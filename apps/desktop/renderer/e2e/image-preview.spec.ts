@@ -6,7 +6,7 @@ const png = Buffer.from(
   "base64",
 );
 
-async function fixture(request: APIRequestContext, generated: boolean) {
+async function fixture(request: APIRequestContext, generated: boolean, copies = 1) {
   const upload = await request.post("/api/assets/upload?name=double-click.png", {
     headers: { "content-type": "image/png" },
     data: png,
@@ -21,8 +21,9 @@ async function fixture(request: APIRequestContext, generated: boolean) {
       graph: {
         schemaVersion: 1,
         viewport: { x: 20, y: 20, zoom: 1 },
-        nodes: [{
-          id: "picture", type: "workflow", position: { x: 60, y: 90 },
+        nodes: Array.from({ length: copies }, (_, index) => ({
+          id: index === 0 ? "picture" : `picture-${index}`,
+          type: "workflow", position: { x: 60 + index * 360, y: 90 },
           style: { width: 300, height: 300 },
           data: {
             nodeType: "asset-input", label: "双击预览", assetId: asset.id,
@@ -34,13 +35,43 @@ async function fixture(request: APIRequestContext, generated: boolean) {
             } : {}),
             outputs: [{ id: "asset", kind: "image", label: "图片" }],
           },
-        }],
+        })),
         edges: [],
       },
     },
   });
   expect(created.status()).toBe(201);
   return { id, asset };
+}
+
+async function observeOriginalObjectUrls(page: Page) {
+  await page.addInitScript(() => {
+    const counters = { created: [] as string[], revoked: [] as string[] };
+    const create = URL.createObjectURL.bind(URL);
+    const revoke = URL.revokeObjectURL.bind(URL);
+    URL.createObjectURL = value => {
+      const url = create(value);
+      if (value instanceof Blob && value.type.startsWith("image/"))
+        counters.created.push(url);
+      return url;
+    };
+    URL.revokeObjectURL = url => {
+      if (counters.created.includes(url)) counters.revoked.push(url);
+      revoke(url);
+    };
+    (window as typeof window & { __imagePreviewObjectUrls?: typeof counters })
+      .__imagePreviewObjectUrls = counters;
+  });
+}
+
+async function originalObjectUrls(page: Page) {
+  return page.evaluate(() => {
+    const counters = (window as typeof window & {
+      __imagePreviewObjectUrls?: { created: string[]; revoked: string[] };
+    }).__imagePreviewObjectUrls;
+    if (!counters) throw new Error("Image object URL observer was not installed");
+    return { created: [...counters.created], revoked: [...counters.revoked] };
+  });
 }
 
 async function doubleClickImage(page: Page) {
@@ -170,3 +201,81 @@ for (const emptyOriginal of [false, true]) {
     }
   });
 }
+
+test("原图非空但解码失败时，节点仍挂载也及时释放 Blob URL", async ({ page, request }) => {
+  const { id, asset } = await fixture(request, true);
+  await observeOriginalObjectUrls(page);
+  await page.route(`**/api/assets/${asset.id}/preview?*`, route =>
+    route.fulfill({ status: 500, json: { error: "test preview failure" } }),
+  );
+  let originalRequests = 0;
+  await page.route(`**/api/assets/${asset.id}/content`, route => {
+    originalRequests++;
+    return route.fulfill({ contentType: "image/png", body: Buffer.from("nonempty damaged PNG") });
+  });
+  try {
+    await page.goto(`/canvas/${id}`);
+    const picture = page.locator('.react-flow__node[data-id="picture"]');
+    await expect(picture.getByText("图片加载失败", { exact: true })).toBeVisible();
+    await expect(picture).toBeVisible();
+    await expect(picture.locator("img")).toHaveCount(0);
+    await expect.poll(async () => {
+      const urls = await originalObjectUrls(page);
+      return { created: urls.created.length, revoked: urls.revoked.length };
+    }).toEqual({ created: 1, revoked: 1 });
+    const urls = await originalObjectUrls(page);
+    expect(urls.revoked).toEqual(urls.created);
+    expect(originalRequests).toBe(1);
+  } finally {
+    await page.close();
+    await request.delete(`/api/projects/${id}`);
+    await request.delete(`/api/assets/${asset.id}`);
+  }
+});
+
+test("共享原图的一张图片失败或移除，不会提前释放其他图片的租约", async ({ page, request }) => {
+  const { id, asset } = await fixture(request, false, 2);
+  await observeOriginalObjectUrls(page);
+  await page.route(`**/api/assets/${asset.id}/preview?*`, route =>
+    route.fulfill({ status: 500, json: { error: "test preview failure" } }),
+  );
+  let originalRequests = 0;
+  page.on("request", event => {
+    if (new URL(event.url()).pathname === `/api/assets/${asset.id}/content`)
+      originalRequests++;
+  });
+  try {
+    await page.goto(`/canvas/${id}`);
+    const first = page.locator('.react-flow__node[data-id="picture"]');
+    const second = page.locator('.react-flow__node[data-id="picture-1"]');
+    for (const node of [first, second]) {
+      await expect(node.locator("img")).toHaveAttribute("data-asset-preview-state", "original");
+      await expect.poll(() => node.locator("img").evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(1);
+    }
+    const sharedUrl = await second.locator("img").getAttribute("src");
+    expect(sharedUrl).toMatch(/^blob:/);
+    await expect(first.locator("img")).toHaveAttribute("src", sharedUrl!);
+    expect(originalRequests).toBe(1);
+    expect(await originalObjectUrls(page)).toEqual({ created: [sharedUrl], revoked: [] });
+
+    // The original error path must release just this consumer. Keep the second
+    // consumer alive, then unmount the failed one to check idempotent cleanup.
+    await first.locator("img").dispatchEvent("error");
+    await expect(first.getByText("图片加载失败", { exact: true })).toBeVisible();
+    await first.locator(".node-card").click({ position: { x: 30, y: 20 } });
+    await page.keyboard.press("Delete");
+    await expect(first).toHaveCount(0);
+    await expect(second).toBeVisible();
+    expect(await page.evaluate(async url => fetch(url!).then(response => response.ok).catch(() => false), sharedUrl)).toBe(true);
+    expect(await originalObjectUrls(page)).toEqual({ created: [sharedUrl], revoked: [] });
+
+    await second.locator(".node-card").click({ position: { x: 30, y: 20 } });
+    await page.keyboard.press("Delete");
+    await expect(second).toHaveCount(0);
+    await expect.poll(() => originalObjectUrls(page)).toEqual({ created: [sharedUrl], revoked: [sharedUrl] });
+  } finally {
+    await page.close();
+    await request.delete(`/api/projects/${id}`);
+    await request.delete(`/api/assets/${asset.id}`);
+  }
+});

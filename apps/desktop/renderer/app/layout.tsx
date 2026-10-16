@@ -2,9 +2,11 @@ import type { Metadata } from "next";
 import "./globals.css";
 import "./studio-theme.css";
 import "./canvas-studio.css";
-import "./canvas-workbench.css";
+import "./theme-tokens.css";
 import { MotionPreferenceBridge } from "../components/canvas-motion";
 import { DesktopBridge } from "../components/desktop-bridge";
+import { ThemeBridge } from "../components/theme-bridge";
+import { THEME_BOOTSTRAP_SCRIPT } from "../lib/ui-preferences";
 
 export const metadata: Metadata = {
   title: process.env.NEXT_PUBLIC_APP_NAME ?? "超级画布",
@@ -15,8 +17,9 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="zh-CN">
-      <body><MotionPreferenceBridge />{children}<DesktopBridge /></body>
+    <html lang="zh-CN" suppressHydrationWarning>
+      <head><script id="theme-bootstrap" dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP_SCRIPT }} /></head>
+      <body><ThemeBridge /><MotionPreferenceBridge />{children}<DesktopBridge /></body>
     </html>
   );
 }

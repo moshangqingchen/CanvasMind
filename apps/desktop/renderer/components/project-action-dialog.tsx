@@ -106,6 +106,7 @@ export function ProjectActionDialog({
             onClick={onClose}
             disabled={busy}
             aria-label={`关闭${heading}窗口`}
+            title={`关闭${heading}窗口（Esc）`}
           >
             <X size={16} />
           </button>

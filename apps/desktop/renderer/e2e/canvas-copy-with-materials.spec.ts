@@ -182,7 +182,7 @@ function incomingSignature(edge: EdgeRecord) {
 
 async function copyWithMaterials(page: Page, nodeId = "video-source", label = "带素材的视频") {
   const node = page.locator(`.react-flow__node[data-id="${nodeId}"]`);
-  const title = node.locator(".node-title");
+  const title = node.locator(".node-title:visible");
   if (await title.count()) await title.click({ button: "right" });
   else await node.locator(".node-card").click({ button: "right", position: { x: 12, y: 12 } });
   const menu = page.getByRole("menu", { name: `${label} 的操作`, exact: true });
@@ -280,6 +280,7 @@ test("多选时仅复制右键目标，一次撤销和重做同时恢复节点�
 test("编辑提示词后立即复制，一次撤销仅移除副本与新连线并保留原节点新文案", async ({ page, request, copyCanvas }) => {
   const before = await savedGraph(request, copyCanvas.id);
   const originalIds = new Set(before.nodes.map((node) => node.id));
+  await page.locator('.react-flow__node[data-id="video-source"] .prompt-overview').click();
   const editor = page.getByRole("textbox", { name: "编辑 带素材的视频 提示词", exact: true });
   const freshText = "刚刚改好的镜头文案：角色一起朝镜头走来。";
   await editor.fill(freshText);
@@ -291,6 +292,7 @@ test("编辑提示词后立即复制，一次撤销仅移除副本与新连线�
   expect(copy.data.parts).toEqual(freshParts);
   await page.getByRole("button", { name: "撤销", exact: true }).click();
   await expect(page.locator(`.react-flow__node[data-id="${copy.id}"]`)).toHaveCount(0);
+  await page.locator('.react-flow__node[data-id="video-source"] .prompt-overview').click();
   await expect(editor).toHaveText(freshText);
   await expect.poll(async () => {
     const restored = await savedGraph(request, copyCanvas.id);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ModelDescriptor } from "@super-canvas/providers";
-import { choosePickerConnection, filterPickerModels, pickerConnectionGroups, pickerConnectionLabel, readRecentModels, rememberModel } from "./model-picker";
+import { choosePickerConnection, displayPickerModels, filterPickerModels, pickerConnectionGroups, pickerConnectionLabel, readRecentModels, rememberModel } from "./model-picker";
 
 const connections = [
   { id: "a", name: "主连接", supplier: "supplier", supplierLabel: "供应商", group: "标准", available: true },
@@ -61,6 +61,19 @@ describe("connection identity in the canvas picker", () => {
 });
 
 describe("model search and history", () => {
+  it("keeps Key descriptors and order when a large public directory overlaps, without altering either source", () => {
+    const catalog = [
+      { ...models[0], name: "官网同名项", metadata: { publicCatalogOnly: true } },
+      { id: "catalog-extra", name: "官网额外项", operations: [] } satisfies ModelDescriptor,
+    ];
+    const merged = displayPickerModels(models, catalog);
+    expect(merged.map(model => model.id)).toEqual([...models.map(model => model.id), "catalog-extra"]);
+    expect(merged[0]).toBe(models[0]);
+    expect(merged.at(-1)).toBe(catalog[1]);
+    expect(models).toHaveLength(3);
+    expect(catalog).toHaveLength(2);
+    expect(displayPickerModels(models)).toBe(models);
+  });
   it("uses output facts for node type filters including music, irrespective of stale operations", () => {
     const mixed: ModelDescriptor[] = [
       { id: "video-image-to-video", name: "视频", operations: ["image.generate"], outputKinds: ["video"], metadata: { operationsSource: "inferred" } },

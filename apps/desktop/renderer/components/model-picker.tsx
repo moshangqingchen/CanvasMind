@@ -1,18 +1,19 @@
 "use client";
 
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { ChevronDown } from "lucide-react";
+import { Check, ChevronDown } from "lucide-react";
 import type { ModelDescriptor } from "@super-canvas/providers";
 import type { ImageEditingCapabilities } from "@super-canvas/providers/image-editing-capabilities";
 import { cleanModelDisplayName, modelPickerPriceSummary } from "../lib/model-display";
 import { modelCanvasUnavailableReason } from "../lib/graph-ui";
-import { filterPickerModels, MODEL_PICKER_PAGE_SIZE, readRecentModels, RECENT_MODELS_KEY, rememberModel,
+import { displayPickerModels, filterPickerModels, MODEL_PICKER_PAGE_SIZE, readRecentModels, RECENT_MODELS_KEY, rememberModel,
   type ModelKindFilter, type ModelStatusFilter } from "../lib/model-picker";
 import styles from "./model-picker.module.css";
 import { groupTk1688Models, tk1688ModelFamily, tk1688RouteLabel, tk1688RouteSummary } from "../lib/tk1688-model-display";
 import type { CatalogPickerDirectory } from "../lib/supplier-model-directory-diff";
 import { modelPickerDirectoryFact } from "../lib/model-picker-data";
 import { imageTransparencyEvidenceNote } from "../lib/image-transparency-presentation";
+import { WindowedModelList, type ModelListMeasurements } from "./model-picker-window";
 
 type PickerOption = { id: string; model?: ModelDescriptor; label: string; reason: string | null; family?: string; merchants?: number };
 
@@ -59,13 +60,17 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
   const trigger = useRef<HTMLButtonElement>(null);
   const search = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLDivElement>(null);
+  const listMeasurements = useRef<ModelListMeasurements>({ width: 0, viewportHeight: 480, heights: new Map() });
   const menu = useRef<HTMLDivElement>(null);
   const selected = models.find(model => model.id === value);
-  const displayModels = useMemo(() => [...models, ...(catalogDirectory?.models ?? []).filter(model => !models.some(key => key.id === model.id))], [models, catalogDirectory]);
-  const filtered = useMemo(() => filterPickerModels(displayModels, query, kind, status, recentIds), [displayModels, query, kind, status, recentIds]);
-  const grouped = displayModels.some(model => tk1688ModelFamily(model));
+  // A closed trigger only needs the selected model. Defer catalog-wide display,
+  // grouping and filtering work until its menu is actually requested.
+  const displayModels = useMemo(() => open ? displayPickerModels(models, catalogDirectory?.models) : [], [open, models, catalogDirectory?.models]);
+  const filtered = useMemo(() => open ? filterPickerModels(displayModels, query, kind, status, recentIds) : [], [open, displayModels, query, kind, status, recentIds]);
+  const grouped = useMemo(() => open && displayModels.some(model => tk1688ModelFamily(model)), [open, displayModels]);
   const hasFilters = Boolean(query.trim()) || kind !== "all" || status !== "all";
   const options = useMemo<PickerOption[]>(() => {
+    if (!open) return [];
     const automatic: PickerOption[] = !hasFilters && !family ? [{ id: "", label: "自动模型", reason: null }] : [];
     if (!grouped) return [...automatic, ...filtered.map(model => ({ id: model.id, model,
       label: cleanModelDisplayName(model.name, model.metadata?.priceLabel), reason: modelCanvasUnavailableReason(model) }))];
@@ -76,7 +81,7 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
       label: group.id, merchants: group.merchants.length, reason: null })),
       ...filtered.filter(model => !tk1688ModelFamily(model)).map(model => ({ id: model.id, model,
         label: cleanModelDisplayName(model.name, model.metadata?.priceLabel), reason: modelCanvasUnavailableReason(model) }))];
-  }, [filtered, hasFilters, family, grouped]);
+  }, [open, filtered, hasFilters, family, grouped]);
   const activeIndex = Math.min(active, Math.max(0, options.length - 1));
   const page = Math.floor(activeIndex / MODEL_PICKER_PAGE_SIZE);
   const pageStart = page * MODEL_PICKER_PAGE_SIZE;
@@ -88,12 +93,18 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
     if (next) {
       try { setRecentIds(readRecentModels(localStorage.getItem(RECENT_MODELS_KEY)).find(item => item.connectionId === connectionId)?.modelIds ?? []); } catch { setRecentIds([]); }
       setQuery(""); setKind("all"); setStatus("all"); setFamily(null);
-      const index = displayModels.findIndex(model => model.id === value);
-      const groups = groupTk1688Models(displayModels);
-      const selectedFamily = selected && tk1688ModelFamily(selected);
-      const groupedIndex = selectedFamily ? groups.findIndex(group => group.id === selectedFamily)
-        : groups.length + displayModels.filter(model => !tk1688ModelFamily(model)).findIndex(model => model.id === value);
-      setActive(grouped && index >= 0 ? groupedIndex + 1 : index < 0 ? 0 : index + 1);
+      // This click still sees the closed render. Resolve the same display list
+      // here so the current row/family is active on the very first open.
+      const openingModels = open ? displayModels : displayPickerModels(models, catalogDirectory?.models);
+      const openingGrouped = open ? grouped : openingModels.some(model => tk1688ModelFamily(model));
+      const index = openingModels.findIndex(model => model.id === value);
+      if (openingGrouped && index >= 0) {
+        const groups = groupTk1688Models(openingModels);
+        const selectedFamily = selected && tk1688ModelFamily(selected);
+        const groupedIndex = selectedFamily ? groups.findIndex(group => group.id === selectedFamily)
+          : groups.length + openingModels.filter(model => !tk1688ModelFamily(model)).findIndex(model => model.id === value);
+        setActive(groupedIndex + 1);
+      } else setActive(index < 0 ? 0 : index + 1);
     }
   };
   const choose = (modelId: string) => {
@@ -169,7 +180,7 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
         // Reserve the filters/footer plus at least one complete option when
         // the viewport is too narrow to place the menu beside the inspector.
         const rows = list.current;
-        const rowHeight = Math.max(44, ...Array.from(rows?.children ?? [], row => row.getBoundingClientRect().height));
+        const rowHeight = Math.max(44, ...Array.from(rows?.querySelectorAll('[role="option"]') ?? [], row => row.getBoundingClientRect().height));
         const chromeHeight = panel.offsetHeight + Math.max(0, panel.scrollHeight - panel.clientHeight) - (rows?.clientHeight ?? 0);
         const minimumHeight = Math.min(height, Math.max(160, chromeHeight + rowHeight));
         y = Math.max(top, Math.min(y, bottom - minimumHeight));
@@ -180,13 +191,27 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
       panel.style.top = `${y}px`;
     };
     position();
+    const inspector = host.current?.closest(".node-config-popover");
+    inspector?.addEventListener("canvas-node-config-position", position);
+    inspector?.addEventListener("animationend", position);
+    const rows = list.current;
+    rows?.addEventListener("canvas-model-list-size", position);
+    const repositionAfterScroll = (event: Event) => {
+      // Scrolling the windowed list changes neither its anchor nor the menu's
+      // available viewport. Avoid synchronously measuring the whole popover.
+      if (event.target instanceof Node && panel.contains(event.target)) return;
+      position();
+    };
     window.addEventListener("resize", position);
-    window.addEventListener("scroll", position, true);
+    window.addEventListener("scroll", repositionAfterScroll, true);
     window.visualViewport?.addEventListener("resize", position);
     window.visualViewport?.addEventListener("scroll", position);
     return () => {
+      inspector?.removeEventListener("canvas-node-config-position", position);
+      inspector?.removeEventListener("animationend", position);
+      rows?.removeEventListener("canvas-model-list-size", position);
       window.removeEventListener("resize", position);
-      window.removeEventListener("scroll", position, true);
+      window.removeEventListener("scroll", repositionAfterScroll, true);
       window.visualViewport?.removeEventListener("resize", position);
       window.visualViewport?.removeEventListener("scroll", position);
     };
@@ -202,10 +227,6 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
     document.addEventListener("pointerdown", outside, true);
     return () => document.removeEventListener("pointerdown", outside, true);
   }, [open, onOpenChange]);
-  useEffect(() => {
-    if (!open) return;
-    list.current?.querySelector<HTMLElement>(`[data-index="${activeIndex}"]`)?.scrollIntoView({ block: "nearest" });
-  }, [open, activeIndex, page]);
   const keyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.nativeEvent.isComposing) return;
     if (event.key === "Escape" && open) { event.preventDefault(); event.stopPropagation(); setOpen(false, true); return; }
@@ -251,19 +272,19 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
         <span>官网额外 {catalogDirectory.keyConfirmed ? catalogDirectory.catalogOnlyIds.length : "—"}（仅目录）</span>
         {catalogDirectory.catalogStale && <span>官网目录为上次记录</span>}
       </p>}
-      <div ref={list} id={listId} className={styles.list} role="listbox" aria-label={`${label} 可选模型`}>
-        {visible.map((option, offset) => <button key={option.id} id={`${listId}-${pageStart + offset}`} type="button" role="option"
-          aria-label={option.label} aria-selected={option.family ? tk1688ModelFamily(selected ?? { id: value }) === option.family : value === option.id} aria-disabled={Boolean(option.reason)} aria-setsize={options.length} aria-posinset={pageStart + offset + 1}
-          aria-describedby={option.model ? `${listId}-${pageStart + offset}-id ${listId}-${pageStart + offset}-price${family ? ` ${listId}-${pageStart + offset}-summary` : ""}${option.model.metadata?.publicCatalogOnly === true ? ` ${listId}-${pageStart + offset}-directory` : ""}${capabilities[option.model.id]?.transparent || capabilities[option.model.id]?.mask ? ` ${listId}-${pageStart + offset}-capabilities` : ""}` : undefined}
-          className={styles.option} data-index={pageStart + offset} data-active={activeIndex === pageStart + offset || undefined} data-catalog-only={option.model?.metadata?.publicCatalogOnly === true || undefined}
+      <WindowedModelList rows={visible} pageStart={pageStart} activeIndex={activeIndex} listRef={list} measurements={listMeasurements} id={listId} label={`${label} 可选模型`}
+        emptyMessage={`没有符合筛选条件的${family ? "线路" : "模型"}。可清空搜索或调整筛选。`}
+        renderRow={(option, index, style) => <button key={option.id} id={`${listId}-${index}`} style={style} type="button" role="option"
+          aria-label={option.label} aria-selected={option.family ? tk1688ModelFamily(selected ?? { id: value }) === option.family : value === option.id} aria-disabled={Boolean(option.reason)} aria-setsize={options.length} aria-posinset={index + 1}
+          aria-describedby={option.model ? `${listId}-${index}-id ${listId}-${index}-price${family ? ` ${listId}-${index}-summary` : ""}${option.model.metadata?.publicCatalogOnly === true ? ` ${listId}-${index}-directory` : ""}${capabilities[option.model.id]?.transparent || capabilities[option.model.id]?.mask ? ` ${listId}-${index}-capabilities` : ""}` : undefined}
+          className={styles.option} data-index={index} data-active={activeIndex === index || undefined} data-catalog-only={option.model?.metadata?.publicCatalogOnly === true || undefined}
           title={option.family ? "查看此模型的自动路由与商家渠道" : option.id || "使用连接默认模型"} tabIndex={-1}
           onMouseDown={event => event.preventDefault()} onClick={() => activate(option)}>
           {option.family ? <span className={styles.identity}><strong>{option.label}</strong><span className={styles.summary}>{option.merchants} 条商家渠道 · 查看线路与报价</span></span>
-            : option.model ? <ModelIdentity model={option.model} parameters={parameters} capabilities={capabilities[option.model.id]} detailsId={`${listId}-${pageStart + offset}`} price selected={option.id === value} route={Boolean(family)} keyConfirmed={catalogDirectory?.keyConfirmed} /> : <span>{option.label}</span>}
+            : option.model ? <ModelIdentity model={option.model} parameters={parameters} capabilities={capabilities[option.model.id]} detailsId={`${listId}-${index}`} price selected={option.id === value} route={Boolean(family)} keyConfirmed={catalogDirectory?.keyConfirmed} /> : <span>{option.label}</span>}
           {option.model && badge?.(option.model)}
-        </button>)}
-        {!options.length && <p className={styles.note}>没有符合筛选条件的{family ? "线路" : "模型"}。可清空搜索或调整筛选。</p>}
-      </div>
+          {(option.family ? tk1688ModelFamily(selected ?? { id: value }) === option.family : value === option.id) && <Check className={styles.currentCheck} size={14} aria-hidden="true" />}
+        </button>} />
       <div className={styles.pagination}><span>{options.length ? `${pageStart + 1}–${Math.min(pageStart + MODEL_PICKER_PAGE_SIZE, options.length)} / ${options.length}${grouped ? family ? " 条线路" : " 个模型选项" : ""}` : "0 个模型"}</span>
         {options.length > MODEL_PICKER_PAGE_SIZE && <><button type="button" disabled={!page} onClick={() => { setActive(Math.max(0, pageStart - MODEL_PICKER_PAGE_SIZE)); search.current?.focus(); }}>上一页</button><button type="button" disabled={pageStart + MODEL_PICKER_PAGE_SIZE >= options.length} onClick={() => { setActive(pageStart + MODEL_PICKER_PAGE_SIZE); search.current?.focus(); }}>下一页</button></>}
       </div>

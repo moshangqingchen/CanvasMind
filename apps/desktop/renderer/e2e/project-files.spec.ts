@@ -200,6 +200,48 @@ test("项目文件标识不能跨项目读取、导入或删除", async ({ page,
   } finally { f.safe(); }
 });
 
+test("项目文件 Escape 只关闭顶层预览或删除确认，再关闭文件窗口并归还焦点", async ({ page, request }) => {
+  const f = await fixture(page, request);
+  const alpha = f.aFiles.find(file => file.name.startsWith("alpha-project-file"))!;
+  let deleteRequests = 0;
+  await page.route(`**/api/projects/${f.a}/files/delete`, route => { deleteRequests++; return route.abort(); });
+  try {
+    await page.goto(`/canvas/${f.a}`);
+    const opener = page.getByRole("button", { name: "项目文件", exact: true });
+    await opener.click();
+    const panel = page.getByRole("dialog", { name: "项目文件", exact: true });
+    await panel.getByRole("tab", { name: /^草稿/u }).click();
+
+    const previewOpener = panel.getByRole("button", { name: `预览 ${alpha.name}`, exact: true });
+    await previewOpener.click();
+    const preview = page.getByRole("dialog", { name: "项目文件预览", exact: true });
+    await expect(preview).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(preview).toHaveCount(0);
+    await expect(panel).toBeVisible();
+    await expect(previewOpener).toBeFocused();
+
+    const deleteOpener = panel.getByRole("button", { name: `删除 ${alpha.name}`, exact: true });
+    await deleteOpener.click();
+    const confirmation = page.getByRole("alertdialog", { name: "删除 1 个项目文件？", exact: true });
+    await expect(confirmation).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(confirmation).toHaveCount(0);
+    await expect(panel).toBeVisible();
+    await expect(deleteOpener).toBeFocused();
+    expect(deleteRequests).toBe(0);
+    expect((await files(request, f.a)).map(file => file.fileId).sort()).toEqual(f.aFiles.map(file => file.fileId).sort());
+
+    const search = panel.getByRole("searchbox", { name: "搜索项目文件", exact: true });
+    await search.focus();
+    await search.evaluate(element => element.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", isComposing: true, bubbles: true })));
+    await expect(panel).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
+    await expect(opener).toBeFocused();
+  } finally { f.safe(); }
+});
+
 test("缩略图临时读取失败后刷新可以恢复，保留选择且不重载正常缩略图", async ({ page, request }) => {
   const f = await fixture(page, request);
   const alpha = f.aFiles.find(file => file.name.startsWith("alpha-project-file"))!;

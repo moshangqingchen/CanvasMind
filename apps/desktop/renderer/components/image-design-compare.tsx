@@ -291,6 +291,7 @@ export function ImageDesignCompare({
   const id = useId();
   const [zoom, setZoom] = useState<Zoom>("fit");
   const [pan, setPan] = useState<Pan>({ x: 0, y: 0 });
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const [drafts, setDrafts] = useState<Record<string, ReviewDraft>>({});
   const [savedReviews, setSavedReviews] = useState<
     Record<string, ImageDesignReview>
@@ -444,7 +445,15 @@ export function ImageDesignCompare({
   }
 
   return (
-    <div ref={(element) => { dialogRef.current = element; }} className={styles.root} aria-busy={Boolean(savingId)} tabIndex={-1}>
+    <div ref={(element) => { dialogRef.current = element; }} className={styles.root} aria-busy={Boolean(savingId)} tabIndex={-1}
+      onKeyDown={event => {
+        if (leaveAction || event.nativeEvent.isComposing || event.altKey || event.ctrlKey || event.metaKey || (event.target as HTMLElement).closest("input,textarea,select,[contenteditable=true]")) return;
+        const index = Number(event.key) - 1;
+        if (/^[1-4]$/.test(event.key) && images[index]) {
+          event.preventDefault(); event.stopPropagation(); setSelectedIndex(index);
+          dialogRef.current?.querySelector<HTMLElement>(`[data-asset-id="${CSS.escape(images[index].id)}"]`)?.focus({ preventScroll: false });
+        }
+      }}>
       <div className={styles.header}>
         <div className={styles.heading}>
           <button
@@ -547,7 +556,7 @@ export function ImageDesignCompare({
         </div>
         <span className={styles.panHint}>
           <Move size={13} aria-hidden="true" />
-          放大后拖动图片，同步查看细节
+          1–4 选择图片 · 放大后拖动，同步查看细节
         </span>
       </div>
 
@@ -574,6 +583,10 @@ export function ImageDesignCompare({
                 aria-labelledby={`${prefix}-name`}
                 data-asset-id={asset.id}
                 data-review-status={status}
+                data-selected={selectedIndex === index}
+                tabIndex={0}
+                onFocus={() => setSelectedIndex(index)}
+                onPointerDown={() => setSelectedIndex(index)}
               >
                 <div className={styles.cardHeader}>
                   <span className={styles.index}>

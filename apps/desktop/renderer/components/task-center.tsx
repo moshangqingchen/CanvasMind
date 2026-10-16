@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   CircleAlert,
   Clock3,
@@ -20,6 +20,14 @@ import { downloadBlob } from "../lib/blob-download";
 import { useDialogFocus } from "./use-dialog-focus";
 import type { RunSnapshot } from "./types";
 import "./task-center.css";
+import { VirtualList } from "./virtual-list";
+
+function TaskDetails({ title, className = "", children, expanded, onExpanded }: { title: ReactNode; className?: string; children: ReactNode; expanded: boolean; onExpanded: (value: boolean) => void }) {
+  return <details className={`history-errors ${className}`} open={expanded} onToggle={event => onExpanded(event.currentTarget.open)}>
+    <summary className={className.includes("failure") ? "history-error" : undefined}>{title}</summary>
+    {expanded ? children : null}
+  </details>;
+}
 interface ModalProps {
   open: boolean;
   onClose: () => void;
@@ -64,6 +72,16 @@ export function RunHistoryModal({
   const [resumingId, setResumingId] = useState<string | null>(null);
   const [recoveringId, setRecoveringId] = useState<string | null>(null);
   const [filter, setFilter] = useState("all");
+  const [query, setQuery] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const setDetailsExpanded = (id: string, value: boolean) => setExpanded(current => {
+    if (current.has(id) === value) return current;
+    const next = new Set(current);
+    if (value) next.add(id); else next.delete(id);
+    return next;
+  });
+  const searchRef = useRef<HTMLInputElement>(null);
   const requestSequence = useRef(0);
   const dialogRef = useDialogFocus(open, onClose);
   const reload = async () => {
@@ -73,7 +91,7 @@ export function RunHistoryModal({
     setLoadError(null);
     try {
       const items = await fetchRuns(canvasId);
-      if (sequence === requestSequence.current) setRuns(items);
+      if (sequence === requestSequence.current) { setRuns(items); setLoaded(true); }
     } catch (error) {
       if (sequence === requestSequence.current)
         setLoadError(
@@ -96,6 +114,7 @@ export function RunHistoryModal({
         .then((items) => {
           if (cancelled || sequence !== requestSequence.current) return;
           setRuns(items);
+          setLoaded(true);
           setBusy(false);
           setLoadError(null);
         })
@@ -119,22 +138,31 @@ export function RunHistoryModal({
       clearTimeout(timer);
     };
   }, [open, canvasId]);
-  const visibleRuns = runs.filter(
-    ({ run }) =>
-      filter === "all" ||
-      (filter === "active"
-        ? [
-            "blocked",
-            "queued",
-            "submitting",
-            "running",
-            "archiving",
-            "cancel_requested",
-          ].includes(run.status)
-        : filter === "attention"
-          ? ["failed", "needs_attention"].includes(run.status)
-          : run.status === filter),
-  );
+  const counts = useMemo(() => ({
+    all: runs.length,
+    active: runs.filter(({ run }) => ["blocked", "queued", "submitting", "running", "archiving", "cancel_requested"].includes(run.status)).length,
+    attention: runs.filter(({ run }) => ["failed", "needs_attention"].includes(run.status)).length,
+    succeeded: runs.filter(({ run }) => run.status === "succeeded").length,
+  }), [runs]);
+  const visibleRuns = useMemo(() => {
+    const needle = query.trim().toLocaleLowerCase();
+    return runs.filter(
+      ({ run }) =>
+        filter === "all" ||
+        (filter === "active"
+          ? [
+              "blocked",
+              "queued",
+              "submitting",
+              "running",
+              "archiving",
+              "cancel_requested",
+            ].includes(run.status)
+          : filter === "attention"
+            ? ["failed", "needs_attention"].includes(run.status)
+            : run.status === filter),
+    ).filter(({ run, nodes }) => !needle || `${run.id} ${nodes.map(node => `${node.nodeId} ${node.request?.model ?? ""} ${node.errorJson?.message ?? ""}`).join(" ")}`.toLocaleLowerCase().includes(needle));
+  }, [runs, filter, query]);
   if (!open) return null;
   return (
     <div
@@ -151,11 +179,18 @@ export function RunHistoryModal({
         aria-modal="true"
         aria-label="运行历史"
         tabIndex={-1}
+        onKeyDown={event => {
+          if (event.nativeEvent.isComposing) return;
+          const typing = (event.target as HTMLElement).closest("input,textarea,[contenteditable=true]");
+          if (((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") || (event.key === "/" && !typing)) {
+            event.preventDefault(); event.stopPropagation(); searchRef.current?.focus();
+          }
+        }}
       >
         <header className="modal-head">
-          <div>
-            <span className="eyebrow">生成记录</span>
-            <h2>任务中心</h2>
+          <div className="task-heading">
+            <span className="task-heading-icon" aria-hidden="true"><Clock3 size={22} strokeWidth={1.75} /></span>
+            <div><span className="eyebrow">生成记录</span><h2>任务中心</h2></div>
           </div>
           <div className="modal-head-actions">
             <button
@@ -163,6 +198,7 @@ export function RunHistoryModal({
               type="button"
               onClick={() => void reload()}
               aria-label="刷新"
+              title="刷新任务"
             >
               <RefreshCw className={busy ? "spin" : ""} size={16} />
             </button>
@@ -171,28 +207,19 @@ export function RunHistoryModal({
               type="button"
               onClick={onClose}
               aria-label="关闭"
+              title="关闭（Esc）"
             >
               <X size={17} />
             </button>
           </div>
         </header>
         <div className="library-filter-row">
-          <label>
-            任务状态{" "}
-            <select
-              aria-label="筛选任务状态"
-              value={filter}
-              onChange={(event) => setFilter(event.target.value)}
-            >
-              <option value="all">全部任务</option>
-              <option value="active">正在进行</option>
-              <option value="attention">需要处理</option>
-              <option value="succeeded">已完成</option>
-            </select>
-          </label>
-          <span>当前项目 · 每 4 秒更新</span>
+          <div className="task-tabs" role="tablist" aria-label="任务状态">
+            {([['all', '全部'], ['active', '进行中'], ['attention', '需要处理'], ['succeeded', '已完成']] as const).map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={filter === id} onClick={() => setFilter(id)}>{label} <span>{counts[id]}</span></button>)}
+          </div>
+          <input ref={searchRef} className="task-search" aria-label="搜索任务" placeholder="搜索型号、任务或错误…" value={query} onChange={event => setQuery(event.target.value)} />
         </div>
-        <div className="history-list">
+        <div className="task-content">
           {loadError ? (
             <div className="modal-message history-load-error" role="alert">
               <CircleAlert size={15} />
@@ -216,28 +243,40 @@ export function RunHistoryModal({
                 className="icon-button"
                 type="button"
                 aria-label="关闭任务操作提示"
+                title="关闭任务操作提示"
                 onClick={() => setActionError(null)}
               >
                 <X size={15} />
               </button>
             </div>
           ) : null}
-          {visibleRuns.length === 0 && !loadError ? (
+          {!loaded && !loadError ? <div className="task-skeleton" role="status" aria-label="正在读取任务"><i /><i /><i /></div> : visibleRuns.length === 0 && !loadError ? (
             <div className="empty-state">
               <Clock3 size={24} />
               <span>{runs.length ? "当前筛选没有任务" : "还没有运行记录"}</span>
             </div>
           ) : visibleRuns.length > 0 ? (
-            visibleRuns.map(({ run, nodes }) => {
+            <VirtualList items={visibleRuns} itemKey={item => item.run.id} label="任务列表" className="history-list" estimatedHeight={180} resetKey={`${filter}:${query}`} renderItem={({ run, nodes }) => {
               const outputAssetIds = [
                 ...new Set(nodes.flatMap((node) => node.outputAssetIds)),
               ];
               const nodeErrors = nodes.filter((node) =>
                 Boolean(node.errorJson?.message) || ["failed", "needs_attention"].includes(node.status),
               );
+              // The preview endpoint accepts images only; unknown and non-image results keep a neutral tile.
+              const outputPreviewId = nodes.find(node => node.request?.operation?.startsWith("image.") && node.outputAssetIds.length)?.outputAssetIds[0];
+              const completedNodes = nodes.filter(node => node.status === "succeeded").length;
+              const completion = nodes.length ? completedNodes / nodes.length * 100 : 0;
               return (
-                <article className="history-row" key={run.id}>
-                  <span className={`history-status ${run.status}`} />
+                <article className="history-row" key={run.id} data-run-id={run.id} data-status={run.status}>
+                  <span className={`history-status ${run.status}`} aria-hidden="true" />
+                  <div className="task-preview">
+                  {outputPreviewId ? <img className="task-thumbnail" src={`/api/assets/${encodeURIComponent(outputPreviewId)}/preview?size=160`} alt="" loading="lazy" decoding="async" /> : <span className="task-thumbnail task-thumbnail-empty"><Clock3 size={18} /></span>}
+                    <svg className="task-progress-ring" viewBox="0 0 24 24" role="img" aria-label={`${completedNodes} / ${nodes.length} 个节点已完成`}>
+                      <circle className="task-progress-track" cx="12" cy="12" r="9" />
+                      <circle className="task-progress-value" cx="12" cy="12" r="9" pathLength="100" strokeDasharray={`${completion} 100`} />
+                    </svg>
+                  </div>
                   <div className="history-main">
                     <strong>
                       {run.scope === "all"
@@ -246,12 +285,10 @@ export function RunHistoryModal({
                           ? "运行下游"
                           : "运行当前节点"}
                     </strong>
+                    <span className="task-model" title={nodes.map(node => node.request?.model).filter(Boolean).join(" · ")}>{nodes.map(node => node.request?.model).filter(Boolean).join(" · ") || "—"}</span>
                     <small>
                       {new Date(run.createdAt).toLocaleString("zh-CN")} ·{" "}
-                      {
-                        nodes.filter((node) => node.status === "succeeded")
-                          .length
-                      }
+                      {completedNodes}
                       /{nodes.length} 节点完成
                     </small>
                     <small>
@@ -272,8 +309,7 @@ export function RunHistoryModal({
                         ? new Date(run.updatedAt).toLocaleTimeString("zh-CN")
                         : "未记录"}
                     </small>
-                    <details className="history-errors">
-                      <summary>查看任务进度</summary>
+                    <TaskDetails title="查看任务进度" expanded={expanded.has(`${run.id}:progress`)} onExpanded={value => setDetailsExpanded(`${run.id}:progress`, value)}>
                       <ul className="history-error-list task-progress">
                         {nodes.map((node) => (
                           <li key={node.id}>
@@ -315,7 +351,7 @@ export function RunHistoryModal({
                           </li>
                         ))}
                       </ul>
-                    </details>
+                    </TaskDetails>
                     <button
                       className="button ghost small"
                       type="button"
@@ -351,10 +387,7 @@ export function RunHistoryModal({
                       <Download size={12} /> 导出诊断信息
                     </button>
                     {nodeErrors.length > 0 ? (
-                      <details className="history-errors" open>
-                        <summary className="history-error">
-                          {nodeErrors.length} 个节点错误
-                        </summary>
+                      <TaskDetails className="task-failure" expanded={expanded.has(`${run.id}:failure`)} onExpanded={value => setDetailsExpanded(`${run.id}:failure`, value)} title={<><span className="task-error-summary" title={localizeRunError(nodeErrors[0]?.errorJson, { status: nodeErrors[0]?.status, provider: nodeErrors[0]?.request?.provider, supplier: nodeErrors[0]?.request?.supplier, providerTaskStatus: nodeErrors[0]?.taskEvidence?.status })?.message}>{localizeRunError(nodeErrors[0]?.errorJson, { status: nodeErrors[0]?.status, provider: nodeErrors[0]?.request?.provider, supplier: nodeErrors[0]?.request?.supplier, providerTaskStatus: nodeErrors[0]?.taskEvidence?.status })?.message ?? `${nodeErrors.length} 个节点需要处理`}</span><span>查看原因</span></>}>
                         <ul className="history-error-list">
                           {nodeErrors.map((node) => {
                             const localized = localizeRunError(node.errorJson, { provider: node.request?.provider, supplier: node.request?.supplier, status: node.status, providerTaskStatus: node.taskEvidence?.status });
@@ -388,7 +421,7 @@ export function RunHistoryModal({
                             );
                           })}
                         </ul>
-                      </details>
+                      </TaskDetails>
                     ) : null}
                     {outputAssetIds.length > 0 ? (
                       <div className="history-output-actions">
@@ -491,7 +524,7 @@ export function RunHistoryModal({
                   </span>
                 </article>
               );
-            })
+            }} />
           ) : null}
         </div>
       </section>

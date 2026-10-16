@@ -71,7 +71,7 @@ async function wheelPanel(page: Page, panel: Locator, delta: number) {
     const bottom = Math.min(bounds.bottom - 8, innerHeight - 1);
     if (right <= left || bottom <= top) return { point: null, reason: "body outside viewport" };
     // Hit-test the visible body, including its padding, so an overlapping
-    // attached panel cannot silently receive the intended panel's wheel.
+    // neighboring floating card cannot silently receive this card's wheel.
     for (const x of [right, left, (left + right) / 2]) {
       for (const y of [(top + bottom) / 2, top, bottom]) {
         const hit = document.elementFromPoint(x, y);
@@ -87,7 +87,12 @@ async function wheelPanel(page: Page, panel: Locator, delta: number) {
 }
 
 async function fixture(page: Page, request: APIRequestContext, suffix: string) {
-  await page.setViewportSize({ width: 1440, height: 1080 });
+  // The wide deck shows both retained cards; narrow tab behavior has its own
+  // regression, including per-card drafts, optional controls and scroll.
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  // Keep both deck slots available before the deferred preference hydration;
+  // a one-time aria-expanded read can otherwise race the desktop default.
+  await page.addInitScript(() => localStorage.setItem("super-canvas:inspector-open", "false"));
   let submissions = 0;
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
@@ -378,6 +383,9 @@ for (const interruption of ["pointercancel", "blur", "capture-lost-blur"] as con
 test(`框选被 ${interruption} 中断后移除遮挡，参数面板仍能下拉和滚动`, async ({ page, request }, testInfo) => {
   const ui = await fixture(page, request, `框选取消 ${interruption}`);
   const first = ui.panels[0]!;
+  // Selection can open the Agent and reduce the deck to one visible slot.
+  // Keep the recovery target active throughout that real layout change.
+  await page.getByRole("tab", { name: ui.labels[0], exact: true }).click();
   const pane = page.locator(".react-flow__pane");
   const paneBounds = await pane.boundingBox();
   const supplierBounds = await first.supplier.boundingBox();
@@ -413,9 +421,9 @@ test(`框选被 ${interruption} 中断后移除遮挡，参数面板仍能下拉
       if (event.target === window) record(event);
     }, { capture: true });
   });
-  const marqueeStart = { x: paneBounds!.x + paneBounds!.width - 100, y: paneBounds!.y + 20 };
-  // Start above the cards. A start inside the right card captures its child
-  // instead of the pane and its stopped propagation bypasses our recorder.
+  const firstPanelBounds = (await first.panel.boundingBox())!;
+  const marqueeStart = { x: firstPanelBounds.x - 24, y: paneBounds!.y + 100 };
+  // Start in the clear canvas beside the floating deck, below the top islands.
   expect(await pane.evaluate((element, point) =>
     document.elementFromPoint(point.x, point.y) === element,
     marqueeStart,
@@ -508,9 +516,8 @@ test(`框选被 ${interruption} 中断后移除遮挡，参数面板仍能下拉
   } finally {
     await page.keyboard.up("Control");
   }
-  // Marquee-selected nodes open the assistant rail and narrow the canvas,
-  // making the two attached panels overlap after auto-pan. Restore the
-  // fixture's layout only after the first model action has proved recovery.
+  // Marquee-selected nodes can open Agent and collapse the deck to one slot.
+  // Restore both slots after the first model action proves pointer recovery.
   const sidebar = page.getByRole("button", { name: "智能体面板", exact: true });
   if ((await sidebar.getAttribute("aria-expanded")) === "true") await sidebar.click();
   await chooseNativeWithMouse(page, first.group, ui.alternateGroup);

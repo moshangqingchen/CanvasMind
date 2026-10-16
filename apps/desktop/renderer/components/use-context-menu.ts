@@ -1,6 +1,18 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
+
+/** Canvas content is full bleed; menus still reserve the visible top islands. */
+export function canvasMenuViewport(menu: HTMLElement) {
+  const editor = menu.closest(".canvas-editor");
+  const islands = editor?.querySelectorAll<HTMLElement>("[data-canvas-island]") ?? [];
+  let top = (menu.closest(".canvas-wrap")?.getBoundingClientRect().top ?? 0) + 8;
+  for (const island of islands) {
+    const box = island.getBoundingClientRect();
+    if (box.width > 0 && box.height > 0) top = Math.max(top, box.bottom + 8);
+  }
+  return { left: 8, top, right: window.innerWidth - 8, bottom: window.innerHeight - 8 };
+}
 
 /** Keep canvas menus reachable by keyboard and inside the current window. */
 export function useContextMenu(opening: unknown, onClose: () => void, originNodeId?: string) {
@@ -8,7 +20,7 @@ export function useContextMenu(opening: unknown, onClose: () => void, originNode
   const closeRef = useRef(onClose);
   useEffect(() => { closeRef.current = onClose; }, [onClose]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!opening) return;
     const menu = menuRef.current;
     if (!menu) return;
@@ -20,10 +32,15 @@ export function useContextMenu(opening: unknown, onClose: () => void, originNode
       '[role="menuitem"]:not(:disabled)',
     ));
     const fit = () => {
+      const viewport = canvasMenuViewport(menu);
+      menu.style.maxWidth = `${Math.max(0, viewport.right - viewport.left)}px`;
+      menu.style.maxHeight = `${Math.max(0, viewport.bottom - viewport.top)}px`;
+      menu.style.overflowY = "auto";
+      menu.style.overscrollBehavior = "contain";
+      menu.style.scrollPaddingBlock = "4px";
       const bounds = menu.getBoundingClientRect();
-      const minimumTop = (menu.closest(".canvas-wrap")?.getBoundingClientRect().top ?? 0) + 8;
-      const dx = Math.max(8 - bounds.left, Math.min(0, window.innerWidth - 8 - bounds.right));
-      const dy = Math.max(minimumTop - bounds.top, Math.min(0, window.innerHeight - 8 - bounds.bottom));
+      const dx = Math.max(viewport.left - bounds.left, Math.min(0, viewport.right - bounds.right));
+      const dy = Math.max(viewport.top - bounds.top, Math.min(0, viewport.bottom - bounds.bottom));
       menu.style.left = `${Number.parseFloat(menu.style.left) + dx}px`;
       menu.style.top = `${Number.parseFloat(menu.style.top) + dy}px`;
     };
@@ -34,6 +51,7 @@ export function useContextMenu(opening: unknown, onClose: () => void, originNode
     const keydown = (event: KeyboardEvent) => {
       if (!menu.contains(event.target as Node)) return;
       if (event.key === "Escape") {
+        if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
         event.preventDefault();
         event.stopPropagation();
         closeRef.current();
@@ -51,6 +69,7 @@ export function useContextMenu(opening: unknown, onClose: () => void, originNode
           : event.key === "End" ? buttons.length - 1
           : (current + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length;
         buttons[next]?.focus({ preventScroll: true });
+        buttons[next]?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
       }
     };
     const pointerdown = (event: PointerEvent) => {

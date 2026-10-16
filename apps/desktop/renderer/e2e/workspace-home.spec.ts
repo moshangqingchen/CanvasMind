@@ -5,8 +5,36 @@ interface HomeProject {
   title: string;
   createdAt: string;
   updatedAt: string;
-  nodeCount: number;
+  nodeCount?: number;
   previewAssetId?: string;
+}
+
+type HomeMotionWindow = typeof window & { __homeAuraDraws: number };
+
+async function observeAuraDraws(page: Page) {
+  await page.addInitScript(() => {
+    const w = window as HomeMotionWindow;
+    w.__homeAuraDraws = 0;
+    const original = CanvasRenderingContext2D.prototype.clearRect;
+    CanvasRenderingContext2D.prototype.clearRect = function (...args) {
+      if (this.canvas.closest("[data-animating]")) w.__homeAuraDraws++;
+      return original.apply(this, args);
+    };
+  });
+}
+
+const auraDraws = (page: Page) => page.evaluate(() => (window as HomeMotionWindow).__homeAuraDraws);
+async function expectAuraDrawing(page: Page) {
+  const previous = await auraDraws(page);
+  await expect.poll(() => auraDraws(page)).toBeGreaterThan(previous);
+}
+async function expectAuraPaused(page: Page) {
+  await expect(page.locator("[data-animating]")).toHaveAttribute("data-animating", "false");
+  // Pausing may draw one static frame. There must be no subsequent loop.
+  await page.waitForTimeout(100);
+  const stopped = await auraDraws(page);
+  await page.waitForTimeout(180);
+  expect(await auraDraws(page)).toBe(stopped);
 }
 
 const older: HomeProject = {
@@ -33,6 +61,112 @@ const newer: HomeProject = {
   createdAt: "2026-09-03T08:00:00.000Z",
   updatedAt: "2026-09-04T08:00:00.000Z",
 };
+
+for (const viewport of [
+  { width: 1024, height: 768, columns: 6 },
+  { width: 1366, height: 768, columns: 12 },
+  { width: 1920, height: 1080, columns: 12 },
+]) {
+  test(`首页 Bento 在 ${viewport.width} 像素下分区清晰且没有横向溢出`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const state = await mockWorkspace(page, [older, newer]);
+    await page.goto("/");
+    await expect(page.getByRole("article")).toHaveCount(2);
+    const bento = page.locator('[data-home-layout="bento"]');
+    expect(await bento.evaluate(element => getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/u).length)).toBe(viewport.columns);
+    const hero = await page.locator('[aria-labelledby="workspace-heading"]').boundingBox();
+    const overview = await page.getByRole("complementary", { name: "创作空间概览" }).boundingBox();
+    expect(hero).not.toBeNull();
+    expect(overview).not.toBeNull();
+    expect(hero!.x + hero!.width).toBeLessThanOrEqual(overview!.x);
+    expect(overview!.y).toBeCloseTo(hero!.y, 0);
+    const shortcuts = page.locator('[aria-label="按设计任务开始"] > button');
+    await expect(shortcuts).toHaveCount(3);
+    for (const shortcut of await shortcuts.all()) {
+      const bounds = await shortcut.boundingBox();
+      expect(bounds).not.toBeNull();
+      expect(bounds!.y).toBeGreaterThanOrEqual(Math.max(hero!.y + hero!.height, overview!.y + overview!.height));
+      expect(bounds!.x).toBeGreaterThanOrEqual(0);
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width);
+    }
+    await expect(page.getByRole("button", { name: "聊聊创作想法", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "创建画布", exact: true })).toBeVisible();
+    await expect(page.locator('[data-workspace-stat="projects"] dd')).toHaveText("2张");
+    await expect(page.locator('[data-workspace-stat="nodes"] dd')).toHaveText("20个");
+    await expectReadableWorkspace(page, viewport.width);
+    expect(await page.locator('div[data-motion]').evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: testInfo.outputPath(`workspace-home-bento-${viewport.width}.png`), fullPage: true });
+    expect(state.mutations).toEqual([]);
+    expect(state.canvasReads).toEqual([]);
+  });
+}
+
+test("首页优先使用已有结果封面，装饰封面在排序与筛选后保持稳定", async ({ page }) => {
+  await mockWorkspace(page, [{ ...older, previewAssetId: "existing-cover" }, newer]);
+  await page.route("**/api/assets/existing-cover/preview?size=640", route => route.fulfill({
+    contentType: "image/svg+xml",
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="#2DD4BF"/></svg>',
+  }));
+  await page.goto("/");
+  const saved = page.getByRole("article", { name: older.title, exact: true });
+  const decorated = page.getByRole("article", { name: newer.title, exact: true });
+  const image = saved.locator('img[data-project-cover="result"]');
+  await image.scrollIntoViewIfNeeded();
+  await expect.poll(() => image.evaluate(element => (element as HTMLImageElement).naturalWidth)).toBe(640);
+  await expect(saved.locator('[data-project-cover="decoration"]')).toHaveCount(0);
+  const cover = decorated.locator('[data-project-cover="decoration"]');
+  const palette = await cover.getAttribute("data-cover-palette");
+  expect(palette).toBeTruthy();
+  await page.getByLabel("画布排序").selectOption("name");
+  await expect(cover).toHaveAttribute("data-cover-palette", palette!);
+  await page.getByLabel("搜索画布", { exact: true }).fill("秋日");
+  await expect(page.getByRole("article")).toHaveCount(1);
+  await expect(cover).toHaveAttribute("data-cover-palette", palette!);
+  await page.reload();
+  await expect(decorated.locator('[data-project-cover="decoration"]')).toHaveAttribute("data-cover-palette", palette!);
+});
+
+test("首页没有完整节点统计时留空，不把缺字段显示成零", async ({ page }) => {
+  const state = await mockWorkspace(page, [{ ...older, nodeCount: undefined }, newer]);
+  await page.goto("/");
+  await expect(page.getByRole("article")).toHaveCount(2);
+  await expect(page.locator('[data-workspace-stat="projects"] dd')).toHaveText("2张");
+  await expect(page.locator('[data-workspace-stat="nodes"]')).toHaveCount(0);
+  await expect(page.getByRole("article", { name: older.title, exact: true })).not.toContainText("0 个节点");
+  await expect(page.getByRole("article", { name: newer.title, exact: true })).toContainText("12 个节点");
+  expect(state.mutations).toEqual([]);
+  expect(state.canvasReads).toEqual([]);
+});
+
+test("首页操作完成提示四秒后消失，操作按钮仍可用", async ({ page }) => {
+  await mockWorkspace(page, [older]);
+  await page.goto("/");
+  await page.getByRole("button", { name: `${older.title} 的画布操作` }).click();
+  await page.getByRole("menuitem", { name: "重命名", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "重命名画布" });
+  await dialog.getByLabel("画布名称").fill("新的创作名称");
+  await dialog.getByRole("button", { name: "保存名称", exact: true }).click();
+  const notice = page.getByRole("status").filter({ hasText: "画布已重命名" });
+  await expect(notice).toBeVisible();
+  await expect(notice).toHaveCount(0, { timeout: 6000 });
+  await expect(page.getByRole("button", { name: "新的创作名称 的画布操作" })).toBeEnabled();
+});
+
+test("首页支持斜杠和 Ctrl+F 搜索且输入中的斜杠保持文字", async ({ page }) => {
+  await mockWorkspace(page, [older, newer]);
+  await page.goto("/");
+  const search = page.getByRole("textbox", { name: "搜索画布", exact: true });
+  await page.getByRole("link", { name: `打开画布 ${newer.title}`, exact: true }).focus();
+  await page.keyboard.press("/");
+  await expect(search).toBeFocused();
+  await search.fill("秋日");
+  await page.keyboard.press("/");
+  await expect(search).toHaveValue("秋日/");
+  await page.getByRole("button", { name: "供应商与模型", exact: true }).focus();
+  await page.keyboard.press("Control+f");
+  await expect(search).toBeFocused();
+});
 
 for (const title of ["做活动海报", "修改客户原图", "制作多尺寸物料"]) {
   test(`已有同名任务时仍可再次开始：${title}`, async ({ page }) => {
@@ -316,9 +450,16 @@ test.describe("画布工作台", () => {
     await expect(page.getByRole("article").first()).toHaveAccessibleName(
       newer.title,
     );
-    const firstCard = await page.getByRole("article").first().boundingBox();
+    const firstArticle = page.getByRole("article").first();
+    const firstCard = await firstArticle.boundingBox();
     expect(firstCard).not.toBeNull();
-    expect(firstCard!.y + firstCard!.height).toBeLessThanOrEqual(720);
+    expect(firstCard!.y, "Bento 下方的最近作品应从首屏可见").toBeLessThan(720);
+    // Nearest-edge scrolling may leave a fractional bottom border clipped by
+    // integer scrollTop rounding. Center the real card before requiring 100%
+    // intersection; the independent first-screen placement check stays above.
+    await firstArticle.evaluate(element => element.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" }));
+    await expect(firstArticle).toBeInViewport({ ratio: 1 });
+    await page.locator('div[data-motion]').evaluate(element => { element.scrollTop = 0; });
     expect(state.canvasReads).toEqual([]);
     await page.screenshot({
       path: testInfo.outputPath("workspace-home-desktop.png"),
@@ -483,8 +624,10 @@ test.describe("画布工作台", () => {
     await card.getByRole("link").focus();
     await expect.poll(() => card.evaluate(element => getComputedStyle(element, "::after").opacity)).toBe("1");
     expect(await card.evaluate(element => getComputedStyle(element, "::after").transitionDuration)).toBe("0s");
-    await expect(page.locator('canvas[class*="pointerTrail"]')).toBeHidden();
+    await expect(page.locator('canvas[class*="pointerTrail"]')).toHaveCount(0);
     await expect(card.getByRole("link")).toBeFocused();
+    await card.getByRole("link").press("Enter");
+    await expect(page).toHaveURL(/\/canvas\/home-older$/u);
   });
 
   test("设置分类支持方向键探索和 Enter 激活，保留未保存的草稿", async ({ page }) => {
@@ -496,6 +639,7 @@ test.describe("画布工作台", () => {
     const suppliers = tabs.filter({ hasText: "供应商与模型" });
     const personal = tabs.filter({ hasText: "个人 AI 网站" });
     const cloud = tabs.filter({ hasText: "云端生图" });
+    const appearance = tabs.filter({ hasText: "外观" });
     await expect(suppliers).toBeFocused();
     await expect(settings.locator('[role="tab"][tabindex="0"]')).toHaveCount(1);
     await suppliers.press("ArrowRight");
@@ -508,6 +652,8 @@ test.describe("画布工作台", () => {
     await connectionName.fill("未保存的个人网站");
     await personal.focus();
     await personal.press("End");
+    await expect(appearance).toBeFocused();
+    await appearance.press("ArrowLeft");
     await expect(cloud).toBeFocused();
     await expect(connectionName).toHaveValue("未保存的个人网站");
     page.once("dialog", dialog => dialog.dismiss());
@@ -517,6 +663,8 @@ test.describe("画布工作台", () => {
     await cloud.press("Home");
     await expect(suppliers).toBeFocused();
     await suppliers.press("ArrowLeft");
+    await expect(appearance).toBeFocused();
+    await appearance.press("ArrowLeft");
     await expect(cloud).toBeFocused();
     expect(state.mutations).toEqual([]);
   });
@@ -637,44 +785,36 @@ test.describe("画布工作台", () => {
       .toContain("/api/canvas/home-older");
   });
 
-  test("鼠标流光可见，滚动后仍跟随指针，并在停留、输入和弹窗时收起", async ({
+  test("首页无装饰鼠标轨迹，滚动和输入不受影响，Aura离屏或弹窗时暂停", async ({
     page,
   }, testInfo) => {
     await page.setViewportSize({ width: 1280, height: 680 });
     await page.emulateMedia({ reducedMotion: "no-preference" });
+    await observeAuraDraws(page);
     const state = await mockWorkspace(page, [older, newer]);
     await page.goto("/");
     await expect(page.getByRole("article")).toHaveCount(2);
     const trail = page.locator('canvas[class*="pointerTrail"]');
-    const hasInkAtPointer = () =>
-      trail.evaluate((element) => {
-        const canvas = element as HTMLCanvasElement;
-        const scale =
-          canvas.width / (canvas.getBoundingClientRect().width || innerWidth);
-        const pixels = canvas
-          .getContext("2d")!
-          .getImageData(
-            Math.round(480 * scale),
-            Math.round(190 * scale),
-            Math.round(24 * scale),
-            Math.round(24 * scale),
-          ).data;
-        return pixels.some((value, index) => index % 4 === 3 && value > 12);
-      });
+    const aura = page.locator("[data-animating]");
+    const auraCanvas = aura.locator("canvas");
+    await expect(trail).toHaveCount(0);
+    await expectAuraDrawing(page);
+    expect(await auraCanvas.evaluate(element => {
+      const canvas = element as HTMLCanvasElement;
+      return canvas.getContext("2d")!.getImageData(0, 0, canvas.width, canvas.height).data.some((value, index) => index % 4 === 3 && value > 12);
+    })).toBe(true);
     const movePointer = async () => {
       await page.mouse.move(330, 202);
-      // Distinct animation frames catch a trail that erases its first point too early.
       await page.waitForTimeout(35);
       await page.mouse.move(400, 202);
       await page.waitForTimeout(35);
       await page.mouse.move(495, 202);
     };
     await movePointer();
-    await expect.poll(hasInkAtPointer).toBe(true);
+    await expect(trail).toHaveCount(0);
     await page.screenshot({
-      path: testInfo.outputPath("workspace-home-pointer.png"),
+      path: testInfo.outputPath("workspace-home-aura.png"),
     });
-    await expect.poll(hasInkAtPointer).toBe(false);
 
     const home = page.locator("div[data-motion]");
     await home.evaluate((element) => {
@@ -684,38 +824,58 @@ test.describe("画布工作台", () => {
       .poll(() => home.evaluate((element) => element.scrollTop))
       .toBeGreaterThan(0);
     await movePointer();
-    await expect.poll(hasInkAtPointer).toBe(true);
-    await page.getByLabel("搜索画布", { exact: true }).focus();
+    await expectAuraDrawing(page);
+    const search = page.getByLabel("搜索画布", { exact: true });
+    await search.focus();
     await movePointer();
-    expect(await hasInkAtPointer()).toBe(false);
+    await expect(search).toBeFocused();
+    await expect(trail).toHaveCount(0);
+
+    // A real scroll moves the decorative host completely outside the viewport.
+    await page.setViewportSize({ width: 1280, height: 400 });
+    await home.evaluate(element => { element.scrollTop = element.scrollHeight; });
+    await expect.poll(() => aura.evaluate(element => element.getBoundingClientRect().bottom)).toBeLessThanOrEqual(0);
+    await expectAuraPaused(page);
+    await page.setViewportSize({ width: 1280, height: 680 });
+    await home.evaluate(element => { element.scrollTop = 0; });
+    await expectAuraDrawing(page);
+
+    await page.evaluate(() => { Object.defineProperty(document, "hidden", { configurable: true, value: true }); document.dispatchEvent(new Event("visibilitychange")); });
+    await expectAuraPaused(page);
+    await page.evaluate(() => { Reflect.deleteProperty(document, "hidden"); document.dispatchEvent(new Event("visibilitychange")); });
+    await expectAuraDrawing(page);
 
     await page.getByRole("button", { name: "创建画布", exact: true }).click();
     await expect(
       page.getByRole("dialog", { name: "创建新画布" }),
     ).toBeVisible();
     await movePointer();
-    expect(await hasInkAtPointer()).toBe(false);
+    await expectAuraPaused(page);
     await page.getByRole("button", { name: "关闭弹窗" }).click();
+    await expectAuraDrawing(page);
     await page.getByRole("button", { name: "暂停动效" }).click();
     await movePointer();
-    expect(await hasInkAtPointer()).toBe(false);
-    await expect(trail).toBeHidden();
+    await expectAuraPaused(page);
+    await expect(trail).toHaveCount(0);
+    await expect(auraCanvas).toBeVisible();
     expect(state.mutations).toEqual([]);
+    expect(state.canvasReads).toEqual([]);
   });
 
   test("动效暂停在刷新后保留，并遵循系统减少动态效果设置", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.emulateMedia({ reducedMotion: "no-preference" });
+    await observeAuraDraws(page);
     const state = await mockWorkspace(page, []);
     await page.goto("/");
     const home = page.locator("div[data-motion]");
     const trail = page.locator('canvas[class*="pointerTrail"]');
-    await expect(trail).toHaveCount(1);
+    await expect(trail).toHaveCount(0);
     await expect(home).toHaveAttribute("data-motion", "on");
-    await expect(trail).toBeVisible();
+    await expectAuraDrawing(page);
     await page.getByRole("button", { name: "暂停动效" }).click();
     await expect(home).toHaveAttribute("data-motion", "off");
-    await expect(trail).toBeHidden();
+    await expectAuraPaused(page);
     expect(
       await page.evaluate(() =>
         localStorage.getItem("super-canvas:gentle-motion"),
@@ -724,19 +884,19 @@ test.describe("画布工作台", () => {
 
     await page.reload();
     await expect(home).toHaveAttribute("data-motion", "off");
-    await expect(trail).toBeHidden();
+    await expectAuraPaused(page);
     const enableMotion = page.getByRole("button", { name: "开启动效" });
     await expect(enableMotion).toHaveAttribute("aria-pressed", "false");
     await enableMotion.click();
     await expect(home).toHaveAttribute("data-motion", "on");
-    await expect(trail).toBeVisible();
+    await expectAuraDrawing(page);
     await expect(
       page.getByRole("button", { name: "暂停动效" }),
     ).toHaveAttribute("aria-pressed", "true");
 
     await page.emulateMedia({ reducedMotion: "reduce" });
     await expect(home).toHaveAttribute("data-motion", "off");
-    await expect(trail).toBeHidden();
+    await expectAuraPaused(page);
     expect(
       await page.evaluate(() =>
         localStorage.getItem("super-canvas:gentle-motion"),
@@ -744,7 +904,8 @@ test.describe("画布工作台", () => {
     ).toBe("on");
     await page.emulateMedia({ reducedMotion: "no-preference" });
     await expect(home).toHaveAttribute("data-motion", "on");
-    await expect(trail).toBeVisible();
+    await expectAuraDrawing(page);
+    await expect(trail).toHaveCount(0);
     expect(state.mutations).toEqual([]);
     expect(state.canvasReads).toEqual([]);
   });

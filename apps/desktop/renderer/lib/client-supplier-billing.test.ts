@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useSyncExternalStore } from "react";
 vi.mock("./client-suppliers", () => ({ fetchSuppliers: vi.fn(async () => []) }));
-vi.mock("react", () => ({ useEffect: vi.fn(), useSyncExternalStore: (_subscribe: unknown, snapshot: () => unknown) => snapshot() }));
+vi.mock("react", () => ({ useEffect: vi.fn(), useSyncExternalStore: vi.fn((_subscribe: unknown, snapshot: () => unknown) => snapshot()) }));
 import { refreshSupplierAccount, refreshSupplierAccountAfterRun, loadSupplierBilling, seedSupplierBilling, useSupplierBillingOverview } from "./client-supplier-billing";
 import { fetchSuppliers, type SupplierRecord } from "./client-suppliers";
 
@@ -13,6 +14,29 @@ function setup() {
   return fetcher;
 }
 describe("account refresh after a run", () => {
+  it("keeps closed panels unsubscribed and reads the latest balance when opened", () => {
+    setup();
+    const supplier = (balance: number) => ({ id: "panel-account", name: "Panel account", supplierKey: "panel",
+      state: { sourceId: "panel-source", revision: 1, visibility: "visible", billing: { sourceId: "panel-source", status: "live", balance, unit: "USD" } } }) as unknown as SupplierRecord;
+    seedSupplierBilling([supplier(10)]);
+    const closedSnapshot = useSupplierBillingOverview(false);
+    const [offSubscribe, readClosed] = vi.mocked(useSyncExternalStore).mock.lastCall!;
+    const closedChanged = vi.fn();
+    const stopClosed = offSubscribe(closedChanged);
+    expect(closedSnapshot).toEqual([]);
+    expect(useSupplierBillingOverview()).toMatchObject([{ billing: { balance: 10 } }]);
+    const [onSubscribe] = vi.mocked(useSyncExternalStore).mock.lastCall!;
+    const openedChanged = vi.fn();
+    const stopOpened = onSubscribe(openedChanged);
+    try {
+      seedSupplierBilling([supplier(20)]);
+      expect(closedChanged).not.toHaveBeenCalled();
+      expect(openedChanged).toHaveBeenCalledOnce();
+      expect(readClosed()).toBe(closedSnapshot);
+      expect(useSupplierBillingOverview(false)).toBe(closedSnapshot);
+      expect(useSupplierBillingOverview(true)).toMatchObject([{ billing: { balance: 20 } }]);
+    } finally { stopClosed(); stopOpened(); }
+  });
   it("deduplicates manual refresh requests", async () => {
     const fetcher = setup();
     const a = refreshSupplierAccount("manual-account"), b = refreshSupplierAccount("manual-account");

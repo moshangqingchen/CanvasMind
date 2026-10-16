@@ -1,6 +1,7 @@
 import { expect, test, type APIRequestContext, type Locator } from "@playwright/test";
 import { CANGYUAN_IMAGE_CONNECTOR } from "../lib/provider-presets";
-import { attachedPanelGeometry } from "./attached-panel-geometry";
+import { floatingPanelGeometry } from "./floating-panel-geometry";
+import { setCanvasZoomWithWheel } from "./canvas-test-actions";
 
 const NODE_LABEL = "布局验收：长名称模型与参数";
 const MODEL_NAME = "用于检验长模型名称截断和完整提示的高质量图像生成模型";
@@ -12,7 +13,7 @@ async function createLayoutCanvas(request: APIRequestContext, connectionId: stri
       title: `布局回归 ${zoom}`,
       graph: {
         schemaVersion: 1,
-        viewport: { x: 0, y: 0, zoom },
+        viewport: { x: 0, y: 0, zoom: zoom < .55 ? 1 : zoom },
         edges: [],
         nodes: [{
           id: "layout-image",
@@ -43,7 +44,7 @@ async function expectSeparated(first: Locator, second: Locator) {
 }
 
 for (const width of [980, 1280, 1366, 1440, 1920]) {
-  test(`参数面板在 ${width}px 窗口随节点缩放，画布工具保持避让`, async ({ page, request }, testInfo) => {
+  test(`参数浮卡在 ${width}px 窗口保持屏幕尺寸，画布工具保持避让`, async ({ page, request }, testInfo) => {
     test.setTimeout(90_000);
     await page.setViewportSize({ width, height: 820 });
     const response = await request.post("/api/providers", {
@@ -57,7 +58,10 @@ for (const width of [980, 1280, 1366, 1440, 1920]) {
             models: [{
               id: "layout-image-model", name: MODEL_NAME, operations: ["image.generate"],
               metadata: { canvasRunnable: true },
-              parameters: [{
+              parameters: [...Array.from({ length: 12 }, (_, index) => ({
+                key: `layout_field_${index}`, label: `滚动布局参数 ${index + 1}`,
+                control: "text", default: `原值 ${index + 1}`,
+              })), {
                 key: "quality", label: QUALITY_LABEL, control: "select", default: "high",
                 options: [{ value: "high", label: "高质量" }, { value: "low", label: "标准" }],
               }],
@@ -80,7 +84,7 @@ for (const width of [980, 1280, 1366, 1440, 1920]) {
       const nodeWidth = zoom === 0.5 ? 560 : 420;
       const canvasId = await createLayoutCanvas(request, connection.id, zoom, nodeWidth);
       await page.goto(`/canvas/${canvasId}`);
-      await expect(page.locator(".canvas-zoom-value")).toHaveText(`${zoom * 100}%`);
+      await expect(page.locator(".canvas-zoom-value")).toHaveText(`${(zoom < .55 ? 1 : zoom) * 100}%`);
       await page.getByRole("button", { name: `打开 ${NODE_LABEL} 模型与参数`, exact: true }).click();
       const panel = page.getByRole("dialog", { name: `${NODE_LABEL} 模型与参数`, exact: true });
       const model = panel.getByRole("combobox", { name: `${NODE_LABEL} 模型`, exact: true });
@@ -88,18 +92,13 @@ for (const width of [980, 1280, 1366, 1440, 1920]) {
       const inspectorToggle = page.getByRole("button", { name: "智能体面板", exact: true });
       if (await inspectorToggle.getAttribute("aria-expanded") === "true") await inspectorToggle.click();
       await expect(inspectorToggle).toHaveAttribute("aria-expanded", "false");
-      const placement = await attachedPanelGeometry(panel);
-      if (placement.direction === "left" || placement.direction === "right") {
-        // A side panel may use the remaining width, with responsive controls.
-        expect(placement.width / placement.zoom).toBeGreaterThanOrEqual(180);
-        expect(placement.width / placement.zoom).toBeLessThanOrEqual(nodeWidth);
-        if (placement.width / placement.zoom < 240)
-          expect(placement.height / placement.zoom).toBeGreaterThanOrEqual(120);
-      } else await expect(panel).toHaveCSS("width", `${nodeWidth}px`);
+      if (zoom < .55) await setCanvasZoomWithWheel(page, zoom);
+      await expect(page.locator(".canvas-zoom-value")).toHaveText(`${zoom * 100}%`);
+      // Node width and canvas zoom never scale the root-owned parameter card.
+      await expect(panel).toHaveCSS("width", "380px");
       await expect(panel).toHaveCSS("font-size", "13px");
-      // Preserve node scale while using a clear side or scrolling a shorter
-      // panel when the viewport cannot fit it below the node.
-      await expect.poll(async () => (await attachedPanelGeometry(panel)).attachmentError).toBeLessThanOrEqual(1);
+      // Retain screen-safe controls and independent scrolling at every zoom.
+      await expect.poll(async () => (await floatingPanelGeometry(panel)).floatingError).toBeLessThanOrEqual(1);
       await expect(panel.getByRole("button", { name: "关闭模型与参数面板" })).toBeInViewport({ ratio: 1 });
       await expect(panel.getByRole("button", { name: "管理供应商与密钥" })).toBeInViewport({ ratio: 1 });
       await expect(panel.locator(".node-config-provider-header > span").first()).toHaveCSS("font-size", "12px");
@@ -113,10 +112,8 @@ for (const width of [980, 1280, 1366, 1440, 1920]) {
       await expect.poll(() => label.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
       await quality.scrollIntoViewIfNeeded();
       await expect(quality).toBeInViewport({ ratio: 1 });
-      if (zoom === 2) {
-        await expect.poll(() => body.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
-      }
-      await expect.poll(async () => (await attachedPanelGeometry(panel)).attachmentError).toBeLessThanOrEqual(1);
+      await expect.poll(() => body.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+      await expect.poll(async () => (await floatingPanelGeometry(panel)).floatingError).toBeLessThanOrEqual(1);
       await page.screenshot({ path: testInfo.outputPath(`panel-${zoom * 100}.png`) });
       await page.getByRole("button", { name: "打开节点与素材库", exact: true }).click({ trial: true });
       await panel.getByRole("button", { name: "关闭模型与参数面板" }).click();

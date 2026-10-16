@@ -221,6 +221,7 @@ export function PromptEditor({
   const flushTimerRef = useRef<number | null>(null);
   const mentionAssetsRef = useRef(mentionAssets);
   const editorRef = useRef<Editor | null>(null);
+  const editedSinceFocusRef = useRef(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const placeholderRef = useRef(placeholder);
   const flushPendingParts = useCallback(() => {
@@ -306,6 +307,7 @@ export function PromptEditor({
         current.view.dom.setAttribute("data-empty", String(current.isEmpty));
       },
       onUpdate: ({ editor: current }) => {
+        editedSinceFocusRef.current = true;
         pendingPartsRef.current = documentToParts(current.getJSON());
         schedulePendingPartsFlush();
       },
@@ -324,17 +326,19 @@ export function PromptEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
+  const synchronizeExternalParts = useCallback(() => {
     const editor = editorRef.current;
     if (!editor || editor.isDestroyed) return;
-    // The editor's own transaction already contains the latest text. Replacing
-    // content while focused resets the DOM selection and drops keyboard focus.
-    if (editor.isFocused) return;
     const nextDocument = partsToDocument(parts, assets);
     if (JSON.stringify(editor.getJSON()) !== JSON.stringify(nextDocument)) {
       editor.commands.setContent(nextDocument, { emitUpdate: false });
     }
   }, [assets, parts]);
+  useEffect(() => {
+    // The editor's own transaction already contains the latest text. Replacing
+    // content while focused resets the DOM selection and drops keyboard focus.
+    if (!editorRef.current?.isFocused) synchronizeExternalParts();
+  }, [synchronizeExternalParts]);
 
   return (
     <div
@@ -349,7 +353,16 @@ export function PromptEditor({
         });
       }}
       onClick={(event) => event.stopPropagation()}
-      onBlur={flushPendingParts}
+      onFocus={() => { editedSinceFocusRef.current = false; }}
+      onCompositionStart={() => { editedSinceFocusRef.current = true; }}
+      onBlur={() => {
+        const edited = editedSinceFocusRef.current;
+        flushPendingParts();
+        // Without local edits, apply external changes deferred during focus.
+        // A local flush may not have reached props yet; preserve that text and
+        // the existing local-edit priority instead of restoring stale props.
+        if (!edited) synchronizeExternalParts();
+      }}
     />
   );
 }

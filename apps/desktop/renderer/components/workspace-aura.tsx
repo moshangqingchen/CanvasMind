@@ -5,8 +5,9 @@ import { memo, useEffect, useRef } from "react";
 import styles from "./workspace-aura.module.css";
 
 const TAU = Math.PI * 2;
+// Keep the existing silhouette; shared samples avoid per-filament allocations.
 const FILAMENTS = 48;
-const STEPS = 144;
+const STEPS = 120;
 const FRAME_INTERVAL = 1000 / 30;
 
 const ringSamples = Array.from({ length: STEPS + 1 }, (_, step) => {
@@ -67,6 +68,14 @@ export const WorkspaceAura = memo(function WorkspaceAura({
     let width = 0;
     let height = 0;
     let ratio = 1;
+    let spectrum: CanvasGradient | null = null;
+    const readPalette = () => {
+      const style = window.getComputedStyle(document.documentElement);
+      const token = (name: string) => style.getPropertyValue(`--aura-${name}`).trim();
+      return { particle: token("particle-rgb"), orbit: token("orbit-rgb"), sky: token("sky-rgb"),
+        stops: [token("mint"), token("teal"), token("mist"), token("blue"), token("sky")] };
+    };
+    let palette = readPalette();
 
     // Reused buffers avoid allocating thousands of small objects each frame.
     const points = new Float32Array((STEPS + 1) * 2);
@@ -89,13 +98,13 @@ export const WorkspaceAura = memo(function WorkspaceAura({
       const cosIncline = Math.cos(incline);
       const sinIncline = Math.sin(incline);
 
-      context.globalCompositeOperation = "lighter";
+      context.globalCompositeOperation = "source-over";
       for (const particle of dust) {
         const x = (particle.x - 0.5) * 566;
         const y =
           (particle.y - 0.5) * 310 + Math.sin(time * 0.24 + particle.phase) * 8;
         const alpha = 0.14 + (Math.sin(time * 0.7 + particle.phase) + 1) * 0.15;
-        context.fillStyle = `rgba(192,180,255,${alpha})`;
+        context.fillStyle = `rgba(${palette.particle},${alpha})`;
         context.beginPath();
         context.arc(x, y, particle.radius, 0, TAU);
         context.fill();
@@ -105,11 +114,11 @@ export const WorkspaceAura = memo(function WorkspaceAura({
       context.save();
       context.rotate(-0.32);
       context.lineWidth = 0.65;
-      context.strokeStyle = "rgba(163,142,248,0.16)";
+      context.strokeStyle = `rgba(${palette.orbit},0.16)`;
       context.beginPath();
       context.ellipse(0, 4, 239, 87, 0, 0, TAU);
       context.stroke();
-      context.strokeStyle = "rgba(159,191,238,0.075)";
+      context.strokeStyle = `rgba(${palette.sky},0.075)`;
       context.beginPath();
       context.ellipse(0, 4, 223, 113, 0.18, 0, TAU);
       context.stroke();
@@ -117,8 +126,8 @@ export const WorkspaceAura = memo(function WorkspaceAura({
         const angle = time * 0.1 + i * 2.18;
         // Short fading arcs let the orbiting lights read as particles in motion.
         context.lineWidth = 1.1;
-        for (let segment = 0; segment < 12; segment += 1) {
-          context.strokeStyle = `rgba(190,174,255,${(1 - segment / 12) * 0.6})`;
+        for (let segment = 0; segment < 6; segment += 1) {
+          context.strokeStyle = `rgba(${palette.orbit},${(1 - segment / 6) * 0.6})`;
           context.beginPath();
           context.ellipse(
             0,
@@ -132,9 +141,7 @@ export const WorkspaceAura = memo(function WorkspaceAura({
           context.stroke();
         }
         context.fillStyle =
-          i === 1 ? "rgba(188,229,255,.9)" : "rgba(193,174,255,.8)";
-        context.shadowBlur = 12;
-        context.shadowColor = "#ad86ff";
+          i === 1 ? `rgba(${palette.sky},.9)` : `rgba(${palette.particle},.8)`;
         context.beginPath();
         context.arc(
           Math.cos(angle) * 239,
@@ -144,20 +151,23 @@ export const WorkspaceAura = memo(function WorkspaceAura({
           TAU,
         );
         context.fill();
-        context.shadowBlur = 0;
       }
       context.restore();
 
-      const spectrum = context.createLinearGradient(-153, -105, 155, 110);
-      spectrum.addColorStop(0, "#b9a5ff");
-      spectrum.addColorStop(0.28, "#8a60ff");
-      spectrum.addColorStop(0.52, "#dccfff");
-      spectrum.addColorStop(0.76, "#8379ff");
-      spectrum.addColorStop(1, "#a9e1fa");
+      // The color field depends on the canvas size, not the animated ribbon.
+      // Reuse it until resize resets the context and its coordinate system.
+      if (!spectrum) {
+        spectrum = context.createLinearGradient(-153, -105, 155, 110);
+        spectrum.addColorStop(0, palette.stops[0]!);
+        spectrum.addColorStop(0.28, palette.stops[1]!);
+        spectrum.addColorStop(0.52, palette.stops[2]!);
+        spectrum.addColorStop(0.76, palette.stops[3]!);
+        spectrum.addColorStop(1, palette.stops[4]!);
+      }
       context.strokeStyle = spectrum;
       context.lineJoin = "round";
 
-      // Sample the changing ring once, then share it across all 48 filaments.
+      // Sample the changing ring once, then share it across all filaments.
       for (let step = 0; step <= STEPS; step += 1) {
         const { angle } = ringSamples[step]!;
         const twist = angle * 2 + time * 0.19;
@@ -166,8 +176,7 @@ export const WorkspaceAura = memo(function WorkspaceAura({
         twistSines[step] = Math.sin(twist);
       }
 
-      // The braided torus is actual projected geometry, rather than a rotating image.
-      // Forty-eight fine filaments create a translucent, silk-like surface.
+      // The projected strands share samples and draw without raster glow passes.
       for (const filament of filamentSamples) {
         for (let step = 0; step <= STEPS; step += 1) {
           const sample = ringSamples[step]!;
@@ -192,8 +201,6 @@ export const WorkspaceAura = memo(function WorkspaceAura({
         const { highlight } = filament;
         context.globalAlpha = highlight ? 0.73 : 0.21 + filament.sin * 0.07;
         context.lineWidth = highlight ? 1.15 : 0.68;
-        context.shadowBlur = highlight ? 7 : 0;
-        context.shadowColor = "rgba(132,93,255,.72)";
         context.beginPath();
         context.moveTo(points[0]!, points[1]!);
         for (let step = 1; step <= STEPS; step += 1) {
@@ -203,7 +210,6 @@ export const WorkspaceAura = memo(function WorkspaceAura({
       }
 
       context.globalAlpha = 1;
-      context.shadowBlur = 0;
       context.globalCompositeOperation = "source-over";
     };
 
@@ -240,9 +246,10 @@ export const WorkspaceAura = memo(function WorkspaceAura({
       const bounds = host.getBoundingClientRect();
       width = bounds.width;
       height = bounds.height;
-      ratio = Math.min(window.devicePixelRatio || 1, 1.75);
+      ratio = Math.min(window.devicePixelRatio || 1, 1.25);
       canvas.width = Math.round(width * ratio);
       canvas.height = Math.round(height * ratio);
+      spectrum = null;
       draw();
       refresh();
     };
@@ -258,6 +265,12 @@ export const WorkspaceAura = memo(function WorkspaceAura({
       },
       { threshold: 0.05 },
     );
+    const themeObserver = new MutationObserver(() => {
+      palette = readPalette();
+      spectrum = null;
+      draw();
+    });
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     sizeObserver.observe(host);
     intersectionObserver.observe(host);
     motionQuery.addEventListener("change", refresh);
@@ -269,6 +282,7 @@ export const WorkspaceAura = memo(function WorkspaceAura({
       refreshRef.current = null;
       window.cancelAnimationFrame(frame);
       sizeObserver.disconnect();
+      themeObserver.disconnect();
       intersectionObserver.disconnect();
       motionQuery.removeEventListener("change", refresh);
       document.removeEventListener("visibilitychange", refresh);

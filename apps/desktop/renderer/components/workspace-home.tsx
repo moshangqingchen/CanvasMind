@@ -30,7 +30,7 @@ import {
   WandSparkles,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   createProject,
   deleteProject,
@@ -40,8 +40,9 @@ import {
   type ProjectSummaryView,
 } from "../lib/client-api";
 import { SettingsModal } from "./workspace-modals";
-import { useCanvasMotion, WorkspacePointerTrail } from "./canvas-motion";
+import { useCanvasMotion } from "./canvas-motion";
 import { WorkspaceAura } from "./workspace-aura";
+import { projectCoverPalette, workspaceProjectStatistics } from "../lib/workspace-home-presentation";
 import styles from "./workspace-home.module.css";
 
 const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME ?? "超级画布";
@@ -91,22 +92,19 @@ function updatedLabel(value: string) {
       })}更新`;
 }
 
-function EmptyCover({ compact = false }: { compact?: boolean }) {
+function DecorativeCover({ projectId }: { projectId: string }) {
+  const palette = projectCoverPalette(projectId);
   return (
     <div
-      className={`${styles.emptyCover} ${compact ? styles.compactCover : ""}`}
+      className={styles.decorativeCover}
+      data-project-cover="decoration"
+      data-cover-palette={palette.name}
+      style={{ "--cover-from": palette.from, "--cover-to": palette.to, "--cover-glow": palette.glow } as CSSProperties}
       aria-hidden="true"
     >
       <div className={styles.coverDotGrid} />
-      <div className={styles.coverConnector} />
-      <div className={styles.coverNode}>
-        <span />
-        <span />
-        <span />
-      </div>
-      <div className={styles.coverTile}>
-        <Sparkles size={compact ? 22 : 30} strokeWidth={1.35} />
-      </div>
+      <div className={styles.coverArc} />
+      <span className={styles.coverSymbol}><Layers3 size={32} strokeWidth={1.25} /></span>
     </div>
   );
 }
@@ -117,6 +115,7 @@ function ProjectCover({ project }: { project: ProjectSummaryView }) {
     // The existing authenticated preview endpoint serves cached, resized images.
     <img
       className={styles.coverImage}
+      data-project-cover="result"
       src={`/api/assets/${encodeURIComponent(project.previewAssetId)}/preview?size=640`}
       alt=""
       loading="lazy"
@@ -124,7 +123,7 @@ function ProjectCover({ project }: { project: ProjectSummaryView }) {
       onError={() => setFailedId(project.previewAssetId ?? null)}
     />
   ) : (
-    <EmptyCover compact />
+    <DecorativeCover projectId={project.id} />
   );
 }
 
@@ -199,6 +198,7 @@ function ProjectActionDialog({
             className={styles.iconButton}
             type="button"
             aria-label="关闭弹窗"
+            title="关闭弹窗（Esc）"
             disabled={busy}
             onClick={onClose}
           >
@@ -303,17 +303,24 @@ export function WorkspaceHome() {
     }
   }, []);
   const [motionEnabled, toggleMotion] = useCanvasMotion();
-  const pointerEffectsEnabled =
-    motionEnabled && !settingsOpen && !dialog && !menuId;
   const [notice, setNotice] = useState<{
     message: string;
     error?: boolean;
   } | null>(null);
   useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+  useEffect(() => {
     const focusSearch = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
+      if ((event.target as HTMLElement | null)?.closest('[role="dialog"]')) return;
+      const typing = (event.target as HTMLElement | null)?.closest("input, textarea, select, [contenteditable='true']");
+      const shortcut = (event.ctrlKey || event.metaKey) && ["k", "f"].includes(event.key.toLowerCase());
+      const slash = event.key === "/" && !event.ctrlKey && !event.metaKey && !event.altKey && !typing;
       if (
-        (event.ctrlKey || event.metaKey) &&
-        event.key.toLocaleLowerCase() === "k" &&
+        (shortcut || slash) &&
         !settingsOpen &&
         !dialog
       ) {
@@ -394,57 +401,6 @@ export function WorkspaceHome() {
       window.removeEventListener("resize", placeMenu);
     };
   }, [menuId]);
-  useEffect(() => {
-    const home = homeRef.current;
-    if (!home || !pointerEffectsEnabled) return;
-    let frame = 0;
-    let latest: PointerEvent | null = null;
-    const reset = () => {
-      window.cancelAnimationFrame(frame);
-      frame = 0;
-      latest = null;
-      home.style.removeProperty("--pointer-visible");
-    };
-    const paint = () => {
-      frame = 0;
-      if (!latest) return;
-      home.style.setProperty("--pointer-x", `${latest.clientX}px`);
-      home.style.setProperty("--pointer-y", `${latest.clientY}px`);
-      home.style.setProperty("--pointer-visible", "1");
-    };
-    const move = (event: PointerEvent) => {
-      if (
-        event.pointerType !== "mouse" ||
-        event.buttons ||
-        document.hidden ||
-        document.activeElement?.matches(
-          "input, textarea, select, [contenteditable='true']",
-        )
-      ) {
-        reset();
-        return;
-      }
-      latest = event;
-      if (!frame) frame = window.requestAnimationFrame(paint);
-    };
-    home.addEventListener("pointermove", move, { passive: true });
-    home.addEventListener("pointerleave", reset);
-    home.addEventListener("pointerdown", reset);
-    home.addEventListener("focusin", reset);
-    home.addEventListener("scroll", reset, { passive: true });
-    window.addEventListener("blur", reset);
-    document.addEventListener("visibilitychange", reset);
-    return () => {
-      reset();
-      home.removeEventListener("pointermove", move);
-      home.removeEventListener("pointerleave", reset);
-      home.removeEventListener("pointerdown", reset);
-      home.removeEventListener("focusin", reset);
-      home.removeEventListener("scroll", reset);
-      window.removeEventListener("blur", reset);
-      document.removeEventListener("visibilitychange", reset);
-    };
-  }, [pointerEffectsEnabled]);
   const visibleProjects = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
     return (projects ?? [])
@@ -463,6 +419,7 @@ export function WorkspaceHome() {
       !recent || project.updatedAt > recent.updatedAt ? project : recent,
     undefined,
   );
+  const statistics = useMemo(() => projects ? workspaceProjectStatistics(projects) : null, [projects]);
   const completeAction = async (title: string) => {
     if (!dialog) return;
     if (dialog.kind === "create") {
@@ -508,11 +465,6 @@ export function WorkspaceHome() {
       data-motion={motionEnabled ? "on" : "off"}
     >
       <div className={styles.ambient} aria-hidden="true" />
-      <div className={styles.pointerGlow} aria-hidden="true" />
-      <WorkspacePointerTrail
-        enabled={pointerEffectsEnabled}
-        className={styles.pointerTrail}
-      />
       <header className={styles.header}>
         <Link className={styles.brand} href="/" aria-label={`${APP_NAME}首页`}>
           <span className={styles.brandIcon}>
@@ -562,6 +514,7 @@ export function WorkspaceHome() {
         </div>
       </header>
       <main className={styles.main}>
+        <div className={styles.bento} data-home-layout="bento">
         <section className={styles.hero} aria-labelledby="workspace-heading">
           <div className={styles.heroCopy}>
             <div className={styles.eyebrow}>
@@ -604,25 +557,51 @@ export function WorkspaceHome() {
               <button className={styles.blankCanvasButton} disabled={startingDesign} onClick={() => setDialog({ kind: "create" })}>
                 <Plus size={16} />创建画布
               </button>
-              {recentProject ? (
-                <Link
-                  className={styles.continueLink}
-                  href={projectUrl(recentProject.id)}
-                  title={`继续编辑「${recentProject.title}」`}
-                >
-                  <span className={styles.recentHeading}>
-                    继续最近创作
-                    <ArrowRight size={14} />
-                  </span>
-                  <strong title={recentProject.title}>
-                    {recentProject.title}
-                  </strong>
-                </Link>
-              ) : (
-                <span className={styles.heroHint}>从一张空白画布开始</span>
-              )}
             </div>
-            <div className={styles.quickDesigns} aria-label="按设计任务开始">
+            {recentProject ? (
+              <Link
+                className={styles.continueLink}
+                href={projectUrl(recentProject.id)}
+                title={`继续编辑「${recentProject.title}」`}
+              >
+                <span className={styles.recentIcon}><Clock3 size={17} /></span>
+                <span className={styles.recentCopy}>
+                  <span className={styles.recentHeading}>继续最近创作</span>
+                  <strong title={recentProject.title}>{recentProject.title}</strong>
+                </span>
+                <ArrowRight size={17} />
+              </Link>
+            ) : (
+              <span className={styles.heroHint}>从一张空白画布开始，让好想法有个落点。</span>
+            )}
+          </div>
+        </section>
+        <aside className={styles.heroVisual} aria-label="创作空间概览">
+          <div className={styles.studioHeading}>
+            <span>YOUR CREATIVE SPACE</span>
+            <strong>让灵感，连接起来。</strong>
+          </div>
+          <div className={styles.auraFrame} aria-hidden="true">
+            <WorkspaceAura paused={!motionEnabled || settingsOpen || Boolean(dialog)} />
+          </div>
+          {statistics ? (
+            <dl className={styles.workspaceStats} aria-label="工作空间数据">
+              <div data-workspace-stat="projects">
+                <dt>画布</dt>
+                <dd>{statistics.projects.toLocaleString("zh-CN")}<span>张</span></dd>
+              </div>
+              {statistics.nodes !== undefined ? (
+                <div data-workspace-stat="nodes">
+                  <dt>创作节点</dt>
+                  <dd>{statistics.nodes.toLocaleString("zh-CN")}<span>个</span></dd>
+                </div>
+              ) : null}
+            </dl>
+          ) : (
+            <p className={styles.studioHint}>文字、图像与视频，在这里汇成作品。</p>
+          )}
+        </aside>
+        <div className={styles.quickDesigns} aria-label="按设计任务开始">
               {(
                 [
                   ["event-poster", "做活动海报", "从主题到完整视觉", ImageIcon],
@@ -645,6 +624,7 @@ export function WorkspaceHome() {
                   key={kind}
                   data-task={kind}
                   title={description}
+                  aria-label={label}
                   aria-busy={startingDesignKind === kind}
                   disabled={startingDesign}
                   onClick={async () => {
@@ -674,24 +654,18 @@ export function WorkspaceHome() {
                     {startingDesignKind === kind ? (
                       <LoaderCircle size={16} className={styles.spinning} />
                     ) : (
-                      <Icon size={16} strokeWidth={1.7} />
+                      <Icon size={21} strokeWidth={1.75} />
                     )}
                   </span>
                   <span className={styles.quickDesignCopy}>
                     <strong>{label}</strong>
                     <span aria-hidden="true">{description}</span>
                   </span>
-                  <ArrowUpRight size={13} className={styles.quickDesignArrow} />
+                  <ArrowUpRight size={17} className={styles.quickDesignArrow} aria-hidden="true" />
                 </button>
               ))}
-            </div>
-          </div>
-          <div className={styles.heroVisual}>
-            <WorkspaceAura
-              paused={!motionEnabled || settingsOpen || Boolean(dialog)}
-            />
-          </div>
-        </section>
+        </div>
+        </div>
         <section
           className={styles.projectsSection}
           aria-labelledby="projects-heading"
@@ -707,11 +681,11 @@ export function WorkspaceHome() {
                   ? `找到 ${visibleProjects.length} 张画布`
                   : projects?.length
                     ? `共 ${projects.length} 张画布 · 点击作品继续编辑`
-                    : "新建画布，开始你的第一个项目"}
+                    : "还没有画布，先来创建一个吧"}
               </p>
             </div>
             <div className={styles.listTools}>
-              <label className={styles.search} title="搜索画布 · Ctrl / ⌘ K">
+              <label className={styles.search} title="搜索画布 · /、Ctrl+F 或 Ctrl+K">
                 <Search size={17} />
                 <input
                   ref={searchRef}
@@ -724,6 +698,7 @@ export function WorkspaceHome() {
                   <button
                     type="button"
                     aria-label="清空搜索"
+                    title="清空搜索"
                     onClick={() => {
                       setQuery("");
                       searchRef.current?.focus();
@@ -759,6 +734,7 @@ export function WorkspaceHome() {
                 <button
                   type="button"
                   aria-label="网格视图"
+                  title="网格视图"
                   aria-pressed={view === "grid"}
                   onClick={() => {
                     setView("grid");
@@ -770,6 +746,7 @@ export function WorkspaceHome() {
                 <button
                   type="button"
                   aria-label="列表视图"
+                  title="列表视图"
                   aria-pressed={view === "list"}
                   onClick={() => {
                     setView("list");
@@ -793,9 +770,11 @@ export function WorkspaceHome() {
             </div>
           ) : null}
           {!projects && !loadError ? (
-            <div className={styles.loading} role="status">
-              <LoaderCircle size={22} className={styles.spinning} />
-              正在读取你的画布…
+            <div className={styles.loading} role="status" aria-label="正在读取你的画布">
+              <span className={styles.loadingLabel}>正在读取你的画布…</span>
+              <div className={styles.loadingCards} aria-hidden="true">
+                {[0, 1, 2].map(index => <div key={index}><span /><span /><span /></div>)}
+              </div>
             </div>
           ) : null}
           {projects ? (
@@ -854,10 +833,10 @@ export function WorkspaceHome() {
                           <Clock3 size={12} />
                           {updatedLabel(project.updatedAt)}
                         </span>
-                        <span className={styles.nodeCount}>
+                        {project.nodeCount !== undefined ? <span className={styles.nodeCount}>
                           <Layers3 size={12} />
-                          {project.nodeCount ?? 0} 个节点
-                        </span>
+                          {project.nodeCount} 个节点
+                        </span> : null}
                       </div>
                     </div>
                   </Link>
@@ -875,6 +854,7 @@ export function WorkspaceHome() {
                       type="button"
                       className={styles.iconButton}
                       aria-label={`${project.title} 的画布操作`}
+                      title={`${project.title} 的画布操作`}
                       aria-expanded={menuId === project.id}
                       aria-haspopup="menu"
                       aria-controls={
@@ -1063,6 +1043,7 @@ export function WorkspaceHome() {
             className={styles.iconButton}
             type="button"
             aria-label="关闭提示"
+            title="关闭提示"
             onClick={() => setNotice(null)}
           >
             <X size={15} />

@@ -6,6 +6,7 @@ import { EventEmitter } from "node:events";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { DesktopRendererRecovery, rendererLoadFailure } from "../src/renderer-recovery.mjs";
+import { themeBackground } from "../src/theme.mjs";
 
 const deferred = () => {
   let resolve;
@@ -178,7 +179,7 @@ function setupWindowFixture() {
     destroy() { this.destroyed = true; this.webContents.emit("render-process-gone", {}, crash); } removeMenu() {} hide() { this.hidden = true; }
   }
   const context = { Window, BrowserWindow: Window, window: new Window({}), quitting: false, backend: undefined, startupPath: "fixture/startup.html", __dirname: "fixture", join, pathToFileURL,
-    smoke: true, smokeWindowed: true, development: false, preparations: new Map([["test", () => { calls.prepared++; }]]),
+    smoke: true, smokeWindowed: true, development: false, themeBackground, nativeTheme: { shouldUseDarkColors: true }, preparations: new Map([["test", () => { calls.prepared++; }]]),
     origin: "http://127.0.0.1:43210", log: async () => {}, requestExit: async () => {}, rendererLoadFailure,
     rendererRecovery: { rendererGone: async () => { calls.gone++; }, rememberPage() {} },
     isAppUrl: (url, origin) => url.startsWith(origin + "/"), externalUrl: url => url.startsWith("https://") ? url : null,
@@ -208,6 +209,7 @@ test("a crashed setup gets a new secured window with its geometry and zoom while
   assert.equal(current.options.webPreferences.contextIsolation, true);
   assert.equal(current.options.webPreferences.nodeIntegration, false);
   assert.equal(current.options.webPreferences.preload, join("fixture", "preload.cjs"));
+  assert.equal(current.options.backgroundColor, "#0E0F12");
   assert.equal(current.webContents.open({ url: "https://example.com/" }).action, "deny");
   let blocked = 0;
   current.webContents.emit("will-navigate", { preventDefault() { blocked++; } }, "file:///outside.html");

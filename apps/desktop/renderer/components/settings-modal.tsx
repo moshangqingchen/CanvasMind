@@ -1,20 +1,41 @@
 "use client";
 import { useCallback, useState } from "react";
+import dynamic from "next/dynamic";
 import { X } from "lucide-react";
 import { useDialogFocus } from "./use-dialog-focus";
 import {
   SettingsDraftGuardProvider,
   useSettingsLeaveGuard,
 } from "./settings-draft-guard";
-import { SupplierManager } from "./supplier-manager";
-import { PersonalAiSettings } from "./personal-ai-settings";
-import { ReferenceChannelSettings } from "./reference-channel-settings";
-import { CloudGenerationSettings } from "./cloud-generation-settings";
+import { DeferredPanelContent } from "./deferred-panel-content";
+import { PanelBodySkeleton } from "./panel-loading";
+import { ThemeControl } from "./theme-control";
+
+function SettingsBodyLoading() { return <PanelBodySkeleton label="正在打开设置" />; }
+// Keep the dialog and draft guard in the small shell. Only the active settings
+// section downloads its implementation; SupplierManager already defers details.
+const SupplierManager = dynamic(
+  () => import("./supplier-manager").then(module => module.SupplierManager),
+  { ssr: false, loading: SettingsBodyLoading },
+);
+const PersonalAiSettings = dynamic(
+  () => import("./personal-ai-settings").then(module => module.PersonalAiSettings),
+  { ssr: false, loading: SettingsBodyLoading },
+);
+const ReferenceChannelSettings = dynamic(
+  () => import("./reference-channel-settings").then(module => module.ReferenceChannelSettings),
+  { ssr: false, loading: SettingsBodyLoading },
+);
+const CloudGenerationSettings = dynamic(
+  () => import("./cloud-generation-settings").then(module => module.CloudGenerationSettings),
+  { ssr: false, loading: SettingsBodyLoading },
+);
 const SETTINGS_TABS = [
   { id: "suppliers", label: "供应商与模型" },
   { id: "personal-ai", label: "个人 AI 网站" },
   { id: "reference", label: "素材通道" },
   { id: "cloud", label: "云端生图" },
+  { id: "appearance", label: "外观" },
 ] as const;
 type SettingsTab = (typeof SETTINGS_TABS)[number]["id"];
 interface SettingsModalProps {
@@ -63,6 +84,14 @@ function SettingsModalContent({
         aria-modal="true"
         aria-label="供应商与模型设置"
         tabIndex={-1}
+        onKeyDown={event => {
+          if (event.defaultPrevented) return;
+          const editing = (event.target as HTMLElement).closest("input, textarea, select, [contenteditable=true]");
+          if ((!editing && event.key === "/") || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f")) {
+            const input = event.currentTarget.querySelector<HTMLInputElement>('input[aria-label="搜索供应商"]');
+            if (input) { event.preventDefault(); event.stopPropagation(); input.focus(); input.select(); }
+          }
+        }}
       >
         <header className="sm-settings-header">
           <div>
@@ -106,22 +135,32 @@ function SettingsModalContent({
             type="button"
             className="sm-icon"
             aria-label="关闭设置"
+            title="关闭设置（Esc）"
             onClick={requestClose}
           >
             <X size={19} />
           </button>
         </header>
-        {tab === "suppliers" ? (
+        {tab === "appearance" ? (
+          <section id="sm-appearance-panel" role="tabpanel" aria-labelledby="sm-appearance-tab" className="sm-appearance-panel">
+            <div className="sm-appearance-card">
+              <h3 className="sm-appearance-heading">让工作室合你心意</h3>
+              <p className="sm-appearance-description">选择清新的浅色或沉静的深色，也可以跟随系统自动切换。</p>
+              <ThemeControl />
+              <p className="sm-appearance-description">外观会自动记住，下次打开继续使用。</p>
+            </div>
+          </section>
+        ) : tab === "suppliers" ? (
           <SupplierManager
             initialCangyuanGroup={initialCangyuanGroup}
           />
-        ) : tab === "personal-ai" ? (
+        ) : <DeferredPanelContent key={tab}>{tab === "personal-ai" ? (
           <PersonalAiSettings />
         ) : tab === "cloud" ? (
           <CloudGenerationSettings />
         ) : (
           <ReferenceChannelSettings />
-        )}
+        )}</DeferredPanelContent>}
       </section>
     </div>
   );

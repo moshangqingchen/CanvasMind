@@ -5,6 +5,17 @@ test.beforeAll(() => {
   expect(process.env.PLAYWRIGHT_BASE_URL, "蒙版测试只能使用 globalSetup 创建的隔离数据目录").toBeFalsy();
 });
 
+test.beforeEach(async ({ page }) => {
+  // These cases exercise the on-canvas mask controls. Start without the
+  // optional Agent overlay, while preserving preferences across reloads.
+  await page.addInitScript(() => {
+    try {
+      if (localStorage.getItem("super-canvas:inspector-open") === null)
+        localStorage.setItem("super-canvas:inspector-open", "false");
+    } catch { /* Storage is optional for mask editing. */ }
+  });
+});
+
 async function expectUsableMaskLayout(node: Locator) {
   await expect.poll(async () => node.evaluate(element => {
     const card = element.querySelector<HTMLElement>(".node-card")!;
@@ -23,7 +34,7 @@ async function expectUsableMaskLayout(node: Locator) {
 }
 
 for (const sourceKind of ["uploaded", "generated"] as const) {
-  test(`蒙版画笔：${sourceKind} 原图、缩放、擦除、撤销、保存与重开`, async ({ page, request }, testInfo) => {
+  test(`蒙版画笔：${sourceKind} 原图、缩放、擦除、撤销、保存、重开与 Escape 保护草稿`, async ({ page, request }, testInfo) => {
     await page.setViewportSize({ width: 1400, height: 900 });
     const bytes = await sharp({ create: { width: 1024, height: 768, channels: 4, background: "#698bce" } }).png().toBuffer();
     const uploaded = await request.post(`/api/assets/upload?name=${sourceKind}.png`, { headers: { "content-type": "image/png" }, data: bytes });
@@ -57,6 +68,11 @@ for (const sourceKind of ["uploaded", "generated"] as const) {
     const save = editor.getByRole("button", { name: "保存并创建局部重绘", exact: true });
     await expect(editor).toBeVisible();
     await expect(editor.getByRole("button", { name: "画笔", exact: true })).toBeEnabled();
+    await page.keyboard.press("Escape");
+    await expect(editor).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "绘制蒙版", exact: true })).toBeFocused();
+    await page.getByRole("button", { name: "绘制蒙版", exact: true }).click();
+    await expect(editor.getByRole("button", { name: "画笔", exact: true })).toBeEnabled();
     await expect(save).toBeDisabled();
     expect(await canvas.evaluate((element: HTMLCanvasElement) => [element.width, element.height])).toEqual([1024, 768]);
     await editor.getByRole("button", { name: "缩小预览", exact: true }).click();
@@ -86,6 +102,7 @@ for (const sourceKind of ["uploaded", "generated"] as const) {
     await expect.poll(async () => (await graph()).nodes.find((node: { data: { label: string } }) => node.data.label === "局部重绘")?.data.parameters.maskSourceAssetId).toBe(asset.id);
     const edit = (await graph()).nodes.find((node: { data: { label: string } }) => node.data.label === "局部重绘");
     const editNode = page.locator(`.react-flow__node[data-id="${edit.id}"]`);
+    await editNode.locator(".prompt-overview").click();
     const prompt = editNode.getByRole("textbox", { name: "编辑 局部重绘 提示词", exact: true });
     await expect(prompt).toHaveAttribute("data-placeholder", "描述涂抹区域要如何修改，例如：将衣服改成蓝色…");
     await expect(prompt).toHaveAttribute("data-empty", "true");
@@ -118,6 +135,7 @@ for (const sourceKind of ["uploaded", "generated"] as const) {
     expect(savedAlpha(50, 50)).toBe(255);
     expect(await (await request.get(`/api/assets/${asset.id}/content`)).body()).toEqual(bytes);
     await page.reload();
+    await editNode.locator(".prompt-overview").click();
     await expectUsableMaskLayout(editNode);
     await editNode.getByRole("button", { name: "编辑蒙版", exact: true }).click();
     await expect(editor.getByRole("button", { name: "保存蒙版", exact: true })).toBeEnabled();
@@ -125,6 +143,9 @@ for (const sourceKind of ["uploaded", "generated"] as const) {
     expect(await alpha(512, 384)).toBe(0);
     await editor.getByRole("button", { name: "清空", exact: true }).click();
     await expect(editor.getByRole("button", { name: "保存蒙版", exact: true })).toBeDisabled();
+    await page.keyboard.press("Escape");
+    await expect(editor.getByRole("button", { name: "继续编辑", exact: true })).toBeVisible();
+    await editor.getByRole("button", { name: "继续编辑", exact: true }).click();
     await editor.getByRole("button", { name: "关闭蒙版编辑器", exact: true }).click();
     await expect(editor.getByRole("button", { name: "继续编辑", exact: true })).toBeVisible();
     await editor.getByRole("button", { name: "放弃修改", exact: true }).click();
@@ -154,6 +175,8 @@ test("窄旧节点恢复尺寸，断开原图禁止运行且仍能移除旧 URL 
   await page.goto(`/canvas/${project.id}`);
   await expect(page.getByText("请连接蒙版对应的原图", { exact: true })).toBeVisible();
   const editNode = page.locator('.react-flow__node[data-id="edit"]');
+  await editNode.locator(".node-head").click();
+  await editNode.locator(".prompt-overview").click();
   await expectUsableMaskLayout(editNode);
   await expect(editNode.getByRole("button", { name: "运行 旧蒙版 节点", exact: true })).toBeDisabled();
   const prompt = editNode.getByRole("textbox", { name: "编辑 旧蒙版 提示词", exact: true });

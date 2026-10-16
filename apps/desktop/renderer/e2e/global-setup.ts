@@ -1,5 +1,7 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { access, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import type { FullConfig } from "@playwright/test";
 import { createTestEnvironment } from "./test-environment";
 
@@ -54,6 +56,21 @@ async function stopServer(server: ChildProcess): Promise<void> {
 }
 
 export default async function globalSetup(config: FullConfig) {
+  // The A/B coordinator may pause between isolated samples for source checks.
+  // No browser, renderer server or fixture exists until this gate is released.
+  if (process.env.UI_PERF_EFFECT && process.env.UI_PERF_OUTPUT_DIR && process.env.UI_PERF_ARM !== "B") {
+    const effectGate = resolve(process.env.UI_PERF_OUTPUT_DIR, "..", `pause-canvas-perf-${process.env.UI_PERF_EFFECT}`);
+    const gate = await access(effectGate).then(() => effectGate, () => resolve(process.env.UI_PERF_OUTPUT_DIR!, "..", "pause-canvas-perf"));
+    const exists = () => access(gate).then(() => true, () => false);
+    if (await exists()) {
+      await writeFile(`${gate}.ready.json`, JSON.stringify({ pid: process.pid, at: new Date().toISOString(), sample: process.env.UI_PERF_OUTPUT_DIR }));
+      const deadline = Date.now() + 300_000;
+      while (await exists()) {
+        if (Date.now() > deadline) throw new Error("A/B coordinator source-check pause exceeded five minutes");
+        await new Promise(resolve => setTimeout(resolve, 250));
+      }
+    }
+  }
   if (process.env.PLAYWRIGHT_BASE_URL) return;
 
   const baseURL = String(config.projects[0]?.use.baseURL);

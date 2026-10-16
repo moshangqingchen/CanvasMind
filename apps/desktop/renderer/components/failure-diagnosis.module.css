@@ -1,44 +1,45 @@
 .diagnosis {
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-  padding: 12px;
-  border: 1px solid rgb(255 181 112 / 20%);
-  border-radius: 12px;
-  background: rgb(255 181 112 / 5%);
-  color: #e3e5ed;
-  text-align: left;
-  overflow-wrap: anywhere;
-  user-select: text;
+  box-sizing:border-box;
+  width:100%;
+  min-width:0;
+  padding:14px;
+  border:1px solid var(--line);
+  border-left:2px solid var(--line-strong);
+  border-radius:14px;
+  background:var(--surface-floating,var(--surface-floating));
+  color:var(--text);
+  text-align:left;
+  overflow-wrap:anywhere;
+  user-select:text;
 }
 .diagnosis .rows {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 10px;
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.6;
+  display:grid;
+  grid-template-columns:minmax(0, 1fr);
+  gap:10px;
+  margin:0;
+  font-size:12px;
+  line-height:1.6;
 }
 .rows > div {
-  display: grid;
-  grid-template-columns: 56px minmax(0, 1fr);
-  align-items: start;
-  gap: 10px;
+  display:grid;
+  grid-template-columns:56px minmax(0, 1fr);
+  align-items:start;
+  gap:10px;
 }
 .rows dt {
-  margin: 0;
-  color: #acb2c4;
-  font-size: inherit;
+  margin:0;
+  color:var(--text-secondary);
+  font-size:inherit;
 }
 .rows dd {
-  min-width: 0;
-  margin: 0;
-  color: inherit;
+  min-width:0;
+  margin:0;
+  color:inherit;
 }
-.diagnosis .reason strong { color: #ffd09e; font-size: 13px; white-space: normal; overflow: visible; text-overflow: clip; }
-.reason p { margin: 4px 0 0; color: #d6d9e3; }
-.rows small { display: block; margin-top: 3px; color: #acb2c4; font-size: 11px; }
-.charge { display: inline-block; padding: 1px 7px; border-radius: 5px; background: rgb(171 177 198 / 12%); color: #d6d9e3; }
-.charge[data-charge="charged"] { background: rgb(255 174 116 / 12%); color: #ffd09e; }
-.charge[data-charge="not_charged"], .charge[data-charge="refunded"] { background: rgb(93 218 185 / 12%); color: #9ce3ce; }
-.next { border-top: 1px solid rgb(255 255 255 / 8%); padding-top: 9px; }
+.diagnosis .reason strong { color:var(--status-warn); font-size:13px; white-space:normal; overflow:visible; text-overflow:clip; }
+.reason p { margin:4px 0 0; color:var(--text); }
+.rows small { display:block; margin-top:3px; color:var(--text-secondary); font-size:11px; }
+.charge { display:inline-block; padding:2px 8px; border-radius:999px; background:color-mix(in srgb, var(--selection-ink) 12.00%, transparent); color:var(--text); }
+.charge[data-charge="charged"] { background:color-mix(in srgb, var(--warning-wash) 60.00%, transparent); color:var(--status-warn); }
+.charge[data-charge="not_charged"], .charge[data-charge="refunded"] { background:color-mix(in srgb, var(--success-wash) 60.00%, transparent); color:var(--status-success); }
+.next { border-top:1px solid var(--line); padding-top:9px; }

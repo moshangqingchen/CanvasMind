@@ -9,11 +9,14 @@ import { descriptorKinds, groupNameMatches, matchesModelText, supplierGroupMatch
 import { modelInventoryLastSuccessAt, modelInventoryScanStatus } from "../lib/model-inventory-status";
 import { modelInventoryStatusLabel } from "../lib/model-inventory-status-label";
 import { SupplierBillingSummary } from "./supplier-billing-summary";
+import { DeferredPanelContent } from "./deferred-panel-content";
+import { VirtualList } from "./virtual-list";
 import { refreshAllSupplierAccounts, seedSupplierBilling, useSupplierBillingOverview } from "../lib/client-supplier-billing";
 import { billingCompact } from "../lib/supplier-billing-display";
 import { groupTk1688Models, tk1688ModelFamily, tk1688RouteLabel, tk1688RouteSummary, type Tk1688DisplayModel } from "../lib/tk1688-model-display";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
+import { supplierIdentityPresentation } from "../lib/supplier-identity-presentation";
 import {
   Check,
   ChevronDown,
@@ -126,6 +129,14 @@ interface SupplierEntry {
   apiUrl: string;
   builtIn: boolean;
   record?: SupplierRecord;
+}
+
+function SupplierIdentity({ name, large = false }: { name: string; large?: boolean }) {
+  const identity = supplierIdentityPresentation(name);
+  return <span className={`sm-supplier-avatar${large ? " sm-supplier-avatar-large" : ""}`} aria-hidden="true"
+    style={{ "--sm-identity-from": identity.from, "--sm-identity-to": identity.to, "--sm-identity-ink": identity.ink } as CSSProperties}>
+    {identity.initial}
+  </span>;
 }
 
 function catalogStatus(record?: SupplierRecord): string {
@@ -272,11 +283,13 @@ export function SupplierManager({
     y: number;
   } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const menuOpener = useRef<HTMLElement | null>(null);
   useEffect(() => {
     if (menu)
       menuRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
   }, [menu]);
   function openMenu(entry: SupplierEntry, x: number, y: number) {
+    menuOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setMenu({
       entry,
       x: Math.min(x, window.innerWidth - 225),
@@ -529,7 +542,7 @@ export function SupplierManager({
           <RefreshCw size={16} className={refresh.running ? "sm-spin" : ""} />
           {refresh.running ? `正在刷新 ${refresh.completed}/${refresh.total}` : "刷新全部供应商"}
         </button>
-        <button type="button" className="sm-button sm-refresh-all" disabled={billingBusy || loading} onClick={async () => {
+        <button type="button" className="sm-button sm-refresh-all" disabled={billingBusy || (loading && suppliers.length === 0)} onClick={async () => {
           setBillingBusy(true); setBillingMessage("");
           try { const results = await refreshAllSupplierAccounts(); const ok = results.filter(item => item.status === "live").length;
             setBillingMessage(`账务已读取 ${ok}/${results.length} 家；其他供应商请查看各自的读取状态`); }
@@ -564,7 +577,7 @@ export function SupplierManager({
             const refreshing = refresh.runningIds.includes(entry.id) || preparingRefreshId === entry.id;
             return (
               <div
-                className="sm-supplier-row"
+                className={`sm-supplier-row${!adding && selected?.id === entry.id ? " is-selected" : ""}`}
                 key={entry.id}
                 onContextMenu={(event) => {
                   event.preventDefault();
@@ -584,6 +597,7 @@ export function SupplierManager({
                 <button
                   type="button"
                   className={`sm-supplier-item ${!adding && selected?.id === entry.id ? "is-selected" : ""}`}
+                  title={entry.name}
                   key={entry.id}
                   onClick={() => {
                     if (selected?.id === entry.id && !adding) return;
@@ -594,8 +608,10 @@ export function SupplierManager({
                     });
                   }}
                 >
-                  <span className="sm-supplier-avatar">
-                    {entry.name.slice(0, 1)}
+                  <span className="sm-supplier-identity">
+                    <SupplierIdentity name={entry.name} />
+                    <span className="sm-supplier-state" aria-hidden="true" data-state={refreshing ? "running" : result?.status ??
+                      (entry.record?.scanStatus === "live" ? "updated" : entry.record?.scanStatus === "failed" || entry.record?.scanStatus === "unauthorized" ? "failed" : "idle")} />
                   </span>
                   <span className="sm-supplier-label">
                     <strong>{entry.name}</strong>
@@ -608,11 +624,12 @@ export function SupplierManager({
                     </small>
                     {entry.record && <small>{billingCompact(billingAccounts.find(item => item.id === entry.record?.id)?.billing)}</small>}
                   </span>
-                  <ChevronRight size={14} />
+                  <span className="sm-connection-count" aria-hidden="true" title={`${count} 个已配置连接`}>{count}</span>
                 </button>
                 <button
                   className="sm-icon sm-supplier-more"
                   aria-label={`${entry.name} 的更多操作`}
+                  title={`${entry.name} 的更多操作`}
                   aria-haspopup="menu"
                   onClick={(event) => {
                     const rect = event.currentTarget.getBoundingClientRect();
@@ -681,6 +698,7 @@ export function SupplierManager({
         </div>
       </aside>
       <main className="sm-main">
+        <DeferredPanelContent>
         {(refresh.running || refresh.results.length > 0) && (
           <section className="sm-refresh-report" aria-label="供应商刷新结果">
             <h3>各家最近刷新结果</h3>
@@ -744,6 +762,7 @@ export function SupplierManager({
             <p>填入站点地址，自动发现分组与模型。</p>
           </div>
         )}
+        </DeferredPanelContent>
       </main>
       {refreshDetailsId !== null && <SupplierRefreshDetails
         supplierName={refreshDetailsEntry?.name ?? refreshDetailsResult?.name ?? "供应商"}
@@ -765,6 +784,10 @@ export function SupplierManager({
             onKeyDown={(e) => {
               if (e.key === "Escape" || e.key === "Tab") {
                 e.stopPropagation();
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  menuOpener.current?.focus({ preventScroll: true });
+                }
                 setMenu(null);
               }
               if (["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) {
@@ -1042,11 +1065,17 @@ function SupplierDetail({
   const [activeGroup, setActiveGroup] = useState<string | null | undefined>(initialGroup ?? undefined);
   const [addGroup, setAddGroup] = useState(false);
   const [groupName, setGroupName] = useState("");
-  const [collapsedGroups, setCollapsedGroups] = useState({
-    supplier: false,
-    manual: false,
-    missing: false,
+  const [collapsedGroups, setCollapsedGroups] = useState(() => {
+    const fallback = { supplier: false, manual: false, missing: false };
+    try {
+      const saved = JSON.parse(localStorage.getItem(`supplier-ui-sections:${entry.id}`) ?? "null");
+      return saved && typeof saved === "object" ? { supplier: saved.supplier === true, manual: saved.manual === true, missing: saved.missing === true } : fallback;
+    } catch { return fallback; }
   });
+  useEffect(() => {
+    try { localStorage.setItem(`supplier-ui-sections:${entry.id}`, JSON.stringify(collapsedGroups)); } catch { /* Preferences must never block settings. */ }
+  }, [collapsedGroups, entry.id]);
+  const [openedGroupIds, setOpenedGroupIds] = useState<ReadonlySet<string>>(new Set());
   const [groupQuery, setGroupQuery] = useState("");
   const [appliedGroupQuery, setAppliedGroupQuery] = useState("");
   function clearGroupFilter() {
@@ -1054,6 +1083,8 @@ function SupplierDetail({
     setAppliedGroupQuery("");
   }
   const record = entry.record;
+  const catalogGroups = record?.catalog.groups;
+  const catalogModelCount = useMemo(() => catalogGroups?.reduce((total, group) => total + group.models.length, 0), [catalogGroups]);
   const savedAuthMode = record?.siteLogin?.authMode ?? "password";
   const showUserId = kind === "auto" || kind === "newapi";
   const sameLoginSource = (() => {
@@ -1085,9 +1116,9 @@ function SupplierDetail({
     setUserId(record?.siteLogin?.userId ?? "");
     setClearLogin(false);
   }
-  const connections = allConnections.filter((connection) =>
+  const connections = useMemo(() => allConnections.filter((connection) =>
     supplierOwnsConnection(entry, connection),
-  );
+  ), [allConnections, entry]);
   const groups = useMemo(() => {
     const result = new Map(
       (record?.catalog.groups ?? []).map((group) => [group.id, group]),
@@ -1124,6 +1155,10 @@ function SupplierDetail({
   const activeGroupId = activeGroup === undefined
     ? visibleGroups.find(group => connections.some(connection => connection.apiKeySet && providerConnectionGroup(connection) === group.id))?.id ?? visibleGroups[0]?.id
     : activeGroup;
+  // Search may choose a group without its header being clicked. Retain that
+  // editor too, so clearing the search cannot discard a still-visible draft.
+  if (activeGroupId && !openedGroupIds.has(activeGroupId)) setOpenedGroupIds(new Set([...openedGroupIds, activeGroupId]));
+  const retainedGroupIds = openedGroupIds;
 
   async function saveBasics(): Promise<SupplierRecord> {
     const site = cleanSupplierAddress(siteUrl || apiUrl);
@@ -1305,13 +1340,20 @@ function SupplierDetail({
   }
 
   return (
-    <div className="sm-detail" data-tab={detailTab}>
+    <div className="sm-detail" data-tab={detailTab} onKeyDown={event => {
+      const editing = (event.target as HTMLElement).closest("input, textarea, select, [contenteditable=true]");
+      if ((!editing && event.key === "/") || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f")) {
+        const input = event.currentTarget.querySelector<HTMLInputElement>('input[name="supplier-group-filter"]');
+        if (input && input.getClientRects().length) { event.preventDefault(); event.stopPropagation(); input.focus(); input.select(); }
+      }
+    }}>
       <header className="sm-detail-heading">
-        <div>
-          
-          <h2>{entry.name}</h2>
-          <p>{record?.scannedAt ? `最近尝试 ${new Date(record.scannedAt).toLocaleString("zh-CN")}` : "连接供应商，读取分组与模型"}</p>
-          {record?.scanLastSuccessAt && <p>目录成功更新于 {new Date(record.scanLastSuccessAt).toLocaleString("zh-CN")}</p>}
+        <div className="sm-detail-identity">
+          <SupplierIdentity name={entry.name} large />
+          <div>
+            <h2>{entry.name}</h2>
+            <p>{record?.scannedAt ? `最近尝试 ${new Date(record.scannedAt).toLocaleString("zh-CN")}` : "连接供应商，读取分组与模型"}</p>
+          </div>
         </div>
         <div className="sm-detail-status-actions">
           <button type="button" className="sm-button" disabled={refreshBusy || busy} onClick={onRefresh} aria-label={`刷新 ${entry.name}`}>
@@ -1324,6 +1366,15 @@ function SupplierDetail({
           </button>
         </div>
       </header>
+      <section className="sm-supplier-overview" aria-label="供应商目录概览">
+        <div data-supplier-stat="groups"><span>当前分组</span><strong>{groups.length}</strong><small>保留站点目录与手动分组</small></div>
+        <div data-supplier-stat="models"><span>目录型号</span><strong>{catalogModelCount ?? "—"}</strong><small>按已保存的分组记录统计</small></div>
+        <div data-supplier-stat="updated"><span>目录成功更新</span>{record?.scanLastSuccessAt ?
+          <time dateTime={record.scanLastSuccessAt} title={new Date(record.scanLastSuccessAt).toLocaleString("zh-CN")}>
+            {new Date(record.scanLastSuccessAt).toLocaleDateString("zh-CN", { month: "short", day: "numeric" })}
+            <small>{new Date(record.scanLastSuccessAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</small>
+          </time> : <strong>—</strong>}</div>
+      </section>
       <div className="sm-status-summary" aria-label="供应商配置概况">
         <span>已配置 Key <strong>{connections.filter(connection => connection.apiKeySet).length}</strong></span>
         <span>模型目录已确认 <strong>{connections.filter(connection => connection.config.modelScanStatus === "live" || connection.config.modelScanStatus === "empty").length}</strong></span>
@@ -1332,7 +1383,9 @@ function SupplierDetail({
       <nav className="sm-detail-tabs" aria-label="供应商管理页面">
         {([["models", "模型与分组"], ["connection", "连接配置"], ["verification", "核验记录"]] as const).map(([id, label]) => <button key={id} role="tab" aria-selected={detailTab === id} onClick={() => setDetailTab(id)}>{label}</button>)}
       </nav>
-      <SupplierBillingSummary supplierId={record?.id} />
+      <details className="sm-account-details">
+        <summary>账号账务与生成方式</summary>
+        <SupplierBillingSummary supplierId={record?.id} />
       <div className="sm-notice" aria-label="供应商生成方式">
         <label><input type="checkbox" aria-label="使用 Cloudflare 云端生图" checked={record?.state?.generationTransport === "cloudflare"} disabled={busy}
           onChange={async event => {
@@ -1348,6 +1401,7 @@ function SupplierDetail({
           }} /> 使用 Cloudflare 云端生图</label>
         <p className="sm-muted">{record?.state?.generationTransport === "cloudflare" ? "新生图与编辑任务由云端保存结果 24 小时，画布可恢复取回；到期删除云端图片，已下载的本地图片保留。" : "当前方式：本机连接供应商并接收结果。"} 切换不影响已经提交的任务。</p>
       </div>
+      </details>
       {record?.scanError && detailTab !== "connection" && <div className="sm-notice is-error" role="status">
         <p>{record.scanError}</p>
         <p>{supplierScanHint(record)}</p>
@@ -1774,6 +1828,17 @@ function SupplierDetail({
           );
           if (section === "missing" && !all.length) return null;
           const title = section === "missing" ? "未再返回的分组" : manual ? "手动分组" : "供应商分组";
+          const renderGroup = (group: SupplierCatalogGroup) => (
+            <SupplierGroup active={activeGroupId === group.id}
+              onSelect={() => {
+                setOpenedGroupIds(current => new Set([...current, ...(activeGroupId ? [activeGroupId] : []), group.id]));
+                setActiveGroup(activeGroupId === group.id ? null : group.id);
+              }} key={group.id} supplier={entry} group={group}
+              searchQuery={groupNameMatches(group, normalizedGroupQuery) ? "" : normalizedGroupQuery}
+              connections={connections} ensureSupplier={saveBasics} onConnectionsChanged={onConnectionsChanged}
+              onDelete={manual ? () => requestLeave(() => void removeManualGroup(group), { ids: [`supplier-group:${entry.id}:${group.id}`] }) : undefined}
+              deleting={busy} />
+          );
           return (
             <section
               className="sm-group-section"
@@ -1808,23 +1873,10 @@ function SupplierDetail({
                     ? "自己添加的分组；删除时一并移除该分组在本应用保存的 Key。"
                     : "平台实际扫描返回的分组。"}
                 </p>
-                {filtered.map((group) => (
-                  <SupplierGroup
-                    active={activeGroupId === group.id}
-                    onSelect={() => setActiveGroup(activeGroupId === group.id ? null : group.id)}
-                    key={group.id}
-                    supplier={entry}
-                    group={group}
-                    searchQuery={groupNameMatches(group, normalizedGroupQuery) ? "" : normalizedGroupQuery}
-                    connections={connections}
-                    ensureSupplier={saveBasics}
-                    onConnectionsChanged={onConnectionsChanged}
-                    onDelete={
-                      manual ? () => requestLeave(() => void removeManualGroup(group), { ids: [`supplier-group:${entry.id}:${group.id}`] }) : undefined
-                    }
-                    deleting={busy}
-                  />
-                ))}
+                {all.length > 24 ? <VirtualList items={filtered} itemKey={group => group.id} renderItem={renderGroup}
+                  itemMeasurementKey={group => activeGroupId === group.id ? "expanded" : "collapsed"}
+                  estimatedHeight={86} label={`${title}列表`} className="sm-group-virtual" resetKey={normalizedGroupQuery}
+                  keepMountedKeys={retainedGroupIds} /> : filtered.map(renderGroup)}
                 {!filtered.length && (
                   <p className="sm-muted">
                     {all.length
@@ -1901,6 +1953,7 @@ function SupplierGroup({
   const [opened, setOpened] = useState(active);
   if (active && !opened) setOpened(true);
   const [selectedConnectionId, setSelectedConnectionId] = useState("");
+  const refreshControl = useRef<HTMLButtonElement>(null);
   const matchingConnections = connections.filter(
     (item) =>
       (providerConnectionGroup(item) === group.id || item.config.accountKeyGroup === group.id) &&
@@ -1923,8 +1976,9 @@ function SupplierGroup({
     <article className={`sm-group-card ${active ? "is-active" : ""}`}>
       <header className="sm-group-header">
         <div className="sm-group-identity">
-          <h4 aria-label={group.id}><button aria-label={group.id} type="button" className="sm-group-select" aria-expanded={active} onClick={onSelect}>{group.id}</button></h4>
-          {group.label !== group.id && <span>{group.label}</span>}
+          <h4 aria-label={group.id}><button aria-label={group.id} title={group.id} type="button" className="sm-group-select" aria-expanded={active} onClick={onSelect}>{active ? <ChevronDown size={15} aria-hidden="true" /> : <ChevronRight size={15} aria-hidden="true" />}<span>{group.id}</span></button></h4>
+          {group.label !== group.id && <span title={group.label}>{group.label}</span>}
+          <span className="sm-group-stable-id" title="供应商稳定分组编号">编号 {group.supplierGroupId?.trim() ? group.supplierGroupId : "—"}</span>
           <span
             className={`sm-badge ${group.source === "manual" ? "is-manual" : ""}`}
           >
@@ -1936,7 +1990,14 @@ function SupplierGroup({
                   ? "站点目录"
                   : "已保存分组"}
           </span>
+          <span className="sm-group-key-status" data-configured={Boolean(connection?.apiKeySet)}>{connection?.apiKeySet ? "Key 已保存" : "Key —"}</span>
+          <span className="sm-group-rate" title="后台倍率">倍率 {group.details?.rateMultiplier !== undefined ? `${group.details.rateMultiplier}×` : "—"}</span>
+          {typeof connection?.config.modelScanLastSuccessAt === "string" ? <time className="sm-group-refreshed" title={new Date(connection.config.modelScanLastSuccessAt).toLocaleString("zh-CN")} dateTime={connection.config.modelScanLastSuccessAt}>
+            刷新 {new Date(connection.config.modelScanLastSuccessAt).toLocaleDateString("zh-CN", { month: "short", day: "numeric" })}
+          </time> : <span className="sm-group-refreshed">刷新 —</span>}
         </div>
+        {active && <button type="button" className="sm-icon" aria-label={`刷新 ${group.id} 型号`} title="刷新模型" disabled={deleting || !connection?.apiKeySet}
+          onClick={() => refreshControl.current?.click()}><RefreshCw size={14} /></button>}
         {onDelete && (
           <button
             type="button"
@@ -2000,6 +2061,7 @@ function SupplierGroup({
         searchQuery={searchQuery}
         usage={usage}
         connection={connection}
+        refreshControl={refreshControl}
         ensureSupplier={ensureSupplier}
         onConnectionsChanged={onConnectionsChanged}
       />}
@@ -2014,6 +2076,7 @@ function GroupConnectionEditor({
   searchQuery,
   usage,
   connection,
+  refreshControl,
   ensureSupplier,
   onConnectionsChanged,
 }: {
@@ -2022,6 +2085,7 @@ function GroupConnectionEditor({
   searchQuery: string;
   usage: ProviderConnectionUsage;
   connection?: ProviderConnectionView;
+  refreshControl: RefObject<HTMLButtonElement | null>;
   ensureSupplier: () => Promise<SupplierRecord>;
   onConnectionsChanged: () => Promise<void>;
 }) {
@@ -2058,6 +2122,7 @@ function GroupConnectionEditor({
       ? connection.config.defaultModel
       : "",
   );
+  const [showDefaultSuggestions, setShowDefaultSuggestions] = useState(false);
   const alive = useRef(true);
   const savedDefault = typeof connection?.config.defaultModel === "string" ? connection.config.defaultModel : "";
   const savedHosting = connection?.config.referenceImageHosting === "litterbox-24h";
@@ -2437,6 +2502,7 @@ function GroupConnectionEditor({
           <button
             className="sm-text-button"
             type="button"
+            ref={refreshControl}
             onClick={() => void runAction("refresh")}
             disabled={busy || (!connection?.apiKeySet && !apiKey.trim())}
           >
@@ -2632,12 +2698,13 @@ function GroupConnectionEditor({
                 <input
                   value={defaultModel}
                   onChange={(event) => setDefaultModel(event.target.value)}
+                  onFocus={() => setShowDefaultSuggestions(true)}
                   placeholder="选择或填写准确模型 ID"
                   list={`sm-models-${connection.id}`}
                   disabled={busy}
                 />
                 <datalist id={`sm-models-${connection.id}`}>
-                  {[
+                  {showDefaultSuggestions && [
                     ...new Set([
                       ...actualModels.map((model) => model.id),
                       ...manualModels.map((model) => model.id),
@@ -2688,8 +2755,8 @@ function SupplierModelRow({ model, route = false }: { model: SupplierModelListIt
   return (
     <div className={`sm-model-item${route ? " sm-model-route" : ""}`}>
       <div className="sm-model-name">
-        <strong>{route ? tk1688RouteLabel(model) : cleanModelDisplayName(model.name ?? model.id, model.priceLabel)}</strong>
-        <code>{model.id}</code>
+        <strong title={route ? tk1688RouteLabel(model) : cleanModelDisplayName(model.name ?? model.id, model.priceLabel)}>{route ? tk1688RouteLabel(model) : cleanModelDisplayName(model.name ?? model.id, model.priceLabel)}</strong>
+        <code title={model.id}>{model.id}</code>
       </div>
       <div className="sm-model-facts">
         {model.added && <span className="sm-model-state is-ok">新增</span>}
@@ -2788,7 +2855,9 @@ function ModelList({
           </div>}
           {rows.length > 0 && <div className="sm-model-items">
             <div className="sm-model-columns" aria-hidden="true"><span>模型 / ID</span><span>状态与能力</span><span>参考标价</span></div>
-            {rows.map(model => <SupplierModelRow key={model.id} model={model} />)}
+            {rows.length > 20 ? <VirtualList items={rows} itemKey={model => model.id} renderItem={model => <SupplierModelRow model={model} />}
+              estimatedHeight={76} label={`${title}型号列表`} className="sm-model-virtual" resetKey={String(currentPage)} />
+              : rows.map(model => <SupplierModelRow key={model.id} model={model} />)}
           </div>}
         </>
       ) : (

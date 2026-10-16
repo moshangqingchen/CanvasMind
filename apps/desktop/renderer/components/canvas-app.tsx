@@ -2,7 +2,8 @@
 
 import { savedModelAvailabilityError } from "../lib/model-availability";
 import { getImageEditingCapabilities } from "@super-canvas/providers/image-editing-capabilities";
-import { modelImageCapabilities } from "../lib/model-image-capabilities";
+import { createModelImageCapabilityCache } from "../lib/model-image-capability-cache";
+import { createPresentationModelCache } from "../lib/presentation-model-cache";
 import { selectMaskEditModel } from "../lib/mask-edit-model-selection";
 import { retainedImageModelForDisplay } from "../lib/image-model-presentation";
 import { ensureMaskNodeSize, hasImageMask, MASK_EDIT_NODE_MIN_HEIGHT, MASK_EDIT_NODE_DEFAULT_HEIGHT } from "../lib/generation-node-layout";
@@ -20,12 +21,24 @@ import { cliInputPorts, cliOperationForNode } from "../lib/cli-input-ports";
 import feedbackStyles from "./blocking-feedback.module.css";
 import { useContextMenu } from "./use-context-menu";
 import { CanvasLoading } from "./canvas-loading";
+import { CanvasParameterDeck } from "./canvas-parameter-deck";
+import { restoreHistoryWithTransientNodes } from "../lib/history-transient-graph";
+import { CanvasEdgePalette } from "./canvas-edge-palette";
+import { AddNodeMenu, CanvasChrome, isDraggableNodeType, NODE_CARD_DRAG_TYPE } from "./canvas-chrome";
+import { DynamicIsland } from "./dynamic-island";
+import { ThemeControl } from "./theme-control";
+import { collectIslandTasks, failedIslandStatuses, islandCanvasBounds, type IslandTask } from "../lib/dynamic-island";
 
 import { useRouter } from "next/navigation";
-import { CanvasPointerTrail, canvasMotionEnabled, useCanvasMotion } from "./canvas-motion";
-import { createNodePresentationCache, useStableNodeContent } from "../lib/stable-node-content";
+import { CanvasInteractionFeedback, canvasMotionEnabled, useCanvasMotion } from "./canvas-motion";
+import { createNodePresentationCache, useStableNodeContent, useStableNodeDefinitions } from "../lib/stable-node-content";
+import { useStableNodePresentationData } from "../lib/stable-node-presentation";
+import { createLazySnapshot } from "../lib/lazy-snapshot";
 import { CanvasCheckpointBuffer } from "../lib/canvas-checkpoint-buffer";
 import { createNodePortLayoutCache } from "../lib/node-port-layout-cache";
+import { canvasUsableArea } from "../lib/canvas-usable-area";
+import { createCanvasViewportHydration } from "../lib/canvas-viewport-hydration";
+import { newNodePlacement } from "../lib/new-node-placement";
 import { acknowledgeSubmissions, forgetSubmission, hiddenResult, hideRemovedResults, readSubmissions, linkSubmission, needsTaskReconciliation, rememberSubmission, restoreSubmissions } from "../lib/submission-journal";
 import { acknowledgeCanvasDraft, canvasDraftRecovery, discardCanvasDraft, readCanvasDraft, writeCanvasDraft } from "../lib/canvas-drafts";
 import { trackCanvasSave, waitForCanvasSaves } from "../lib/canvas-save-barrier";
@@ -43,10 +56,8 @@ import {
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
-  type WheelEvent as ReactWheelEvent,
 } from "react";
 import {
-  Background,
   Controls,
   MiniMap,
   ReactFlow,
@@ -56,6 +67,7 @@ import {
   addEdge,
   applyEdgeChanges,
   applyNodeChanges,
+  getViewportForBounds,
   useStoreApi,
   useUpdateNodeInternals,
   type Connection,
@@ -262,13 +274,13 @@ import {
   isCanvasShortcutAllowed,
   modelCanvasUnavailableReason,
   modelSupportsNodeType,
-  preferredCanvasLayoutDirection,
   connectionSupportsNodeType,
   shouldPersistNodeChanges,
   tidyCanvasRectPositions,
   type AutoConnectNodeType,
   type NodeAlignmentAction,
 } from "../lib/graph-ui";
+import { fallbackNodePortY } from "../lib/node-port-layout";
 import {
   modelDescriptorForSavedSelection,
   modelDescriptorForSavedSelectionOrDefault,
@@ -289,7 +301,8 @@ import {
   weAiCanvasModelDescriptorsFromSavedScan,
   weAiSizePresetForTier,
 } from "../lib/weai-catalog";
-import { AgentPanel } from "./creative-agent-panel";
+import { AgentPanel, preloadAgentPanel } from "./lazy-agent-panel";
+import { schedulePanelPreload } from "../lib/panel-preload";
 import { AgentCanvasContext, type AgentCanvasBridge } from "./agent-canvas-context";
 import { CanvasSaveConflictModal } from "./canvas-save-conflict-modal";
 import { CanvasCommandMenu, type CanvasCommand } from "./canvas-command-menu";
@@ -304,7 +317,14 @@ import { useCanvasStore } from "./canvas-store";
 import { WorkflowNode } from "./workflow-node";
 import { ReadableName } from "./result-information";
 import { StudioEdge } from "./studio-edge";
+import { CanvasDotGrid } from "./canvas-background";
+import { CanvasLevelOfDetail } from "./canvas-level-of-detail";
+
+import { legacyCanvasCullingRequested, shouldCullCanvasNodes } from "../lib/canvas-render-policy";
+import { animateLayout, type LayoutAnimation } from "../lib/layout-animation";
+import { reflectedPendingSourceStatus } from "../lib/node-state-presentation";
 import { presentCanvasEdges } from "../lib/canvas-edge-presentation";
+import { readUiPreference, writeUiPreference } from "../lib/ui-preferences";
 import {
   AssetPreviewModal,
   GenerationHistoryModal,
@@ -323,12 +343,16 @@ import type {
   RunSnapshot,
 } from "./types";
 
+const reactFlowProOptions = { hideAttribution: true };
+const emptyIslandRunSnapshots = new Map<string, RunSnapshot>();
+
 type ToastTone = "info" | "success" | "error";
 
 interface ToastMessage {
   id: number;
   message: string;
   tone: ToastTone;
+  action?: { label: string; onClick: () => void };
 }
 
 /** Reflects the autosave pipeline so the top bar can stop guessing. */
@@ -352,6 +376,7 @@ const SAVE_STATE_LABEL: Record<SaveState, string> = {
 
 const nodeTypes = { workflow: WorkflowNode };
 const edgeTypes = { studio: StudioEdge };
+const connectionLineStyle = { stroke: "var(--connection-color, var(--accent))", strokeWidth: 1.5 };
 const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME ?? "超级画布";
 const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? "0.1.0";
 const ASSET_DRAG_TYPE = "application/x-super-canvas-asset";
@@ -381,7 +406,7 @@ const INSPECTOR_DEFAULT_WIDTH = 380;
 const INSPECTOR_MAX_WIDTH = 720;
 const INSPECTOR_WIDTH_STORAGE_KEY = "super-canvas:inspector-width";
 
-type CanvasInteractionMode = "pan" | "draw" | "select-drawing";
+type CanvasInteractionMode = "pan" | "select" | "draw" | "select-drawing";
 
 const DRAWING_TOOL_LABEL: Record<DrawingTool, string> = {
   freehand: "画笔自由涂鸦",
@@ -866,16 +891,17 @@ function generatedMediaAspectRatio(source: CanvasNode): number {
 }
 
 function nodeDimensions(node: CanvasNode): { width: number; height: number } {
+  const unmeasuredResultMinimum = node.data.generatedResult === true &&
+    (node.data.generatedStatus === "failed" || node.data.generatedStatus === "needs_attention")
+    ? GENERATED_RESULT_ERROR_MIN_HEIGHT : 0;
   return {
     width:
       positiveDimension(node.measured?.width, node.width, node.style?.width) ??
       300,
     height:
-      Math.max(node.data.nodeType === "image-generation" && hasImageMask(node.data.parameters) ? MASK_EDIT_NODE_MIN_HEIGHT : 0, positiveDimension(
-        node.measured?.height,
-        node.height,
-        node.style?.height,
-      ) ?? 230),
+      Math.max(node.data.nodeType === "image-generation" && hasImageMask(node.data.parameters) ? MASK_EDIT_NODE_MIN_HEIGHT : 0,
+        positiveDimension(node.measured?.height) ?? Math.max(unmeasuredResultMinimum,
+          positiveDimension(node.height, node.style?.height) ?? 230)),
   };
 }
 
@@ -1869,6 +1895,7 @@ function modelOptionsForNode(
     authoritative?: boolean;
     loading?: boolean;
   },
+  resolveDescriptors: typeof modelDescriptorsForConnection = modelDescriptorsForConnection,
 ): ModelDescriptor[] {
   const nodeType = node.data.nodeType;
   if (nodeType !== "image-generation" && nodeType !== "video-generation" && nodeType !== "music-generation")
@@ -1889,7 +1916,7 @@ function modelOptionsForNode(
     (candidate) => candidate.id === node.data.connectionId,
   );
   const configured = connection
-    ? modelDescriptorsForConnection(connection).filter((model) =>
+    ? resolveDescriptors(connection).filter((model) =>
         modelSupportsNodeType(model, nodeType),
       )
     : [];
@@ -2030,6 +2057,7 @@ const transientNodeDataKeys = new Set([
   "onConnectionChange",
   "onConfigurationFocus",
   "onConfigurationOpenChange",
+  "onRequestConfiguration",
   "onModelChange",
   "onParametersChange",
   "onMediaAspectRatio",
@@ -2050,6 +2078,9 @@ const transientNodeDataKeys = new Set([
   "connectionHighlight",
   "compatibleInputIds",
   "status",
+  "runStartedAt",
+  "runError",
+  "portConnectionCounts",
 ]);
 
 function serializableNode(node: CanvasNode): CanvasNode {
@@ -2227,7 +2258,10 @@ function ProjectSidebar({
   useEffect(() => {
     if (!contextMenu) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setContextMenu(null);
+      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
+      event.preventDefault();
+      setContextMenu(null);
+      contextMenu.returnFocus?.focus({ preventScroll: true });
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -2573,6 +2607,7 @@ function CanvasShell({
     setViewport,
   } = useCanvasStore();
   const contentNodes = useStableNodeContent(nodes);
+  const nodeDefinitions = useStableNodeDefinitions(nodes);
   const [assets, setAssets] = useState<AssetView[]>([]);
   const [linkedAssetDurations, setLinkedAssetDurations] = useState<
     Record<string, number>
@@ -2596,6 +2631,35 @@ function CanvasShell({
       return next;
     });
   }, []);
+  const [openParameterIds, setOpenParameterIds] = useState<string[]>([]);
+  const [activeParameterId, setActiveParameterId] = useState<string | null>(null);
+  const [wideParameterDeck, setWideParameterDeck] = useState(false);
+  const [narrowParameterDeck, setNarrowParameterDeck] = useState(false);
+  const parameterElements = useRef(new Map<string, HTMLElement>());
+  const parameterTriggers = useRef(new Map<string, WeakRef<HTMLElement>>());
+  const blurParameterInput = useCallback((exceptNodeId?: string) => {
+    const input = document.activeElement;
+    const card = input instanceof HTMLElement ? input.closest<HTMLElement>(".canvas-parameter-dock") : null;
+    if (input instanceof HTMLElement && card && card.dataset.parameterNodeId !== exceptNodeId) input.blur();
+    flushPendingEditorEdits();
+  }, []);
+  const registerParameterElement = useCallback((id: string, element: HTMLElement | null) => {
+    if (element) parameterElements.current.set(id, element);
+    else parameterElements.current.delete(id);
+  }, []);
+  const focusParameter = useCallback((id: string) => {
+    blurParameterInput(id);
+    setActiveParameterId(id);
+    setModelEditorNodeId(id);
+  }, [blurParameterInput]);
+  const closeParameter = useCallback((id: string) => {
+    blurParameterInput();
+    setOpenParameterIds(current => current.filter(value => value !== id));
+    setActiveParameterId(current => current === id ? null : current);
+    const trigger = parameterTriggers.current.get(id)?.deref();
+    parameterTriggers.current.delete(id);
+    if (trigger?.isConnected) trigger.focus({ preventScroll: true });
+  }, [blurParameterInput]);
   const [modelEditorSelectionId, setModelEditorSelectionId] = useState(selectedId);
   if (modelEditorSelectionId !== selectedId) {
     setModelEditorSelectionId(selectedId);
@@ -2632,10 +2696,12 @@ function CanvasShell({
   const [nodeRunStatuses, setNodeRunStatuses] = useState<
     Map<string, NodeRunStatus>
   >(new Map());
+  const [nodeRunPresentation, setNodeRunPresentation] = useState(new Map<string, { startedAt: string; error?: RunErrorDetails }>());
   const latestNodeRunAt = useRef(new Map<string, string>());
   const [busy, setBusy] = useState(false);
   const [runSyncError, setRunSyncError] = useState(false);
-  const [toast, setToast] = useState<ToastMessage | null>(null);
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const toastMessages = useRef<ToastMessage[]>([]);
   const [appUpdateStatus, setAppUpdateStatus] = useState<AppUpdateView | null>(
     null,
   );
@@ -2695,6 +2761,7 @@ function CanvasShell({
     };
   }, [projectId, cancelPendingPreview]);
   const [previewReturnsToHistory, setPreviewReturnsToHistory] = useState(false);
+  const [previewSequence, setPreviewSequence] = useState<readonly AssetView[]>([]);
   const [agentDraftRequest, setAgentDraftRequest] =
     useState<AgentDraftRequest | null>(null);
   const [leftSidebarMode, setLeftSidebarMode] =
@@ -2702,10 +2769,36 @@ function CanvasShell({
   const [mobileLibraryOpen, setMobileLibraryOpen] = useState(false);
   const [mobileProjectsOpen, setMobileProjectsOpen] = useState(false);
   const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
+  const requestParameter = useCallback((id: string, trigger: HTMLElement | null) => {
+    blurParameterInput();
+    if (trigger) parameterTriggers.current.set(id, new WeakRef(trigger));
+    setOpenParameterIds(current => current.includes(id) ? current : [...current, id]);
+    setActiveParameterId(id);
+    // Selection and opening are one click; do not clear its explicit model editor on this render.
+    setModelEditorSelectionId(useCanvasStore.getState().selectedId);
+    setModelEditorNodeId(id);
+    if (window.matchMedia("(max-width:1199px)").matches) setMobileInspectorOpen(false);
+  }, [blurParameterInput]);
+  useEffect(() => {
+    const wide = window.matchMedia("(min-width:1600px)");
+    const narrow = window.matchMedia("(max-width:1199px)");
+    const update = () => { setWideParameterDeck(wide.matches); setNarrowParameterDeck(narrow.matches); };
+    update(); wide.addEventListener("change", update); narrow.addEventListener("change", update);
+    return () => { wide.removeEventListener("change", update); narrow.removeEventListener("change", update); };
+  }, []);
   const [showMinimap, setShowMinimap] = useState(false);
   const [showConnections, setShowConnections] = useState(true);
   const [showEffects, toggleEffects] = useCanvasMotion();
   const [inspectorWidth, setInspectorWidth] = useState(INSPECTOR_DEFAULT_WIDTH);
+  // Match the live cards used by the deck, including deletion during this render.
+  const liveParameterCount = openParameterIds.filter(id => nodeDefinitions.some(node => node.id === id)).length;
+  const canvasOccludedRight = (mobileInspectorOpen ? inspectorWidth + 24 : 0) +
+    (liveParameterCount && !(narrowParameterDeck && mobileInspectorOpen)
+      ? (wideParameterDeck && !mobileInspectorOpen && liveParameterCount > 1 ? 784 : 392) : 0);
+  const canvasOcclusionStyle = useMemo(() => ({
+    "--canvas-occluded-right": `${canvasOccludedRight}px`,
+  } as CSSProperties), [canvasOccludedRight]);
+  const inspectorPreferencesReady = useRef(false);
   const [inspectorResizing, setInspectorResizing] = useState(false);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [pendingProjectImport, setPendingProjectImport] =
@@ -2766,6 +2859,9 @@ function CanvasShell({
   const reactFlowRef = useRef<ReactFlowInstance<CanvasNode, CanvasEdge> | null>(
     null,
   );
+  const layoutAnimationRef = useRef<LayoutAnimation | null>(null);
+  const tidyCanvasLayoutRef = useRef<(() => void) | null>(null);
+  const [layoutAnimating, setLayoutAnimating] = useState(false);
   const updateNodeInternals = useUpdateNodeInternals();
   const portLayoutSignatureRef = useRef<ReadonlyMap<string, string>>(new Map());
   const [getPortLayoutSignature] = useState(createNodePortLayoutCache);
@@ -2779,9 +2875,10 @@ function CanvasShell({
   const activeBridgeDropsRef = useRef(new Set<string>());
   const materialDropPollRef = useRef<(() => Promise<void>) | null>(null);
   const materialDropConsumerIdRef = useRef(crypto.randomUUID());
-  const initialViewportApplied = useRef(false);
-  const toastTimer = useRef<number | null>(null);
+  const [viewportHydration] = useState(createCanvasViewportHydration);
+  const toastTimers = useRef(new Map<number, number>());
   const toastSeq = useRef(0);
+  const historyUndoToastId = useRef<number | null>(null);
   const appUpdateVersionRef = useRef<string | null>(null);
   const appUpdateNoticeVersionRef = useRef<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2837,6 +2934,7 @@ function CanvasShell({
   const [historyAvailability, setHistoryAvailability] = useState({ undo: false, redo: false });
   const saveQueue = useRef<LatestTaskQueue<CanvasSaveRequest> | null>(null);
   const instanceActive = useRef(true);
+  const drawingWheelFlushRef = useRef<(() => void) | null>(null);
   const saveSuspended = useRef(false);
   const [agentMutation, setAgentMutation] = useState(false);
   const agentMutationRef = useRef(false);
@@ -2847,11 +2945,13 @@ function CanvasShell({
     editableCanvasProjectRef.current === projectId && activeProjectIdRef.current === projectId
   ), [projectId]);
   const canEditCanvas = useCallback(() => (
-    canvasProjectIsReady() && !leavingRef.current
+    canvasProjectIsReady() && !leavingRef.current && !agentMutationRef.current
   ), [canvasProjectIsReady]);
   useEffect(() => {
     instanceActive.current = true;
     return () => {
+      layoutAnimationRef.current?.finish();
+      drawingWheelFlushRef.current?.();
       // Prompt editors buffer keystrokes briefly. Flush while their callbacks
       // still belong to this canvas, before allowing another instance to load.
       flushPendingEditorEdits();
@@ -2951,16 +3051,24 @@ function CanvasShell({
     // A sidebar can make the canvas narrow even on a wide desktop window.
     // Use its measured width without introducing CSS containment, which would
     // change the coordinate system of the fixed context menus inside it.
-    const updateTools = (width: number) => {
-      canvas.toggleAttribute("data-compact-tools", width <= 1350);
+    const toolbar = canvas.querySelector<HTMLElement>(".canvas-toolbar");
+    const controls = canvas.querySelector<HTMLElement>(".react-flow__controls");
+    const updateTools = () => {
+      const canvasBounds = canvas.getBoundingClientRect();
+      const controlRight = controls ? controls.getBoundingClientRect().right - canvasBounds.left : 236;
+      const toolbarWidth = toolbar ? Math.max(toolbar.offsetWidth, toolbar.scrollWidth) : 0;
+      // Floating panels reserve space without resizing the canvas element.
+      // Match the toolbar's CSS center, including that reserved area.
+      const centeredSpace = canvas.clientWidth - canvasOccludedRight + 76;
+      canvas.toggleAttribute("data-compact-tools", centeredSpace < toolbarWidth + 2 * (controlRight + 8));
     };
-    updateTools(canvas.clientWidth);
-    const observer = new ResizeObserver(([entry]) => {
-      if (entry) updateTools(entry.contentRect.width);
-    });
+    updateTools();
+    const observer = new ResizeObserver(updateTools);
     observer.observe(canvas);
+    if (toolbar) observer.observe(toolbar);
+    if (controls) observer.observe(controls);
     return () => observer.disconnect();
-  }, []);
+  }, [canvasOccludedRight, mobileInspectorOpen, inspectorWidth, openParameterIds.length, narrowParameterDeck, wideParameterDeck]);
 
   useEffect(
     () => () => {
@@ -2972,11 +3080,13 @@ function CanvasShell({
   );
 
   useEffect(() => {
-    const storedWidth = window.localStorage.getItem(INSPECTOR_WIDTH_STORAGE_KEY);
+    const storedWidth = readUiPreference(INSPECTOR_WIDTH_STORAGE_KEY);
     const stored = storedWidth ? Number(storedWidth) : INSPECTOR_DEFAULT_WIDTH;
     const frame = window.requestAnimationFrame(() => {
       setInspectorWidth(clampInspectorWidth(Number.isFinite(stored) ? stored : INSPECTOR_DEFAULT_WIDTH));
-      setMobileInspectorOpen(window.matchMedia("(min-width: 1101px)").matches);
+      const savedOpen = readUiPreference("super-canvas:inspector-open");
+      inspectorPreferencesReady.current = true;
+      setMobileInspectorOpen(savedOpen === null ? window.matchMedia("(min-width: 1101px)").matches : savedOpen === "true");
     });
     const handleResize = () =>
       setInspectorWidth((current) => clampInspectorWidth(current));
@@ -2986,6 +3096,10 @@ function CanvasShell({
       window.removeEventListener("resize", handleResize);
     };
   }, []);
+
+  useEffect(() => {
+    if (inspectorPreferencesReady.current) writeUiPreference("super-canvas:inspector-open", String(mobileInspectorOpen));
+  }, [mobileInspectorOpen]);
 
   useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {
@@ -3004,7 +3118,7 @@ function CanvasShell({
       inspectorResizeRef.current = null;
       setInspectorResizing(false);
       setInspectorWidth(finalWidth);
-      window.localStorage.setItem(
+      writeUiPreference(
         INSPECTOR_WIDTH_STORAGE_KEY,
         String(finalWidth),
       );
@@ -3025,59 +3139,85 @@ function CanvasShell({
     };
   }, []);
 
-  // React Flow initializes before the canvas graph is fetched. Apply the
-  // persisted viewport once the first nodes arrive; otherwise
-  // `onlyRenderVisibleElements` can keep every node unmounted after reload.
+  // A new React Flow instance can initialize while the shared store still
+  // contains the preceding graph or its reset viewport. Only apply the target
+  // staged from this project's fetched snapshot, never a render's placeholder.
+  const applyInitialViewport = useCallback((instance: ReactFlowInstance<CanvasNode, CanvasEdge>) => {
+    const owner = activeProjectIdRef.current;
+    if (!instanceActive.current || editableCanvasProjectRef.current !== owner) return;
+    void viewportHydration.apply(owner, target => instance.setViewport(target, { duration: 0 }));
+  }, [viewportHydration]);
+  const onFlowInit = useCallback((instance: ReactFlowInstance<CanvasNode, CanvasEdge>) => {
+    reactFlowRef.current = instance;
+    applyInitialViewport(instance);
+  }, [applyInitialViewport]);
+  const onCanvasPaneClick = useCallback(() => {
+    useCanvasStore.setState((state) => {
+      const hasSelectedNodes = state.nodes.some(node => node.selected);
+      if (!hasSelectedNodes && state.selectedId === null) return {};
+      return { selectedId: null, nodes: state.nodes.map(node => node.selected ? { ...node, selected: false } : node) };
+    });
+    if (window.matchMedia("(max-width: 1100px)").matches) setMobileInspectorOpen(false);
+    setConnectionMenu(null);
+    setCanvasMenu(null);
+    setNodeMenu(null);
+  }, []);
   useEffect(() => {
-    if (
-      !canvasId ||
-      nodes.length === 0 ||
-      initialViewportApplied.current ||
-      !reactFlowRef.current
-    )
-      return;
-    reactFlowRef.current.setViewport(viewport);
-    initialViewportApplied.current = true;
-  }, [canvasId, nodes.length, viewport]);
+    if (!canvasId || initialization.status !== "ready" || !reactFlowRef.current) return;
+    applyInitialViewport(reactFlowRef.current);
+  }, [applyInitialViewport, canvasId, initialization.status, nodes.length]);
+
+  useEffect(() => {
+    if (initialization.status !== "ready") return;
+    return schedulePanelPreload(preloadAgentPanel);
+  }, [initialization.status]);
 
   const selectedNode = useMemo(() => selectedId
-    ? (nodes.find((node) => node.id === selectedId) ?? null)
-    : null, [nodes, selectedId]);
+    ? (contentNodes.find((node) => node.id === selectedId) ?? null)
+    : null, [contentNodes, selectedId]);
   const statuses = useMemo(() => {
     const current = new Map(nodeRunStatuses);
     // Finishing one run must not hide another active run on the same source.
-    for (const node of contentNodes) {
+    for (const node of nodeDefinitions) {
       if (node.data.generatedResult === true && node.data.generatedFromNodeId &&
           isPendingGeneratedResultStatus(node.data.generatedStatus)) {
-        current.set(node.data.generatedFromNodeId, "running");
+        current.set(node.data.generatedFromNodeId, reflectedPendingSourceStatus(current.get(node.data.generatedFromNodeId), node.data.generatedStatus));
       }
     }
     return current;
-  }, [nodeRunStatuses, contentNodes]);
+  }, [nodeRunStatuses, nodeDefinitions]);
 
-  const showToast = useCallback((message: string, tone: ToastTone = "info") => {
-    // One timer for the whole app: without this a fast second toast used to be
-    // cleared early by the first toast's pending timeout.
-    if (toastTimer.current !== null) window.clearTimeout(toastTimer.current);
-    setToast({ message, tone, id: (toastSeq.current += 1) });
-    toastTimer.current = window.setTimeout(
-      () => {
-        toastTimer.current = null;
-        setToast(null);
-      },
-      tone === "error" ? 5_500 : 3_500,
-    );
+  const dismissToast = useCallback((id?: number) => {
+    if (id === undefined || historyUndoToastId.current === id) historyUndoToastId.current = null;
+    for (const [key, timer] of toastTimers.current) if (id === undefined || key === id) {
+      window.clearTimeout(timer);
+      toastTimers.current.delete(key);
+    }
+    toastMessages.current = id === undefined ? [] : toastMessages.current.filter(toast => toast.id !== id);
+    setToasts(toastMessages.current);
   }, []);
 
-  const dismissToast = useCallback(() => {
-    if (toastTimer.current !== null) window.clearTimeout(toastTimer.current);
-    toastTimer.current = null;
-    setToast(null);
-  }, []);
+  const showToast = useCallback((message: string, tone: ToastTone = "info", action?: ToastMessage["action"]) => {
+    const toast = { message, tone, action, id: ++toastSeq.current };
+    const next = [...toastMessages.current, toast].slice(-2);
+    for (const previous of toastMessages.current) if (!next.includes(previous)) {
+      if (historyUndoToastId.current === previous.id) historyUndoToastId.current = null;
+      window.clearTimeout(toastTimers.current.get(previous.id));
+      toastTimers.current.delete(previous.id);
+    }
+    toastMessages.current = next;
+    setToasts(next);
+    toastTimers.current.set(toast.id, window.setTimeout(() => dismissToast(toast.id), 4000));
+    return toast.id;
+  }, [dismissToast]);
+
+  const invalidateHistoryUndoToast = useCallback(() => {
+    if (historyUndoToastId.current !== null) dismissToast(historyUndoToastId.current);
+  }, [dismissToast]);
 
   useEffect(
     () => () => {
-      if (toastTimer.current !== null) window.clearTimeout(toastTimer.current);
+      for (const timer of toastTimers.current.values()) window.clearTimeout(timer);
     },
     [],
   );
@@ -3294,8 +3434,9 @@ function CanvasShell({
     setDropActive(false);
     setViewport({ x: 0, y: 0, zoom: 0.85 });
     graphRef.current = { nodes: [], edges: [] };
-    initialViewportApplied.current = false;
+    viewportHydration.reset();
     setNodeRunStatuses(new Map());
+    setNodeRunPresentation(new Map());
     latestNodeRunAt.current.clear();
     latestRunSnapshots.current.clear();
     setBusy(false);
@@ -3415,6 +3556,7 @@ function CanvasShell({
           graphNodes !== typedNodes ||
           journaledNodes !== migratedNodes ||
           graphEdges !== graph.edges;
+        viewportHydration.stage(canvas.id, graphViewport);
         setNodes(graphNodes);
         setEdges(graphEdges);
         setDrawings(graphDrawings);
@@ -3542,6 +3684,7 @@ function CanvasShell({
     })();
     return () => {
       active = false;
+      viewportHydration.reset();
       editableCanvasProjectRef.current = null;
       window.clearTimeout(initializationTimeout);
       if (saveTimer.current) window.clearTimeout(saveTimer.current);
@@ -3553,7 +3696,7 @@ function CanvasShell({
       setBusy(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, showToast]);
+  }, [projectId, showToast, viewportHydration]);
 
   const saveRequest = useCallback(
     async (request: CanvasSaveRequest, reportError = true) => {
@@ -3637,6 +3780,7 @@ function CanvasShell({
       nextDrawings = useCanvasStore.getState().drawings,
     ) => {
       if (!instanceActive.current || !canvasId || saveSuspended.current || editableCanvasProjectRef.current !== canvasId) return;
+      if (layoutAnimationRef.current) return;
       geometryCheckpoints.take();
       if (saveTimer.current) clearTimeout(saveTimer.current);
       latestSaveAttempt.current += 1;
@@ -3671,6 +3815,10 @@ function CanvasShell({
 
   /** Flushes the debounced autosave immediately (Ctrl/Cmd+S, project menu). */
   const saveNow = useCallback(async () => {
+    drawingWheelFlushRef.current?.();
+    const field = document.activeElement;
+    if (field instanceof HTMLElement && field.closest(".canvas-parameter-dock")) field.blur();
+    layoutAnimationRef.current?.finish();
     if (!canvasId) return;
     flushPendingEditorEdits();
     if (saveTimer.current) {
@@ -3763,6 +3911,8 @@ function CanvasShell({
 
   useEffect(() => {
     const flushPendingSave = () => {
+      drawingWheelFlushRef.current?.();
+      layoutAnimationRef.current?.finish();
       if (instanceActive.current) flushPendingEditorEdits();
       // Unmount can run after instanceActive becomes false. Materialize the
       // buffered gesture here, without relying on scheduleSave's active guard.
@@ -3802,9 +3952,13 @@ function CanvasShell({
 
   const checkpoint = useCallback(
     (force = false) => {
+      // Keep a toast's discrete action separate from the next edit, even when
+      // typing starts inside the usual 450ms coalescing window.
+      const followsUndoableAction = historyUndoToastId.current !== null;
+      invalidateHistoryUndoToast();
       const history = historyRef.current;
       const now = Date.now();
-      if (!force && history.future.length === 0 && now - history.lastAt < 450) return;
+      if (!force && !followsUndoableAction && history.future.length === 0 && now - history.lastAt < 450) return;
       history.past.push(
         serializableGraph(
           graphRef.current.nodes,
@@ -3819,14 +3973,15 @@ function CanvasShell({
         ? current
         : { undo: true, redo: false });
     },
-    [],
+    [invalidateHistoryUndoToast],
   );
 
   const restoreSnapshot = useCallback(
     (snapshot: CanvasDocument) => {
+      const restored = restoreHistoryWithTransientNodes(snapshot, useCanvasStore.getState());
       const nextNodes = ensureGeneratedResultInputs(
         ensureGenerationNodeInputs(
-          snapshot.nodes.map((node) => ({
+          restored.nodes.map((node) => ({
             ...node,
             type: "workflow" as const,
           })),
@@ -3834,7 +3989,7 @@ function CanvasShell({
       );
       const nextEdges = filterEdgesToKnownPorts(
         nextNodes,
-        syncGeneratedResultEdges(nextNodes, snapshot.edges),
+        syncGeneratedResultEdges(nextNodes, restored.edges),
       );
       setNodes(nextNodes);
       setEdges(nextEdges);
@@ -3862,6 +4017,8 @@ function CanvasShell({
   );
 
   const undo = useCallback(() => {
+    layoutAnimationRef.current?.finish();
+    invalidateHistoryUndoToast();
     const history = historyRef.current;
     const previous = history.past.pop();
     if (!previous) return;
@@ -3875,9 +4032,20 @@ function CanvasShell({
     setHistoryAvailability({ undo: history.past.length > 0, redo: true });
     history.lastAt = 0;
     restoreSnapshot(previous);
-  }, [restoreSnapshot, viewport]);
+  }, [invalidateHistoryUndoToast, restoreSnapshot, viewport]);
+
+  const undoFromToast = useRef(undo);
+  useEffect(() => { undoFromToast.current = undo; }, [undo]);
+  const showUndoToast = useCallback((message: string) => {
+    const id = showToast(message, "success", { label: "撤销", onClick: () => {
+      if (historyUndoToastId.current === id) undoFromToast.current();
+    } });
+    historyUndoToastId.current = id;
+  }, [showToast]);
 
   const redo = useCallback(() => {
+    layoutAnimationRef.current?.finish();
+    invalidateHistoryUndoToast();
     const history = historyRef.current;
     const next = history.future.pop();
     if (!next) return;
@@ -3891,7 +4059,7 @@ function CanvasShell({
     setHistoryAvailability({ undo: true, redo: history.future.length > 0 });
     history.lastAt = 0;
     restoreSnapshot(next);
-  }, [restoreSnapshot, viewport]);
+  }, [invalidateHistoryUndoToast, restoreSnapshot, viewport]);
 
   const changeCanvasMode = useCallback((mode: CanvasInteractionMode) => {
     const interaction = drawingInteractionRef.current;
@@ -3934,37 +4102,82 @@ function CanvasShell({
     [],
   );
 
-  const onDrawingWheel = useCallback(
-    (event: ReactWheelEvent<HTMLDivElement>) => {
-      if (event.deltaY === 0) return;
+  const drawingLayerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (canvasMode !== "draw" && canvasMode !== "select-drawing") return;
+    const layer = drawingLayerRef.current;
+    if (!layer) return;
+    let frame = 0;
+    let timer = 0;
+    let changed = false;
+    let bounds = layer.getBoundingClientRect();
+    let pending: Array<Pick<WheelEvent, "clientX" | "clientY" | "deltaY" | "deltaMode">> = [];
+    const currentProject = () => Boolean(canvasId && canvasId === projectId && instanceActive.current &&
+      !saveSuspended.current && activeProjectIdRef.current === canvasId && editableCanvasProjectRef.current === canvasId);
+    const applyPending = () => {
+      frame = 0;
+      const batch = pending;
+      pending = [];
+      if (!currentProject()) { changed = false; return; }
+      const instance = reactFlowRef.current;
+      if (!instance || batch.length === 0) return;
+      if (layer.isConnected) bounds = layer.getBoundingClientRect();
+      const current = instance.getViewport();
+      let nextViewport = current;
+      for (const event of batch) {
+        const point = { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
+        const deltaScale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? bounds.height : 1;
+        nextViewport = zoomViewportAtPoint(nextViewport, point,
+          nextViewport.zoom * Math.exp(-event.deltaY * deltaScale * 0.0015));
+      }
+      if (nextViewport === current) return;
+      // Set the public viewport first, so the synchronous React Flow move-end
+      // callback sees the same value and does not persist each animation frame.
+      setViewport(nextViewport);
+      void instance.setViewport(nextViewport, { duration: 0 });
+      changed = true;
+    };
+    const flush = () => {
+      window.clearTimeout(timer);
+      if (frame) window.cancelAnimationFrame(frame);
+      applyPending();
+      if (!changed) return;
+      changed = false;
+      const state = useCanvasStore.getState();
+      scheduleSave(state.nodes, state.edges, state.viewport, state.drawings);
+    };
+    const onDrawingWheel = (event: WheelEvent) => {
+      if (event.deltaY === 0 || !currentProject()) return;
       event.preventDefault();
       event.stopPropagation();
       if (drawingInteractionRef.current) return;
-      const instance = reactFlowRef.current;
-      if (!instance) return;
-      const bounds = event.currentTarget.getBoundingClientRect();
-      const point = {
-        x: event.clientX - bounds.left,
-        y: event.clientY - bounds.top,
-      };
-      const deltaScale =
-        event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? bounds.height : 1;
-      const current = instance.getViewport();
-      const targetZoom =
-        current.zoom * Math.exp(-event.deltaY * deltaScale * 0.0015);
-      const nextViewport = zoomViewportAtPoint(current, point, targetZoom);
-      if (nextViewport === current) return;
-      void instance.setViewport(nextViewport, { duration: 0 });
-      setViewport(nextViewport);
-      const state = useCanvasStore.getState();
-      scheduleSave(state.nodes, state.edges, nextViewport, state.drawings);
-    },
-    [scheduleSave, setViewport],
-  );
+      pending.push({ clientX: event.clientX, clientY: event.clientY, deltaY: event.deltaY, deltaMode: event.deltaMode });
+      if (!frame) frame = window.requestAnimationFrame(applyPending);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(flush, 160);
+    };
+    const hidden = () => { if (document.hidden) flush(); };
+    drawingWheelFlushRef.current = flush;
+    // React delegates wheel passively. This layer owns drawing zoom and must
+    // suppress browser/D3 zoom without a passive-listener preventDefault warning.
+    layer.addEventListener("wheel", onDrawingWheel, { passive: false });
+    window.addEventListener("blur", flush);
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", hidden);
+    return () => {
+      layer.removeEventListener("wheel", onDrawingWheel);
+      window.removeEventListener("blur", flush);
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", hidden);
+      if (drawingWheelFlushRef.current === flush) drawingWheelFlushRef.current = null;
+      flush();
+    };
+  }, [canvasId, canvasMode, projectId, scheduleSave, setViewport]);
 
   const onDrawingPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (!canEditCanvas() || event.button !== 0 || canvasMode === "pan") return;
+      if (!canEditCanvas() || event.button !== 0 || canvasMode === "pan" || canvasMode === "select") return;
+      drawingWheelFlushRef.current?.();
       const point = drawingPointForEvent(event);
       if (!point) return;
       event.preventDefault();
@@ -3980,7 +4193,6 @@ function CanvasShell({
         ...(canvasMode === "draw" ? { tool: drawingTool } : {}),
       };
       if (canvasMode === "draw") {
-        checkpoint(true);
         const stroke: CanvasDrawingStroke = {
           id: `drawing-${crypto.randomUUID().slice(0, 12)}`,
           color: brushColor,
@@ -4033,7 +4245,6 @@ function CanvasShell({
       brushSize,
       canvasMode,
       canEditCanvas,
-      checkpoint,
       drawingTool,
       drawingPointForEvent,
       selectedDrawingIds,
@@ -4130,6 +4341,7 @@ function CanvasShell({
           Math.hypot(end.x - interaction.start.x, end.y - interaction.start.y) <
             3 / zoom;
         if (!cancelled && !shapeTooSmall && stroke) {
+          checkpoint(true);
           const state = useCanvasStore.getState();
           const nextDrawings = [...state.drawings, stroke];
           setDrawings(nextDrawings);
@@ -4159,7 +4371,7 @@ function CanvasShell({
           : new Set(matched),
       );
     },
-    [drawingPointForEvent, drawingSelectionEnd, scheduleSave, setDrawings],
+    [checkpoint, drawingPointForEvent, drawingSelectionEnd, scheduleSave, setDrawings],
   );
 
   const deleteSelectedDrawings = useCallback(() => {
@@ -4172,12 +4384,9 @@ function CanvasShell({
     setDrawings(nextDrawings);
     setSelectedDrawingIds(new Set());
     scheduleSave(state.nodes, state.edges, state.viewport, nextDrawings);
-    showToast(
-      `已删除 ${state.drawings.length - nextDrawings.length} 条涂鸦`,
-      "success",
-    );
+    showUndoToast(`已删除 ${state.drawings.length - nextDrawings.length} 条涂鸦`);
     return true;
-  }, [checkpoint, scheduleSave, selectedDrawingIds, setDrawings, showToast]);
+  }, [checkpoint, scheduleSave, selectedDrawingIds, setDrawings, showUndoToast]);
 
   const effectiveInputsForNode = useCallback(
     (node: CanvasNode): CanvasNodeData["inputs"] => {
@@ -4198,8 +4407,8 @@ function CanvasShell({
 
   const connectionCheck = useCallback(
     (connection: Connection) => {
-      const source = contentNodes.find((node) => node.id === connection.source);
-      const target = contentNodes.find((node) => node.id === connection.target);
+      const source = nodeDefinitions.find((node) => node.id === connection.source);
+      const target = nodeDefinitions.find((node) => node.id === connection.target);
       const sourceKind = nodePortKind(
         source ?? ({} as CanvasNode),
         connection.sourceHandle,
@@ -4230,7 +4439,7 @@ function CanvasShell({
         };
       }
       if (
-        wouldCreateCycle({ nodes: contentNodes, edges }, connection.source, connection.target)
+        wouldCreateCycle({ nodes: nodeDefinitions, edges }, connection.source, connection.target)
       ) {
         return {
           valid: false,
@@ -4286,7 +4495,7 @@ function CanvasShell({
         reason: "",
       };
     },
-    [edges, effectiveInputsForNode, contentNodes],
+    [edges, effectiveInputsForNode, nodeDefinitions],
   );
 
   const onConnect: OnConnect = useCallback(
@@ -4485,7 +4694,6 @@ function CanvasShell({
     (type: string, position: { x: number; y: number }) => {
       if (!canEditCanvas()) return null;
       if (!connectionsSettledRef.current && ["image-generation", "video-generation", "music-generation"].includes(type)) return null;
-      checkpoint(true);
       const state = useCanvasStore.getState();
       const node = configureNewGenerationNode(
         createNode(type, position, state.nodes.length),
@@ -4497,6 +4705,7 @@ function CanvasShell({
         setCanvasMenu(null);
         return null;
       }
+      checkpoint(true);
       setNodes((current) => {
         const next = [...current, node];
         scheduleSave(next, useCanvasStore.getState().edges);
@@ -4510,8 +4719,8 @@ function CanvasShell({
     [canEditCanvas, checkpoint, connections, scheduleSave, setNodes, setSelectedId, showToast],
   );
 
-  const graphicDesignModels = useMemo(
-    () => connections.flatMap((connection) => {
+  const getGraphicDesignModels = useMemo(
+    () => createLazySnapshot(() => connections.flatMap((connection) => {
       if (
         providerConnectionUsage(connection) === "disabled" ||
         !connectionIsConfigured(connection) ||
@@ -4527,7 +4736,7 @@ function CanvasShell({
         provider: connection.provider,
         connectionId: connection.id,
       }));
-    }),
+    })),
     [connectionModels, connections],
   );
 
@@ -4547,14 +4756,14 @@ function CanvasShell({
     }
     const connectionId = selected?.data.connectionId ?? selected?.data.generatedConnectionId;
     const modelId = selected?.data.model ?? selected?.data.generatedModel;
-    const preferred = graphicDesignModels.find((option) => option.connectionId === connectionId && option.model.id === modelId);
+    const preferred = getGraphicDesignModels().find((option) => option.connectionId === connectionId && option.model.id === modelId);
     setGraphicDesignSession({
       id: crypto.randomUUID(),
       draftKey: initialBrief && selected ? `${canvasId}:${selected.id}` : canvasId ?? projectId,
       initialBrief,
       initialModelKey: preferred?.key,
     });
-  }, [assets, canvasId, graphicDesignModels, initialization.status, projectId]);
+  }, [assets, canvasId, getGraphicDesignModels, initialization.status, projectId]);
 
   const consumedDesignEntry = useRef(false);
   const consumedChatEntry = useRef(false);
@@ -4590,16 +4799,37 @@ function CanvasShell({
     return () => cancelAnimationFrame(frame);
   }, [initialization.status, canvasId, projectId]);
 
+  const readUsableCanvas = useCallback(() => {
+    const canvas = canvasWrapRef.current;
+    const bounds = canvas?.getBoundingClientRect() ?? { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
+    const chrome = canvas?.closest(".canvas-editor");
+    const obstacles = [...(chrome?.querySelectorAll<HTMLElement>('[data-canvas-island], .editor-rail, .canvas-toolbar, .react-flow__controls, .workspace > .inspector.mobile-open, .canvas-parameter-deck:not([hidden])') ?? [])]
+      .map(element => { const rect = element.getBoundingClientRect(); return element.hasAttribute("data-dynamic-island") ? islandCanvasBounds(rect) : rect; });
+    return canvasUsableArea(bounds, obstacles);
+  }, []);
+
   const addNewNode = useCallback(
     (type: string) => {
       if (!canEditCanvas()) return;
-      const position = reactFlowRef.current?.screenToFlowPosition({
-        x: 360 + Math.random() * 260,
-        y: 150 + Math.random() * 260,
-      }) ?? { x: 360, y: 180 };
-      insertNodeAt(type, position);
+      const instance = reactFlowRef.current;
+      if (!instance) return;
+      const bounds = canvasWrapRef.current?.getBoundingClientRect();
+      const screen = bounds ?? { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+      const area = readUsableCanvas();
+      const topLeft = instance.screenToFlowPosition({ x: screen.left + area.x, y: screen.top + area.y });
+      const bottomRight = instance.screenToFlowPosition({ x: screen.left + area.x + area.width, y: screen.top + area.y + area.height });
+      const state = useCanvasStore.getState();
+      const size = nodeDimensions(createNode(type, { x: 0, y: 0 }, state.nodes.length));
+      const placement = newNodePlacement(size, {
+        x: topLeft.x, y: topLeft.y, width: bottomRight.x - topLeft.x, height: bottomRight.y - topLeft.y,
+      }, state.nodes.filter(node => !node.hidden).map(node => ({ id: node.id, position: node.position, ...nodeDimensions(node) })), state.selectedId);
+      const node = insertNodeAt(type, placement.position);
+      if (node && placement.requiresReveal) void instance.setCenter(
+        placement.position.x + size.width / 2, placement.position.y + size.height / 2,
+        { zoom: instance.getViewport().zoom, duration: 0 },
+      );
     },
-    [canEditCanvas, insertNodeAt],
+    [canEditCanvas, insertNodeAt, readUsableCanvas],
   );
 
   const reuseHistoricalAsset = useCallback(
@@ -4933,8 +5163,9 @@ function CanvasShell({
       setSelectedId((current) =>
         current && removedIds.has(current) ? null : current,
       );
+      showUndoToast(`已删除 ${state.nodes.length - nextNodes.length} 个节点`);
     },
-    [scheduleSave, setEdges, setNodes, setSelectedId, checkpoint],
+    [scheduleSave, setEdges, setNodes, setSelectedId, checkpoint, showUndoToast],
   );
 
   const copySelectedNodes = useCallback((): boolean => {
@@ -5149,25 +5380,12 @@ function CanvasShell({
   const fitViewToCanvas = useCallback(() => {
     const instance = reactFlowRef.current;
     if (!instance) return;
-    if (useCanvasStore.getState().nodes.length === 0) {
-      showToast("画布还没有节点");
-      return;
-    }
-    const canvas = canvasWrapRef.current;
-    const canvasBounds = canvas?.getBoundingClientRect();
-    const toolbarBounds = canvas?.querySelector(".canvas-toolbar")?.getBoundingClientRect();
-    // Fit into the usable canvas above the floating tools, including when a
-    // sidebar moves those tools into two rows.
-    const bottomPadding = canvasBounds && toolbarBounds
-      ? Math.min(canvasBounds.height / 2, Math.max(canvasBounds.height * 0.1, canvasBounds.bottom - toolbarBounds.top + 16))
-      : 140;
-    void instance.fitView({
-      padding: { top: "10%", x: "10%", bottom: `${Math.ceil(bottomPadding)}px` },
-      minZoom: CANVAS_MIN_ZOOM,
-      maxZoom: CANVAS_MAX_ZOOM,
-      duration: canvasMotionEnabled() ? 320 : 0,
-    });
-  }, [showToast]);
+    const visible = useCanvasStore.getState().nodes.filter(node => !node.hidden);
+    if (!visible.length) { showToast("画布还没有节点"); return; }
+    const area = readUsableCanvas();
+    const fitted = getViewportForBounds(instance.getNodesBounds(visible), area.width, area.height, CANVAS_MIN_ZOOM, CANVAS_MAX_ZOOM, .08);
+    void instance.setViewport({ ...fitted, x: fitted.x + area.x, y: fitted.y + area.y }, { duration: canvasMotionEnabled() ? 300 : 0 });
+  }, [readUsableCanvas, showToast]);
 
   const locateCanvasNode = useCallback((id: string) => {
     flushPendingEditorEdits();
@@ -5179,14 +5397,14 @@ function CanvasShell({
     });
     setMobileLibraryOpen(false);
     setMobileProjectsOpen(false);
-    void reactFlowRef.current?.fitView({
-      nodes: [{ id }],
-      padding: 0.35,
-      minZoom: CANVAS_MIN_ZOOM,
-      maxZoom: 1,
-      duration: canvasMotionEnabled() ? 320 : 0,
-    });
-  }, []);
+    const instance = reactFlowRef.current;
+    const node = state.nodes.find(item => item.id === id);
+    if (instance && node) {
+      const area = readUsableCanvas();
+      const fitted = getViewportForBounds(instance.getNodesBounds([node]), area.width, area.height, CANVAS_MIN_ZOOM, 1, .18);
+      void instance.setViewport({ ...fitted, x: fitted.x + area.x, y: fitted.y + area.y }, { duration: canvasMotionEnabled() ? 300 : 0 });
+    }
+  }, [readUsableCanvas]);
 
   const updateNodeData = useCallback(
     (
@@ -5527,6 +5745,14 @@ function CanvasShell({
           if (latestAt && latestAt > snapshot.run.createdAt) continue;
           latestNodeRunAt.current.set(node.nodeId, snapshot.run.createdAt);
           next.set(node.nodeId, node.status as NodeRunStatus);
+        }
+        return next;
+      });
+      setNodeRunPresentation(current => {
+        const next = new Map(current);
+        for (const node of snapshot.nodes) {
+          if ((current.get(node.nodeId)?.startedAt ?? "") > snapshot.run.createdAt) continue;
+          next.set(node.nodeId, { startedAt: snapshot.run.createdAt, error: node.errorJson ?? undefined });
         }
         return next;
       });
@@ -6517,7 +6743,7 @@ function CanvasShell({
     if (preparingGraphicDesign.current) throw new Error("设计任务正在准备，请稍候");
     if (!canvasId || initialization.status !== "ready") throw new Error("画布尚未加载完成");
     if (saveConflictRef.current || saveSuspended.current) throw new Error("请先处理画布保存冲突，再创建设计");
-    const option = graphicDesignModels.find((item) => item.key === input.modelKey);
+    const option = getGraphicDesignModels().find((item) => item.key === input.modelKey);
     if (!option) throw new Error("所选图片模型当前不可用，请重新选择或检查 API 设置");
     const targetCanvasId = canvasId;
     preparingGraphicDesign.current = true;
@@ -6582,7 +6808,7 @@ function CanvasShell({
     } finally {
       preparingGraphicDesign.current = false;
     }
-  }, [assets, canvasId, checkpoint, graphicDesignModels, initialization.status, runNode, scheduleSave, setEdges, setNodes, setSelectedId, showToast]);
+  }, [assets, canvasId, checkpoint, getGraphicDesignModels, initialization.status, runNode, scheduleSave, setEdges, setNodes, setSelectedId, showToast]);
 
   const uploadGraphicDesignAsset = useCallback(async (file: File) => {
     const asset = await uploadAsset(file);
@@ -6696,9 +6922,9 @@ function CanvasShell({
   useEffect(() => {
     if (initialization.status !== "ready") return;
     const handler = (event: KeyboardEvent) => {
-      if (event.isComposing) return;
+      if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
       if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "k") {
-        if (document.querySelector('dialog[open], [role="dialog"]:not([data-canvas-command-menu])')) return;
+        if (document.querySelector('dialog[open], [role="dialog"][aria-modal="true"]:not([data-canvas-command-menu])')) return;
         event.preventDefault();
         event.stopPropagation();
         flushPendingEditorEdits();
@@ -6712,7 +6938,24 @@ function CanvasShell({
       // The search dialog owns every key while open, including canvas modes.
       if (document.querySelector('[data-canvas-command-menu]')) return;
       if (event.key === "Escape") {
+        if (event.defaultPrevented || event.keyCode === 229) return;
+        // This listener runs in window capture. Let the visible dialog or
+        // parameter panel dismiss itself without changing the canvas below it.
+        if ([...document.querySelectorAll<HTMLElement>('dialog[open], [role="dialog"], [role="alertdialog"]')]
+          .some(dialog => dialog.getClientRects().length > 0)) return;
         if (event.target instanceof Element && event.target.closest(".connection-menu")) return;
+        if (document.querySelector("[data-canvas-add-node-menu]")) return;
+        if (document.querySelector('[data-dynamic-island][data-open="true"]')) return;
+        if (document.querySelector(".project-context-menu")) return;
+        if (projectMenuOpen || connectionMenu || canvasMenu || nodeMenu) {
+          event.preventDefault();
+          setProjectMenuOpen(false);
+          setConnectionMenu(null);
+          setCanvasMenu(null);
+          setNodeMenu(null);
+          if (projectMenuOpen) document.querySelector<HTMLElement>(".project-menu-toggle")?.focus({ preventScroll: true });
+          return;
+        }
         setShortcutsOpen(false);
         setProjectMenuOpen(false);
         setConnectionMenu(null);
@@ -6771,6 +7014,20 @@ function CanvasShell({
         return;
       }
 
+      // inert blocks pointer interaction, but the window capture listener still
+      // receives shortcuts while an agent request owns the canvas transaction.
+      // Keep editor, dialog, help and navigation keys in their existing scopes.
+      const mutationKey = event.key.toLowerCase();
+      const canvasMutationShortcut = event.ctrlKey || event.metaKey
+        ? ["a", "d", "g", "z", "y", "enter"].includes(mutationKey)
+        : !event.altKey && !event.shiftKey &&
+          ["delete", "backspace", "o"].includes(mutationKey);
+      if (agentMutationRef.current && !editing && !modalOpen &&
+          !interactiveControl && canvasMutationShortcut) {
+        event.preventDefault();
+        return;
+      }
+
       // Plain-key canvas shortcuts must never fire while typing or in a dialog.
       // A focused button is fine: digits and "F" are not activation keys, and
       // clicking any node control would otherwise disable these shortcuts.
@@ -6782,8 +7039,8 @@ function CanvasShell({
         !event.altKey;
 
       if (bareKeyAllowed && !event.shiftKey) {
-        const modeKey = { "1": "pan", "2": "draw", "3": "select-drawing" }[
-          event.key
+        const modeKey = { "1": "pan", "2": "draw", "3": "select-drawing", v: "select" }[
+          event.key.toLowerCase()
         ] as CanvasInteractionMode | undefined;
         if (modeKey) {
           event.preventDefault();
@@ -6795,6 +7052,14 @@ function CanvasShell({
           event.preventDefault();
           fitViewToCanvas();
           return;
+        }
+        if (event.key.toLowerCase() === "l") {
+          const id = useCanvasStore.getState().selectedId;
+          if (id) { event.preventDefault(); locateCanvasNode(id); }
+          return;
+        }
+        if (event.key.toLowerCase() === "o") {
+          event.preventDefault(); tidyCanvasLayoutRef.current?.(); return;
         }
       }
       if (
@@ -6838,7 +7103,7 @@ function CanvasShell({
           setNodes(nextNodes);
           setEdges(nextEdges);
           scheduleSave(nextNodes, nextEdges);
-          showToast(`已断开 ${selectedEdges.length} 条连线`);
+          showUndoToast(`已断开 ${selectedEdges.length} 条连线`);
           return;
         }
       }
@@ -6878,10 +7143,21 @@ function CanvasShell({
         else groupSelectedNodesRef.current?.();
         return;
       }
+      // Ordinary canvas buttons keep focus after a click. They do not own an
+      // editing history; native fields, local widgets and overlays still do.
+      const historyButton = target?.closest<HTMLButtonElement>("button");
+      const localHistoryControl = Boolean(target?.closest(
+        'input, textarea, select, [contenteditable="true"], summary, [role="slider"], [role="spinbutton"], [role="combobox"], [role="menu"], [role="menuitem"], [role="listbox"], [role="option"], [role="dialog"], [role="alertdialog"], .node-model-select[data-open]',
+      ));
+      const plainCanvasButton = Boolean(historyButton &&
+        (!historyButton.hasAttribute("role") || historyButton.getAttribute("role") === "button") &&
+        historyButton.closest(".topbar, [data-canvas-island], .canvas-toolbar, .react-flow__controls, .react-flow__node") &&
+        !localHistoryControl);
       const historyShortcutAllowed = isCanvasHistoryShortcutAllowed({
         editing,
-        modalOpen,
-        interactiveControl,
+        modalOpen: modalOpen || Boolean(document.querySelector('dialog[open], [role="alertdialog"][aria-modal="true"]')),
+        interactiveControl: interactiveControl || localHistoryControl,
+        plainCanvasButton,
       });
       const duplicateShortcutAllowed =
         !editing &&
@@ -6915,7 +7191,10 @@ function CanvasShell({
         return;
       }
       if ((key === "z" || key === "y") && historyShortcutAllowed) {
+        if (event.keyCode === 229) return;
         event.preventDefault();
+        // inert cannot stop window capture shortcuts dispatched at a button.
+        if (agentMutationRef.current) return;
         if (key === "y" || event.shiftKey) redo();
         else undo();
         return;
@@ -6946,8 +7225,13 @@ function CanvasShell({
     deleteSelectedDrawings,
     duplicateSelectedNodes,
     fitViewToCanvas,
+    locateCanvasNode,
     initialization.status,
     nodes,
+    projectMenuOpen,
+    connectionMenu,
+    canvasMenu,
+    nodeMenu,
     redo,
     runNode,
     saveNow,
@@ -6959,6 +7243,7 @@ function CanvasShell({
     setEdges,
     setNodes,
     showToast,
+    showUndoToast,
     undo,
   ]);
 
@@ -7203,33 +7488,60 @@ function CanvasShell({
   }, [groupSelectedNodes, ungroupSelectedNodes]);
 
   const tidyCanvasLayout = useCallback(() => {
+    if (!canEditCanvas() || layoutAnimationRef.current) return;
+    flushPendingEditorEdits();
     const state = useCanvasStore.getState();
     if (state.nodes.length < 2) {
       showToast("至少需要两个节点才能整理");
       return;
     }
-    const layoutNodes = state.nodes.map((node) => ({
-      id: node.id,
-      position: node.position,
-      ...nodeDimensions(node),
-      ...(node.data.generatedResult === true &&
-      typeof node.data.generatedFromNodeId === "string"
-        ? { generatedFromNodeId: node.data.generatedFromNodeId }
-        : {}),
-      ...(node.data.canvasGroupId
-        ? { canvasGroupId: node.data.canvasGroupId }
-        : {}),
-    }));
+    const mountedCard = canvasWrapRef.current?.querySelector<HTMLElement>(".node-card, .generated-result-node");
+    const structuralBorder = mountedCard ? parseFloat(getComputedStyle(mountedCard).borderTopWidth) || 1 : 1;
+    const layoutNodes = state.nodes.map((node) => {
+      const dimensions = nodeDimensions(node);
+      const internalNode = reactFlowRef.current?.getInternalNode(node.id);
+      const measuredHandles = internalNode?.internals.handleBounds;
+      // Internal nodes retain the currently presented model/mode ports even
+      // when visibility culling has unmounted their DOM. Raw saved inputs can
+      // differ from these effective inputs.
+      const portData = internalNode?.data ?? node.data;
+      const portCenters = (direction: "input" | "output") => {
+        const ports = (direction === "input" ? portData.inputs : portData.outputs) ?? [];
+        const bounds = direction === "input" ? measuredHandles?.target : measuredHandles?.source;
+        return ports.map((port, index) => {
+          const measured = bounds?.find(handle => handle.id === port.id);
+          return { id: port.id, y: measured ? measured.y + measured.height / 2 :
+            fallbackNodePortY(node.data.nodeType, direction, index, ports.length, dimensions.height, structuralBorder) };
+        });
+      };
+      return {
+        id: node.id,
+        nodeType: node.data.nodeType,
+        position: node.position,
+        ...dimensions,
+        portCenters: { source: portCenters("output"), target: portCenters("input") },
+        ...(node.data.generatedResult === true &&
+        typeof node.data.generatedFromNodeId === "string"
+          ? { generatedFromNodeId: node.data.generatedFromNodeId }
+          : {}),
+        ...(node.data.canvasGroupId
+          ? { canvasGroupId: node.data.canvasGroupId }
+          : {}),
+      };
+    });
     const layoutEdges = state.edges.map((edge) => ({
       source: edge.source,
       target: edge.target,
+      sourceHandle: edge.sourceHandle,
+      targetHandle: edge.targetHandle,
     }));
-    const direction = preferredCanvasLayoutDirection(layoutNodes, layoutEdges);
+    const selectedIds = state.nodes.filter(node => node.selected).map(node => node.id);
+    const scope = selectedIds.length >= 2 ? new Set(selectedIds) : new Set(state.nodes.map(node => node.id));
+    const usable = readUsableCanvas();
     const positions = tidyCanvasRectPositions(
       layoutNodes,
       layoutEdges,
-      direction,
-      { layerGap: 104, nodeGap: 44, resultGap: 28, resultGridGap: 16, componentGap: 96, maxComponentColumns: 4 },
+      { selectedIds, viewportWidth: usable.width, viewportHeight: usable.height },
     );
     let changed = false;
     const nextNodes = state.nodes.map((node) => {
@@ -7243,28 +7555,64 @@ function CanvasShell({
       changed = true;
       return { ...node, position };
     });
+    const scoped = nextNodes.filter(node => scope.has(node.id));
+    const left = Math.min(...scoped.map(node => node.position.x)), top = Math.min(...scoped.map(node => node.position.y));
+    const right = Math.max(...scoped.map(node => node.position.x + nodeDimensions(node).width));
+    const bottom = Math.max(...scoped.map(node => node.position.y + nodeDimensions(node).height));
+    const initialViewport = reactFlowRef.current?.getViewport() ?? state.viewport;
+    const fittedViewport = getViewportForBounds({ x: left, y: top, width: right - left, height: bottom - top },
+      usable.width, usable.height, CANVAS_MIN_ZOOM, CANVAS_MAX_ZOOM, .08);
+    const targetViewport = { ...fittedViewport, x: fittedViewport.x + usable.x, y: fittedViewport.y + usable.y };
     if (!changed) {
+      if (Math.abs(initialViewport.x - targetViewport.x) > .01 || Math.abs(initialViewport.y - targetViewport.y) > .01 || Math.abs(initialViewport.zoom - targetViewport.zoom) > .00001)
+        void reactFlowRef.current?.setViewport(targetViewport, { duration: canvasMotionEnabled() ? 300 : 0 });
       showToast("画布已经很整齐了");
       return;
     }
 
     checkpoint(true);
-    useCanvasStore.setState({ nodes: nextNodes });
-    graphRef.current = { nodes: nextNodes, edges: state.edges };
-    scheduleSave(nextNodes, state.edges, state.viewport);
-    window.requestAnimationFrame(() => {
-      void reactFlowRef.current?.fitView({
-        padding: 0.18,
-        minZoom: CANVAS_MIN_ZOOM,
-        maxZoom: CANVAS_MAX_ZOOM,
-        duration: canvasMotionEnabled() ? 320 : 0,
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = null;
+    geometryCheckpoints.take();
+    const start = new Map(state.nodes.map(node => [node.id, node.position]));
+    const frame = (progress: number) => {
+      const current = useCanvasStore.getState();
+      const framed = current.nodes.map(node => {
+        const origin = start.get(node.id), target = positions.get(node.id);
+        if (!origin || !target || !scope.has(node.id)) return node;
+        const position = { x: origin.x + (target.x - origin.x) * progress, y: origin.y + (target.y - origin.y) * progress };
+        return { ...node, position };
       });
-    });
-    showToast(
-      `已按关联分组并${direction === "horizontal" ? "横向" : "纵向"}整理 ${nextNodes.length} 个节点`,
-      "success",
-    );
-  }, [checkpoint, scheduleSave, showToast]);
+      useCanvasStore.setState({ nodes: framed });
+      graphRef.current = { nodes: framed, edges: current.edges };
+      void reactFlowRef.current?.setViewport({
+        x: initialViewport.x + (targetViewport.x - initialViewport.x) * progress,
+        y: initialViewport.y + (targetViewport.y - initialViewport.y) * progress,
+        zoom: initialViewport.zoom + (targetViewport.zoom - initialViewport.zoom) * progress,
+      });
+    };
+    const complete = () => {
+      layoutAnimationRef.current = null;
+      setLayoutAnimating(false);
+      const current = useCanvasStore.getState();
+      useCanvasStore.setState({ viewport: targetViewport });
+      scheduleSave(current.nodes, current.edges, targetViewport, current.drawings);
+      const toastId: number = showToast(`已整理 ${scope.size} 个节点`, "success", {
+        label: "撤销",
+        onClick: () => { if (historyUndoToastId.current === toastId) undo(); },
+      });
+      historyUndoToastId.current = toastId;
+    };
+    if (canvasMotionEnabled()) {
+      setLayoutAnimating(true);
+      layoutAnimationRef.current = animateLayout({ duration: 300, frame, complete });
+    } else {
+      layoutAnimationRef.current = { finish: () => {}, cancel: () => {} };
+      frame(1);
+      complete();
+    }
+  }, [readUsableCanvas, canEditCanvas, checkpoint, geometryCheckpoints, scheduleSave, showToast, undo]);
+  useEffect(() => { tidyCanvasLayoutRef.current = tidyCanvasLayout; }, [tidyCanvasLayout]);
 
   const applyAgentCanvasResult = useCallback(
     async (result: { canvas: { id: string; title: string; graph: unknown; revision: number }; run?: unknown }) => {
@@ -7318,8 +7666,11 @@ function CanvasShell({
     [applyRunSnapshot, refreshAssets, subscribeToRun, geometryCheckpoints],
   );
 
-  const performAgentAction: AgentCanvasBridge["perform"] = async (request) => {
+  const performAgentAction = useCallback<AgentCanvasBridge["perform"]>(async (request) => {
     if (!canvasId || agentMutationRef.current || !instanceActive.current) throw new Error("画布正在处理操作");
+    if (useCanvasStore.getState().nodes.some(node => node.data.pendingImport === true) ||
+        nativeUploadInProgressRef.current.size > 0 || activeBridgeDropsRef.current.size > 0)
+      throw new Error("素材仍在导入，请等待导入完成后重试");
     agentMutationRef.current = true;
     try {
       flushPendingEditorEdits();
@@ -7342,15 +7693,49 @@ function CanvasShell({
       agentMutationRef.current = false;
       if (instanceActive.current) setAgentMutation(false);
     }
-  };
+  }, [canvasId, saveState, saveNow, checkpoint, applyAgentCanvasResult, applyRunSnapshot, subscribeToRun]);
+  const agentCanvasBridge = useMemo<AgentCanvasBridge>(() => ({ perform: performAgentAction }), [performAgentAction]);
+  const closeAgentInspector = useCallback(() => setMobileInspectorOpen(false), []);
+  const manageAgentApi = useCallback((group?: string) => {
+    setSettingsInitialCangyuanGroup(group ?? null);
+    setSettingsOpen(true);
+  }, []);
+
+  // Card ownership depends only on live node identities, not their expensive presentation.
+  const liveParameterIds = useMemo(() => openParameterIds.filter(id => nodeDefinitions.some(node => node.id === id)), [openParameterIds, nodeDefinitions]);
+  const effectiveParameterId = liveParameterIds.includes(activeParameterId ?? "") ? activeParameterId : liveParameterIds.at(-1) ?? null;
+  const modelOwnerId = modelEditorNodeId ?? effectiveParameterId;
+  const modelScanNode = nodes.find((node) => node.id === modelOwnerId) ?? selectedNode;
+  const modelScanNodeId = modelScanNode?.id;
+  const modelScanConnectionId = typeof modelScanNode?.data.connectionId === "string"
+    ? modelScanNode.data.connectionId : "";
+  const modelScanConnectionRecord = connections.find((connection) => connection.id === modelScanConnectionId);
+  const verificationRevision = useSupplierVerificationRevision(
+    typeof modelScanConnectionRecord?.config.supplierId === "string" ? modelScanConnectionRecord.config.supplierId : undefined,
+  );
+  // A new immutable connection or ledger revision gets a fresh presentation-only cache.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const resolveModelsForPresentation = useMemo(() => createPresentationModelCache(modelDescriptorsForConnection), [connections, verificationRevision, modelScanConnectionId]);
 
   const presentedNodes = useMemo(() => {
-    const nodeById = new Map(contentNodes.map((node) => [node.id, node] as const));
+    const imageCapabilitiesForPresentation = createModelImageCapabilityCache();
+    const modelOptionsBySelection = new Map<string, ModelDescriptor[]>();
+    const listedModelsForPresentation = { ...connectionModels, items: connectionModelItemsForDisplay(connectionModels) };
+    const nodeById = new Map(nodeDefinitions.map((node) => [node.id, node] as const));
     const assetById = new Map(
       assets.map((asset) => [asset.id, asset] as const),
     );
     const incomingEdges = new Map<string, CanvasEdge[]>();
+    const portCounts = new Map<string, { input: Record<string, number>; output: Record<string, number> }>();
+    const countPort = (nodeId: string, direction: "input" | "output", handle?: string | null) => {
+      if (!handle) return;
+      let counts = portCounts.get(nodeId);
+      if (!counts) { counts = { input: Object.create(null), output: Object.create(null) }; portCounts.set(nodeId, counts); }
+      counts[direction][handle] = (counts[direction][handle] ?? 0) + 1;
+    };
     for (const edge of edges) {
+      countPort(edge.source, "output", edge.sourceHandle ?? nodeById.get(edge.source)?.data.outputs?.[0]?.id);
+      countPort(edge.target, "input", edge.targetHandle ?? nodeById.get(edge.target)?.data.inputs?.[0]?.id);
       const incoming = incomingEdges.get(edge.target);
       if (incoming) incoming.push(edge);
       else incomingEdges.set(edge.target, [edge]);
@@ -7405,7 +7790,7 @@ function CanvasShell({
     };
 
     const catalogDirectories = new Map<string, ReturnType<typeof catalogPickerDirectory>>();
-    return contentNodes.map((node): CanvasNode => {
+    return nodeDefinitions.map((node): CanvasNode => {
       const nodeType = node.data.nodeType;
       const generationType =
         nodeType === "image-generation" || nodeType === "video-generation" || nodeType === "music-generation"
@@ -7415,15 +7800,19 @@ function CanvasShell({
         ? canvasPickerConnections(connections.filter(
             (connection) =>
               providerConnectionUsage(connection) !== "disabled" &&
-              (connection.id === node.data.connectionId || connectionSupportsNodeType(connection, generationType, modelDescriptorsForConnection(connection))),
+              (connection.id === node.data.connectionId || connectionSupportsNodeType(connection, generationType, resolveModelsForPresentation(connection))),
           ), node.data.connectionId, connection => connectionIsConfigured(connection) &&
-            connectionSupportsNodeType(connection, generationType, modelDescriptorsForConnection(connection)))
+            connectionSupportsNodeType(connection, generationType, resolveModelsForPresentation(connection)))
         : [];
-      const modelOptions = modelOptionsForNode(
-        node,
-        connections,
-        { ...connectionModels, items: connectionModelItemsForDisplay(connectionModels) },
-      );
+      // These are all node fields read by modelOptionsForNode. Share its source
+      // descriptors for this connection snapshot so identical nodes also share
+      // capability derivation. Scan facts invalidate the resolver above.
+      const optionsKey = JSON.stringify([nodeType, node.data.provider, node.data.connectionId, node.data.model]);
+      let modelOptions = modelOptionsBySelection.get(optionsKey);
+      if (!modelOptions) {
+        modelOptions = modelOptionsForNode(node, connections, listedModelsForPresentation, resolveModelsForPresentation);
+        modelOptionsBySelection.set(optionsKey, modelOptions);
+      }
       const effectiveModel =
         modelDescriptorForSavedSelectionOrDefault(
           modelOptions,
@@ -7442,7 +7831,7 @@ function CanvasShell({
       const linkedAssets = generationType ? directAssetsForNode(node.id) : [];
       const imageOperation = linkedAssets.some(asset => asset.kind === "image") ? "image.edit" : "image.generate";
       const imageEditingCapabilities = generationType === "image-generation" && editingModel
-        ? modelImageCapabilities(editingConnection, editingModel, node.data.parameters, imageOperation)
+        ? imageCapabilitiesForPresentation(editingConnection, editingModel, node.data.parameters, imageOperation)
         : { transparent: false, mask: null };
       const compatibleInputIds =
         connectingFrom && node.id !== connectingFrom.nodeId
@@ -7467,7 +7856,7 @@ function CanvasShell({
                     ? nodeById.get(node.data.generatedFromNodeId)
                     : undefined;
                   return source
-                    ? generationPromptParts(source, contentNodes, edges)
+                    ? generationPromptParts(source, nodeDefinitions, edges)
                     : [];
                 })(),
               {
@@ -7496,7 +7885,7 @@ function CanvasShell({
           linkedAssets,
           imageEditingCapabilities,
           modelImageCapabilities: generationType === "image-generation" ? Object.fromEntries(modelOptions.map(model => [model.id,
-            modelImageCapabilities(editingConnection, model, model.id === effectiveModel?.id ? node.data.parameters : undefined, imageOperation),
+            imageCapabilitiesForPresentation(editingConnection, model, model.id === effectiveModel?.id ? node.data.parameters : undefined, imageOperation),
           ])) : undefined,
           linkedAssetDurations,
           linkedAssetWarnings: validateLinkedMediaInputs(
@@ -7531,7 +7920,7 @@ function CanvasShell({
                 ]
               : []),
             ...nodeConnectionCandidates.map((connection) => {
-              const models = modelDescriptorsForConnection(connection);
+              const models = resolveModelsForPresentation(connection);
               const compatibleModels = generationType
                 ? models.filter(model => modelSupportsNodeType(model, generationType))
                 : [];
@@ -7587,14 +7976,9 @@ function CanvasShell({
           ),
           generatedPromptText,
           status: statuses.get(node.id),
-          selectionSize: selectedCanvasNodes.length,
-          ...(selectionToolbarAnchorId === node.id
-            ? {
-                selectionAlignmentVisible: true,
-                selectionCount: selectedCanvasNodes.length,
-                onAlignSelection: alignSelectedNodes,
-              }
-            : {}),
+          runStartedAt: nodeRunPresentation.get(node.id)?.startedAt,
+          runError: nodeRunPresentation.get(node.id)?.error,
+          portConnectionCounts: portCounts.get(node.id),
           onSelect: (additive = false) => selectCanvasNode(node.id, additive),
           onOpenPreview: (assetId: string) => void openAssetPreview(assetId),
           onEditMask: openImageMask,
@@ -7663,6 +8047,7 @@ function CanvasShell({
             changeNodeConnection(node.id, connectionId),
           onConfigurationFocus: () => setModelEditorNodeId(node.id),
           onConfigurationOpenChange,
+          onRequestConfiguration: (trigger: HTMLElement | null) => requestParameter(node.id, trigger),
           onModelChange: (model: string) => changeNodeModel(node.id, model),
           onParametersChange: (parameters: Record<string, unknown>) => {
             const current = useCanvasStore.getState().nodes.find(item => item.id === node.id)?.data;
@@ -7699,12 +8084,14 @@ function CanvasShell({
     });
   }, [
     assets,
+    nodeRunPresentation,
     changeNodeConnection,
     changeNodeModel,
     checkpoint,
     connectionCheck,
     connectingFrom,
     connectionModels,
+    resolveModelsForPresentation,
     connections,
     supplierDirectories,
     supplierDirectoryReadFailed,
@@ -7712,10 +8099,11 @@ function CanvasShell({
     effectiveInputsForNode,
     deleteNode,
     durationReadFailures,
-    contentNodes,
+    nodeDefinitions,
     linkedAssetDurations,
     modelLoadError,
     onConfigurationOpenChange,
+    requestParameter,
     recordLinkedAssetDuration,
     openAssetPreview,
     openImageMask,
@@ -7729,17 +8117,32 @@ function CanvasShell({
     setNodes,
     showToast,
     subscribeToRun,
-    alignSelectedNodes,
     selectCanvasNode,
-    selectedCanvasNodes.length,
-    selectionToolbarAnchorId,
     statuses,
     updateNodeData,
     updateMediaAspectRatio,
   ]);
 
-  const presentedData = useMemo(() => new Map(presentedNodes.map((node) => [node.id, node.data])), [presentedNodes]);
-  const renderedNodes = useMemo(() => presentNodes(nodes, presentedData), [nodes, presentedData, presentNodes]);
+  const stablePresentedNodes = useStableNodePresentationData(presentedNodes);
+  const presentedData = useMemo(() => new Map(stablePresentedNodes.map((node) => [node.id, node.data])), [stablePresentedNodes]);
+  // This cache stores the event callback by identity; it never invokes it during render.
+  // eslint-disable-next-line react-hooks/refs -- alignSelectedNodes reads graph refs only when the user chooses an alignment.
+  const renderedNodes = useMemo(() => presentNodes(nodes, presentedData, {
+    size: selectedCanvasNodes.length, anchorId: selectionToolbarAnchorId, onAlignSelection: alignSelectedNodes,
+  }), [nodes, presentedData, presentNodes, selectedCanvasNodes.length, selectionToolbarAnchorId, alignSelectedNodes]);
+
+  const parameterCards = useMemo(() => openParameterIds.flatMap(id => {
+    const data = presentedData.get(id);
+    return data ? [{ id, data }] : [];
+  }), [openParameterIds, presentedData]);
+  if (openParameterIds.some(id => !presentedData.has(id))) {
+    setOpenParameterIds(openParameterIds.filter(id => presentedData.has(id)));
+  }
+  useEffect(() => {
+    const live = new Set(parameterCards.map(card => card.id));
+    for (const id of parameterTriggers.current.keys()) if (!live.has(id)) parameterTriggers.current.delete(id);
+  }, [parameterCards]);
+
 
   const portLayoutSignature = useMemo(
     () => getPortLayoutSignature(renderedNodes),
@@ -7830,29 +8233,24 @@ function CanvasShell({
     [checkpoint, scheduleSave, setEdges, setNodes],
   );
   const onMoveEnd = useCallback(
-    (_: unknown, nextViewport: { x: number; y: number; zoom: number }) => {
+    (event: unknown, nextViewport: { x: number; y: number; zoom: number }) => {
+      if (layoutAnimationRef.current || !instanceActive.current ||
+          !viewportHydration.ready(activeProjectIdRef.current)) return;
+      // A queued initialization callback can arrive after the restored target.
+      // Fit/tidy callbacks still persist when they match the live Flow viewport.
+      const actual = reactFlowRef.current?.getViewport();
+      if ((event === null || event === undefined) && actual && !canvasViewportsEqual(actual, nextViewport)) return;
       const state = useCanvasStore.getState();
       if (canvasViewportsEqual(state.viewport, nextViewport)) return;
       setViewport(nextViewport);
       scheduleSave(state.nodes, state.edges, nextViewport, state.drawings);
     },
-    [scheduleSave, setViewport],
+    [scheduleSave, setViewport, viewportHydration],
   );
   // React Flow memoizes its node wrappers. Keep their event props stable when
   // viewport/save state changes so a wheel gesture does not render every node.
   const dismissNodeMenu = useCallback(() => setNodeMenu(null), []);
   const onNodeDragStart = useCallback(() => checkpoint(true), [checkpoint]);
-
-  // An open node editor can remain usable after canvas selection is cleared.
-  // Load its models independently without selecting the node or opening a sidebar.
-  const modelScanNode = nodes.find((node) => node.id === modelEditorNodeId) ?? selectedNode;
-  const modelScanNodeId = modelScanNode?.id;
-  const modelScanConnectionId = typeof modelScanNode?.data.connectionId === "string"
-    ? modelScanNode.data.connectionId : "";
-  const modelScanConnectionRecord = connections.find((connection) => connection.id === modelScanConnectionId);
-  const verificationRevision = useSupplierVerificationRevision(
-    typeof modelScanConnectionRecord?.config.supplierId === "string" ? modelScanConnectionRecord.config.supplierId : undefined,
-  );
 
   // Marketplace prices are supplier-owned data. Keep the canvas selector in
   // sync when the tab regains focus (for example after refreshing a supplier's
@@ -7947,7 +8345,9 @@ function CanvasShell({
       savedWeAiItems ??
       (requiresAuthoritativeScan
         ? []
-        : modelDescriptorsForConnection(selectedConnection));
+        // Reuse this owner/evidence snapshot's local projection. Live responses
+        // still pass through the full parameter derivation below.
+        : resolveModelsForPresentation(selectedConnection));
     const applyModels = (received: readonly ModelDescriptor[]) => {
       if (cancelled) return;
       const items = withCurrentImageRequestParameters(selectedConnection, received);
@@ -8118,25 +8518,26 @@ function CanvasShell({
     verificationRevision,
     modelScanConnectionId,
     modelScanNodeId,
+    resolveModelsForPresentation,
     updateNodeData,
   ]);
 
   const selectedData = selectedNode?.data;
   const selectedGeneratedPrompt = useMemo(() => {
     if (selectedData?.generatedResult !== true) return "";
-    const source = nodes.find(
+    const source = contentNodes.find(
       (node) => node.id === selectedData.generatedFromNodeId,
     );
     const parts =
       selectedData.generatedPromptParts ??
-      (source ? generationPromptParts(source, nodes, edges) : []);
+      (source ? generationPromptParts(source, contentNodes, edges) : []);
     return renderPromptParts(parts, {
       resolveAsset: (assetId) => {
         const asset = assets.find((item) => item.id === assetId);
         return asset ? `@${asset.name}` : `@${assetId}`;
       },
     }).trim();
-  }, [assets, edges, nodes, selectedData]);
+  }, [assets, edges, contentNodes, selectedData]);
   const connectionSourceKind = connectionMenu?.sourceKind;
   const connectionOptions = useMemo(
     () =>
@@ -8333,8 +8734,7 @@ function CanvasShell({
           failPendingAssetImport(item.nodeId);
           return false;
         }
-        completePendingAssetImport(item.nodeId, asset);
-        return true;
+        return completePendingAssetImport(item.nodeId, asset);
       });
       return results.filter(Boolean).length;
     },
@@ -8373,7 +8773,7 @@ function CanvasShell({
       }
     };
     const pollMaterialDrops = async () => {
-      if (polling || disposed) return;
+      if (polling || disposed || agentMutationRef.current) return;
       const canvasIsVisible =
         typeof document.visibilityState !== "string" ||
         document.visibilityState === "visible";
@@ -8385,7 +8785,10 @@ function CanvasShell({
       try {
         const drops = await fetchMaterialDrops();
         for (const drop of drops) {
-          if (disposed) break;
+          // A fetch started before the agent lock may finish after it. Leave
+          // these unclaimed events queued for the next poll, after the agent's
+          // authoritative canvas has applied, rather than inserting lost nodes.
+          if (disposed || agentMutationRef.current) break;
           // Only the foreground canvas should consume a desktop drag. This also
           // prevents another open canvas tab from claiming the same bridge event.
           const contentKey = nativeDropContentKey(drop);
@@ -8537,8 +8940,8 @@ function CanvasShell({
               );
               unregisterPendingNativeDrop(contentKey, optimisticNode.id);
             }
-            completePendingAssetImport(optimisticNode.id, asset);
-            showToast(
+            const placed = completePendingAssetImport(optimisticNode.id, asset);
+            if (placed) showToast(
               canUseDropPoint
                 ? `已从素材管理拖入：${asset.name}`
                 : `已从素材管理拖入：${asset.name}（已放到画布中央）`,
@@ -8668,6 +9071,11 @@ function CanvasShell({
       );
       if (editing || modalOpen || interactiveControl) return;
 
+      if (agentMutationRef.current) {
+        event.preventDefault();
+        return;
+      }
+
       const candidates = filesFromClipboard(event.clipboardData);
       const images = preferNamedClipboardImages(
         candidates
@@ -8793,6 +9201,9 @@ function CanvasShell({
         y: event.clientY,
       });
       if (!position) return;
+
+      const draggedNodeType = event.dataTransfer.getData(NODE_CARD_DRAG_TYPE);
+      if (isDraggableNodeType(draggedNodeType)) { insertNodeAt(draggedNodeType, position); return; }
 
       const assetId = event.dataTransfer.getData(ASSET_DRAG_TYPE);
       if (assetId) {
@@ -9002,6 +9413,7 @@ function CanvasShell({
         showToast(sourceFailures[0]?.message ?? "素材导入失败", "error");
     },
     [
+      insertNodeAt,
       assets,
       canEditCanvas,
       canvasProjectIsReady,
@@ -9269,6 +9681,32 @@ function CanvasShell({
 
   // Build search contents only while the menu is open. Large graphs should not
   // parse every prompt again when the user pans or resizes the canvas.
+  async function renameCanvasProject(nextId: string, nextTitle: string) {
+
+            if (nextId === canvasId) {
+              await saveNow();
+              await waitForCanvasSaves(nextId);
+              if (!instanceActive.current) throw new Error("画布已关闭，请在首页重命名");
+              saveSuspended.current = true;
+            }
+            try {
+              return await trackCanvasSave(nextId, (async () => {
+                const result = await onRenameProject(nextId, nextTitle);
+                if (instanceActive.current && nextId === canvasId) {
+                  canvasRevision.current = result.revision;
+                  setTitle(result.project.title);
+                }
+                if (instanceActive.current) showToast("项目与文件夹已同步重命名", "success");
+                return result;
+              })());
+            } finally {
+              if (nextId === canvasId) saveSuspended.current = false;
+            }
+
+  }
+
+  const [renameAction, setRenameAction] = useState<ProjectActionDialogState | null>(null);
+
   const canvasCommands: CanvasCommand[] = commandMenuOpen ? [
     ...(connectionsSettled ? [{ id: "create-image", label: "新建图片节点", description: "从提示词或参考图生成图片", group: "开始创作", icon: <ImageIcon size={18} />, onSelect: () => addNewNode("image-generation") }] : []),
     { id: "create-prompt", label: "新建提示词节点", description: "编写文案与结构化 Prompt", group: "开始创作", icon: <Type size={18} />, onSelect: () => addNewNode("prompt") },
@@ -9295,94 +9733,248 @@ function CanvasShell({
     })),
   ] : [];
 
-  return (
-    <AgentCanvasContext.Provider value={{ perform: performAgentAction }}>
-      {agentMutation && <div role="status" className={feedbackStyles.overlay}>
-        <div className={feedbackStyles.card}><div className={feedbackStyles.progress}>
-          <span className={feedbackStyles.spinner} aria-hidden="true" />
-          <span>正在保存并核对画布…</span>
-        </div></div>
-      </div>}
-    <div inert={agentMutation} className={`shell canvas-editor ${showEffects ? "" : "motion-disabled"} ${mobileInspectorOpen ? "inspector-visible" : ""} ${leaving ? "is-leaving" : ""}`} style={{ "--inspector-width": `${inspectorWidth}px` } as CSSProperties}>
-      <header className="topbar">
-        <button className="icon-button editor-home" type="button" aria-label="返回主界面" title={initialization.status === "error" ? "返回主界面" : "保存并返回主界面"} disabled={leaving || initialization.status === "loading"} onClick={() => void leaveCanvas(() => router.push("/"))}>
+  const canvasToolbar = useMemo(() => (
+<div className={`canvas-toolbar ${canvasMode === "draw" ? "is-drawing" : ""} ${canvasMode === "select-drawing" ? "is-selecting-drawing" : ""}`} style={canvasOcclusionStyle}>
+            <div
+              className="canvas-drawing-tools canvas-toolbar-segment" data-group="modes"
+              role="toolbar"
+              aria-label="画布绘图工具"
+            >
+              <button
+                className={canvasMode === "pan" ? "active" : ""}
+                type="button"
+                aria-label="抓手模式"
+                aria-pressed={canvasMode === "pan"}
+                title="抓手：拖动画布和操作节点（1）"
+                onClick={() => changeCanvasMode("pan")}
+              >
+                <Hand size={15} />
+                <span>抓手</span>
+              </button>
+              <button type="button" className={canvasMode === "select" ? "active" : ""} aria-label="选择节点模式" aria-pressed={canvasMode === "select"}
+                title="选择：框选节点并拖动所选节点（V）" onClick={() => changeCanvasMode("select")}>
+                <MousePointer2 size={15} /><span>选择</span>
+              </button>
+              <button
+                className={
+                  canvasMode === "draw" && drawingTool === "freehand"
+                    ? "active"
+                    : ""
+                }
+                type="button"
+                aria-label="画笔模式"
+                aria-pressed={
+                  canvasMode === "draw" && drawingTool === "freehand"
+                }
+                title="画笔：绘制自由、不规则涂鸦（2）"
+                onClick={() => activateDrawingTool("freehand")}
+              >
+                <Pencil size={15} />
+                <span>画笔</span>
+              </button>
+              <span className="canvas-drawing-tools-divider" />
+              <span className="canvas-shape-label">形状</span>
+              <button
+                className={
+                  canvasMode === "draw" && drawingTool === "rectangle"
+                    ? "active shape-tool"
+                    : "shape-tool"
+                }
+                type="button"
+                aria-label="矩形工具"
+                aria-pressed={
+                  canvasMode === "draw" && drawingTool === "rectangle"
+                }
+                title="矩形：拖拽绘制矩形"
+                onClick={() => activateDrawingTool("rectangle")}
+              >
+                <Square size={15} />
+              </button>
+              <button
+                className={
+                  canvasMode === "draw" && drawingTool === "ellipse"
+                    ? "active shape-tool"
+                    : "shape-tool"
+                }
+                type="button"
+                aria-label="椭圆工具"
+                aria-pressed={
+                  canvasMode === "draw" && drawingTool === "ellipse"
+                }
+                title="椭圆：拖拽绘制圆形或椭圆"
+                onClick={() => activateDrawingTool("ellipse")}
+              >
+                <Circle size={15} />
+              </button>
+              <button
+                className={
+                  canvasMode === "draw" && drawingTool === "line"
+                    ? "active shape-tool"
+                    : "shape-tool"
+                }
+                type="button"
+                aria-label="直线工具"
+                aria-pressed={canvasMode === "draw" && drawingTool === "line"}
+                title="直线：拖拽绘制直线"
+                onClick={() => activateDrawingTool("line")}
+              >
+                <Minus size={16} />
+              </button>
+              <button
+                className={
+                  canvasMode === "draw" && drawingTool === "arrow"
+                    ? "active shape-tool"
+                    : "shape-tool"
+                }
+                type="button"
+                aria-label="箭头工具"
+                aria-pressed={canvasMode === "draw" && drawingTool === "arrow"}
+                title="箭头：拖拽绘制指向箭头"
+                onClick={() => activateDrawingTool("arrow")}
+              >
+                <ArrowUpRight size={16} />
+              </button>
+              <span className="canvas-drawing-tools-divider" />
+              <button
+                className={`canvas-drawing-selection ${canvasMode === "select-drawing" ? "active" : ""}`}
+                type="button"
+                aria-label="选择涂鸦"
+                aria-pressed={canvasMode === "select-drawing"}
+                title="框选图形：点击或框选涂鸦，按 Ctrl 可多选（3）"
+                onClick={() => changeCanvasMode("select-drawing")}
+              >
+                <MousePointer2 size={15} />
+                <span>框选图形</span>
+              </button>
+              <label className="canvas-brush-color" title="画笔颜色">
+                <span>颜色</span>
+                <input
+                  type="color"
+                  aria-label="画笔颜色"
+                  value={brushColor}
+                  onChange={(event) => setBrushColor(event.target.value)}
+                />
+              </label>
+              <label className="canvas-brush-size" title="画笔粗细">
+                <span>粗细</span>
+                <input
+                  type="range"
+                  aria-label="画笔粗细"
+                  min="1"
+                  max="48"
+                  step="1"
+                  value={brushSize}
+                  onChange={(event) => setBrushSize(Number(event.target.value))}
+                />
+                <output>{brushSize}px</output>
+              </label>
+              <button
+                className="merge-drawings-button"
+                type="button"
+                aria-label="将选中涂鸦合并为图片"
+                title="合并后会生成可连接参考图输入的图片素材节点"
+                disabled={selectedDrawingIds.size === 0 || mergingDrawings}
+                onClick={() => void mergeSelectedDrawings()}
+              >
+                <Combine size={15} />
+                <span>
+                  {mergingDrawings
+                    ? "合并中"
+                    : selectedDrawingIds.size > 0
+                      ? `合并 ${selectedDrawingIds.size} 笔`
+                      : "合并为图片"}
+                </span>
+              </button>
+            </div>
+            <div className="toolbar-group canvas-toolbar-segment" data-group="actions">
+              <button className="button small canvas-locate-button" type="button" aria-label="定位所选节点" disabled={!selectedId} title={`定位：${selectedNode?.data.label ?? "所选节点"}（L）`} onClick={() => { if (selectedId) locateCanvasNode(selectedId); }}><ScanLine size={14} /><span>定位所选</span></button>
+              <button
+                className="button small canvas-tidy-button"
+                type="button"
+                onClick={tidyCanvasLayout}
+                disabled={nodes.length < 2 || layoutAnimating}
+                aria-label="一键整理画布"
+                title={`${selectedCanvasNodes.length >= 2 ? `整理所选（${selectedCanvasNodes.length}）` : "整理画布"}（O）`}
+              >
+                <LayoutGrid size={13} />
+                <span>一键整理</span>
+              </button>
+              <button
+                className="button small canvas-group-button"
+                type="button"
+                onClick={
+                  selectedHasGroup
+                    ? ungroupSelectedNodes
+                    : groupSelectedNodes
+                }
+                disabled={
+                  selectedHasGroup
+                    ? false
+                    : selectedCanvasNodes.length < 2
+                }
+                aria-label={selectedHasGroup ? "解组所选节点" : "将所选节点打组"}
+                title={
+                  selectedHasGroup
+                    ? "解组所选节点（Ctrl+Shift+G）"
+                    : "将至少两个所选节点放入一个视觉分组（Ctrl+G）"
+                }
+              >
+                <Combine size={13} />
+                <span>{selectedHasGroup ? "解组" : "打组"}</span>
+              </button>
+            </div>
+          </div>
+  ), [canvasMode, drawingTool, changeCanvasMode, activateDrawingTool, brushColor, brushSize,
+    selectedDrawingIds.size, mergingDrawings, mergeSelectedDrawings, selectedId, selectedNode?.data.label,
+    locateCanvasNode, tidyCanvasLayout, nodes.length, layoutAnimating, selectedCanvasNodes.length,
+    selectedHasGroup, groupSelectedNodes, ungroupSelectedNodes, canvasOcclusionStyle]);
+  const canvasControls = useMemo(() => (
+<Controls
+              showZoom={false}
+              showInteractive={false}
+              showFitView={false}
+            >
+              <button className="react-flow__controls-button" type="button" onClick={() => void reactFlowRef.current?.zoomOut({ duration: canvasMotionEnabled() ? 120 : 0 })} title="缩小" aria-label="Zoom Out"><Minus size={14} /></button>
+              <button className="canvas-zoom-value" type="button" onClick={fitViewToCanvas} title="适应画布 (F)" aria-label="缩放比例，点击适应画布">{Math.round(viewport.zoom * 100)}%</button>
+              <button className="react-flow__controls-button" type="button" onClick={() => void reactFlowRef.current?.zoomIn({ duration: canvasMotionEnabled() ? 120 : 0 })} title="放大" aria-label="Zoom In">+</button>
+              <button className="react-flow__controls-button react-flow__controls-fitview" type="button" onClick={fitViewToCanvas} title="适应全部（F）" aria-label="Fit View"><Maximize size={14} /></button>
+              <button className="react-flow__controls-button" type="button" title={showMinimap ? "收起小地图" : "显示小地图"} aria-label="小地图" aria-pressed={showMinimap} onClick={() => setShowMinimap((shown) => !shown)}><MapIcon size={14} /></button>
+              <button className="react-flow__controls-button" type="button" title="显示连线" aria-label="显示连线" aria-pressed={showConnections} onClick={() => setShowConnections((shown) => !shown)}><GitBranch size={14} /></button>
+              <button className="react-flow__controls-button" type="button" title={showEffects ? "暂停画布动效" : "开启画布动效"} aria-label="画布动效" aria-pressed={showEffects} onClick={toggleEffects}><WandSparkles size={14} /></button>
+            </Controls>
+  ), [viewport.zoom, fitViewToCanvas, showMinimap, showConnections, showEffects, toggleEffects]);
+
+  const islandTasks = useMemo(() => collectIslandTasks(contentNodes, nodeRunStatuses, nodeRunPresentation, emptyIslandRunSnapshots), [contentNodes, nodeRunStatuses, nodeRunPresentation]);
+  const openIslandTask = useCallback((task: IslandTask) => {
+    locateCanvasNode(task.nodeId);
+    if (failedIslandStatuses.has(task.status)) setRunHistoryOpen(true);
+  }, [locateCanvasNode]);
+  const openIslandTaskCenter = useCallback(() => setRunHistoryOpen(true), []);
+  const handleIslandSaveIssue = useCallback(() => {
+    if (saveConflict) setSaveConflictOpen(true);
+    else if (saveState === "error") void saveNow().catch(() => undefined);
+  }, [saveConflict, saveState, saveNow]);
+
+  const canvasChrome = useMemo(() => (
+<CanvasChrome
+        project={<>
+<button className="icon-button editor-home" type="button" aria-label="返回主界面" title={initialization.status === "error" ? "返回主界面" : "保存并返回主界面"} disabled={leaving || initialization.status === "loading"} onClick={() => void leaveCanvas(() => router.push("/"))}>
           <ArrowLeft size={18} />
         </button>
         <div className="brand">
           <span className="brand-mark">✦</span>
-          <span className="editor-project-title" title={title}><ReadableName text={title} /></span>
+          <button className="editor-project-title" type="button" title={`${title} · 点击重命名`} aria-label="重命名当前画布" onClick={event => { const project = projects.find(item => item.id === projectId); if (project) setRenameAction({ mode: "rename", project, returnFocus: event.currentTarget }); }}><ReadableName text={title} /></button>
           <span className="brand-version">节点 {nodes.length} <span aria-hidden="true">·</span> 连线 {edges.length}</span>
         </div>
-        <nav className="top-create-actions" aria-label="生成工具">
-          <button
-            className="top-create-action"
-            type="button"
-            onClick={openGraphicDesign}
-            disabled={initialization.status !== "ready"}
-            title="制作海报、宣传图和活动物料"
-          >
-            <Palette size={14} />
-            <span>平面设计</span>
-          </button>
-          <button
-            className="top-create-action"
-            type="button"
-            onClick={() => addNewNode("image-generation")}
-            disabled={initialization.status !== "ready" || !connectionsSettled || leaving}
-            title="新建图片生成节点"
-          >
-            <WandSparkles size={14} />
-            <span>图片生成</span>
-          </button>
-          <button
-            className="top-create-action"
-            type="button"
-            onClick={() => addNewNode("video-generation")}
-            disabled={initialization.status !== "ready" || !connectionsSettled || leaving}
-            title="新建视频生成节点"
-          >
-            <Video size={14} />
-            <span>视频生成</span>
-          </button>
-          <button
-            className="top-create-action"
-            type="button"
-            onClick={() => setHistoryOpen(true)}
-            title="查看历史生成"
-          >
-            <History size={14} />
-            <span>历史生成</span>
-          </button>
-        </nav>
-        <div className="top-actions">
-          <button className="canvas-command-trigger" type="button" aria-label="搜索操作与节点" title="搜索操作与节点 (Ctrl+K)" disabled={initialization.status !== "ready" || leaving} onClick={() => { flushPendingEditorEdits(); setCommandMenuOpen(true); }}>
-            <Search size={15} /><span>搜索操作 / 节点</span><kbd>Ctrl K</kbd>
-          </button>
-          <button className="button small project-files-button" type="button" onClick={openProjectFiles}
-            disabled={initialization.status !== "ready"} title="在页面内查看当前项目的成品和草稿文件" aria-label="打开项目文件">
-            <FolderOpen size={14} /><span>项目文件</span>
-          </button>
-          <button
-            className="icon-button project-toggle"
-            type="button"
-            onClick={() => setMobileProjectsOpen((open) => !open)}
-            aria-label="打开画布列表"
-            title="画布列表"
-          >
-            <MessageSquarePlus size={15} />
-          </button>
-          <button
-            className="icon-button library-toggle"
-            type="button"
-            onClick={() => setMobileLibraryOpen(true)}
-            aria-label="打开节点与素材库"
-            title="节点与素材库"
-          >
-            <FolderOpen size={15} />
-          </button>
+        </>}
+        command={<DynamicIsland tasks={islandTasks} ready={initialization.status === "ready"} saveState={saveState} submitting={busy} onTask={openIslandTask} onTaskCenter={openIslandTaskCenter} onSaveIssue={handleIslandSaveIssue} />}
+        actions={<div className="top-actions">
+          <button className="icon-button canvas-command-trigger" type="button" aria-label="搜索操作与节点" title="搜索操作与节点 (Ctrl+K)" disabled={initialization.status !== "ready" || leaving} onClick={() => { flushPendingEditorEdits(); setCommandMenuOpen(true); }}><Search size={15} /></button>
           <button
             className="icon-button inspector-toggle"
             type="button"
+            onPointerEnter={() => { void preloadAgentPanel(); }}
+            onFocus={() => { void preloadAgentPanel(); }}
             onClick={() => {
               setMobileInspectorOpen((open) => !open);
             }}
@@ -9421,8 +10013,7 @@ function CanvasShell({
                       : "running"
               }`}
             />
-            {SAVE_STATE_LABEL[saveState]}
-            {draftStorageError && saveState !== "saved" ? " · 本地草稿不可用" : ""}
+            <span className="save-state-text">{SAVE_STATE_LABEL[saveState]}{draftStorageError && saveState !== "saved" ? " · 本地草稿不可用" : ""}</span>
           </button>
           {runSyncError ? (
             <button
@@ -9432,9 +10023,9 @@ function CanvasShell({
               title="暂时无法读取任务状态，已保留现有任务；点击重新查询"
               onClick={() => window.dispatchEvent(new Event("canvas-reconcile-tasks"))}
             >
-              <CircleAlert size={14} /> 状态同步失败 · 重试
+              <CircleAlert size={14} /><span className="save-state-text">状态同步失败 · 重试</span>
             </button>
-          ) : busy ? <span className="pill task-state"><span className="node-status running" />任务运行中</span> : null}
+          ) : null}
           <button
             className="icon-button"
             type="button"
@@ -9456,33 +10047,13 @@ function CanvasShell({
             <Redo2 size={14} />
           </button>
           <button
-            className="icon-button"
-            type="button"
-            onClick={() => setShortcutsOpen(true)}
-            aria-label="键盘快捷键"
-            title="键盘快捷键 (?)"
-          >
-            <Keyboard size={14} />
-          </button>
-          <input
-            ref={importInput}
-            type="file"
-            accept={`application/json,application/zip,.json,${PROJECT_PACKAGE_EXTENSION}`}
-            disabled={projectImportBusy || busy}
-            hidden
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) void importProject(file);
-              event.currentTarget.value = "";
-            }}
-          />
-          <button
             className="button api-settings-button small"
             type="button"
             onClick={() => setSettingsOpen(true)}
+            aria-label="API 设置"
             title="配置生图与生视频 API"
           >
-            <KeyRound size={13} /> API 设置
+            <KeyRound size={13} /><span className="api-settings-label">API 设置</span>
           </button>
           <button className="button primary editor-run" type="button" onClick={runAll} disabled={nodes.length === 0 || busy || leaving}>
             <Play size={14} /> 运行全部
@@ -9497,8 +10068,25 @@ function CanvasShell({
           >
             <MoreHorizontal size={16} />
           </button>
-        </div>
-      </header>
+
+        </div>}
+      />
+  ), [title, nodes.length, edges.length, projects, projectId, initialization.status, leaving,
+    mobileInspectorOpen, saveState, saveConflict, draftStorageError, runSyncError, busy,
+    historyAvailability.undo, historyAvailability.redo, projectMenuOpen,
+    islandTasks, openIslandTask, openIslandTaskCenter, handleIslandSaveIssue,
+    leaveCanvas, redo, router, runAll, saveNow, undo]);
+
+  return (
+    <AgentCanvasContext.Provider value={agentCanvasBridge}>
+      {agentMutation && <div role="status" className={feedbackStyles.overlay}>
+        <div className={feedbackStyles.card}><div className={feedbackStyles.progress}>
+          <span className={feedbackStyles.spinner} aria-hidden="true" />
+          <span>正在保存并核对画布…</span>
+        </div></div>
+      </div>}
+    <div inert={agentMutation} data-minimap={showMinimap} className={`shell canvas-editor ${showEffects ? "" : "motion-disabled"} ${leaving ? "is-leaving" : ""}`} style={{ "--inspector-width": `${inspectorWidth}px` } as CSSProperties}>
+      {canvasChrome}
       {projectMenuOpen ? (
         <>
           <button
@@ -9508,6 +10096,13 @@ function CanvasShell({
             onClick={() => setProjectMenuOpen(false)}
           />
           <div className="project-menu" role="menu" aria-label="项目操作">
+            <div className="project-menu-theme" role="none"><ThemeControl compact /></div>
+            <div className="project-menu-divider" />
+            <button type="button" role="menuitem" onClick={() => { setProjectMenuOpen(false); flushPendingEditorEdits(); setCommandMenuOpen(true); }}><Search size={14} />搜索节点与操作<span className="project-menu-hint">Ctrl+K</span></button>
+            <button type="button" role="menuitem" onClick={() => { setProjectMenuOpen(false); setMobileInspectorOpen(open => !open); }}><Bot size={14} />智能体</button>
+            <button type="button" role="menuitem" onClick={() => { setProjectMenuOpen(false); setSettingsOpen(true); }}><KeyRound size={14} />API 设置</button>
+            <button type="button" role="menuitem" aria-label="打开项目文件" onClick={() => { setProjectMenuOpen(false); openProjectFiles(); }}><FolderOpen size={14} />项目文件</button>
+            <button type="button" role="menuitem" aria-label="键盘快捷键" onClick={() => { setProjectMenuOpen(false); setShortcutsOpen(true); }}><Keyboard size={14} />键盘快捷键<span className="project-menu-hint">?</span></button>
             <button
               type="button"
               role="menuitem"
@@ -9612,7 +10207,7 @@ function CanvasShell({
         </>
       ) : null}
       <main
-        className={`workspace ${mobileInspectorOpen ? "inspector-open" : ""} ${inspectorResizing ? "inspector-resizing" : ""}`}
+        className={`workspace ${inspectorResizing ? "inspector-resizing" : ""}`}
         style={
           {
             "--inspector-width": `${inspectorWidth}px`,
@@ -9621,7 +10216,7 @@ function CanvasShell({
           } as CSSProperties
         }
       >
-        {mobileInspectorOpen || mobileLibraryOpen || mobileProjectsOpen ? (
+        {!mobileInspectorOpen && (mobileLibraryOpen || mobileProjectsOpen) ? (
           <button
             className="mobile-backdrop"
             type="button"
@@ -9634,6 +10229,8 @@ function CanvasShell({
           />
         ) : null}
         <nav className="editor-rail" aria-label="创作工具">
+          <AddNodeMenu disabled={initialization.status !== "ready" || leaving} generationDisabled={!connectionsSettled} onAdd={addNewNode} onAssets={() => { setMobileLibraryOpen(true); setMobileProjectsOpen(false); }} />
+          <button type="button" title="画布列表" aria-label="打开画布列表" aria-pressed={mobileProjectsOpen} onClick={() => { setMobileProjectsOpen(open => !open); setMobileLibraryOpen(false); }}><LayoutGrid size={20} /><span>画布列表</span></button>
           <button type="button" title="海报、宣传图、活动物料" aria-label="打开平面设计" disabled={initialization.status !== "ready"} onClick={openGraphicDesign}><Palette size={20} /><span>设计</span></button>
           <button type="button" title="图片生成" aria-label="新建图片节点" disabled={initialization.status !== "ready" || !connectionsSettled || leaving} onClick={() => addNewNode("image-generation")}><ImageIcon size={20} /><span>图片</span></button>
           <button type="button" title="视频生成" aria-label="新建视频节点" disabled={initialization.status !== "ready" || !connectionsSettled || leaving} onClick={() => addNewNode("video-generation")}><Video size={20} /><span>视频</span></button>
@@ -9655,15 +10252,12 @@ function CanvasShell({
           onLeftModeChange={setLeftSidebarMode}
           connections={connections}
           assets={assets}
-          nodes={nodes}
+          nodes={contentNodes}
           canvasId={canvasId ?? ""}
           selectedNode={selectedNode}
           selectedPrompt={selectedGeneratedPrompt}
           draftRequest={agentDraftRequest}
-          onManageApi={(group) => {
-            setSettingsInitialCangyuanGroup(group ?? null);
-            setSettingsOpen(true);
-          }}
+          onManageApi={manageAgentApi}
           onSelectProject={(nextId) => {
             void leaveCanvas(() => onSelectProject(nextId));
           }}
@@ -9676,27 +10270,7 @@ function CanvasShell({
             await onOpenProjectFolder(nextId);
             showToast("已打开项目文件夹", "success");
           }}
-          onRenameProject={async (nextId, nextTitle) => {
-            if (nextId === canvasId) {
-              await saveNow();
-              await waitForCanvasSaves(nextId);
-              if (!instanceActive.current) throw new Error("画布已关闭，请在首页重命名");
-              saveSuspended.current = true;
-            }
-            try {
-              return await trackCanvasSave(nextId, (async () => {
-                const result = await onRenameProject(nextId, nextTitle);
-                if (instanceActive.current && nextId === canvasId) {
-                  canvasRevision.current = result.revision;
-                  setTitle(result.project.title);
-                }
-                if (instanceActive.current) showToast("项目与文件夹已同步重命名", "success");
-                return result;
-              })());
-            } finally {
-              if (nextId === canvasId) saveSuspended.current = false;
-            }
-          }}
+          onRenameProject={renameCanvasProject}
           onDeleteProject={async (nextId) => {
             if (nextId === canvasId) {
               await saveNow();
@@ -9717,7 +10291,7 @@ function CanvasShell({
             className="icon-button mobile-panel-close mobile-only"
             type="button"
             onClick={() => setMobileLibraryOpen(false)}
-            aria-label="关闭素材库"
+            aria-label="关闭节点库"
           >
             <X size={15} />
           </button>
@@ -9849,7 +10423,9 @@ function CanvasShell({
         </aside> : null}
         <section
           ref={canvasWrapRef}
-          className={`canvas-wrap ${dropActive ? "drop-active" : ""} ${showConnections ? "" : "connections-hidden"} ${showEffects ? "" : "effects-paused"} ${viewport.zoom < .55 ? "low-detail" : ""}`}
+          className={`canvas-wrap ${layoutAnimating ? "is-layout-animating" : ""} ${dropActive ? "drop-active" : ""} ${showConnections ? "" : "connections-hidden"} ${showEffects ? "" : "effects-paused"} ${viewport.zoom < .55 ? "low-detail" : ""}`}
+          style={{ "--connection-color": `var(--port-${connectingFrom?.kind.replace(/\[\]$/u, "") ?? "text"}, var(--accent))` } as CSSProperties}
+          onPointerDownCapture={() => layoutAnimationRef.current?.finish()}
           onDragEnterCapture={onCanvasDragOver}
           onDragOverCapture={onCanvasDragOver}
           onDragLeaveCapture={(event) => {
@@ -9858,200 +10434,16 @@ function CanvasShell({
           }}
           onDropCapture={(event) => void onCanvasDrop(event)}
         >
-          <CanvasPointerTrail enabled={showEffects && canvasMode === "pan" && !connectingFrom} />
-          <div className={`canvas-toolbar ${canvasMode === "draw" ? "is-drawing" : ""} ${canvasMode === "select-drawing" ? "is-selecting-drawing" : ""}`}>
-            <div className="toolbar-group">
-              {selectedId ? <button className="button small canvas-locate-button" type="button" aria-label="定位所选节点" title={`定位：${selectedNode?.data.label ?? "所选节点"}`} onClick={() => locateCanvasNode(selectedId)}><ScanLine size={14} /><span>定位所选</span></button> : null}
-              <button
-                className="button small canvas-tidy-button"
-                type="button"
-                onClick={tidyCanvasLayout}
-                disabled={nodes.length < 2}
-                aria-label="一键整理画布"
-                title="先整理每组相连的工作流，再整齐排列互不相连的工作流"
-              >
-                <LayoutGrid size={13} />
-                <span>一键整理</span>
-              </button>
-              <button
-                className="button small canvas-group-button"
-                type="button"
-                onClick={
-                  selectedHasGroup
-                    ? ungroupSelectedNodes
-                    : groupSelectedNodes
-                }
-                disabled={
-                  selectedHasGroup
-                    ? false
-                    : selectedCanvasNodes.length < 2
-                }
-                aria-label={selectedHasGroup ? "解组所选节点" : "将所选节点打组"}
-                title={
-                  selectedHasGroup
-                    ? "解组所选节点（Ctrl+Shift+G）"
-                    : "将至少两个所选节点放入一个视觉分组（Ctrl+G）"
-                }
-              >
-                <Combine size={13} />
-                <span>{selectedHasGroup ? "解组" : "打组"}</span>
-              </button>
-            </div>
-            <div
-              className="canvas-drawing-tools"
-              role="toolbar"
-              aria-label="画布绘图工具"
-            >
-              <button
-                className={canvasMode === "pan" ? "active" : ""}
-                type="button"
-                aria-label="抓手模式"
-                aria-pressed={canvasMode === "pan"}
-                title="抓手：拖动画布和操作节点"
-                onClick={() => changeCanvasMode("pan")}
-              >
-                <Hand size={15} />
-                <span>抓手</span>
-              </button>
-              <button
-                className={
-                  canvasMode === "draw" && drawingTool === "freehand"
-                    ? "active"
-                    : ""
-                }
-                type="button"
-                aria-label="画笔模式"
-                aria-pressed={
-                  canvasMode === "draw" && drawingTool === "freehand"
-                }
-                title="画笔：绘制自由、不规则涂鸦"
-                onClick={() => activateDrawingTool("freehand")}
-              >
-                <Pencil size={15} />
-                <span>画笔</span>
-              </button>
-              <span className="canvas-drawing-tools-divider" />
-              <span className="canvas-shape-label">形状</span>
-              <button
-                className={
-                  canvasMode === "draw" && drawingTool === "rectangle"
-                    ? "active shape-tool"
-                    : "shape-tool"
-                }
-                type="button"
-                aria-label="矩形工具"
-                aria-pressed={
-                  canvasMode === "draw" && drawingTool === "rectangle"
-                }
-                title="矩形：拖拽绘制矩形"
-                onClick={() => activateDrawingTool("rectangle")}
-              >
-                <Square size={15} />
-              </button>
-              <button
-                className={
-                  canvasMode === "draw" && drawingTool === "ellipse"
-                    ? "active shape-tool"
-                    : "shape-tool"
-                }
-                type="button"
-                aria-label="椭圆工具"
-                aria-pressed={
-                  canvasMode === "draw" && drawingTool === "ellipse"
-                }
-                title="椭圆：拖拽绘制圆形或椭圆"
-                onClick={() => activateDrawingTool("ellipse")}
-              >
-                <Circle size={15} />
-              </button>
-              <button
-                className={
-                  canvasMode === "draw" && drawingTool === "line"
-                    ? "active shape-tool"
-                    : "shape-tool"
-                }
-                type="button"
-                aria-label="直线工具"
-                aria-pressed={canvasMode === "draw" && drawingTool === "line"}
-                title="直线：拖拽绘制直线"
-                onClick={() => activateDrawingTool("line")}
-              >
-                <Minus size={16} />
-              </button>
-              <button
-                className={
-                  canvasMode === "draw" && drawingTool === "arrow"
-                    ? "active shape-tool"
-                    : "shape-tool"
-                }
-                type="button"
-                aria-label="箭头工具"
-                aria-pressed={canvasMode === "draw" && drawingTool === "arrow"}
-                title="箭头：拖拽绘制指向箭头"
-                onClick={() => activateDrawingTool("arrow")}
-              >
-                <ArrowUpRight size={16} />
-              </button>
-              <span className="canvas-drawing-tools-divider" />
-              <button
-                className={canvasMode === "select-drawing" ? "active" : ""}
-                type="button"
-                aria-label="选择涂鸦"
-                aria-pressed={canvasMode === "select-drawing"}
-                title="点击或框选涂鸦，按 Ctrl 可多选；选中后可直接拖动"
-                onClick={() => changeCanvasMode("select-drawing")}
-              >
-                <MousePointer2 size={15} />
-                <span>选择</span>
-              </button>
-              <label className="canvas-brush-color" title="画笔颜色">
-                <span>颜色</span>
-                <input
-                  type="color"
-                  aria-label="画笔颜色"
-                  value={brushColor}
-                  onChange={(event) => setBrushColor(event.target.value)}
-                />
-              </label>
-              <label className="canvas-brush-size" title="画笔粗细">
-                <span>粗细</span>
-                <input
-                  type="range"
-                  aria-label="画笔粗细"
-                  min="1"
-                  max="48"
-                  step="1"
-                  value={brushSize}
-                  onChange={(event) => setBrushSize(Number(event.target.value))}
-                />
-                <output>{brushSize}px</output>
-              </label>
-              <button
-                className="merge-drawings-button"
-                type="button"
-                aria-label="将选中涂鸦合并为图片"
-                title="合并后会生成可连接参考图输入的图片素材节点"
-                disabled={selectedDrawingIds.size === 0 || mergingDrawings}
-                onClick={() => void mergeSelectedDrawings()}
-              >
-                <Combine size={15} />
-                <span>
-                  {mergingDrawings
-                    ? "合并中"
-                    : selectedDrawingIds.size > 0
-                      ? `合并 ${selectedDrawingIds.size} 笔`
-                      : "合并为图片"}
-                </span>
-              </button>
-            </div>
-          </div>
+          <div className="canvas-aurora" aria-hidden="true" />
+          <CanvasInteractionFeedback />
+          {canvasToolbar}
           <ReactFlow
             nodes={renderedNodes}
             edges={displayedEdges}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             connectionRadius={32}
-            connectionLineStyle={{ stroke: "#55dff3", strokeWidth: 2, strokeDasharray: "5 5" }}
+            connectionLineStyle={connectionLineStyle}
             onNodesChange={onNodesChangeWrapped}
             onEdgesChange={onEdgesChangeWrapped}
             onNodeDragStart={onNodeDragStart}
@@ -10061,47 +10453,28 @@ function CanvasShell({
             isValidConnection={isValidConnection}
             onPaneContextMenu={openCanvasMenu}
             onNodeContextMenu={openNodeMenu}
-            onPaneClick={() => {
-              useCanvasStore.setState((state) => {
-                const hasSelectedNodes = state.nodes.some(
-                  (node) => node.selected,
-                );
-                if (!hasSelectedNodes && state.selectedId === null) return {};
-                return {
-                  selectedId: null,
-                  nodes: state.nodes.map((node) =>
-                    node.selected ? { ...node, selected: false } : node,
-                  ),
-                };
-              });
-              if (window.matchMedia("(max-width: 1100px)").matches) setMobileInspectorOpen(false);
-              setConnectionMenu(null);
-              setCanvasMenu(null);
-              setNodeMenu(null);
-            }}
+            onPaneClick={onCanvasPaneClick}
             onNodeClick={dismissNodeMenu}
             onMoveStart={dismissNodeMenu}
-            onInit={(instance) => {
-              reactFlowRef.current = instance;
-              instance.setViewport(viewport);
-            }}
+            onInit={onFlowInit}
             onMoveEnd={onMoveEnd}
             fitView={false}
             minZoom={CANVAS_MIN_ZOOM}
             maxZoom={CANVAS_MAX_ZOOM}
             panOnDrag={canvasMode === "pan"}
-            nodesDraggable={canvasMode === "pan"}
-            nodesConnectable={canvasMode === "pan"}
-            elementsSelectable={canvasMode === "pan"}
+            nodesDraggable={canvasMode === "pan" || canvasMode === "select"}
+            nodesConnectable={canvasMode === "pan" || canvasMode === "select"}
+            elementsSelectable={canvasMode === "pan" || canvasMode === "select"}
+            selectionOnDrag={canvasMode === "select"}
             edgesFocusable
             // An open panel extends beyond the node's measured bounds. Keep it
             // mounted when panning its node offscreen to reach the lower fields.
-            onlyRenderVisibleElements={openConfigurationNodeIds.size === 0}
-            selectionKeyCode="Control"
+            onlyRenderVisibleElements={shouldCullCanvasNodes(nodes.length, openConfigurationNodeIds.size, legacyCanvasCullingRequested())}
+            selectionKeyCode={canvasMode === "select" ? null : "Control"}
             multiSelectionKeyCode="Control"
             selectionMode={SelectionMode.Partial}
             deleteKeyCode={null}
-            proOptions={{ hideAttribution: true }}
+            proOptions={reactFlowProOptions}
           >
             <ViewportPortal>
               <div className="canvas-group-layer" aria-label="节点分组">
@@ -10153,7 +10526,9 @@ function CanvasShell({
                 ))}
               </div>
             </ViewportPortal>
-            <Background gap={20} size={0.8} color="#303235" />
+            <CanvasEdgePalette edges={displayedEdges} />
+            <CanvasDotGrid />
+            <CanvasLevelOfDetail />
             <DrawingLayer
               drawings={drawings}
               activeStroke={activeStroke}
@@ -10161,26 +10536,17 @@ function CanvasShell({
               selectionStart={drawingSelectionStart}
               selectionEnd={drawingSelectionEnd}
             />
-            <Controls
-              showInteractive={false}
-              showFitView={false}
-            >
-              <button className="react-flow__controls-button react-flow__controls-fitview" type="button" onClick={fitViewToCanvas} title="Fit View" aria-label="Fit View"><Maximize size={14} /></button>
-              <button className="canvas-zoom-value" type="button" onClick={fitViewToCanvas} title="适应画布 (F)" aria-label="缩放比例，点击适应画布">{Math.round(viewport.zoom * 100)}%</button>
-              <button className="react-flow__controls-button" type="button" title={showMinimap ? "收起小地图" : "显示小地图"} aria-label="小地图" aria-pressed={showMinimap} onClick={() => setShowMinimap((shown) => !shown)}><MapIcon size={14} /></button>
-              <button className="react-flow__controls-button" type="button" title="显示连线" aria-label="显示连线" aria-pressed={showConnections} onClick={() => setShowConnections((shown) => !shown)}><GitBranch size={14} /></button>
-              <button className="react-flow__controls-button" type="button" title={showEffects ? "暂停画布动效" : "开启画布动效"} aria-label="画布动效" aria-pressed={showEffects} onClick={toggleEffects}><WandSparkles size={14} /></button>
-            </Controls>
+            {canvasControls}
             {showMinimap && <MiniMap
+              style={canvasOcclusionStyle}
               nodeColor={(node) =>
-                node.data?.nodeType === "video-generation"
-                  ? "#5de2c2"
-                  : "#9b8cff"
+                node.data?.generatedResult ? "var(--port-result)" : ({ prompt: "var(--port-text)", "asset-input": "var(--port-asset)", "image-generation": "var(--port-image)", "video-generation": "var(--port-video)", "music-generation": "var(--port-audio)" }[String(node.data?.nodeType)] ?? "var(--port-result)")
               }
             />}
           {/* Keep drawing below the controls in the same stacking context. */}
-          {canvasMode !== "pan" ? (
+          {canvasMode === "draw" || canvasMode === "select-drawing" ? (
             <div
+              ref={drawingLayerRef}
               className={`canvas-drawing-input-layer ${canvasMode}`}
               tabIndex={-1}
               aria-label={
@@ -10192,7 +10558,6 @@ function CanvasShell({
               onPointerMove={onDrawingPointerMove}
               onPointerUp={(event) => finishDrawingInteraction(event)}
               onPointerCancel={(event) => finishDrawingInteraction(event, true)}
-              onWheel={onDrawingWheel}
               onContextMenu={(event) => event.preventDefault()}
             />
           ) : null}
@@ -10241,14 +10606,6 @@ function CanvasShell({
                   disabled={!connectionsSettled || leaving}
                 >
                   <WandSparkles size={13} /> 新建图片生成
-                </button>
-                <button
-                  className="button small"
-                  type="button"
-                  onClick={() => addNewNode("video-generation")}
-                  disabled={!connectionsSettled || leaving}
-                >
-                  <Video size={13} /> 新建视频生成
                 </button>
                 <button
                   className="button small"
@@ -10484,7 +10841,7 @@ function CanvasShell({
                 inspectorWidth + (event.key === "ArrowLeft" ? 20 : -20),
               );
               setInspectorWidth(next);
-              window.localStorage.setItem(
+              writeUiPreference(
                 INSPECTOR_WIDTH_STORAGE_KEY,
                 String(next),
               );
@@ -10492,22 +10849,37 @@ function CanvasShell({
           />
           <div className="inspector-agent-content" id="inspector-agent-panel">
             <AgentPanel
+              visible={mobileInspectorOpen}
               connections={connections}
               assets={assets}
-              nodes={nodes}
+              nodes={contentNodes}
               canvasId={canvasId ?? ""}
               selectedNode={selectedNode}
               selectedPrompt={selectedGeneratedPrompt}
               draftRequest={agentDraftRequest}
-              onClose={() => setMobileInspectorOpen(false)}
-              onManageApi={(group) => {
-                setSettingsInitialCangyuanGroup(group ?? null);
-                setSettingsOpen(true);
-              }}
+              onClose={closeAgentInspector}
+              onManageApi={manageAgentApi}
             />
           </div>
         </aside>
       </main>
+      <CanvasParameterDeck cards={parameterCards} activeId={effectiveParameterId}
+        slots={wideParameterDeck && !mobileInspectorOpen && parameterCards.length > 1 ? 2 : 1} hidden={narrowParameterDeck && mobileInspectorOpen}
+        alongsideAgent={mobileInspectorOpen && !narrowParameterDeck} onClose={closeParameter} onFocus={focusParameter} register={registerParameterElement} />
+      {renameAction ? <ProjectActionDialog action={renameAction} onClose={() => setRenameAction(null)} onRename={async (id, nextTitle) => { await renameCanvasProject(id, nextTitle); }} onDelete={async () => {}} onCleanup={async () => {}} /> : null}
+          <input
+            ref={importInput}
+            type="file"
+            accept={`application/json,application/zip,.json,${PROJECT_PACKAGE_EXTENSION}`}
+            disabled={projectImportBusy || busy}
+            hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) void importProject(file);
+              event.currentTarget.value = "";
+            }}
+          />
+
       <CanvasCommandMenu open={commandMenuOpen} onClose={() => setCommandMenuOpen(false)} commands={canvasCommands} />
       {saveConflict ? (
         <CanvasSaveConflictModal
@@ -10574,7 +10946,7 @@ function CanvasShell({
           key={`${canvasId}:${graphicDesignSession.id}`}
           draftKey={graphicDesignSession.draftKey}
           assets={assets}
-          models={graphicDesignModels}
+          models={getGraphicDesignModels()}
           initialModelKey={graphicDesignSession.initialModelKey}
           initialBrief={graphicDesignSession.initialBrief}
           onClose={() => { if (!preparingGraphicDesign.current) setGraphicDesignSession(null); }}
@@ -10593,10 +10965,11 @@ function CanvasShell({
         onSaveReview={saveDesignReview}
         onContinueEditing={(assetId) => void continueEditingImage(assetId)}
         onDeleteAssets={deleteHistoricalAssets}
-        onPreview={(asset) => {
+        onPreview={(asset, orderedAssets) => {
           cancelPendingPreview();
           setHistoryOpen(false);
           setPreviewReturnsToHistory(true);
+          setPreviewSequence(orderedAssets ?? [asset]);
           setPreviewAsset(asset);
         }}
         onDropAsset={(assetId, screenPosition) => {
@@ -10608,6 +10981,17 @@ function CanvasShell({
             return;
           }
           placeAssetsOnCanvas([asset], flowPosition);
+          setHistoryOpen(false);
+        }}
+        onDropAssets={(assetIds, screenPosition) => {
+          const selectedIds = new Set(assetIds);
+          const items = assets.filter((asset) => selectedIds.has(asset.id));
+          const flowPosition = reactFlowRef.current?.screenToFlowPosition(screenPosition);
+          if (!items.length || !flowPosition) {
+            showToast("素材无法放入画布，请重试");
+            return;
+          }
+          placeAssetsOnCanvas(items, flowPosition);
           setHistoryOpen(false);
         }}
       />
@@ -10630,8 +11014,9 @@ function CanvasShell({
         }}
       />
       <AssetPreviewModal
-        key={previewAsset?.id ?? "no-preview"}
         asset={previewAsset}
+        orderedAssets={previewReturnsToHistory ? previewSequence : undefined}
+        onSelectAsset={setPreviewAsset}
         onEditMask={openImageMask}
         onClose={() => {
           cancelPendingPreview();
@@ -10674,7 +11059,7 @@ function CanvasShell({
         onApply={() => void runAppUpdateAction("apply")}
         onDefer={() => void runAppUpdateAction("defer")}
       />
-      {toast ? (
+      <div className="toast-stack">{toasts.map(toast => (
         <div
           key={toast.id}
           className={`toast toast-${toast.tone}`}
@@ -10689,16 +11074,17 @@ function CanvasShell({
             <Info aria-hidden="true" size={15} />
           )}
           <span className="toast-text">{toast.message}</span>
+          {toast.action && <button type="button" className="toast-action" onClick={() => { toast.action?.onClick(); dismissToast(toast.id); }}>{toast.action.label}</button>}
           <button
             className="toast-close"
             type="button"
-            onClick={dismissToast}
+            onClick={() => dismissToast(toast.id)}
             aria-label="关闭提示"
           >
             <X size={13} />
           </button>
         </div>
-      ) : null}
+      ))}</div>
     </div>
     </AgentCanvasContext.Provider>
   );

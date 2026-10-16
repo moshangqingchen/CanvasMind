@@ -30,6 +30,7 @@ import {
   loadGraphicDesignExtractionModels,
 } from "../lib/graphic-design-intake-client";
 import styles from "./graphic-design-studio.module.css";
+import { useDialogFocus } from "./use-dialog-focus";
 import { designBatchPrice } from "../lib/design-batch-price";
 import { createPortableProjectPackage } from "../lib/project-transfer";
 import { downloadBlob } from "../lib/blob-download";
@@ -299,8 +300,8 @@ export function GraphicDesignStudio(props: GraphicDesignStudioProps) {
   const [extractionReload, setExtractionReload] = useState(0);
   const busyRef = useRef(false);
   const submittedRef = useRef(false);
-  const dialogRef = useRef<HTMLElement>(null);
   const onCloseRef = useRef<() => void>(() => {});
+  const dialogRef = useDialogFocus(true, () => onCloseRef.current());
   const fileRef = useRef<HTMLInputElement>(null);
   const customerFileRef = useRef<HTMLInputElement>(null);
   const extractionAbortRef = useRef<AbortController | null>(null);
@@ -460,61 +461,6 @@ export function GraphicDesignStudio(props: GraphicDesignStudioProps) {
       window.removeEventListener("beforeunload", beforeUnload);
     };
   }, [brief, modelKey, storageKey, storageError]);
-
-  useEffect(() => {
-    const previous =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
-    const frame = requestAnimationFrame(() =>
-      dialogRef.current?.focus({ preventScroll: true }),
-    );
-    const keydown = (event: KeyboardEvent) => {
-      const dialog = dialogRef.current;
-      if (!dialog) return;
-      if (event.key === "Escape") {
-        event.preventDefault();
-        event.stopPropagation();
-        if (!busyRef.current) onCloseRef.current();
-      } else if (event.key === "Tab") {
-        const focusable = [
-          ...dialog.querySelectorAll<HTMLElement>(
-            "button:not(:disabled),input:not(:disabled):not([type='hidden']),select:not(:disabled),textarea:not(:disabled),summary,[tabindex='0']",
-          ),
-        ].filter(
-          (element) => element.getClientRects().length > 0 && !element.hidden,
-        );
-        const first = focusable[0];
-        const last = focusable.at(-1);
-        if (!first || !last) {
-          event.preventDefault();
-          dialog.focus();
-        } else if (
-          event.shiftKey &&
-          (document.activeElement === dialog ||
-            document.activeElement === first ||
-            !dialog.contains(document.activeElement))
-        ) {
-          event.preventDefault();
-          last.focus();
-        } else if (
-          !event.shiftKey &&
-          (document.activeElement === dialog ||
-            document.activeElement === last ||
-            !dialog.contains(document.activeElement))
-        ) {
-          event.preventDefault();
-          first.focus();
-        }
-      }
-    };
-    document.addEventListener("keydown", keydown, true);
-    return () => {
-      cancelAnimationFrame(frame);
-      document.removeEventListener("keydown", keydown, true);
-      if (previous?.isConnected) previous.focus({ preventScroll: true });
-    };
-  }, []);
 
   function update<K extends keyof GraphicDesignBrief>(
     key: K,
@@ -996,6 +942,7 @@ export function GraphicDesignStudio(props: GraphicDesignStudioProps) {
             type="button"
             className={styles.iconButton}
             aria-label="关闭平面设计"
+            title="关闭平面设计（Esc）"
             disabled={!!busy}
             onClick={() => onCloseRef.current()}
           >
@@ -1185,6 +1132,7 @@ export function GraphicDesignStudio(props: GraphicDesignStudioProps) {
                             className={styles.iconButton}
                             type="button"
                             aria-label={`移除客户图片 ${name}`}
+                            title={`移除客户图片 ${name}`}
                             onClick={() => removeCustomerImage(assetId)}
                           >
                             <Trash2 size={15} />
@@ -1631,6 +1579,7 @@ export function GraphicDesignStudio(props: GraphicDesignStudioProps) {
                           type="button"
                           className={styles.iconButton}
                           aria-label={`移除素材 ${asset?.name ?? reference.assetId}`}
+                          title={`移除素材 ${asset?.name ?? reference.assetId}`}
                           onClick={() =>
                             update(
                               "references",
@@ -1912,7 +1861,8 @@ export function GraphicDesignStudio(props: GraphicDesignStudioProps) {
                   已按自定义比例生成，其他尺寸选项暂时停用。
                 </p>
               )}
-              {invalidFormatIds.length > 0 && (
+              {!selectedModel && <p className={styles.hint}>先选择图片模型，再设置输出尺寸。</p>}
+              {selectedModel && invalidFormatIds.length > 0 && (
                 <div className={styles.inlineWarning}>
                   有 {invalidFormatIds.length} 种已选尺寸不受当前模型支持。
                   <button

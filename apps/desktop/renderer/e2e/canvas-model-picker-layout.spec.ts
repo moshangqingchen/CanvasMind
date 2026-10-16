@@ -151,7 +151,7 @@ test("模型菜单打开后缩窄视口仍在屏幕内，键盘可访问末项�
   await ui.picker.click();
   await expectAllOptionsVisible(ui.list);
   const beforeZoom = await page.getByRole("button", { name: "缩放比例，点击适应画布", exact: true }).innerText();
-  await page.locator(".react-flow__controls-zoomout").click();
+  await page.getByRole("button", { name: "Zoom Out", exact: true }).click();
   await expect(page.getByRole("button", { name: "缩放比例，点击适应画布", exact: true })).not.toHaveText(beforeZoom);
   await expectPanelClearOfTools(page, ui.panel);
   // Outside pointer actions intentionally close the model list. Reopen it to
@@ -162,7 +162,7 @@ test("模型菜单打开后缩窄视口仍在屏幕内，键盘可访问末项�
   const beforePan = await node.boundingBox();
   const pane = await page.locator(".react-flow__pane").boundingBox();
   expect(beforePan).not.toBeNull(); expect(pane).not.toBeNull();
-  const start = { x: pane!.x + pane!.width - 180, y: pane!.y + 110 };
+  const start = { x: pane!.x + 700, y: pane!.y + 300 };
   await page.mouse.move(start.x, start.y); await page.mouse.down();
   try { await page.mouse.move(start.x - 160, start.y, { steps: 12 }); }
   finally { await page.mouse.up(); }

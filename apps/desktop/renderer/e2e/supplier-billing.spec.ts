@@ -55,6 +55,7 @@ test("供应商管理独立刷新、失败保留数值、批量刷新且不触�
   const data = await fixture(page, request);
   await page.goto("/");
   await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+  await page.getByText("账号账务与生成方式", { exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "供应商与模型设置" });
   const billing = dialog.getByRole("region", { name: "供应商余额与消耗" });
   await expect(billing).toContainText("10 CNY"); await expect(billing).toContainText("3 CNY");
@@ -69,6 +70,7 @@ test("供应商管理独立刷新、失败保留数值、批量刷新且不触�
   await dialog.getByRole("button", { name: "刷新全部余额与消耗", exact: true }).click();
   await expect.poll(() => data.refreshes.length).toBe(4);
   await dialog.locator(".sm-supplier-item").filter({ hasText: "报价乙" }).click();
+  await dialog.getByText("账号账务与生成方式", { exact: true }).click();
   await expect(billing).toContainText("22 USD"); await expect(billing).not.toContainText("CNY");
   await expect(billing).toContainText("今日消耗 未读取");
   await page.screenshot({ path: info.outputPath("supplier-billing-desktop.png"), fullPage: true });
@@ -77,6 +79,65 @@ test("供应商管理独立刷新、失败保留数值、批量刷新且不触�
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: info.outputPath("supplier-billing-mobile.png"), fullPage: true });
   expect(data.forbidden).toEqual([]);
+});
+
+test("供应商后台重读期间仍可批量刷新已加载账务", async ({ page, request }, info) => {
+  const data = await fixture(page, request);
+  let holdReload = false;
+  let releaseReload!: () => void;
+  const reloadReleased = new Promise<void>(resolve => { releaseReload = resolve; });
+  const heldPaths = new Set<string>();
+  // Hold only the existing background list reload, never billing POSTs.
+  await page.route(/\/api\/(?:suppliers|providers)(?:\?.*)?$/, async route => {
+    if (holdReload && route.request().method() === "GET") {
+      heldPaths.add(new URL(route.request().url()).pathname);
+      await reloadReleased;
+    }
+    await route.fallback();
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "供应商与模型设置" });
+  const billing = dialog.getByRole("region", { name: "供应商余额与消耗" });
+  const batch = dialog.getByRole("button", { name: "刷新全部余额与消耗", exact: true });
+  await dialog.getByText("账号账务与生成方式", { exact: true }).click();
+  await expect(billing).toContainText("10 CNY");
+  const firstReload = page.waitForResponse(response =>
+    new URL(response.url()).pathname === "/api/suppliers" && response.request().method() === "GET");
+  await billing.getByRole("button", { name: "重新读取消耗" }).click();
+  await expect(billing).toContainText("今日消耗 0.4 CNY");
+  await (await firstReload).finished();
+  await expect(batch).toBeEnabled();
+
+  data.fail();
+  holdReload = true;
+  try {
+    await billing.getByRole("button", { name: "重新读取消耗" }).click();
+    await expect(billing).toContainText("今日消耗 0.4 CNY（上次）");
+    await expect.poll(() => [...heldPaths].sort()).toEqual(["/api/providers", "/api/suppliers"]);
+    await expect.poll(() => data.refreshes.length).toBe(2);
+    await info.attach("background-reload-window", { body: JSON.stringify({
+      heldPaths: [...heldPaths].sort(), billingPosts: data.refreshes.length,
+      batchDisabled: await batch.isDisabled(),
+    }), contentType: "application/json" });
+    // A loaded account list remains actionable while its background reload waits.
+    await expect(batch).toBeEnabled({ timeout: 2_000 });
+    await batch.click();
+    await expect.poll(() => data.refreshes.length).toBe(4);
+    expect(data.refreshes.slice(0, 2)).toEqual([data.suppliers[0]!.id, data.suppliers[0]!.id]);
+    expect(data.refreshes.slice(2).sort()).toEqual(data.suppliers.map(supplier => supplier.id).sort());
+    await expect(dialog.getByText("账务已读取 0/2 家；其他供应商请查看各自的读取状态", { exact: true })).toBeVisible();
+    await expect(billing).toContainText("9.6 CNY（上次）");
+    await expect(billing).toContainText("今日消耗 0.4 CNY（上次）");
+    await dialog.locator(".sm-supplier-item").filter({ hasText: "报价乙" }).click();
+    await dialog.getByText("账号账务与生成方式", { exact: true }).click();
+    await expect(billing).toContainText("22 USD（上次）");
+    await expect(billing).not.toContainText("CNY");
+    expect(data.forbidden).toEqual([]);
+  } finally {
+    holdReload = false;
+    releaseReload();
+  }
 });
 
 test("画布供应商选择显示对应报价余额，切换后刷新对应账号", async ({ page, request }, info) => {
@@ -105,6 +166,14 @@ test("画布供应商选择显示对应报价余额，切换后刷新对应账�
   await billing.getByRole("button", { name: "重新读取消耗" }).click();
   await expect(billing).toContainText("9.6 USD");
   await expect(billing).toContainText("今日消耗 0.4 USD");
+  // Closing removes this node's UI subscription; reopening must immediately
+  // select the current store snapshot without changing account or refreshing.
+  await panel.getByRole("button", { name: "关闭模型与参数面板", exact: true }).click();
+  await expect(panel).toHaveCount(0);
+  await page.getByRole("button", { name: "打开 账务测试 模型与参数", exact: true }).click();
+  await expect(panel.getByLabel("当前供应商报价")).toContainText("0.8 USD");
+  await expect(billing).toContainText("9.6 USD");
+  await expect(billing).toContainText("今日消耗 0.4 USD");
   expect(data.refreshes).toEqual([data.suppliers[1]!.id]); expect(data.forbidden).toEqual([]);
   await page.screenshot({ path: info.outputPath("canvas-supplier-billing.png"), fullPage: true });
 });
@@ -116,6 +185,7 @@ test("未提供今日消耗的站点保留字段并解释原因，刷新后可�
   await page.goto("/");
   await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
   const billing = page.getByRole("dialog", { name: "供应商与模型设置" }).getByRole("region", { name: "供应商余额与消耗" });
+  await page.getByText("账号账务与生成方式", { exact: true }).click();
   await expect(billing).toContainText("今日消耗 暂不支持");
   await expect(billing.getByRole("status")).toContainText("此站点暂不支持今日消耗查询");
   await billing.getByRole("button", { name: "重新读取消耗" }).click();
@@ -131,6 +201,7 @@ test("账务保留不同字段的币种与小额消耗，并说明来源和换�
   await page.goto("/");
   await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
   const billing = page.getByRole("dialog", { name: "供应商与模型设置" }).getByRole("region", { name: "供应商余额与消耗" });
+  await page.getByText("账号账务与生成方式", { exact: true }).click();
   await expect(billing).toContainText("余额 10 CNY");
   await expect(billing).toContainText("累计消耗 0.000001 USD");
   await expect(billing).toContainText("今日消耗 0.000002 USD");

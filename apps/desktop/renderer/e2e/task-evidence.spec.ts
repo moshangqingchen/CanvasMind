@@ -37,7 +37,6 @@ for (const scenario of ["unknown", "capacity"] as const) {
     if (scenario === "unknown") {
       await expect(result).toContainText("提交结果未知");
       await expect(result).toContainText("供应商任务号：未取得");
-      await expect(result.getByLabel("失败诊断")).toContainText("扣费待确认");
       await expect(result.getByRole("button", { name: /再次运行/ })).toHaveCount(0);
     } else {
       await expect(result).toContainText("已接单，任务失败");
@@ -47,6 +46,7 @@ for (const scenario of ["unknown", "capacity"] as const) {
     }
     await result.getByRole("button", { name: /查看 .* 来源/ }).click();
     const details = page.getByRole("dialog", { name: "结果来源与参数" });
+    if (scenario === "unknown") await expect(details.getByLabel("失败诊断")).toContainText("扣费待确认");
     await expect(details).toContainText("本地运行编号");
     await expect(details).toContainText("供应商任务号");
     if (scenario === "capacity") await expect(details.getByRole("button", { name: "复制供应商任务号" })).toBeVisible();

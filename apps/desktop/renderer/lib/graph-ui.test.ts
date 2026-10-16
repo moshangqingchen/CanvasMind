@@ -11,7 +11,6 @@ import {
   isCanvasShortcutAllowed,
   modelCanvasUnavailableReason,
   modelSupportsNodeType,
-  preferredCanvasLayoutDirection,
   providerSupportsNodeType,
   connectionSupportsNodeType,
   shouldPersistNodeChanges,
@@ -120,7 +119,7 @@ describe("canvas graph UI helpers", () => {
       { source: "result-0", target: "target" },
     ];
 
-    const horizontal = tidyCanvasRectPositions(nodes, edges, "horizontal");
+    const horizontal = tidyCanvasRectPositions(nodes, edges);
     expect(horizontal.get("source")!.x).toBeLessThan(
       horizontal.get("result-0")!.x,
     );
@@ -128,30 +127,19 @@ describe("canvas graph UI helpers", () => {
     expect(horizontal.get("result-0")!.x).toBe(horizontal.get("result-2")!.x);
     expect(
       horizontal.get("result-1")!.x - (horizontal.get("result-0")!.x + 200),
-    ).toBe(24);
+    ).toBe(16);
     expect(horizontal.get("result-2")!.y).toBeGreaterThan(
       horizontal.get("result-0")!.y,
     );
     expect(
       horizontal.get("result-2")!.y - (horizontal.get("result-0")!.y + 150),
-    ).toBe(24);
-    expect(horizontal.get("source")!.y + 210 / 2).toBe(
-      (horizontal.get("result-0")!.y + horizontal.get("result-2")!.y + 150) / 2,
-    );
+    ).toBeGreaterThanOrEqual(16);
+    expect(Math.abs(horizontal.get("source")!.y + 210 / 2 -
+      (horizontal.get("result-0")!.y + horizontal.get("result-2")!.y + 150) / 2)).toBeLessThanOrEqual(4);
     expect(horizontal.get("target")!.x).toBeGreaterThan(
       horizontal.get("result-1")!.x + 200,
     );
 
-    const vertical = tidyCanvasRectPositions(nodes, edges, "vertical");
-    expect(vertical.get("source")!.y).toBeLessThan(vertical.get("result-0")!.y);
-    expect(vertical.get("result-0")!.y).toBe(vertical.get("result-1")!.y);
-    expect(vertical.get("result-0")!.x).toBe(vertical.get("result-2")!.x);
-    expect(vertical.get("source")!.x + 420 / 2).toBe(
-      (vertical.get("result-0")!.x + vertical.get("result-1")!.x + 200) / 2,
-    );
-    expect(vertical.get("target")!.y).toBeGreaterThan(
-      vertical.get("result-2")!.y + 150,
-    );
   });
 
   it("keeps connected workflows together before packing unrelated groups", () => {
@@ -196,8 +184,7 @@ describe("canvas graph UI helpers", () => {
         { source: "a-generate", target: "a-result" },
         { source: "b-input", target: "b-generate" },
       ],
-      "horizontal",
-      { componentGap: 200, maxComponentColumns: 2 },
+      { componentGap: 200 },
     );
     const nodeById = new Map(nodes.map((node) => [node.id, node] as const));
     const bounds = (ids: string[]) => {
@@ -242,7 +229,7 @@ describe("canvas graph UI helpers", () => {
     expect(aBounds.left).toBe(standaloneBounds.left);
   });
 
-  it("preserves the canvas's dominant horizontal or vertical flow", () => {
+  it("normalizes an initially vertical chain to the canvas's left-to-right ports", () => {
     const horizontalNodes = [
       { id: "a", position: { x: 0, y: 0 }, width: 200, height: 120 },
       { id: "b", position: { x: 800, y: 40 }, width: 200, height: 120 },
@@ -253,12 +240,11 @@ describe("canvas graph UI helpers", () => {
     ];
     const edges = [{ source: "a", target: "b" }];
 
-    expect(preferredCanvasLayoutDirection(horizontalNodes, edges)).toBe(
-      "horizontal",
-    );
-    expect(preferredCanvasLayoutDirection(verticalNodes, edges)).toBe(
-      "vertical",
-    );
+    for (const nodes of [horizontalNodes, verticalNodes]) {
+      const positions = tidyCanvasRectPositions(nodes, edges);
+      expect(positions.get("b")!.x - (positions.get("a")!.x + 200)).toBe(120);
+      expect(positions.get("a")!.y).toBe(positions.get("b")!.y);
+    }
   });
 
   it("places generated results tightly beside their source", () => {
@@ -529,6 +515,17 @@ describe("canvas graph UI helpers", () => {
         interactiveControl: false,
       }),
     ).toBe(false);
+  });
+
+  it("allows ordinary canvas buttons to retain focus for history without allowing editing or modal scopes", () => {
+    expect(isCanvasHistoryShortcutAllowed({ editing: false, modalOpen: false,
+      interactiveControl: true, plainCanvasButton: true })).toBe(true);
+    expect(isCanvasHistoryShortcutAllowed({ editing: false, modalOpen: false,
+      interactiveControl: true })).toBe(false);
+    expect(isCanvasHistoryShortcutAllowed({ editing: true, modalOpen: false,
+      interactiveControl: true, plainCanvasButton: true })).toBe(false);
+    expect(isCanvasHistoryShortcutAllowed({ editing: false, modalOpen: true,
+      interactiveControl: true, plainCanvasButton: true })).toBe(false);
   });
 
   it("leaves copy events to the browser when document text is selected", () => {

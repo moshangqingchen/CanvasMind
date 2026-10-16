@@ -18,21 +18,31 @@ const automatic: ModelDescriptor = { id, name: `${id} · ￥ 0.205 / 请求`, op
   metadata: { priceLabel: "￥ 0.205 / 请求", officialCatalogPricing: { unitAmount: .205 }, userParameter: "preserve" } };
 
 describe("Chentu current catalog and quote refresh", () => {
-  it("keeps new empty vip and all four exact WAN IDs visible without inventing a generation contract", () => {
+  it("keeps empty vip and all four WAN IDs with the merged documented contract while withholding conflicted currency estimates", () => {
     const current = chentuCatalogFromPricing(fixture.chentu);
     expect(current.marketplaceGroups.find(g => g.id === "vip")?.models).toEqual([]);
     const wan = current.marketplaceGroups.find(g => g.id === group)!;
     expect(wan.models.map(m => m.id).sort()).toEqual(["wan3.0-video-prime", "wan3.0-image-prime", "wan3.0-video", "wan3.0-image"].sort());
     const resolved = resolveChentuScannedGroup(current, group, wan.models.map(m => m.id));
-    expect(resolved.canvasModels).toEqual([]);
+    expect(resolved.canvasModels.map(model => model.id).sort()).toEqual(wan.models.map(model => model.id).sort());
     expect(resolved.canvasDisplayModels).toHaveLength(4);
     for (const model of resolved.canvasDisplayModels) {
       expect(model.pricing).toBeUndefined();
-      expect(model.parameters).toBeUndefined();
-      expect(model.metadata).toMatchObject({ canvasRunnable: false, chentuCurrencyConflict: true, chentuPriceCheckedAt: current.checkedAt });
+      expect(model.parameters?.map(parameter => parameter.key)).toEqual(["duration", "aspect_ratio", "resolution"]);
+      expect(model.parameters?.find(parameter => parameter.key === "duration")).toMatchObject({ min: 1, allowCustomValue: true });
+      expect(model.parameters?.find(parameter => parameter.key === "duration")?.max).toBeUndefined();
+      expect(model.parameters?.find(parameter => parameter.key === "resolution")?.options?.map(option => option.value)).toEqual(["480P", "720P", "1080P"]);
+      expect(model.metadata).toMatchObject({ canvasRunnable: true, chentuCurrencyConflict: true, supplierPriceConflict: true,
+        chentuPriceCheckedAt: current.checkedAt, protocol: "openai-videos", protocolEvidence: "supplier-documentation",
+        endpointPath: "/v1/videos", generationVerified: false, durationRangeUnverified: true });
       expect(model.metadata?.priceLabel).toContain("$");
-      expect(model.operations).toContain("video.generate");
+      expect(model.operations).toEqual(model.id.includes("-image") ? ["video.image-to-video"] : ["video.generate", "video.image-to-video"]);
       expect(model.metadata?.catalogCapability).toBe("video");
+      expect(model.inputKinds).toEqual(["text", "image", "image[]"]);
+      expect(model.limits).toMatchObject({ maxInputVideos: 0, maxInputAudios: 0 });
+      expect(model.metadata?.missingReferenceWireFields).toEqual(model.id.includes("-image") ? ["audio"] : ["video", "audio"]);
+      if (model.id.includes("-video")) expect(model.metadata?.billingIncludesInputDuration).toBe(true);
+      expect(modelEstimatedCost(model, { duration: 10, resolution: "720P" })).toBeUndefined();
     }
   });
   it("replaces only the obsolete automatic CNY estimate while retaining raw rates, time and selected parameters", () => {

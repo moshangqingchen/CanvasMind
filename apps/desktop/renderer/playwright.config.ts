@@ -6,6 +6,8 @@ const baseURL = externalBaseUrl ?? `http://127.0.0.1:${port}`;
 
 export default defineConfig({
   testDir: "./e2e",
+  // These are node:test harness checks, not browser specs.
+  testIgnore: "**/helpers/**",
   globalSetup: "./e2e/global-setup.ts",
   timeout: 45_000,
   expect: { timeout: 10_000 },

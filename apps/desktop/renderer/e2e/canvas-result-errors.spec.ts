@@ -12,7 +12,7 @@ for (const status of ["cancelled", "failed", "needs_attention"]) test(`${status}
   await page.goto(`/canvas/${canvas.id}`);
   const state = page.locator(`.generated-result-state.${status === "needs_attention" ? "needs-attention" : status}`);
   await expect(state).toHaveCSS("overflow-y", "auto");
-  await expect(status === "cancelled" ? state.locator(".result-error-summary") : state.getByLabel("失败诊断").locator("dd p")).toHaveText(message);
+  await expect(status === "cancelled" ? state.locator(".result-error-summary") : state.locator(".node-error-summary > span")).toHaveText(message);
   const title = state.locator("strong").first();
   await expect(title).toBeInViewport({ ratio: 1 });
   const node = page.locator('.react-flow__node[data-id="result"]');

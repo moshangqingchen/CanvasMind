@@ -119,6 +119,11 @@ function AssetPreviewImageResource({
 
   function handleError() {
     if (!assetId || attemptedOriginal.current) {
+      // A failed original is no longer displayed. Release this consumer now,
+      // even when its failure placeholder remains mounted on the canvas.
+      releaseOriginal.current?.();
+      releaseOriginal.current = null;
+      setOriginalUrl("");
       setState("failed");
       return;
     }
@@ -133,6 +138,11 @@ function AssetPreviewImageResource({
         setState("original");
       })
       .catch(() => {
+        // Fetch/empty-body failures also stop using the shared resource. The
+        // lease is idempotent if unmount already released it while awaiting it.
+        lease.release();
+        if (releaseOriginal.current === lease.release)
+          releaseOriginal.current = null;
         if (alive.current) setState("failed");
       });
   }

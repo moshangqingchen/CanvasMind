@@ -97,6 +97,7 @@ for (const { history, kind, failed } of [
         await page.screenshot({ path: test.info().outputPath(`reuse-toolbar-${width}.png`) });
       }
       await toolbar.getByRole("button", { name: "复用 历史图片 提示词" }).click();
+      await page.locator('.react-flow__node.selected .prompt-overview').click();
       const editor = page.locator('.react-flow__node.selected [contenteditable="true"]');
       await expect(editor).toBeVisible();
       await expect(editor).toContainText("标题：新品上市，文字必须准确。");
@@ -158,6 +159,7 @@ test("历史提示词缺失时保留画布，读取失败后可重试", async ({
     expect((await (await request.get(`/api/canvas/${fixture.id}`)).json()).graph.nodes).toHaveLength(fixture.nodes.length);
     state = "ready";
     await reuse.click();
+    await page.locator('.react-flow__node.selected .prompt-overview').click();
     await expect(page.locator('.react-flow__node.selected [contenteditable="true"]')).toContainText("标题：新品上市");
   } finally {
     await page.close();

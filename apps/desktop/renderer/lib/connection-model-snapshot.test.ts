@@ -34,6 +34,7 @@ describe("connection model presentation during scans", () => {
     expect(connectionModelInventoryConfirmed(partial)).toBe(false);
     const confirmed = settledConnectionModelScan(partial, ready.connectionId, structuredClone([model]), true, { scanStatus: "live", complete: true });
     expect(confirmed).not.toBe(partial);
+    expect(confirmed.items).toBe(partial.items);
     expect(connectionModelInventoryConfirmed(confirmed)).toBe(true);
     expect(settledConnectionModelScan(confirmed, ready.connectionId, [model], true, { scanStatus: "live", complete: true })).toBe(confirmed);
   });

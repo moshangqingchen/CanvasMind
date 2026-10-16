@@ -240,7 +240,9 @@ for (const kind of ["image", "video"] as const) test(`极九 ${kind} 全分组�
             await expect(summary).toContainText(examples[model.id]![0]);
             await expect(estimate).toHaveText(examples[model.id]![1]);
           }
-          if (["稳定seedance-2.5全参E", "wan3.0-video", "wan3.0-video-prime"].includes(model.id)) await expect(estimate).toHaveCount(0);
+          // The merged October 14 E contract bills output seconds only: 4s at 480p is 1 CNY.
+          if (model.id === "稳定seedance-2.5全参E") await expect(estimate).toHaveText("1 CNY");
+          if (["wan3.0-video", "wan3.0-video-prime"].includes(model.id)) await expect(estimate).toHaveCount(0);
           if (["SD2.5特价30-10-10-线路一", "稳定seedance-2.5参图参音F", "SD2.0mini稳定903C"].includes(model.id)) {
             await assertPriceSource(f.panel, model);
             await f.panel.screenshot({ path: testInfo.outputPath(`${model.id}-parameters.png`) });

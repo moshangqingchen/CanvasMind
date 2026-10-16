@@ -5,6 +5,7 @@ import {
   type Page,
 } from "@playwright/test";
 import type { CanvasDocument, CanvasNode, RunSnapshot } from "../components/types";
+import { clickBlankCanvas, setCanvasZoomWithWheel } from "./canvas-test-actions";
 
 interface MeasuredFiber {
   memoizedProps?: { data?: { nodeType?: string } };
@@ -77,6 +78,55 @@ const run = (page: Page) =>
   page.getByRole("button", { name: "运行 回归生成 节点", exact: true }).click();
 const saved = async (request: APIRequestContext, id: string) =>
   (await (await request.get(`/api/canvas/${id}`)).json()).graph;
+
+test("旧连线省略端口时保留图片颜色与首端口连接数，保存刷新不改原数据", async ({ page, request }) => {
+  const value = graph();
+  value.nodes = [
+    { id: "source", type: "workflow", position: { x: 100, y: 160 }, style: { width: 300, height: 220 },
+      data: { nodeType: "asset-input", label: "旧图片来源", assetKind: "image", inputs: [],
+        outputs: [{ id: "image", kind: "image", label: "图片" }] } },
+    { id: "target", type: "workflow", position: { x: 650, y: 160 }, style: { width: 300, height: 220 },
+      data: { nodeType: "asset-input", label: "旧图片接收", assetKind: "image", outputs: [],
+        inputs: [{ id: "images", kind: "image[]", label: "参考图" }] } },
+    { id: "unused", type: "workflow", position: { x: 100, y: 470 }, style: { width: 300, height: 220 },
+      data: { nodeType: "asset-input", label: "未连接的其它端口", assetKind: "image",
+        inputs: [{ id: "images", kind: "image[]", label: "参考图" }, { id: "text-in", kind: "text", label: "文字" }],
+        outputs: [{ id: "image", kind: "image", label: "图片" }, { id: "text-out", kind: "text", label: "文字" }] } },
+  ];
+  // The API accepts omitted handles only for an unambiguous single port.
+  // Multi-port legacy display fallback is covered by the presentation unit test.
+  value.edges = [{ id: "legacy-image-link", source: "source", target: "target", type: "smoothstep", data: { retained: "legacy" } }];
+  let submissions = 0;
+  await page.route(/\/api\/(?:runs|agent\/turn)(?:\?|\/|$)/u, async route => {
+    if (route.request().method() === "GET") await route.continue();
+    else { submissions++; await route.abort(); }
+  });
+  const canvas = await create(request, value);
+  const assertPorts = async () => {
+    await expect(page.locator('.react-flow__edge[data-id="legacy-image-link"] .studio-edge')).toHaveAttribute("data-port-kind", "image");
+    await expect(page.locator('.react-flow__node[data-id="source"] .react-flow__handle.source[data-handleid="image"]')).toHaveAttribute("title", "图片 · image · 1 个连接");
+    await expect(page.locator('.react-flow__node[data-id="target"] .react-flow__handle.target[data-handleid="images"]')).toHaveAttribute("title", "参考图 · image[] · 1 个连接");
+    for (const id of ["text-in", "text-out"]) await expect(page.locator(`.react-flow__node[data-id="unused"] .react-flow__handle[data-handleid="${id}"]`)).toHaveAttribute("title", "文字 · text · 0 个连接");
+  };
+  const assertSaved = async () => {
+    const persisted: CanvasDocument = await saved(request, canvas.id);
+    expect(persisted.edges).toEqual(value.edges);
+    expect(persisted.edges[0]).not.toHaveProperty("sourceHandle");
+    expect(persisted.edges[0]).not.toHaveProperty("targetHandle");
+    expect(persisted.nodes.map(node => node.data)).toEqual(value.nodes.map(node => node.data));
+  };
+  await open(page, canvas.id);
+  await assertPorts();
+  const savedResponse = page.waitForResponse(response => response.url().endsWith(`/api/canvas/${canvas.id}`) && response.request().method() === "PUT" && response.ok());
+  await page.keyboard.press("Control+s");
+  await savedResponse;
+  await assertSaved();
+  await page.reload();
+  await assertPorts();
+  await assertSaved();
+  expect(submissions).toBe(0);
+});
+
 function running(snapshot: RunSnapshot) {
   return {
     ...snapshot,
@@ -89,13 +139,90 @@ function running(snapshot: RunSnapshot) {
   };
 }
 
-test("低缩放提示词按需进入编辑，点击后可立即输入并保存", async ({page,request}) => {
-  const value=graph();value.viewport.zoom=.4;
-  const canvas=await create(request,value);await open(page,canvas.id);
-  const overview=page.locator(".prompt-overview");await expect(overview).toBeVisible();
-  await overview.click();const editor=page.locator(".tiptap-prompt");await expect(editor).toBeVisible();await expect(editor).toBeFocused();
-  await editor.fill("缩小画布后也可以立即编辑");await editor.press("Control+s");
-  await expect.poll(async()=>JSON.stringify((await saved(request,canvas.id)).nodes[0].data.parts)).toContain("缩小画布后也可以立即编辑");
+test("低缩放提示词按需进入编辑，点击后可立即输入并保存", async ({ page, request }) => {
+  const value = graph(); value.viewport.zoom = .4;
+  const canvas = await create(request, value); await open(page, canvas.id);
+  const source = page.locator('.react-flow__node[data-id="source"]');
+  const viewport = page.locator(".react-flow__viewport");
+  const overview = source.locator(".prompt-overview");
+  await expect(viewport).toHaveClass(/canvas-lod-compact/);
+  await expect(source.locator(".node-body")).toHaveCSS("visibility", "hidden");
+  await expect(overview).toBeHidden();
+  await expect(page.locator(".tiptap-prompt")).toHaveCount(0);
+  // Compact LOD exposes the header. Reframe the selected node, then use a
+  // real wheel to verify immediate editing at a small but readable scale.
+  await source.locator(".node-head").click();
+  await page.getByRole("button", { name: "定位所选节点", exact: true }).click();
+  await setCanvasZoomWithWheel(page, .6);
+  await expect(viewport).not.toHaveClass(/canvas-lod-compact/);
+  await expect(overview).toBeVisible();
+  await overview.click(); const editor = source.locator(".tiptap-prompt");
+  await expect(editor).toBeVisible(); await expect(editor).toBeFocused();
+  await editor.fill("缩小画布后也可以立即编辑"); await editor.press("Control+s");
+  await expect.poll(async () => JSON.stringify((await saved(request, canvas.id)).nodes[0].data.parts)).toContain("缩小画布后也可以立即编辑");
+});
+
+test("跨缩放阈值不会为未激活节点创建编辑器，激活输入仍立即保存", async ({ page, request }) => {
+  const value = graph(); value.viewport.zoom = .65;
+  value.nodes = Array.from({ length: 24 }, (_, index) => ({ ...value.nodes[0], id: `lazy-${index}`, position: { x: (index % 6) * 420, y: Math.floor(index / 6) * 260 }, data: { ...value.nodes[0].data, label: `按需编辑 ${index}` } }));
+  value.edges = [];
+  const canvas = await create(request, value);
+  await page.goto(`/canvas/${canvas.id}`);
+  await expect(page.locator(".prompt-overview").first()).toBeVisible();
+  await expect(page.locator(".tiptap-prompt")).toHaveCount(0);
+  for (const zoom of ["Zoom Out", "Zoom Out", "Zoom In", "Zoom In"]) await page.getByRole("button", { name: zoom, exact: true }).click();
+  await expect(page.locator(".tiptap-prompt")).toHaveCount(0);
+  // Zoom controls pivot around the viewport center and can move the origin
+  // node behind the top bar. Reframe the real graph before interacting with it.
+  await page.getByRole("button", { name: "Fit View", exact: true }).click();
+  const first = page.locator('.react-flow__node[data-id="lazy-0"]');
+  await expect(first.locator(".node-head")).toBeInViewport({ ratio: 1 });
+  await expect(page.locator(".react-flow__viewport")).toHaveClass(/canvas-lod-compact/);
+  await expect(first.locator(".node-body")).toHaveCSS("visibility", "hidden");
+  await expect(first.locator(".prompt-overview")).toBeHidden();
+  await expect(page.locator(".tiptap-prompt")).toHaveCount(0);
+  await first.locator(".node-head").click();
+  await expect(first).toHaveClass(/selected/);
+  await expect(page.locator(".tiptap-prompt")).toHaveCount(0);
+  // The compact body action is intentionally hidden; the visible header
+  // opens the same root-owned parameter card without mounting an editor.
+  await first.locator(".node-head").dblclick();
+  const parameters = page.locator('.canvas-parameter-dock[data-parameter-node-id="lazy-0"]')
+    .getByRole("dialog", { name: "按需编辑 0 模型与参数", exact: true });
+  await expect(parameters).toBeVisible();
+  await expect(page.locator(".tiptap-prompt")).toHaveCount(0);
+  await parameters.getByRole("button", { name: "关闭模型与参数面板", exact: true }).click();
+  await page.getByRole("button", { name: "定位所选节点", exact: true }).click();
+  await setCanvasZoomWithWheel(page, .6);
+  await expect(page.locator(".react-flow__viewport")).not.toHaveClass(/canvas-lod-compact/);
+  await expect(first.locator(".prompt-overview")).toBeVisible();
+  await first.locator(".prompt-overview").click();
+  const editor = first.locator(".tiptap-prompt");
+  await expect(editor).toBeFocused();
+  await expect(page.locator(".tiptap-prompt")).toHaveCount(1);
+  await editor.fill("只有当前节点需要编辑器");
+  await editor.press("Control+s");
+  await expect.poll(async () => JSON.stringify((await saved(request, canvas.id)).nodes[0].data.parts)).toContain("只有当前节点需要编辑器");
+  // Switching immediately must flush the old editor before it unmounts.
+  await editor.fill("快速切换前的最新内容");
+  const second = page.locator('.react-flow__node[data-id="lazy-1"]');
+  await second.locator(".prompt-overview").click();
+  await expect(first.locator(".tiptap-prompt")).toHaveCount(0);
+  const secondEditor = second.locator(".tiptap-prompt");
+  await expect(secondEditor).toBeFocused();
+  await secondEditor.fill("第二个节点的最新内容");
+  await first.locator(".prompt-overview").click();
+  await expect(editor).toBeFocused();
+  await expect(editor).toHaveText("快速切换前的最新内容");
+  await expect(page.locator(".tiptap-prompt")).toHaveCount(1);
+  await editor.press("Control+s");
+  await expect.poll(async () => {
+    const document = await saved(request, canvas.id);
+    return document.nodes.slice(0, 2).map((node: CanvasNode) => node.data.parts);
+  }).toEqual([[{ type: "text", text: "快速切换前的最新内容" }], [{ type: "text", text: "第二个节点的最新内容" }]]);
+  await clickBlankCanvas(page);
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(0);
+  await expect(page.locator(".tiptap-prompt")).toHaveCount(0);
 });
 
 test("提交响应丢失并关闭页面后按原编号找回，生成 POST 始终为一次", async ({
@@ -200,7 +327,7 @@ test("移出生成卡片后刷新不复活，原任务完成并保留素材；�
 
 
   await expect(page.locator(".generated-result-node")).toHaveCount(0);
-  await page.getByRole("button", { name: "撤销", exact: true }).click();
+  await page.locator(".toast").getByRole("button", { name: "撤销", exact: true }).click();
   await expect(page.locator(".generated-result-node")).toHaveCount(1);
   await page
     .getByRole("button", { name: "删除 生成图片 1 节点", exact: true })
@@ -238,6 +365,7 @@ test("输入框保存最新内容、组合输入不生成、两个运行快捷�
 }) => {
   const canvas = await create(request);
   await open(page, canvas.id);
+  await page.locator('.react-flow__node[data-id="source"] .prompt-overview').click();
   const editor = page.locator(
     '.react-flow__node[data-id="source"] .tiptap-prompt',
   );
@@ -307,6 +435,7 @@ for (const scenario of [
   }) => {
     const canvas = await create(request);
     await open(page, canvas.id);
+    await page.locator('.react-flow__node[data-id="source"] .prompt-overview').click();
     const editor = page.locator(
       '.react-flow__node[data-id="source"] .tiptap-prompt',
     );
@@ -388,8 +517,10 @@ test("任务运行期间保存失败始终可见，点击入口可重试保存",
   );
   await open(page, canvas.id);
   await run(page);
-  await expect(page.locator(".task-state")).toContainText("任务运行中");
+  const island = page.locator("[data-dynamic-island]");
+  await expect(island).toHaveAttribute("data-status", "running");
   fail = true;
+  await page.locator('.react-flow__node[data-id="source"] .prompt-overview').click();
   const editor = page.locator(".tiptap-prompt").first();
   await editor.fill("任务仍运行，修改不能丢失");
   await editor.press("Control+s");
@@ -399,13 +530,15 @@ test("任务运行期间保存失败始终可见，点击入口可重试保存",
   });
   await expect(status).toContainText("保存失败", { timeout: 20000 });
   await expect(status).toBeEnabled();
-  await expect(page.locator(".task-state")).toContainText("任务运行中");
+  await expect(island).toHaveAttribute("data-status", "save-error");
+  await expect(page.locator('.react-flow__node[data-id="source"]').getByRole("status")).toContainText("运行中");
   fail = false;
   await status.click();
   await expect(status).toContainText("已保存");
+  await expect(island).toHaveAttribute("data-status", "running");
 });
 
-test("连续尾光空白处按需启动，停下淡出，关闭后跨项目记忆，减少动态时停用", async ({
+test("画布无装饰鼠标轨迹，空白移动不重绘节点，动效偏好跨项目保存并遵循系统reduce", async ({
   page,
   request,
 }) => {
@@ -455,15 +588,15 @@ test("连续尾光空白处按需启动，停下淡出，关闭后跨项目记�
   expect(before.nodes).toBeGreaterThan(0);
   await page.mouse.move(x, y);
   await page.mouse.move(x + 60, y + 8, { steps: 10 });
-  await expect(trail).toHaveAttribute("data-active", "true");
-  await expect(trail).toHaveAttribute("data-active", "false", {
-    timeout: 2000,
-  });
+  await expect(trail).toHaveCount(0);
+  await page.waitForTimeout(250);
   expect(
     (await page.evaluate(() => (window as MeasuredWindow).__canvasRenderMetrics)).nodes,
   ).toBe(before.nodes);
+  await page.locator('.react-flow__node[data-id="source"] .node-head').click();
+  await page.locator('.react-flow__node[data-id="source"] .prompt-overview').click();
   await page.locator(".tiptap-prompt").hover();
-  await expect(trail).toHaveAttribute("data-active", "false");
+  await expect(trail).toHaveCount(0);
   await toggle.click();
   await page.reload();
   await expect(toggle).toHaveAttribute("aria-pressed", "false");
@@ -475,10 +608,10 @@ test("连续尾光空白处按需启动，停下淡出，关闭后跨项目记�
   await expect(toggle).toHaveAttribute("aria-pressed", "false");
   await page.mouse.move(x, y);
   await page.mouse.move(x + 60, y + 8, { steps: 10 });
-  await expect(trail).toHaveAttribute("data-active", "false");
+  await expect(trail).toHaveCount(0);
 });
 
-test("Ctrl 连线增选、取消选择与批量删除保持一致", async ({ page, request }) => {
+test("Ctrl 连线增选、取消选择与批量删除保持一致", async ({ page, request }, testInfo) => {
   const value: CanvasDocument = graph();
   value.nodes = [0, 1, 2].map((i) => ({
     id: i === 0 ? "source" : `p${i}`,
@@ -511,6 +644,71 @@ test("Ctrl 连线增选、取消选择与批量删除保持一致", async ({ pag
   const canvas = await create(request, value);
   await open(page, canvas.id);
   await page.getByRole("button", { name: "Fit View", exact: true }).click();
+  if (process.env.EDGE_INIT_EVIDENCE === "1") {
+    page.on("console", (message) => {
+      if (message.text().startsWith("EDGE_INIT_SNAPSHOT:")) {
+        void testInfo.attach(`flow-store-${Date.now()}.json`, {
+          body: message.text().slice("EDGE_INIT_SNAPSHOT:".length),
+          contentType: "application/json",
+        });
+      }
+    });
+    const snapshot = await page.evaluate(() => {
+      type HandleBounds = { source?: { id: string }[]; target?: { id: string }[] };
+      type FlowNode = { hidden?: boolean; measured?: { width?: number; height?: number }; width?: number; height?: number; initialWidth?: number; initialHeight?: number; position?: unknown; handles?: { id: string; type: string }[]; internals: { positionAbsolute: { x: number; y: number }; handleBounds?: HandleBounds } };
+      type FlowState = { width: number; height: number; transform: number[]; nodesInitialized: boolean; edges: { id: string; source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null; hidden?: boolean }[]; nodeLookup: Map<string, FlowNode>; edgeLookup: Map<string, unknown> };
+      type Fiber = { return?: Fiber; memoizedProps?: { value?: { getState?: () => FlowState } } };
+      const element = document.querySelector(".react-flow__node") as (HTMLElement & Record<string, unknown>) | null;
+      let fiber = element ? element[Object.keys(element).find(key => key.startsWith("__reactFiber$")) ?? ""] as Fiber | undefined : undefined;
+      let store: { getState?: () => FlowState } | undefined;
+      while (fiber) {
+        const candidate = fiber.memoizedProps?.value;
+        if (candidate?.getState?.()?.nodeLookup instanceof Map) { store = candidate; break; }
+        fiber = fiber.return;
+      }
+      const capture = () => {
+        const state = store?.getState?.();
+        const initialized = (node: FlowNode | undefined) => Boolean(node &&
+          (node.internals.handleBounds || node.handles?.length) && (node.measured?.width || node.width || node.initialWidth));
+        const hasHandle = (node: FlowNode | undefined, type: "source" | "target", id: string | null | undefined) => {
+          const handles = node?.internals.handleBounds?.[type] ?? node?.handles?.filter(handle => handle.type === type);
+          return Boolean(id ? handles?.some(handle => handle.id === id) : handles?.[0]);
+        };
+        const visible = (source: FlowNode | undefined, target: FlowNode | undefined) => {
+          if (!state?.width || !state.height || !source || !target) return false;
+          const dimensions = (node: FlowNode) => ({ width: node.measured?.width ?? node.width ?? node.initialWidth ?? 0,
+            height: node.measured?.height ?? node.height ?? node.initialHeight ?? 0 });
+          const a = source.internals.positionAbsolute, b = target.internals.positionAbsolute;
+          const ad = dimensions(source), bd = dimensions(target), [tx, ty, zoom] = state.transform;
+          const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+          let right = Math.max(a.x + ad.width, b.x + bd.width), bottom = Math.max(a.y + ad.height, b.y + bd.height);
+          if (right === x) right++;
+          if (bottom === y) bottom++;
+          return Math.min(right, (state.width - tx!) / zoom!) > Math.max(x, -tx! / zoom!) &&
+            Math.min(bottom, (state.height - ty!) / zoom!) > Math.max(y, -ty! / zoom!);
+        };
+        return {
+          at: performance.now(), foundStore: Boolean(state), width: state?.width, height: state?.height,
+          transform: state?.transform, nodesInitialized: state?.nodesInitialized, edges: state?.edges, edgeLookup: state ? [...state.edgeLookup] : null,
+          edgeReadiness: state?.edges.map(edge => {
+            const source = state.nodeLookup.get(edge.source), target = state.nodeLookup.get(edge.target);
+            return { id: edge.id, predictedVisible: visible(source, target), hidden: Boolean(edge.hidden),
+              sourcePresent: Boolean(source), targetPresent: Boolean(target), sourceInitialized: initialized(source), targetInitialized: initialized(target),
+              sourceHandleFound: hasHandle(source, "source", edge.sourceHandle), targetHandleFound: hasHandle(target, "target", edge.targetHandle),
+              wrapperMounted: Boolean(document.querySelector(`.react-flow__edge[data-id="${CSS.escape(edge.id)}"]`)) };
+          }),
+          nodes: state ? [...state.nodeLookup].map(([id, node]) => ({ id, measured: node.measured, width: node.width, height: node.height,
+            position: node.position, handles: node.handles, positionAbsolute: node.internals.positionAbsolute, handleBounds: node.internals.handleBounds })) : null,
+          domNodes: [...document.querySelectorAll<HTMLElement>(".react-flow__node")].map(node => ({ id: node.dataset.id, rect: node.getBoundingClientRect().toJSON(),
+            handles: [...node.querySelectorAll<HTMLElement>(".react-flow__handle")].map(handle => ({ id: handle.dataset.handleid, type: handle.classList.contains("source") ? "source" : "target", rect: handle.getBoundingClientRect().toJSON() })) })),
+          domEdgeIds: [...document.querySelectorAll<HTMLElement>(".react-flow__edge")].map(edge => edge.dataset.id),
+        };
+      };
+      for (const delay of [1000, 30000]) window.setTimeout(() => console.log(`EDGE_INIT_SNAPSHOT:${JSON.stringify(capture())}`), delay);
+      return capture();
+    });
+    await testInfo.attach("flow-store-before-click.json", { body: JSON.stringify(snapshot, null, 2), contentType: "application/json" });
+  }
   const clickEdge = async (id: string) => {
     const path = page.locator(
       `.react-flow__edge[data-id="${id}"] .react-flow__edge-interaction`,
@@ -533,6 +731,15 @@ test("Ctrl 连线增选、取消选择与批量删除保持一致", async ({ pag
   await expect
     .poll(async () => (await saved(request, canvas.id)).edges.length)
     .toBe(0);
+  const disconnected = page.locator(".toast").filter({ hasText: "已断开 2 条连线" });
+  await disconnected.getByRole("button", { name: "撤销", exact: true }).click();
+  await expect(page.locator(".react-flow__edge")).toHaveCount(2);
+  await expect.poll(async () => (await saved(request, canvas.id)).edges.map((edge: CanvasDocument["edges"][number]) => edge.id).sort())
+    .toEqual(["edge-a", "edge-b"]);
+  // Toast undo uses the same history step as Ctrl+Z; redo remains available.
+  await page.keyboard.press("Control+Shift+z");
+  await expect(page.locator(".react-flow__edge")).toHaveCount(0);
+  await expect.poll(async () => (await saved(request, canvas.id)).edges.length).toBe(0);
 });
 
 test("永久删除历史结果后撤销重做均不能恢复失效素材", async ({
@@ -563,7 +770,7 @@ test("永久删除历史结果后撤销重做均不能恢复失效素材", async
   await page
     .getByRole("button", { name: "删除 生成图片 1 节点", exact: true })
     .click();
-  await page.getByRole("button", { name: "撤销", exact: true }).click();
+  await page.locator(".toast").getByRole("button", { name: "撤销", exact: true }).click();
   await page
     .getByRole("button", { name: "历史生成", exact: true })
     .first()
@@ -640,6 +847,10 @@ test("低缩放与窄窗口能用键盘读取完整中文名称、来源与实�
     name: "查看 原图结果 来源",
     exact: true,
   });
+  // Compact LOD deliberately keeps only headers/status. Retain the 40%
+  // keyboard name/tooltip check above, and verify the body action is hidden.
+  await expect(info).toBeHidden();
+  await setCanvasZoomWithWheel(page, 1);
   await info.focus();
   await page.keyboard.press("Enter");
   const dialog = page.getByRole("dialog", {

@@ -10,6 +10,13 @@ export type ModelKindFilter = "all" | "image" | "video" | "music";
 export type ModelStatusFilter = "all" | "runnable" | "verified" | "recent";
 export type RecentModels = Array<{ connectionId: string; modelIds: string[] }>;
 
+/** Merge display-only facts while retaining the Key descriptor and its order. */
+export function displayPickerModels(models: readonly ModelDescriptor[], catalog: readonly ModelDescriptor[] = []): readonly ModelDescriptor[] {
+  if (!catalog.length) return models;
+  const keyIds = new Set(models.map(model => model.id));
+  return [...models, ...catalog.filter(model => !keyIds.has(model.id))];
+}
+
 export function modelWasVerified(model: ModelDescriptor): boolean {
   return typeof model.metadata?.imageCapabilitiesVerifiedAt === "string";
 }
@@ -19,7 +26,8 @@ export function filterPickerModels(models: readonly ModelDescriptor[], query: st
   const words = query.normalize("NFKC").trim().toLocaleLowerCase().split(/\s+/u).filter(Boolean);
   const recent = new Set(recentIds);
   const filtered = models.filter(model => {
-    const searchable = tk1688ModelFamily(model) ? tk1688ModelSearchText(model)
+    // Opening an unfiltered menu does not need to normalize every search label.
+    const searchable = !words.length ? "" : tk1688ModelFamily(model) ? tk1688ModelSearchText(model)
       : `${cleanModelDisplayName(model.name, model.metadata?.priceLabel)} ${model.id}`.normalize("NFKC").toLocaleLowerCase();
     return words.every(word => searchable.includes(word)) &&
       (kind === "all" || modelSupportsGenerationMedia(model, kind)) &&

@@ -2,6 +2,7 @@
 
 import { AlertTriangle, Archive, FileJson, X } from "lucide-react";
 import { useDialogFocus } from "./use-dialog-focus";
+import styles from "./project-import-modal.module.css";
 
 import type { PreparedProjectImport } from "../lib/project-transfer";
 
@@ -42,7 +43,7 @@ export function ProjectImportModal({
     >
       <section
         ref={dialogRef}
-        className="modal-window project-import-modal"
+        className={`modal-window project-import-modal ${styles.dialog}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="project-import-title"
@@ -59,6 +60,7 @@ export function ProjectImportModal({
             onClick={onCancel}
             disabled={busy}
             aria-label="关闭"
+            title="关闭（Esc）"
           >
             <X size={17} />
           </button>
@@ -74,7 +76,7 @@ export function ProjectImportModal({
               )}
             </span>
             <div>
-              <strong>{prepared.title}</strong>
+              <strong title={prepared.title}>{prepared.title}</strong>
               <span>
                 {prepared.source === "package"
                   ? "完整项目包 · 会复制包内素材"

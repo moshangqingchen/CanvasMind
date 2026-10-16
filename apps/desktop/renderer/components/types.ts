@@ -125,6 +125,9 @@ export interface CanvasNodeData extends Record<string, unknown> {
   lastOutputCreatedAt?: string;
   materializedOutputAssetIds?: string[];
   status?: string;
+  runStartedAt?: string;
+  runError?: RunErrorDetails;
+  portConnectionCounts?: { input: Record<string, number>; output: Record<string, number> };
   onRun?: () => void;
   onRunDownstream?: () => void;
   onReconcileTask?: () => void;
@@ -147,8 +150,11 @@ export interface CanvasNodeData extends Record<string, unknown> {
   onAlignSelection?: (action: NodeAlignmentAction) => void;
   onPromptPartsChange?: (parts: PromptPart[]) => void;
   onConnectionChange?: (connectionId: string) => void;
+  /** Open a root-owned parameter card; transient UI callback, never persisted. */
+  onRequestConfiguration?: (trigger: HTMLElement | null) => void;
   onConfigurationFocus?: () => void;
-  onConfigurationOpenChange?: (nodeId: string, open: boolean) => void;
+  /** Mount lease for legacy node-owned surfaces, including image downloads. */
+  onConfigurationOpenChange?: (leaseId: string, open: boolean) => void;
   onModelChange?: (model: string) => void;
   onParametersChange?: (parameters: Record<string, unknown>) => void;
   onMediaAspectRatio?: (ratio: number) => void;

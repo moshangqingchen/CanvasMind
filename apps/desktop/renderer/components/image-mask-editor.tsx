@@ -372,7 +372,7 @@ export function ImageMaskEditor({ imageSrc, imageName, initialMaskSrc, onSave, o
     <div className={styles.backdrop} onPointerDown={event => event.stopPropagation()}>
       <section ref={dialogRef} className={styles.modal} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId} tabIndex={-1}
         onKeyDown={event => {
-          event.stopPropagation();
+          if (event.key !== "Escape") event.stopPropagation();
           if (disabled || !(event.ctrlKey || event.metaKey) || (event.target instanceof HTMLElement && /INPUT|TEXTAREA/.test(event.target.tagName))) return;
           const key = event.key.toLowerCase();
           if (key === "z" || key === "y") {

@@ -5,6 +5,7 @@ const listen = (channel, callback) => {
   return () => ipcRenderer.removeListener(channel, handler);
 };
 contextBridge.exposeInMainWorld('superCanvasDesktop', Object.freeze({
+  setThemeSource: (source) => ipcRenderer.invoke('desktop:theme-source', source),
   getUpdate: () => ipcRenderer.invoke('desktop:update-status'),
   update: (action) => ipcRenderer.invoke('desktop:update-action', action),
   initialize: (mode) => ipcRenderer.invoke('desktop:initialize', mode),

@@ -89,6 +89,7 @@ export async function smokeCustomSuppliers(page, api, origin) {
   await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
   const settings = page.getByRole("dialog", { name: "供应商与模型设置" });
   await settings.getByRole("button").filter({ has: page.locator("strong", { hasText: "怪兽设计" }) }).click();
+  await settings.locator("summary").filter({ hasText: "账号账务与生成方式" }).click();
   const cloudChoice = settings.getByRole("checkbox", { name: "使用 Cloudflare 云端生图" });
   assert.equal(await cloudChoice.isChecked(), false);
   await Promise.all([

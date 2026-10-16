@@ -1,5 +1,24 @@
-import { expect, test, type Page, type APIRequestContext } from "@playwright/test";
+import { expect, test, type Page, type Locator, type APIRequestContext } from "@playwright/test";
 import type { RunErrorDetails, RunSnapshot } from "../components/types";
+
+async function expectFailureSummary(state: Locator) {
+  await expect(state).toBeVisible();
+  await expect(state.locator(":scope > strong")).toContainText("失败");
+  await expect(state.locator(".node-error-summary > span")).toBeVisible();
+  await expect(state.locator(".node-error-summary > span")).toContainText(/\S/u);
+  await expect(state.getByRole("button", { name: /^查看原因：/u })).toBeVisible();
+  // The card stays compact; the complete diagnosis opens through its action.
+  await expect(state.getByLabel("失败诊断")).toHaveCount(0);
+}
+
+async function openFailureDetails(page: Page, state: Locator) {
+  await state.getByRole("button", { name: /^查看原因：/u }).click();
+  const details = page.getByRole("dialog", { name: "结果来源与参数" });
+  await expect(details).toBeVisible();
+  await expect(details.getByLabel("失败诊断")).toBeVisible();
+  await expect(details.getByRole("button", { name: "关闭来源详情", exact: true })).toHaveAttribute("title", "关闭来源详情（Esc）");
+  return details;
+}
 
 async function failedGeneration(page: Page, request: APIRequestContext, error: () => RunErrorDetails, supplier = "custom:isolated") {
   const response = await request.post("/api/canvas", { data: {
@@ -31,8 +50,8 @@ async function failedGeneration(page: Page, request: APIRequestContext, error: (
   });
   await page.goto(`/canvas/${canvas.id}`);
   await page.getByRole("button", { name: "运行 诊断验收 节点", exact: true }).click();
-  const state = page.locator(".generated-result-state").first();
-  await expect(state.getByLabel("失败诊断")).toBeVisible();
+  const state = page.locator(".generated-result-state.failed").first();
+  await expectFailureSummary(state);
   return { state, submissions: () => submissions, canvasId: canvas.id };
 }
 
@@ -66,21 +85,28 @@ const cases: Array<{ name: string; error: RunErrorDetails; reason: RegExp; charg
 for (const scenario of cases) test(`失败原因与扣费贯穿结果和历史：${scenario.name}`, async ({ page, request }, testInfo) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   const fixture = await failedGeneration(page, request, () => scenario.error, scenario.supplier);
-  const diagnosis = fixture.state.getByLabel("失败诊断");
-  await expect(diagnosis).toContainText(scenario.reason);
-  await expect(diagnosis).toContainText(scenario.charge);
-  await expect(diagnosis).toContainText("下一步");
-  if (scenario.amount) await expect(diagnosis).toContainText(scenario.amount);
   if (scenario.forbidden) await expect(fixture.state).not.toContainText(scenario.forbidden);
   if (scenario.balanceLink) {
     await fixture.state.locator(".result-error-details summary").click();
     await expect(fixture.state.getByRole("link", { name: /官网查看余额/ })).toHaveAttribute("href", "https://api.3365api.cn/");
   }
-  await page.reload();
+  const details = await openFailureDetails(page, fixture.state);
+  if (scenario.error.charge?.source !== "not_submitted") {
+    await expect(details.getByRole("button", { name: "复制供应商任务号", exact: true })).toHaveAttribute("title", "复制供应商任务号");
+  }
+  const diagnosis = details.getByLabel("失败诊断");
   await expect(diagnosis).toContainText(scenario.reason);
   await expect(diagnosis).toContainText(scenario.charge);
-  await fixture.state.getByRole("button", { name: /查看 .* 来源/ }).click();
-  const details = page.getByRole("dialog", { name: "结果来源与参数" });
+  await expect(diagnosis).toContainText("下一步");
+  if (scenario.amount) await expect(diagnosis).toContainText(scenario.amount);
+  if (scenario.forbidden) await expect(details).not.toContainText(scenario.forbidden);
+  await details.getByRole("button", { name: "关闭来源详情" }).click();
+  await page.reload();
+  await expectFailureSummary(fixture.state);
+  await openFailureDetails(page, fixture.state);
+  await expect(diagnosis).toContainText(scenario.reason);
+  await expect(diagnosis).toContainText(scenario.charge);
+  await expect(diagnosis).toContainText("下一步");
   await expect(details.getByLabel("失败诊断")).toContainText(scenario.reason);
   await expect(details.getByLabel("失败诊断")).toContainText(scenario.charge);
   if (scenario.amount) await expect(details.getByLabel("失败诊断")).toContainText(scenario.amount);
@@ -100,6 +126,10 @@ for (const scenario of cases) test(`失败原因与扣费贯穿结果和历史�
   await page.getByRole("button", { name: "打开项目菜单", exact: true }).click();
   await page.getByRole("menuitem", { name: "运行历史", exact: true }).click();
   const history = page.getByRole("dialog", { name: "运行历史" });
+  const historyFailure = history.locator("details.task-failure").first();
+  await expect(historyFailure).not.toHaveAttribute("open");
+  await historyFailure.locator(":scope > summary").filter({ hasText: "查看原因" }).click();
+  await expect(historyFailure).toHaveAttribute("open");
   await expect(history.getByLabel("失败诊断").first()).toBeVisible();
   await expect(history.getByLabel("失败诊断").first()).toContainText(scenario.reason);
   await expect(history.getByLabel("失败诊断").first()).toContainText(scenario.charge);
@@ -158,14 +188,71 @@ test("错误文案不变时后续扣费证据仍会更新并保存", async ({ pa
   let current: RunErrorDetails = { message: "Provider failed", failureCategory: "supplier_error",
     charge: { status: "unknown", source: "unconfirmed" } };
   const fixture = await failedGeneration(page, request, () => current);
-  await expect(fixture.state.getByLabel("失败诊断")).toContainText("扣费待确认");
+  const details = await openFailureDetails(page, fixture.state);
+  await expect(details.getByLabel("失败诊断")).toContainText("扣费待确认");
+  await details.getByRole("button", { name: "关闭来源详情" }).click();
   current = { ...current, charge: { status: "charged", amount: 0.37, currency: "USD", source: "provider_response" } };
   await page.reload();
-  await expect(fixture.state.getByLabel("失败诊断")).toContainText("已扣费");
-  await expect(fixture.state.getByLabel("失败诊断")).toContainText("0.37");
+  await expectFailureSummary(fixture.state);
+  await openFailureDetails(page, fixture.state);
+  await expect(details.getByLabel("失败诊断")).toContainText("已扣费");
+  await expect(details.getByLabel("失败诊断")).toContainText("0.37");
   await expect.poll(async () => {
     const canvas = await (await request.get(`/api/canvas/${fixture.canvasId}`)).json();
     return canvas.graph.nodes.find((node: { data: { generatedResult?: boolean } }) => node.data.generatedResult)?.data.generatedError?.charge;
   }).toMatchObject({ status: "charged", amount: 0.37, currency: "USD" });
   expect(fixture.submissions()).toBe(1);
+});
+
+test("来源详情 Escape 只关闭顶层并归还焦点，不改变画布选择模式", async ({ page, request }) => {
+  const response = await request.post("/api/canvas", { data: { title: "来源详情 Escape 隔离回归", graph: {
+    schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 1 }, edges: [], nodes: [{
+      id: "escape-result", type: "workflow", position: { x: 120, y: 100 }, style: { width: 360, height: 220 },
+      data: { nodeType: "asset-input", label: "Esc回归", assetKind: "image", generatedResult: true,
+        generatedStatus: "succeeded", generatedFromRunId: "escape-source-run", generatedFromNodeId: "escape-source",
+        generatedProvider: "fake", generatedModel: "fake-image-v1", inputs: [], outputs: [] },
+    }],
+  } } });
+  expect(response.ok()).toBe(true);
+  const canvas = await response.json();
+  let submissions = 0;
+  const pageErrors: string[] = [];
+  page.on("pageerror", error => pageErrors.push(error.message));
+  await page.route("**/api/runs", route => {
+    if (route.request().method() === "POST") { submissions++; return route.abort(); }
+    return route.continue();
+  });
+  await page.route("**/api/runs/escape-source-run?details=1", route => route.fulfill({ json: {
+    run: { id: "escape-source-run", status: "succeeded" }, nodes: [{ id: "escape-run-node", nodeId: "escape-source", status: "succeeded",
+      outputAssetIds: [], errorJson: null, request: { provider: "fake", operation: "image.generate", model: "fake-image-v1" } }],
+  } }));
+  await page.goto(`/canvas/${canvas.id}`);
+  const selectionMode = page.getByRole("button", { name: "选择节点模式", exact: true });
+  await selectionMode.click();
+  await expect(selectionMode).toHaveAttribute("aria-pressed", "true");
+  const opener = page.getByRole("button", { name: "查看 Esc回归 来源", exact: true });
+  await opener.click();
+  const details = page.getByRole("dialog", { name: "结果来源与参数", exact: true });
+  await expect(details).toBeVisible();
+  const close = details.getByRole("button", { name: "关闭来源详情", exact: true });
+  await close.focus();
+  for (const inputMethod of [{ isComposing: true }, { keyCode: 229 }]) {
+    await close.dispatchEvent("keydown", { key: "Escape", bubbles: true, cancelable: true, ...inputMethod });
+    await expect(details).toBeVisible();
+    await expect(selectionMode).toHaveAttribute("aria-pressed", "true");
+  }
+  await close.evaluate(element => {
+    const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    event.preventDefault();
+    element.dispatchEvent(event);
+  });
+  await expect(details).toBeVisible();
+  await expect(selectionMode).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Escape");
+  await expect(details).toHaveCount(0);
+  await expect(opener).toBeFocused();
+  await expect(selectionMode).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator('.react-flow__node[data-id="escape-result"]')).toBeVisible();
+  expect(submissions).toBe(0);
+  expect(pageErrors).toEqual([]);
 });

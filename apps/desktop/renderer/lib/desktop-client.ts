@@ -2,6 +2,7 @@ import type { AppUpdateView } from "./client-api";
 
 export interface ReferenceChannelView { enabled: boolean; baseUrl: string; tokenConfigured: boolean; phase: string; message: string; port: number }
 export interface DesktopBridgeApi {
+  setThemeSource?(source: "system" | "light" | "dark"): Promise<void>;
   getReferenceChannel(): Promise<ReferenceChannelView>;
   saveReferenceChannel(settings: { enabled: boolean; baseUrl: string; tunnelToken?: string }): Promise<ReferenceChannelView>;
   onReferenceChannel(callback: (state: ReferenceChannelView) => void): () => void;

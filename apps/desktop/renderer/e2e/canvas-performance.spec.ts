@@ -1,12 +1,49 @@
-import { test, expect, type APIRequestContext } from "@playwright/test";
+import { test as base, expect, type APIRequestContext, type ConsoleMessage } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { freemem } from "node:os";
 import sharp from "sharp";
 import type { CanvasDocument } from "../components/types";
+import { clickBlankCanvas } from "./canvas-test-actions";
 
-type MeasuredWindow = typeof window & { __frames: number[]; __measure: boolean };
+type NodeChurn = { initial: number; minimum: number; peak: number; final: number; added: number; removed: number };
+type ZoomAudit = { wheels: Array<{ time: number; eventTime: number; deltaY: number; interacting: boolean }>;
+  classes: Array<{ time: number; host: string; before: string | null; after: string | null }> };
+type MeasuredWindow = typeof window & { __frames: number[]; __measure: boolean; __stopNodeChurn?: () => NodeChurn; __stopZoomAudit?: () => ZoomAudit };
 type Scene = "prompt" | "mixed";
-type Measurement = { scene: Scene; count: number; gesture: string; samples: number; p50: number; p95: number; max: number; over50ms: number };
+type Measurement = { scene: Scene; count: number; gesture: string; samples: number; p50: number; p95: number; max: number; over50ms: number;
+  nodeChurn?: NodeChurn;
+  zoomAudit?: ZoomAudit;
+  system: { availableBeforeBytes: number; availableAfterBytes: number; minimumAvailableMemoryBytes: number; valid: boolean } };
+
+// These historical frame gates deliberately disable expensive action traces.
+// Event-only evidence does not take DOM snapshots or change any gesture/timing.
+const test = base.extend<{ consoleEvidence: void }>({
+  consoleEvidence: [async ({ page }, runFixture, testInfo) => {
+    const events: Array<Record<string, unknown>> = [];
+    let droppedEvents = 0;
+    const startedUrl = page.url();
+    const record = (event: Record<string, unknown>) => {
+      if (events.length < 10000) events.push({ ...event, time: Date.now(), pageUrl: page.url() });
+      else droppedEvents++;
+    };
+    const consoleMessage = (message: ConsoleMessage) => record({ type: "console", level: message.type(), text: message.text(), location: message.location() });
+    const pageError = (error: Error) => record({ type: "pageerror", error: { name: error.name, message: error.message, stack: error.stack } });
+    page.on("console", consoleMessage);
+    page.on("pageerror", pageError);
+    try { await runFixture(); }
+    finally {
+      page.off("console", consoleMessage);
+      page.off("pageerror", pageError);
+      const reportPath = testInfo.outputPath("console-events.json");
+      await mkdir(dirname(reportPath), { recursive: true });
+      await writeFile(reportPath, JSON.stringify({ schema: "super-canvas/performance-console-v1",
+        testFile: "canvas-performance.spec.ts", testId: testInfo.testId, title: testInfo.title, retry: testInfo.retry,
+        scope: "primary-page-through-fixture-teardown", capture: { startedUrl, startedBeforeNavigation: startedUrl === "about:blank", completed: true, droppedEvents }, events }));
+      await testInfo.attach("canvas-performance-console", { path: reportPath, contentType: "application/json" });
+    }
+  }, { auto: true }],
+});
 
 // Conservative regression ceilings, not a claim of 60fps on every machine.
 // Override per fixture: CANVAS_PERF_P95_PROMPT_500_MS=80, or use
@@ -44,8 +81,11 @@ test(`画布 50/200/500 提示词与混合图片节点性能门槛 ${scene}/${co
   test.setTimeout(480_000);
   const rows: Measurement[] = [];
   let imageIds: string[] = [];
-  const start = () =>
-    page.evaluate(() => {
+  const minimumAvailableMemoryBytes = 6 * 1024 ** 3;
+  let availableBeforeBytes = 0;
+  const start = () => {
+    availableBeforeBytes = freemem();
+    return page.evaluate(() => {
       const w = window as MeasuredWindow;
       w.__frames = [];
       w.__measure = true;
@@ -58,8 +98,9 @@ test(`画布 50/200/500 提示词与混合图片节点性能门槛 ${scene}/${co
       };
       requestAnimationFrame(frame);
     });
-  const stop = () =>
-    page.evaluate(() => {
+  };
+  const stop = async () => {
+    const metrics = await page.evaluate(() => {
       const w = window as MeasuredWindow;
       w.__measure = false;
       const frames: number[] = w.__frames
@@ -73,6 +114,10 @@ test(`画布 50/200/500 提示词与混合图片节点性能门槛 ${scene}/${co
         over50ms: frames.filter((x) => x > 50).length,
       };
     });
+    const availableAfterBytes = freemem();
+    return { ...metrics, system: { availableBeforeBytes, availableAfterBytes, minimumAvailableMemoryBytes,
+      valid: availableBeforeBytes >= minimumAvailableMemoryBytes && availableAfterBytes >= minimumAvailableMemoryBytes } };
+  };
     console.log(`Preparing canvas performance scene: ${scene}/${count}`);
     if (scene === "mixed" && imageIds.length === 0) imageIds = await uploadPerformanceImages(request);
     await page.goto("about:blank");
@@ -154,14 +199,26 @@ test(`画布 50/200/500 提示词与混合图片节点性能门槛 ${scene}/${co
     const metrics = await stop();
     rows.push({ scene, count, gesture: "drag", ...metrics });
     // Wheel input and group dragging use the same graph and include visible selection effects.
-    const pane = await page.locator(".react-flow__pane").boundingBox();
-    expect(pane).not.toBeNull();
-    await page.mouse.move(
-      pane!.x + pane!.width * 0.5,
-      // Fit View leaves space above the graph. The center can be a prompt's
-      // scrollable editor, which intentionally consumes wheel input.
-      pane!.y + 16,
-    );
+    // The full-bleed canvas also sits behind floating islands. Find exposed
+    // pane space without changing the selection established by the drag.
+    const blankPosition = () => page.locator(".react-flow__pane").evaluate(element => {
+      const bounds = element.getBoundingClientRect();
+      const left = Math.max(bounds.left + 16, 16);
+      const right = Math.min(bounds.right - 16, innerWidth - 16);
+      const top = Math.max(bounds.top + 16, 16);
+      const bottom = Math.min(bounds.bottom - 16, innerHeight - 16);
+      for (let y = top; y <= bottom; y += 32) {
+        for (const fraction of [.5, .25, .75, .125, .875]) {
+          const x = left + (right - left) * fraction;
+          if (document.elementFromPoint(x, y) === element) return { x, y };
+        }
+      }
+      return null;
+    });
+    await expect.poll(blankPosition, { message: "The wheel gesture must start over exposed canvas, outside floating islands and node editors" }).not.toBeNull();
+    const wheelPoint = await blankPosition();
+    expect(wheelPoint).not.toBeNull();
+    await page.mouse.move(wheelPoint!.x, wheelPoint!.y);
     const beforeZoom = await page
       .locator(".react-flow__viewport")
       .getAttribute("style");
@@ -169,6 +226,59 @@ test(`画布 50/200/500 提示词与混合图片节点性能门槛 ${scene}/${co
     const profiler = process.env.CANVAS_CPU_PROFILE && count === 500
       ? await page.context().newCDPSession(page) : null;
     if (profiler) { await profiler.send("Profiler.enable"); await profiler.send("Profiler.start"); }
+    const timeline = process.env.CANVAS_PERF_NATIVE_TRACE === "1" ? profiler : null;
+    const traceComplete = timeline ? new Promise<{ stream?: string }>(resolve => timeline.once("Tracing.tracingComplete", resolve)) : null;
+    if (timeline) {
+      await timeline.send("Tracing.start", { categories: "devtools.timeline,disabled-by-default-devtools.timeline,blink.user_timing,v8", transferMode: "ReturnAsStream" });
+      await page.evaluate(() => {
+        const wrap = document.querySelector(".canvas-wrap")!, viewport = document.querySelector(".react-flow__viewport")!;
+        const audit: ZoomAudit = { wheels: [], classes: [] };
+        const wheel = (event: WheelEvent) => audit.wheels.push({ time: performance.now(), eventTime: event.timeStamp,
+          deltaY: event.deltaY, interacting: wrap.classList.contains("is-interacting") });
+        const record = (records: MutationRecord[]) => {
+          for (const entry of records) audit.classes.push({ time: performance.now(), host: entry.target === wrap ? "wrap" : "viewport",
+            before: entry.oldValue, after: (entry.target as Element).getAttribute("class") });
+        };
+        const observer = new MutationObserver(record);
+        observer.observe(wrap, { attributes: true, attributeFilter: ["class"], attributeOldValue: true });
+        observer.observe(viewport, { attributes: true, attributeFilter: ["class"], attributeOldValue: true });
+        document.addEventListener("wheel", wheel, { capture: true, passive: true });
+        performance.mark("canvas-perf-zoom-start");
+        (window as MeasuredWindow).__stopZoomAudit = () => {
+          performance.mark("canvas-perf-zoom-end");
+          record(observer.takeRecords()); observer.disconnect();
+          document.removeEventListener("wheel", wheel, true);
+          delete (window as MeasuredWindow).__stopZoomAudit;
+          return audit;
+        };
+      });
+    }
+    if (process.env.CANVAS_PERF_NODE_CHURN === "1") await page.evaluate(() => {
+      const root = document.querySelector(".react-flow__nodes")!;
+      const count = () => [...root.children].filter(node => node.classList.contains("react-flow__node")).length;
+      let current = count();
+      const churn: NodeChurn = { initial: current, minimum: current, peak: current, final: current, added: 0, removed: 0 };
+      const apply = (records: MutationRecord[]) => {
+        for (const record of records) {
+          const nodes = (list: NodeList) => [...list].filter(node => node instanceof Element && node.classList.contains("react-flow__node")).length;
+          const added = nodes(record.addedNodes), removed = nodes(record.removedNodes);
+          churn.added += added;
+          churn.removed += removed;
+          current += added - removed;
+          churn.minimum = Math.min(churn.minimum, current);
+          churn.peak = Math.max(churn.peak, current);
+        }
+      };
+      const observer = new MutationObserver(apply);
+      observer.observe(root, { childList: true });
+      (window as MeasuredWindow).__stopNodeChurn = () => {
+        apply(observer.takeRecords());
+        observer.disconnect();
+        churn.final = count();
+        delete (window as MeasuredWindow).__stopNodeChurn;
+        return churn;
+      };
+    });
     await start();
     for (let i = 0; i < 12; i++) {
       await page.mouse.wheel(0, i < 6 ? -60 : 60);
@@ -179,22 +289,37 @@ test(`画布 50/200/500 提示词与混合图片节点性能门槛 ${scene}/${co
           .getAttribute("style");
     }
     await page.waitForTimeout(180);
-    rows.push({ scene, count, gesture: "zoom", ...(await stop()) });
+    const zoomMetrics = await stop();
+    const nodeChurn = process.env.CANVAS_PERF_NODE_CHURN === "1"
+      ? await page.evaluate(() => (window as MeasuredWindow).__stopNodeChurn?.()) : undefined;
+    const zoomAudit = timeline ? await page.evaluate(() => (window as MeasuredWindow).__stopZoomAudit?.()) : undefined;
+    rows.push({ scene, count, gesture: "zoom", ...zoomMetrics, ...(nodeChurn ? { nodeChurn } : {}), ...(zoomAudit ? { zoomAudit } : {}) });
     if (profiler) {
       const { profile } = await profiler.send("Profiler.stop");
       const profilePath = testInfo.outputPath(`${scene}-zoom.cpuprofile`);
       await mkdir(dirname(profilePath), { recursive: true });
       await writeFile(profilePath, JSON.stringify(profile));
-      await profiler.detach();
+      if (!timeline) await profiler.detach();
+    }
+    if (timeline && traceComplete) {
+      await timeline.send("Tracing.end");
+      const { stream } = await traceComplete;
+      if (!stream) throw new Error("Native timeline did not return a stream");
+      let trace = "";
+      for (;;) {
+        const part = await timeline.send("IO.read", { handle: stream });
+        trace += part.base64Encoded ? Buffer.from(part.data, "base64").toString("utf8") : part.data;
+        if (part.eof) break;
+      }
+      await timeline.send("IO.close", { handle: stream });
+      await writeFile(testInfo.outputPath(`${scene}-zoom.trace.json`), trace);
+      await timeline.detach();
     }
     // Zoom is tested in both directions; fit again to expose all group members.
     expect(duringZoom).not.toBe(beforeZoom);
     await page.getByRole("button", { name: "Fit View", exact: true }).click();
     await page.waitForTimeout(450);
-    await page.mouse.click(
-      pane!.x + pane!.width - 8,
-      pane!.y + pane!.height - 55,
-    );
+    await clickBlankCanvas(page);
     await page.keyboard.press("Control+a");
     await expect
       .poll(() => page.locator(".react-flow__node.selected").count())
@@ -235,6 +360,7 @@ test(`画布 50/200/500 提示词与混合图片节点性能门槛 ${scene}/${co
   await testInfo.attach("canvas-performance", { path: reportPath, contentType: "application/json" });
   console.log(JSON.stringify(rows));
   for (const row of rows) {
+    expect.soft(row.system.valid, `${row.scene}/${row.count}/${row.gesture}: available RAM must be >= 6 GiB`).toBe(true);
     expect.soft(row.samples, `${row.scene}/${row.count}/${row.gesture}: insufficient frame samples`).toBeGreaterThan(10);
     if (process.env.CANVAS_PERF_PROFILE_ONLY !== "1") {
       expect.soft(row.p95, `${row.scene}/${row.count}/${row.gesture}: P95 regression`).toBeLessThanOrEqual(p95Budget(row.scene, row.count));

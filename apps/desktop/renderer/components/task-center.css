@@ -1,13 +1,64 @@
-.task-progress li {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  padding: 8px 0;
+.history-modal.modal-window {
+  display:flex; flex-direction:column; width:min(880px, calc(100vw - 48px));
+  max-height:calc(100dvh - 48px); padding:0; border-radius:20px;
+  background:var(--surface-floating, var(--panel-2)); overflow:hidden;
 }
-.task-progress li strong,
-.task-progress li span {
-  color: var(--text, #ddd);
+.history-modal .modal-head { padding:20px 24px 16px; background:linear-gradient(115deg, var(--panel-2), color-mix(in srgb, var(--success-wash) 25.00%, transparent)), var(--surface-floating, var(--panel-2)); }
+.task-heading { display:flex; align-items:center; gap:12px; min-width:0; }
+.task-heading-icon { display:grid; place-items:center; flex:0 0 42px; height:42px; border-radius:14px; background:linear-gradient(135deg, var(--panel-3), var(--info-wash)); color:var(--text); box-shadow:inset 0 1px color-mix(in srgb, var(--highlight) 18.82%, transparent); }
+.task-content { display:flex; flex-direction:column; min-height:0; flex:1; }
+.history-modal .library-filter-row { padding:12px 24px 16px; gap:12px; flex-shrink:0; }
+.task-tabs { display:flex; align-items:center; gap:3px; padding:3px; flex-wrap:wrap; border-radius:999px; background:var(--surface-node); }
+.task-tabs button { min-height:30px; padding:5px 10px; border:0; border-radius:999px; background:transparent; color:var(--text-secondary, var(--text-secondary)); white-space:nowrap; font-size:12px; }
+.task-tabs button[aria-selected="true"] { background:linear-gradient(120deg, var(--panel-2), var(--panel-2)); color:var(--text); box-shadow:inset 0 1px color-mix(in srgb, var(--highlight) 7.06%, transparent); }
+.task-tabs span { margin-left:4px; font-variant-numeric:tabular-nums; opacity:.8; }
+.task-search { margin-left:auto; min-width:140px; width:220px; min-height:36px; padding:7px 12px; border:1px solid var(--line); border-radius:999px; background:var(--surface-floating); color:var(--text); }
+.history-modal .history-list { padding:2px 24px 24px; }
+.history-list .history-row {
+  --task-tone:var(--text-secondary);
+  display:grid; grid-template-columns:4px 48px minmax(0, 1fr) auto; gap:12px; align-items:start;
+  margin:0 0 12px; padding:16px; border:1px solid var(--line); border-radius:16px;
+  background:linear-gradient(125deg, color-mix(in srgb, var(--selection-ink) 1.18%, transparent), transparent), var(--surface-floating);
 }
-.task-progress li small {
-  color: var(--muted, #999);
+.history-row[data-status="running"], .history-row[data-status="submitting"], .history-row[data-status="archiving"] { --task-tone:var(--status-running); }
+.history-row[data-status="queued"], .history-row[data-status="blocked"], .history-row[data-status="cancel_requested"] { --task-tone:var(--status-warn); }
+.history-row[data-status="failed"], .history-row[data-status="needs_attention"] { --task-tone:var(--status-fail); }
+.history-row[data-status="succeeded"] { --task-tone:var(--status-success); }
+.history-list .history-status { width:4px; height:28px; margin-top:10px; border-radius:999px; background:var(--task-tone); }
+.history-list .history-main { min-width:0; gap:5px; }
+.history-list .history-main > strong { font-size:13px; font-weight:650; }
+.history-list .history-main small { font-size:11px; font-variant-numeric:tabular-nums; }
+.history-list .status-label { align-self:start; padding:4px 9px; border-radius:999px; color:var(--task-tone); background:color-mix(in srgb, var(--task-tone) 12%, var(--surface-floating)); font-size:11px; white-space:nowrap; }
+.task-preview { position:relative; width:48px; height:48px; margin-top:2px; }
+.task-thumbnail { width:48px; height:48px; border-radius:14px; object-fit:cover; background:var(--surface-floating); }
+.task-thumbnail-empty { display:grid; place-items:center; color:var(--text); background:linear-gradient(145deg, var(--panel-2), color-mix(in srgb, var(--success-wash) 25.49%, transparent)); }
+.task-progress-ring { position:absolute; right:-7px; bottom:-7px; width:24px; height:24px; padding:2px; border-radius:50%; background:var(--surface-floating); color:var(--task-tone); transform:rotate(-90deg); }
+.task-progress-ring circle { fill:none; stroke-width:2.5; }
+.task-progress-track { stroke:color-mix(in srgb, var(--text) 7.84%, transparent); }
+.task-progress-value { stroke:currentColor; stroke-linecap:round; }
+.task-model { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%; color:var(--text-secondary); font-size:12px; }
+.task-failure { margin-top:4px; padding:8px 10px; background:color-mix(in srgb, var(--danger-wash) 25.00%, transparent); border-radius:10px; }
+.task-failure > summary { display:flex; gap:12px; align-items:center; width:100%; font-size:12px; color:var(--status-fail); }
+.task-error-summary { flex:1; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; min-width:0; }
+.task-failure > summary > span:last-child { flex:none; color:var(--status-fail); }
+.task-progress li { display:flex; flex-direction:column; gap:5px; padding:8px 0; }
+.task-progress li strong, .task-progress li span { color:var(--text, var(--text)); }
+.task-progress li small { color:var(--muted, var(--text-secondary)); }
+.history-modal .history-output-actions { flex-wrap:wrap; }
+.history-modal .button { border-radius:999px; }
+.task-skeleton { display:grid; gap:12px; padding:16px 24px; }
+.task-skeleton i { display:block; height:100px; border:0; border-radius:16px; background:var(--surface-floating); }
+.task-tabs button:focus-visible, .task-search:focus-visible, .history-list:focus-visible, .history-errors summary:focus-visible { outline:2px solid var(--focus-ring); outline-offset:2px; }
+@media (max-width:700px) {
+  .history-modal.modal-window { width:calc(100vw - 24px); max-height:calc(100dvh - 24px); }
+  .history-modal .modal-head { padding:16px; }
+  .history-modal .library-filter-row { flex-wrap:wrap; gap:8px; padding:10px 16px; }
+  .task-search { width:100%; }
+  .history-modal .history-list { padding-inline:12px; }
+  .history-list .history-row { grid-template-columns:4px 40px minmax(0, 1fr); gap:9px; padding:12px; }
+  .task-preview, .task-thumbnail { width:40px; height:40px; }
+  .history-list .status-label { grid-column:3; justify-self:start; grid-row:2; }
+}
+@media (prefers-reduced-motion:reduce) {
+  .history-modal *, .history-modal *::before, .history-modal *::after { animation:none !important; transition:none !important; }
 }

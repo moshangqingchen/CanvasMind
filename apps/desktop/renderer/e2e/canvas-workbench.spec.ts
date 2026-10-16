@@ -46,13 +46,19 @@ async function openWorkbench(page: Page, request: APIRequestContext) {
   const { id } = await created.json() as { id: string };
   await page.goto(`/canvas/${id}`);
   await expect(page.locator('.react-flow__node[data-id="near"] .node-card')).toBeVisible();
-  await expect(page.getByRole("button", { name: "搜索操作与节点", exact: true })).toBeEnabled();
+  const search = page.getByRole("button", { name: "搜索操作与节点", exact: true });
+  await expect(page.getByRole("button", { name: "打开项目菜单", exact: true })).toBeEnabled();
+  if (await search.isVisible()) await expect(search).toBeEnabled();
   return { id, assertNoRuns: () => expect(submissions).toBe(0) };
 }
 
 async function openCommands(page: Page, keyboard = false) {
-  const trigger = page.getByRole("button", { name: "搜索操作与节点", exact: true });
-  if (keyboard) {
+  const search = page.getByRole("button", { name: "搜索操作与节点", exact: true });
+  const searchVisible = await search.isVisible();
+  // Compact chrome keeps Ctrl+K available while the center search island is hidden.
+  // Start from a real visible control so Escape must restore useful keyboard focus.
+  const trigger = searchVisible ? search : page.getByRole("button", { name: "打开项目菜单", exact: true });
+  if (keyboard || !searchVisible) {
     await trigger.focus();
     await page.keyboard.press("Control+k");
   } else await trigger.click();
@@ -150,6 +156,7 @@ test("正在编辑的提示词立即进入搜索，定位后编辑内容仍已�
   await page.setViewportSize({ width: 1600, height: 1000 });
   const canvas = await openWorkbench(page, request);
   await page.locator('.react-flow__node[data-id="near"] .node-title').click();
+  await page.locator('.react-flow__node[data-id="near"] .prompt-overview').click();
   const editor = page.locator('.react-flow__node[data-id="near"] .tiptap-prompt');
   await editor.fill("刚刚输入的雨夜霓虹街景");
   await editor.press("Control+k");
@@ -165,17 +172,52 @@ test("正在编辑的提示词立即进入搜索，定位后编辑内容仍已�
 });
 
 for (const width of [390, 980, 1280, 1600]) {
-  test(`工作台快捷操作在 ${width}px 窗口可见，工具文字可读且没有横向溢出`, async ({ page, request }, testInfo) => {
+  test(`工作台快捷操作在 ${width}px 窗口可见，Dock 图标提示可读且没有横向溢出`, async ({ page, request }, testInfo) => {
     await page.setViewportSize({ width, height: 820 });
     const canvas = await openWorkbench(page, request);
     const rail = page.getByRole("navigation", { name: "创作工具", exact: true });
-    for (const name of ["新建图片节点", "新建提示词节点", "历史生成"]) {
-      const label = rail.getByRole("button", { name, exact: true }).locator("span");
+    for (const { name, text, title } of [
+      { name: "新建图片节点", text: "图片", title: "图片生成" },
+      { name: "新建提示词节点", text: "文本", title: "提示词" },
+      { name: "历史生成", text: "作品", title: undefined },
+    ]) {
+      const button = rail.getByRole("button", { name, exact: true });
+      const label = button.locator("span");
+      await expect(button).toBeEnabled();
+      await expect(button).toHaveAttribute("type", "button");
+      await expect(button).toBeInViewport({ ratio: 1 });
+      await expect(button.locator("svg")).toBeVisible();
+      await expect(label).toHaveText(text);
+      if (title) await expect(button).toHaveAttribute("title", title);
+      await button.hover();
       await expect(label).toBeInViewport({ ratio: 1 });
       await expect.poll(() => label.evaluate(element => {
         const style = getComputedStyle(element);
         return style.display !== "none" && style.visibility !== "hidden" && Number.parseFloat(style.opacity) > 0;
       })).toBe(true);
+      await page.mouse.move(width - 8, 810);
+      await page.keyboard.press("Tab");
+      await button.focus();
+      await expect(button).toBeFocused();
+      await expect.poll(() => button.evaluate(element => element.matches(":focus-visible"))).toBe(true);
+      await expect.poll(() => label.evaluate(element => Number.parseFloat(getComputedStyle(element).opacity))).toBe(1);
+      await expect(label).toBeInViewport({ ratio: 1 });
+    }
+    const search = page.getByRole("button", { name: "搜索操作与节点", exact: true });
+    if (width < 700) {
+      await expect(search).toBeHidden();
+      const more = page.getByRole("button", { name: "打开项目菜单", exact: true });
+      await more.click();
+      const menu = page.getByRole("menu", { name: "项目操作", exact: true });
+      await expect(menu).toBeInViewport({ ratio: 1 });
+      await expect(menu.getByRole("menuitem", { name: "键盘快捷键", exact: true })).toBeVisible();
+      await expect(menu.getByRole("menuitem", { name: "保存画布" })).toContainText("Ctrl+S");
+      await more.press("Escape");
+      await expect(menu).toBeHidden();
+      await expect(more).toBeFocused();
+    } else {
+      await expect(search).toBeInViewport({ ratio: 1 });
+      await expect(search).toHaveAttribute("title", /Ctrl\+K/);
     }
     const ui = await openCommands(page);
     await expect(ui.panel).toBeInViewport({ ratio: 1 });

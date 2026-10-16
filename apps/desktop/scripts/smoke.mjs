@@ -430,7 +430,8 @@ try {
   await page.locator('.react-flow__node[data-id="prompt"]').waitFor({ timeout: 30000 });
   const projectFilesResponse = page.waitForResponse((response) =>
     new URL(response.url()).pathname === `/api/projects/${canvas.id}/files` && response.request().method() === "GET");
-  await page.getByRole("button", { name: "打开项目文件", exact: true }).click();
+  await page.getByRole("button", { name: "打开项目菜单", exact: true }).click();
+  await page.getByRole("menuitem", { name: "打开项目文件", exact: true }).click();
   const projectFilesDialog = page.getByRole("dialog", { name: "项目文件", exact: true });
   await projectFilesDialog.waitFor();
   const filesResponse = await projectFilesResponse;
@@ -449,24 +450,46 @@ try {
   await projectFilesDialog.getByRole("button", { name: "关闭项目文件", exact: true }).click();
   await projectFilesDialog.waitFor({ state: "hidden" });
   report.checks.push("project files opens from the top toolbar, loads the scoped API and decodes an archived finished thumbnail");
-  assert.equal(await page.locator(".studio-edge-beam").count(), 0, "unselected desktop links must be still");
+  assert.equal(await page.locator(".studio-edge-motion").count(), 0, "unselected desktop links must have no moving overlay");
   await page.getByRole("button", { name: "Fit View", exact: true }).click();
   await page.locator('.react-flow__node[data-id="prompt"] .node-title').click();
-  const selectedLight = page.locator('.react-flow__edge[data-id="link"] .studio-edge-light');
-  await selectedLight.waitFor({ state: "attached" });
+  const selectedOverlay = page.locator('.studio-edge-motion[data-edge-id="link"]');
+  const selectedLight = selectedOverlay.locator(".studio-edge-dash");
+  const staticEdge = page.locator('.react-flow__edge[data-id="link"] .react-flow__edge-path');
+  await selectedLight.waitFor({ state: "visible" });
+  assert.equal(await selectedLight.getAttribute("d"), await staticEdge.getAttribute("d"), "moving overlay must follow the actual static edge curve");
+  const animation = await selectedLight.evaluate(element => {
+    const style = getComputedStyle(element);
+    return { name: style.animationName, state: style.animationPlayState, dash: style.strokeDasharray };
+  });
+  assert.equal(animation.name, "edge-running-dash");
+  assert.equal(animation.state, "running");
+  assert.notEqual(animation.dash, "none", "the bounded overlay must paint its moving dashes");
   const flowPositions = await selectedLight.evaluate(async (element) => {
     const positions = [];
     for (let frame = 0; frame < 6; frame++) {
       await new Promise(requestAnimationFrame);
-      positions.push(getComputedStyle(element).offsetDistance);
+      positions.push(getComputedStyle(element).strokeDashoffset);
     }
     return positions;
   });
-  assert.ok(new Set(flowPositions).size > 3, "selected desktop light must move continuously");
-  assert.equal(await page.locator('.react-flow__edge[data-id="link"] .studio-edge-signal').evaluate((element) => getComputedStyle(element).strokeDasharray), "none");
+  assert.ok(new Set(flowPositions).size > 3, "selected desktop dashes must move continuously across consecutive frames");
+  const staticStates = await staticEdge.evaluate(async element => {
+    const states = [];
+    for (let frame = 0; frame < 6; frame++) {
+      await new Promise(requestAnimationFrame);
+      const style = getComputedStyle(element);
+      states.push({ path: element.getAttribute("d"), dash: style.strokeDasharray, offset: style.strokeDashoffset, animation: style.animationName });
+    }
+    return states;
+  });
+  assert.equal(new Set(staticStates.map(state => JSON.stringify(state))).size, 1, "main SVG edge must remain static while its separate overlay moves");
+  assert.equal(staticStates[0].dash, "none");
+  assert.equal(staticStates[0].animation, "none");
   await page.locator(".react-flow__pane").click({ position: { x: 600, y: 700 } });
-  assert.equal(await page.locator(".studio-edge-beam").count(), 0, "clearing selection must remove desktop light");
-  report.checks.push("selected connections alone show continuous feathered light and clear with selection");
+  await selectedOverlay.waitFor({ state: "detached" });
+  assert.equal(await page.locator(".studio-edge-motion").count(), 0, "clearing selection must remove moving overlays");
+  report.checks.push("selected connections alone show continuously moving bounded dashes over unchanged static curves and clear with selection");
   await page.getByRole("button", { name: "打开项目菜单", exact: true }).click();
   await page.getByRole("menuitem", { name: "导出结构 JSON", exact: true }).click();
   let exported;

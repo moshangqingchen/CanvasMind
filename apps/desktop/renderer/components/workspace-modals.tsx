@@ -1,13 +1,40 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Brush, Film, X } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState, type ComponentProps } from "react";
+import dynamic from "next/dynamic";
+import { ArrowLeft, Brush, ChevronLeft, ChevronRight, Film, X } from "lucide-react";
 import { useDialogFocus } from "./use-dialog-focus";
 import { assetDownloadPath, downloadAssetPreferLocal } from "../lib/asset-download";
 import { ImageDownloadButton } from "./image-download-button";
 import type { AssetView } from "./types";
+import { DynamicPanelLoading, WarmPanelBoundary } from "./panel-loading";
+import { DeferredPanelContent } from "./deferred-panel-content";
 export { SettingsModal } from "./settings-modal";
-export { RunHistoryModal } from "./task-center";
-export { GenerationHistoryModal } from "./image-library";
+type RunHistoryProps = ComponentProps<typeof import("./task-center").RunHistoryModal>;
+type GenerationHistoryProps = ComponentProps<typeof import("./image-library").GenerationHistoryModal>;
+const LoadedRunHistoryModal = dynamic<RunHistoryProps>(
+  () => import("./task-center").then(module => module.RunHistoryModal),
+  { ssr: false, loading: DynamicPanelLoading },
+);
+const LoadedGenerationHistoryModal = dynamic<GenerationHistoryProps>(
+  () => import("./image-library").then(module => module.GenerationHistoryModal),
+  { ssr: false, loading: DynamicPanelLoading },
+);
+
+export function RunHistoryModal(props: RunHistoryProps) {
+  return <WarmPanelBoundary open={props.open} onClose={props.onClose} title="任务中心" dialogLabel="运行历史">
+    <DeferredPanelContent fallback={<DynamicPanelLoading />}>
+      <LoadedRunHistoryModal {...props} />
+    </DeferredPanelContent>
+  </WarmPanelBoundary>;
+}
+
+export function GenerationHistoryModal(props: GenerationHistoryProps) {
+  return <WarmPanelBoundary open={props.open} onClose={props.onClose} title="素材库" dialogLabel="历史生成">
+    <DeferredPanelContent fallback={<DynamicPanelLoading />}>
+      <LoadedGenerationHistoryModal {...props} />
+    </DeferredPanelContent>
+  </WarmPanelBoundary>;
+}
 
 export function AssetPreviewModal({
   asset,
@@ -15,12 +42,16 @@ export function AssetPreviewModal({
   onBack,
   onEditMask,
   returnFocus,
+  orderedAssets,
+  onSelectAsset,
 }: {
   asset: AssetView | null;
   onClose: () => void;
   onBack?: () => void;
   onEditMask?: (assetId: string) => void;
   returnFocus?: HTMLElement | null;
+  orderedAssets?: readonly AssetView[];
+  onSelectAsset?: (asset: AssetView) => void;
 }) {
   const dialogRef = useDialogFocus(Boolean(asset), onClose, returnFocus);
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -33,13 +64,30 @@ export function AssetPreviewModal({
   } | null>(null);
   const [imageZoom, setImageZoom] = useState(1);
   const [imageDragging, setImageDragging] = useState(false);
+  const [viewAssetId, setViewAssetId] = useState(asset?.id);
+  // Reset image-local state before the new image paints, while retaining the
+  // dialog element and its focus for consecutive keyboard navigation.
+  if (viewAssetId !== asset?.id) {
+    setViewAssetId(asset?.id);
+    setImageZoom(1);
+    setImageDragging(false);
+  }
+  useLayoutEffect(() => {
+    const stage = stageRef.current;
+    const pointer = imageDragRef.current?.pointerId;
+    if (pointer !== undefined && stage?.hasPointerCapture(pointer)) stage.releasePointerCapture(pointer);
+    imageDragRef.current = null;
+    if (stage) { stage.scrollLeft = 0; stage.scrollTop = 0; }
+  }, [asset?.id]);
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage || asset?.kind !== "image") return;
+    let wheelFrame = 0;
+    let currentZoom = 1;
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
       event.stopPropagation();
-      const previousZoom = imageZoom;
+      const previousZoom = currentZoom;
       const nextZoom = Math.min(5, Math.max(0.25,
         Number((previousZoom + (event.deltaY < 0 ? 0.15 : -0.15)).toFixed(2)),
       ));
@@ -49,17 +97,22 @@ export function AssetPreviewModal({
       const cursorY = event.clientY - bounds.top;
       const contentX = stage.scrollLeft + cursorX;
       const contentY = stage.scrollTop + cursorY;
+      currentZoom = nextZoom;
       setImageZoom(nextZoom);
-      window.requestAnimationFrame(() => {
+      window.cancelAnimationFrame(wheelFrame);
+      wheelFrame = window.requestAnimationFrame(() => {
         const scale = nextZoom / previousZoom;
         stage.scrollLeft = contentX * scale - cursorX;
         stage.scrollTop = contentY * scale - cursorY;
       });
     };
     stage.addEventListener("wheel", onWheel, { passive: false });
-    return () => stage.removeEventListener("wheel", onWheel);
-  }, [asset?.id, asset?.kind, imageZoom]);
+    return () => { stage.removeEventListener("wheel", onWheel); window.cancelAnimationFrame(wheelFrame); };
+  }, [asset?.id, asset?.kind]);
   if (!asset) return null;
+  const index = orderedAssets?.findIndex(item => item.id === asset.id) ?? -1;
+  const previous = index > 0 ? orderedAssets?.[index - 1] : undefined;
+  const next = index >= 0 ? orderedAssets?.[index + 1] : undefined;
   const url = assetDownloadPath(asset.id);
   const stopImageDrag = (pointerId: number, releaseCapture = true) => {
     const stage = stageRef.current;
@@ -84,6 +137,11 @@ export function AssetPreviewModal({
         aria-modal="true"
         aria-label="素材预览"
         tabIndex={-1}
+        onKeyDown={event => {
+          if (!onSelectAsset || event.nativeEvent.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || (event.target as HTMLElement).closest("input,textarea,video,audio,[contenteditable=true]")) return;
+          const target = event.key === "ArrowLeft" ? previous : event.key === "ArrowRight" ? next : undefined;
+          if (target) { event.preventDefault(); event.stopPropagation(); onSelectAsset(target); }
+        }}
       >
         <header className="modal-head">
           <div className="asset-modal-heading">
@@ -100,10 +158,15 @@ export function AssetPreviewModal({
             ) : null}
             <div>
               <span className="eyebrow">素材预览</span>
-              <h2>{asset.name}</h2>
+              <h2 title={asset.name}>{asset.name}</h2>
             </div>
           </div>
           <div className="modal-head-actions">
+            {onSelectAsset && orderedAssets && orderedAssets.length > 1 ? <>
+              <button className="icon-button" type="button" disabled={!previous} onClick={() => previous && onSelectAsset(previous)} aria-label="上一素材" title="上一素材（←）"><ChevronLeft size={17} /></button>
+              <span className="asset-zoom-level">{index + 1} / {orderedAssets.length}</span>
+              <button className="icon-button" type="button" disabled={!next} onClick={() => next && onSelectAsset(next)} aria-label="下一素材" title="下一素材（→）"><ChevronRight size={17} /></button>
+            </> : null}
             {asset.kind === "image" && onEditMask && <button className="button small" type="button"
               onClick={() => onEditMask(asset.id)}><Brush size={15} /> 绘制蒙版</button>}
             {asset.kind === "image" ? (
@@ -116,6 +179,7 @@ export function AssetPreviewModal({
               type="button"
               onClick={onClose}
               aria-label="关闭"
+              title="关闭（Esc）"
             >
               <X size={17} />
             </button>

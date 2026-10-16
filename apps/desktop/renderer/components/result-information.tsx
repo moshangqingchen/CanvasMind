@@ -147,11 +147,13 @@ export function ResultInformation({
   data,
   asset,
   overlay = false,
+  actionLabel,
 }: {
   nodeId: string;
   data: CanvasNodeData;
   asset?: AssetView;
   overlay?: boolean;
+  actionLabel?: string;
 }) {
   const [open, setOpen] = useState(false),
     [copy, setCopy] = useState("复制任务编号");
@@ -239,7 +241,7 @@ export function ResultInformation({
       <button
         type="button"
         className={`${overlay ? "generated-result-provenance-overlay " : ""}result-info-button nodrag nopan`}
-        aria-label={`查看 ${data.label} 来源`}
+        aria-label={actionLabel ? `${actionLabel}：${data.label}` : `查看 ${data.label} 来源`}
         aria-haspopup="dialog"
         title="查看参考图、提示词、模型、参数与任务信息"
         onPointerDown={(e) => e.stopPropagation()}
@@ -254,7 +256,7 @@ export function ResultInformation({
           setOpen(true);
         }}
       >
-        来源 · 详情
+        {actionLabel ?? "来源 · 详情"}
       </button>
       {open
         ? createPortal(
@@ -274,7 +276,7 @@ export function ResultInformation({
                 aria-label="结果来源与参数"
                 tabIndex={-1}
                 onKeyDown={(e) => {
-                  e.stopPropagation();
+                  if (e.key !== "Escape") e.stopPropagation();
                 }}
               >
                 <header className="modal-head">
@@ -283,6 +285,7 @@ export function ResultInformation({
                     type="button"
                     className="icon-button"
                     aria-label="关闭来源详情"
+                    title="关闭来源详情（Esc）"
                     onClick={close}
                   >
                     <X size={16} aria-hidden="true" />
@@ -355,7 +358,7 @@ export function ResultInformation({
                     <dt>耗时（含排队）</dt>
                     <dd>{resultElapsed(data.generatedCreatedAt, details.finishedAt ?? asset?.createdAt)}</dd>
                     <dt>供应商任务号</dt>
-                    <dd>{details.taskEvidence?.taskId ?? "未取得"}{details.taskEvidence?.taskId ? <button type="button" className="icon-button" aria-label="复制供应商任务号" onClick={() => copyDetail(details.taskEvidence!.taskId, "供应商任务号")}><Copy size={15} aria-hidden="true" /></button> : null}</dd>
+                    <dd>{details.taskEvidence?.taskId ?? "未取得"}{details.taskEvidence?.taskId ? <button type="button" className="icon-button" aria-label="复制供应商任务号" title="复制供应商任务号" onClick={() => copyDetail(details.taskEvidence!.taskId, "供应商任务号")}><Copy size={15} aria-hidden="true" /></button> : null}</dd>
                     <dt>本地运行编号</dt>
                     <dd>{taskId ?? "尚未分配"}</dd>
                   </dl>

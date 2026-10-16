@@ -1,8 +1,8 @@
 import { expect, test } from "@playwright/test";
 import { bindScannedModelProtocols } from "../lib/scanned-model-protocols";
-import { attachedPanelGeometry } from "./attached-panel-geometry";
+import { floatingPanelGeometry } from "./floating-panel-geometry";
 
-test("参数面板随节点同比缩放，后台扫描保持参数及滚动位置", async ({ page, request }, testInfo) => {
+test("参数浮卡不随画布缩放，后台扫描保持参数及滚动位置", async ({ page, request }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 960 });
   const descriptor = bindScannedModelProtocols({ provider: "openai", config: {
     baseUrl: "https://genimage.pro/v1", modelGroup: "gptResponseBase64", usage: "canvas",
@@ -54,15 +54,21 @@ test("参数面板随节点同比缩放，后台扫描保持参数及滚动位�
   // after model controls are ready, before measuring layout or scroll position.
   if (await sidebar.getAttribute("aria-expanded") === "true") await sidebar.click();
   await expect(sidebar).toHaveAttribute("aria-expanded", "false");
-  await expect(panel).toHaveCSS("width", "420px");
+  await expect(panel).toHaveCSS("width", "380px");
+  await expect.poll(() => panel.evaluate(element => element.getAnimations()
+    .some(animation => animation.playState === "running"))).toBe(false);
+  const initialBounds = (await panel.boundingBox())!;
   await quality.scrollIntoViewIfNeeded();
   const scrollTop = await body.evaluate(element => element.scrollTop);
   const assertStable = async () => {
-    // These zoom levels have room for the full CSS height. Placement can shift
-    // to keep the panel visible while controls inherit the node's scale.
-    await expect(panel).toHaveCSS("height", "560px");
+    // The floating card and its text retain screen dimensions at every zoom.
+    await expect.poll(async () => {
+      const bounds = (await panel.boundingBox())!;
+      return Math.max(...(["x", "y", "width", "height"] as const)
+        .map(key => Math.abs(bounds[key] - initialBounds[key])));
+    }).toBeLessThanOrEqual(1);
     await expect(panel).toHaveCSS("font-size", "13px");
-    await expect.poll(async () => (await attachedPanelGeometry(panel)).attachmentError).toBeLessThanOrEqual(1);
+    await expect.poll(async () => (await floatingPanelGeometry(panel)).floatingError).toBeLessThanOrEqual(1);
     await panel.getByRole("button", { name: "关闭模型与参数面板", exact: true }).click({ trial: true });
     await expect(tiers.getByRole("button", { name: "4K", exact: true })).toHaveAttribute("aria-pressed", "true");
     await expect(panel.getByLabel("输出分辨率预设", { exact: true })).toHaveValue("auto");
@@ -74,7 +80,7 @@ test("参数面板随节点同比缩放，后台扫描保持参数及滚动位�
   const initialScans = scans;
   for (const direction of ["zoomout", "zoomout", "zoomout", "zoomin", "zoomin", "zoomin"]) {
     const previousZoom = await page.locator(".canvas-zoom-value").textContent();
-    await page.locator(`.react-flow__controls-${direction}`).click();
+    await page.getByRole("button", { name: direction === "zoomout" ? "Zoom Out" : "Zoom In", exact: true }).click();
     await expect(page.locator(".canvas-zoom-value")).not.toHaveText(previousZoom!);
     await assertStable();
   }
@@ -87,7 +93,7 @@ test("参数面板随节点同比缩放，后台扫描保持参数及滚动位�
   try {
     await expect.poll(() => scans).toBeGreaterThan(initialScans);
     await assertStable();
-    await page.locator(".react-flow__controls-zoomout").click();
+    await page.getByRole("button", { name: "Zoom Out", exact: true }).click();
     await assertStable();
     await page.screenshot({ path: testInfo.outputPath("stable-panel-during-scan.png") });
   } finally {

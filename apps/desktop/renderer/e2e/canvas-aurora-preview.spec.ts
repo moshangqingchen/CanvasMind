@@ -1,0 +1,34 @@
+import { expect, test } from "@playwright/test";
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
+import { installPhase3LargeFixture } from "./helpers/phase3-large-fixtures";
+
+test("极光结构首屏预览", async ({ page }) => {
+  const output = process.env.UI_AURORA_PREVIEW_DIR;
+  test.skip(!output, "Opt-in visual preview uses an isolated fixture");
+  test.setTimeout(90_000);
+  await mkdir(output!, { recursive: true });
+  await page.setViewportSize({ width: 1366, height: 768 });
+  const fixture = await installPhase3LargeFixture(page, { imageParameters: true });
+  await page.goto("/");
+  await expect(page.getByText("我的画布", { exact: true }).first()).toBeVisible();
+  await page.screenshot({ path: join(output!, "home-1366.png") });
+  await page.goto(`/canvas/${fixture.canvasId}`);
+  await expect(page.locator('[data-canvas-island="project"]')).toBeVisible();
+  await expect(page.locator('.react-flow__node[data-id="phase3-generator"]')).toBeVisible();
+  const agent = page.getByRole("button", { name: "智能体面板", exact: true });
+  if (await agent.getAttribute("aria-expanded") === "true") await agent.click();
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: join(output!, "canvas-1366.png") });
+  await page.getByRole("button", { name: "添加节点", exact: true }).click();
+  await expect(page.getByRole("menu", { name: "添加创作节点", exact: true })).toBeVisible();
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: join(output!, "add-node-1366.png") });
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "打开 完整图片参数 模型与参数", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "完整图片参数 模型与参数", exact: true })).toBeVisible();
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: join(output!, "parameters-1366.png") });
+  expect(fixture.errors).toEqual([]); expect(fixture.warnings).toEqual([]);
+  expect(fixture.unexpected).toEqual([]); expect(fixture.prohibited).toEqual([]);
+});

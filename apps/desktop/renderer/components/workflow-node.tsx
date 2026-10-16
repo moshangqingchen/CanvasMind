@@ -2,15 +2,15 @@
 
 import { cliOperationForNode } from "../lib/cli-input-ports";
 
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import musicStyles from "./music-node.module.css";
 import {
   Handle,
-  NodeResizer,
+  NodeResizeControl,
   NodeToolbar,
   Position,
-  useStore,
+  useStoreApi,
   type NodeProps,
 } from "@xyflow/react";
 import {
@@ -81,6 +81,12 @@ import { AssetPreviewImage } from "./asset-preview-image";
 import { useResultPreviewSize } from "../lib/use-result-preview-size";
 import { hasImageMask, IMAGE_REFERENCE_NODE_MIN_HEIGHT, MASK_EDIT_NODE_MIN_HEIGHT } from "../lib/generation-node-layout";
 import type { CanvasNode, CanvasNodeData, RunErrorDetails } from "./types";
+import { NodeStateLabel } from "./node-state-label";
+import { assetHasKnownAlpha, nodeVisualStatus } from "../lib/node-state-presentation";
+import { canvasMotionEnabled } from "./canvas-motion";
+import { DeferredPanelContent } from "./deferred-panel-content";
+import { nodePortTop } from "../lib/node-port-layout";
+import { acquireNodeConfigSurfaceMarkers } from "../lib/node-config-surface-markers";
 
 const ASSET_DRAG_TYPE = "application/x-super-canvas-asset";
 
@@ -110,15 +116,7 @@ function portTop(
   index: number,
   total: number,
 ): string {
-  const generationNode =
-    node.data.nodeType === "image-generation" ||
-    node.data.nodeType === "video-generation" || node.data.nodeType === "music-generation";
-  if (generationNode && direction === "input") {
-    const preferred = 58 + index * 42;
-    const bottomClearance = (total - index) * 24;
-    return `min(${preferred}px, calc(100% - ${bottomClearance}px))`;
-  }
-  return `${((index + 1) / (total + 1)) * 100}%`;
+  return nodePortTop(node.data.nodeType, direction, index, total);
 }
 
 function formatMediaDuration(seconds: number | undefined): string | null {
@@ -303,9 +301,9 @@ function PortHandles({
             id={port.id}
             type={direction === "input" ? "target" : "source"}
             position={direction === "input" ? Position.Left : Position.Right}
-            style={{ top: portTop(node, direction, index, ports.length) }}
+            style={{ top: portTop(node, direction, index, ports.length), "--port-color": `var(--port-${port.kind.replace(/\[\]$/u, "")}, var(--port-asset))` } as React.CSSProperties}
             aria-label={`${direction === "input" ? "输入" : "输出"} ${port.label}（${port.kind}）`}
-            title={`${port.label} · ${port.kind}`}
+            title={`${port.label} · ${port.kind} · ${data.portConnectionCounts?.[direction][port.id] ?? 0} 个连接`}
             data-port-kind={port.kind}
             data-connection-active={
               data.connectionPreviewActive ? "true" : undefined
@@ -318,7 +316,8 @@ function PortHandles({
             }
           />
           <span
-            className={`port-label ${direction === "input" ? "left" : "right"}`}
+            className={`port-label node-port-title ${direction === "input" ? "left" : "right"}`}
+            title={`${port.label} · ${port.kind} · ${data.portConnectionCounts?.[direction][port.id] ?? 0} 个连接`}
             style={{ top: portTop(node, direction, index, ports.length) }}
           >
             {port.label}
@@ -333,7 +332,15 @@ function CanvasPromptEditor({data, active}: {data: CanvasNodeData; active: boole
   const placeholder = data.nodeType === "image-generation" && hasImageMask(data.parameters)
     ? "描述涂抹区域要如何修改，例如：将衣服改成蓝色…"
     : data.nodeType === "music-generation" ? "描述曲风、乐器、人声和情绪…" : "输入提示词，描述你希望生成的内容…";
-  const compact = useStore((state) => state.transform[2] < .5 && !active);
+  // Selection, dragging and opening parameters are reading operations. Only
+  // an explicit click/keyboard action on the prompt creates an editor.
+  const [editing, setEditing] = useState(false);
+  const [wasActive, setWasActive] = useState(active);
+  if (wasActive !== active) {
+    setWasActive(active);
+    if (!active) setEditing(false);
+  }
+  const compact = !editing;
   const host = useRef<HTMLDivElement>(null);
   const focusRequested = useRef(false);
   useEffect(() => {
@@ -346,7 +353,7 @@ function CanvasPromptEditor({data, active}: {data: CanvasNodeData; active: boole
       return () => cancelAnimationFrame(frame);
     }
   }, [compact]);
-  const activate = () => { focusRequested.current = true; data.onSelect?.(); };
+  const activate = () => { focusRequested.current = true; data.onSelect?.(); setEditing(true); };
   return <div ref={host} className="canvas-prompt-content">
     {compact ? <div className="prompt-overview" role="button" tabIndex={0} aria-label={`编辑 ${data.label} 提示词`}
       onPointerDownCapture={(event) => {if(!event.ctrlKey && !event.metaKey)focusRequested.current=true;}}
@@ -358,56 +365,112 @@ function CanvasPromptEditor({data, active}: {data: CanvasNodeData; active: boole
   </div>;
 }
 
-function GenerationNodeBody({
-  nodeId,
-  data,
-  active,
-}: {
+export interface GenerationNodeBodyProps {
   nodeId: string;
   data: CanvasNodeData;
   active: boolean;
-}) {
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  /** Fixed for this instance's lifetime; parameter instances are owned by root. */
+  presentation?: "node" | "parameters";
+  onRequestClose?: () => void;
+  onRequestFocus?: () => void;
+  registerPanelElement?: (element: HTMLElement | null) => void;
+}
+
+export function GenerationNodeBody({
+  nodeId,
+  data,
+  active,
+  presentation = "node",
+  onRequestClose,
+  onRequestFocus,
+  registerPanelElement,
+}: GenerationNodeBodyProps) {
+  const [localSettingsOpen, setLocalSettingsOpen] = useState(false);
+  const settingsOpen = presentation === "parameters" || localSettingsOpen;
+  const uiActive = settingsOpen && (presentation !== "parameters" || active);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const onConfigurationOpenChange = data.onConfigurationOpenChange;
   useLayoutEffect(() => {
-    if (!settingsOpen) return;
+    if (presentation === "parameters" || !settingsOpen) return;
     onConfigurationOpenChange?.(nodeId, true);
     return () => onConfigurationOpenChange?.(nodeId, false);
-  }, [nodeId, onConfigurationOpenChange, settingsOpen]);
-  // Share the node's coordinate space so the panel pans, zooms and resizes with it.
+  }, [nodeId, onConfigurationOpenChange, settingsOpen, presentation]);
+  // Only standalone legacy consumers attach their local panel to node space.
   const [settingsHost, setSettingsHost] = useState<HTMLElement | null>(null);
-  const [settingsPlacement, setSettingsPlacement] = useState<{ left: number; top?: number; width?: number; maxHeight?: number }>({ left: 0 });
+  const settingsPopoverRef = useRef<HTMLElement | null>(null);
   const settingsTrigger = useRef<HTMLButtonElement | null>(null);
   const settingsBody = useRef<HTMLDivElement | null>(null);
-  const settingsAnchor = useStore(state => {
-    if (!settingsOpen) return "";
-    const node = state.nodeLookup.get(nodeId);
-    return [state.transform.join(","), node?.internals.positionAbsolute.x,
-      node?.internals.positionAbsolute.y, node?.measured.width, node?.measured.height].join(":");
-  });
+  const flowStore = useStoreApi<CanvasNode>();
+  const attachSettingsPopover = useCallback((element: HTMLElement | null) => {
+    settingsPopoverRef.current = element;
+    registerPanelElement?.(element);
+  }, [registerPanelElement]);
+  const closeSettings = useCallback(() => {
+    // Width/height drafts commit on native blur. React unmount alone does not
+    // deliver that event; commit only this card's active field before closing.
+    const focused = document.activeElement;
+    if (focused instanceof HTMLElement && settingsPopoverRef.current?.contains(focused)) focused.blur();
+    setModelMenuOpen(false);
+    if (presentation === "parameters") onRequestClose?.();
+    else setLocalSettingsOpen(false);
+  }, [presentation, onRequestClose]);
   const attachSettingsTrigger = useCallback((trigger: HTMLButtonElement | null) => {
     settingsTrigger.current = trigger;
     setSettingsHost(trigger?.closest<HTMLElement>(".react-flow__node") ?? null);
   }, []);
-  const settingsZoom = useStore(state => settingsOpen ? state.transform[2] : 1);
   useLayoutEffect(() => {
-    if (!settingsOpen || !settingsHost) return;
+    if (presentation === "parameters") return;
+    const popover = settingsPopoverRef.current;
+    if (!settingsOpen || !settingsHost || !popover) return;
+    const releaseSurfaceMarkers = acquireNodeConfigSurfaceMarkers(settingsHost);
     const canvas = settingsHost.closest<HTMLElement>(".canvas-wrap");
     const rail = settingsHost.closest(".canvas-editor")?.querySelector<HTMLElement>(".editor-rail");
-    if (!canvas) return;
+    if (!canvas) return releaseSurfaceMarkers;
     const toolSelector = ".canvas-toolbar, .react-flow__controls, .react-flow__minimap";
     let viewportTools = [...canvas.querySelectorAll<HTMLElement>(toolSelector)];
     let active = true;
-    const place = () => {
-      if (!active || !Number.isFinite(settingsZoom) || settingsZoom <= 0) return;
-      const hostBounds = settingsHost.getBoundingClientRect();
+    let placementFrame = 0;
+    let environment: { canvasBounds: DOMRect; railBounds?: DOMRect; obstacles: DOMRect[] } | null = null;
+    let previousPlacementGeometry: number[] | undefined;
+    // Detached controls must not stay alive until the parameter panel closes.
+    const observedSizes = new WeakMap<Element, readonly [number, number]>();
+    const rememberSize = (element: Element, bounds: DOMRect, scale = 1) => {
+      observedSizes.set(element, [bounds.width / scale, bounds.height / scale]);
+    };
+    const readEnvironment = () => {
+      if (environment) return environment;
       const canvasBounds = canvas.getBoundingClientRect();
       const railBounds = rail?.getBoundingClientRect();
+      rememberSize(canvas, canvasBounds);
+      if (rail && railBounds) rememberSize(rail, railBounds);
+      const obstacles = viewportTools.map(tool => {
+        const bounds = tool.getBoundingClientRect();
+        rememberSize(tool, bounds);
+        return bounds;
+      }).filter(bounds => bounds.width > 0 && bounds.height > 0);
+      environment = { canvasBounds, railBounds, obstacles };
+      return environment;
+    };
+    const place = () => {
+      const settingsZoom = flowStore.getState().transform[2];
+      if (!active || !Number.isFinite(settingsZoom) || settingsZoom <= 0) return;
+      const hostBounds = settingsHost.getBoundingClientRect();
+      rememberSize(settingsHost, hostBounds, settingsZoom);
+      // Panning transforms the node, while viewport tools stay in screen space.
+      // Reuse their rectangles until an actual size/layout change invalidates them.
+      const { canvasBounds, railBounds, obstacles } = readEnvironment();
       const leftBoundary = Math.max(canvasBounds.left + 8,
         railBounds && railBounds.width > 0 && railBounds.height > 0 ? railBounds.right + 8 : 0);
       const rightBoundary = Math.min(canvasBounds.right, window.innerWidth) - 8;
       if (hostBounds.width <= 0 || rightBoundary <= leftBoundary) return;
+      const geometry = [settingsZoom, window.innerWidth, window.innerHeight,
+        hostBounds.left, hostBounds.top, hostBounds.right, hostBounds.bottom,
+        canvasBounds.left, canvasBounds.top, canvasBounds.right, canvasBounds.bottom,
+        railBounds?.left ?? 0, railBounds?.top ?? 0, railBounds?.right ?? 0, railBounds?.bottom ?? 0,
+        ...obstacles.flatMap(bounds => [bounds.left, bounds.top, bounds.right, bounds.bottom])];
+      if (previousPlacementGeometry?.length === geometry.length &&
+        geometry.every((value, index) => value === previousPlacementGeometry![index])) return;
+      previousPlacementGeometry = geometry;
       const placement = placeNodeConfigPanel({
         node: hostBounds,
         viewport: {
@@ -415,23 +478,65 @@ function GenerationNodeBody({
           top: Math.max(canvasBounds.top, 0) + 8,
           bottom: Math.min(canvasBounds.bottom, window.innerHeight) - 8,
         },
-        obstacles: viewportTools.map(tool => tool.getBoundingClientRect())
-          .filter(bounds => bounds.width > 0 && bounds.height > 0),
+        obstacles,
         zoom: settingsZoom,
       });
       // The portal remains inside the transformed node. Convert only its
       // visual placement to local coordinates; never move or resize the node.
       const next = { left: (placement.left - hostBounds.left) / settingsZoom, width: placement.width / settingsZoom,
         top: (placement.top - hostBounds.top) / settingsZoom, maxHeight: placement.maxHeight / settingsZoom };
-      setSettingsPlacement(previous => Math.abs(previous.left - next.left) < .01 &&
-        previous.width !== undefined && Math.abs(previous.width - next.width) < .01 &&
-        previous.top !== undefined && Math.abs(previous.top - next.top) < .01 &&
-        previous.maxHeight !== undefined && Math.abs(previous.maxHeight - next.maxHeight) < .01 ? previous : next);
+      // Placement belongs to the transformed DOM layer. Updating React state
+      // here used to rerender all model/parameter controls on every pan frame.
+      for (const key of ["left", "top", "width", "maxHeight"] as const) {
+        const value = `${next[key]}px`;
+        if (popover.style[key] !== value) popover.style[key] = value;
+      }
+      // The top-layer model menu follows this inspector without invalidating
+      // either component's React content during canvas geometry changes.
+      popover.dispatchEvent(new Event("canvas-node-config-position"));
     };
+    const schedulePlacement = () => {
+      if (!active || placementFrame) return;
+      placementFrame = window.requestAnimationFrame(() => {
+        placementFrame = 0;
+        place();
+      });
+    };
+    const invalidateEnvironment = () => {
+      environment = null;
+      schedulePlacement();
+    };
+    const readGeometry = () => {
+      const state = flowStore.getState();
+      const node = state.nodeLookup.get(nodeId);
+      return [...state.transform, node?.internals.positionAbsolute.x,
+        node?.internals.positionAbsolute.y, node?.measured.width, node?.measured.height];
+    };
+    // React Flow mutates nodeLookup in place. Compare scalar snapshots rather
+    // than the previous map, which can already contain the current geometry.
+    let previousGeometry = readGeometry();
+    const unsubscribe = flowStore.subscribe(() => {
+      const geometry = readGeometry();
+      if (geometry.some((value, index) => value !== previousGeometry[index])) {
+        previousGeometry = geometry;
+        schedulePlacement();
+      }
+    });
     place();
-    const observer = new ResizeObserver(place);
+    const observer = new ResizeObserver(entries => {
+      const changed = entries.some(entry => {
+        const size = entry.borderBoxSize[0];
+        const previous = observedSizes.get(entry.target);
+        return !size || !previous || Math.abs(previous[0] - size.inlineSize) > .01 || Math.abs(previous[1] - size.blockSize) > .01;
+      });
+      // ResizeObserver delivers initial entries even when the first synchronous
+      // placement already measured the same boxes. Avoid a redundant first RAF.
+      if (changed) invalidateEnvironment();
+    });
     observer.observe(settingsHost);
     observer.observe(canvas);
+    // Placement uses available viewport space, not the panel's content height.
+    // The deferred body and its scroll height cannot change these inputs.
     if (rail) observer.observe(rail);
     for (const tool of viewportTools) observer.observe(tool);
     const toolPositionObserver = new MutationObserver(records => {
@@ -444,35 +549,52 @@ function GenerationNodeBody({
         for (const tool of nextTools) if (!viewportTools.includes(tool)) observer.observe(tool);
         viewportTools = nextTools;
       }
-      if (toolsChanged || records.some(record => record.type === "attributes" && record.target === canvas)) place();
+      if (toolsChanged || records.some(record => record.type === "attributes" && record.target === canvas)) invalidateEnvironment();
     });
     toolPositionObserver.observe(canvas, {
       attributes: true, attributeFilter: ["data-compact-tools"], childList: true, subtree: true,
     });
-    window.addEventListener("resize", place);
+    window.addEventListener("resize", invalidateEnvironment);
     return () => {
       active = false;
+      releaseSurfaceMarkers();
+      window.cancelAnimationFrame(placementFrame);
+      unsubscribe();
       observer.disconnect();
       toolPositionObserver.disconnect();
-      window.removeEventListener("resize", place);
+      window.removeEventListener("resize", invalidateEnvironment);
     };
-  }, [settingsAnchor, settingsHost, settingsOpen, settingsZoom]);
+  }, [flowStore, nodeId, settingsHost, settingsOpen, presentation]);
   useLayoutEffect(() => {
-    if (!settingsOpen) return;
-    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") { if (event.target instanceof HTMLSelectElement || event.target instanceof Element && event.target.closest(".node-model-select[data-open]")) return; event.stopImmediatePropagation(); setSettingsOpen(false); setModelMenuOpen(false); settingsTrigger.current?.focus(); } };
+    if (!uiActive) return;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
+      // A modal opened from a keyboard shortcut owns Escape before this
+      // nonmodal parameter panel; its useDialogFocus handler runs in bubble.
+      if ([...document.querySelectorAll<HTMLElement>('dialog[open], [role="dialog"][aria-modal="true"], [role="alertdialog"][aria-modal="true"]')]
+        .some(dialog => dialog !== settingsPopoverRef.current && dialog.getClientRects().length > 0)) return;
+      // Native popups own the first Escape. Once closed, a focused select in
+      // the root card must not permanently block its ordinary close shortcut.
+      if (event.target instanceof HTMLSelectElement &&
+          (presentation !== "parameters" || event.target.matches(":open"))) return;
+      if (event.target instanceof Element && event.target.closest(".node-model-select[data-open]")) return;
+      event.stopImmediatePropagation();
+      closeSettings();
+      if (presentation !== "parameters") settingsTrigger.current?.focus();
+    };
     window.addEventListener("keydown", escape, true);
     return () => window.removeEventListener("keydown", escape, true);
-  }, [settingsOpen]);
+  }, [uiActive, closeSettings, presentation]);
   const modelSelectRef = useRef<HTMLDivElement | null>(null);
   const [availabilitySnapshot, setAvailabilitySnapshot] = useState<ModelAvailabilitySnapshot>(
     { connectionId: "", items: [], state: "idle" });
   const [, setAvailabilityClock] = useState(0);
   useEffect(() => {
-    if (!settingsOpen) return;
+    if (!uiActive) return;
     // Even a stalled refresh must eventually lose its healthy badge.
     const timer = setInterval(() => setAvailabilityClock(value => value + 1), CANGYUAN_AVAILABILITY_REFRESH_MS);
     return () => clearInterval(timer);
-  }, [settingsOpen]);
+  }, [uiActive]);
   const nodeType =
     data.nodeType === "video-generation"
       ? "video-generation"
@@ -499,8 +621,19 @@ function GenerationNodeBody({
     setPreviousMenuContext(menuContext);
     setModelMenuOpen(false);
   }
+  // Deactivation closes top-layer menus. Becoming active must not clear a
+  // menu opened by the very pointer event that focused this retained card.
+  if (!uiActive && modelMenuOpen) setModelMenuOpen(false);
+  const previousScrollContext = useRef<readonly [boolean, string, string | undefined] | null>(null);
   useLayoutEffect(() => {
-    if (settingsBody.current) settingsBody.current.scrollTop = 0;
+    const next = [settingsOpen, currentConnection, data.model] as const;
+    const previous = previousScrollContext.current;
+    previousScrollContext.current = next;
+    // A new scroll container already starts at zero. Writing scrollTop on its
+    // first layout effect forces the pending panel styles/layout synchronously.
+    // Existing cards still reset after a real open/connection/model change.
+    if (previous && next.some((value, index) => value !== previous[index]) && settingsBody.current)
+      settingsBody.current.scrollTop = 0;
   }, [settingsOpen, currentConnection, data.model]);
   const connectionOptions = data.connectionOptions ?? [];
   const currentConnectionOption = connectionOptions.find(
@@ -526,18 +659,16 @@ function GenerationNodeBody({
     : currentConnection
       ? "当前 API"
       : "未配置 API";
-  const modelOptions = [...(data.modelOptions ?? [])];
-  const billingAccounts = useSupplierBillingOverview();
-  if (
-    data.model &&
-    modelOptions.length === 0 &&
-    !data.modelOptionsAuthoritative &&
-    !data.modelOptionsLoading &&
-    !modelOptions.some((model) => model.id === data.model)
-  ) {
-    modelOptions.unshift({ id: data.model, name: data.model, operations: [] });
-  }
+  const modelOptions = useMemo<NonNullable<CanvasNodeData["modelOptions"]>>(() => {
+    const options = data.modelOptions ?? [];
+    if (data.model && options.length === 0 && !data.modelOptionsAuthoritative && !data.modelOptionsLoading) {
+      return [{ id: data.model, name: data.model, operations: [] }];
+    }
+    return options;
+  }, [data.modelOptions, data.model, data.modelOptionsAuthoritative, data.modelOptionsLoading]);
+  const billingAccounts = useSupplierBillingOverview(uiActive);
   const selectedModel = modelOptions.find((model) => model.id === data.model);
+  const modelPriceLabel = useMemo(() => modelPickerPriceData(selectedModel), [selectedModel]);
   const hasReferenceVideo = data.linkedAssets?.some(asset => asset.kind === "video") === true;
   const priceParameters = { ...parameters,
     has_reference_video: hasReferenceVideo,
@@ -603,7 +734,7 @@ function GenerationNodeBody({
   };
 
   useEffect(() => {
-    if (!modelMenuOpen) return;
+    if (!uiActive || !modelMenuOpen) return;
     const closeOnOutsidePointer = (event: PointerEvent) => {
       if (
         event.target instanceof Node &&
@@ -622,10 +753,10 @@ function GenerationNodeBody({
       document.removeEventListener("pointerdown", closeOnOutsidePointer, true);
       document.removeEventListener("keydown", closeOnEscape);
     };
-  }, [modelMenuOpen]);
+  }, [uiActive, modelMenuOpen]);
 
   useEffect(() => {
-    if (!settingsOpen || !cangyuanAvailabilityEnabled) return;
+    if (!uiActive || !cangyuanAvailabilityEnabled) return;
 
     let cancelled = false;
     let refreshTimer: ReturnType<typeof setTimeout> | undefined;
@@ -668,22 +799,37 @@ function GenerationNodeBody({
       cancelled = true;
       if (refreshTimer) clearTimeout(refreshTimer);
     };
-  }, [cangyuanAvailabilityEnabled, currentConnection, settingsOpen]);
+  }, [cangyuanAvailabilityEnabled, currentConnection, uiActive]);
 
   const settingsPopover = settingsOpen ? (
     <section
       // Portals still participate in React Flow's capture handlers. `nokey`
       // keeps its Ctrl-selection handler from swallowing these form events.
-      className="node-config-popover node-config-popover-portal nodrag nowheel nopan nokey"
-      style={settingsPlacement}
+      className={`node-config-popover node-config-popover-portal nodrag nowheel nopan nokey${presentation === "parameters" ? " node-config-docked" : ""}`}
+      ref={attachSettingsPopover}
+      id={`${presentation === "parameters" ? "canvas-parameters" : "node-parameters"}-${nodeId}`}
+      data-config-node-id={nodeId}
       role="dialog"
+      tabIndex={-1}
       aria-label={`${data.label} 模型与参数`}
+      onAnimationEnd={event => {
+        if (event.target === event.currentTarget) {
+          event.currentTarget.dispatchEvent(new Event("canvas-node-config-position"));
+        }
+      }}
       // A portal still bubbles through the owning React node. Native select
       // clicks must not select that node and reopen the inspector mid-popup.
       onClick={(event) => event.stopPropagation()}
       onDoubleClick={(event) => event.stopPropagation()}
-      onFocusCapture={() => data.onConfigurationFocus?.()}
+      onFocusCapture={() => {
+        if (presentation === "parameters") { if (!active) onRequestFocus?.(); }
+        else data.onConfigurationFocus?.();
+      }}
+      onPointerDownCapture={() => {
+        if (presentation === "parameters" && !active) onRequestFocus?.();
+      }}
       onPointerDown={(event) => {
+        if (presentation === "parameters") { event.stopPropagation(); return; }
         const target = event.target instanceof Element ? event.target : null;
         if (!shouldReselectNodeFromConfigPointer(target)) {
           event.stopPropagation();
@@ -701,10 +847,8 @@ function GenerationNodeBody({
         <button
           type="button"
           aria-label="关闭模型与参数面板"
-          onClick={() => {
-            setModelMenuOpen(false);
-            setSettingsOpen(false);
-          }}
+          title="关闭模型与参数面板（Esc）"
+          onClick={closeSettings}
         >
           <X size={14} />
         </button>
@@ -714,8 +858,7 @@ function GenerationNodeBody({
           aria-label="管理供应商与密钥"
           type="button"
           onClick={() => {
-            setModelMenuOpen(false);
-            setSettingsOpen(false);
+            closeSettings();
             data.onOpenApiSettings?.();
           }}
         >
@@ -785,8 +928,8 @@ function GenerationNodeBody({
               connectionId={currentConnection} models={modelOptions} value={data.model ?? ""}
               capabilities={connectionAvailable ? data.modelImageCapabilities : undefined}
               parameters={{ ...priceParameters, prompt: renderPromptParts(data.parts ?? []) }}
-              onChange={id => data.onModelChange?.(id)} open={modelMenuOpen} onOpenChange={setModelMenuOpen}
-              anchorKey={`${settingsAnchor}:${settingsPlacement.left}:${settingsPlacement.top ?? ""}:${settingsPlacement.width ?? ""}`} loading={data.modelOptionsLoading} failed={data.modelOptionsError}
+              onChange={id => data.onModelChange?.(id)} open={uiActive && modelMenuOpen} onOpenChange={setModelMenuOpen}
+              loading={data.modelOptionsLoading} failed={data.modelOptionsError}
               authoritative={data.modelOptionsAuthoritative} allowManual={!data.modelOptionsAuthoritative}
               catalogDirectory={data.catalogPickerDirectory}
               badge={cangyuanAvailabilityEnabled ? model => <CangyuanAvailabilityBadge
@@ -804,6 +947,7 @@ function GenerationNodeBody({
             当前实际连接是 {currentConnectionOption.name}（{currentConnectionOption.group}），{currentConnectionOption.unavailableReason ?? "该分组密钥不可用"}。请重新配置或选择其他可用分组。
           </div>
         ) : null}
+        <DeferredPanelContent immediate={presentation === "parameters"}>
         <section className="node-config-parameter-section" aria-label="输出参数" key={`${currentConnection}:${data.model}`}>
           <div className="node-config-section-heading">
             <strong>输出参数</strong>
@@ -826,11 +970,25 @@ function GenerationNodeBody({
           />
         </section>
         <ModelPriceDetails model={priceModel} parameters={{ ...priceParameters, prompt: renderPromptParts(data.parts ?? []) }} />
-        <SupplierBillingSummary key={currentConnectionOption?.supplierId} compact supplierId={currentConnectionOption?.supplierId} />
+        </DeferredPanelContent>
+        {currentConnectionOption?.supplierId && <DeferredPanelContent>
+          <SupplierBillingSummary key={currentConnectionOption?.supplierId} compact supplierId={currentConnectionOption?.supplierId} />
+        </DeferredPanelContent>}
       </div>
     </section>
   ) : null;
 
+  if (presentation === "parameters") return settingsPopover;
+
+  const requestConfiguration = (trigger: HTMLElement | null) => {
+    if (data.onRequestConfiguration) { data.onRequestConfiguration(trigger); return; }
+    // Standalone node consumers retain the legacy surface until their root
+    // supplies the callback; integrated canvas nodes never take this branch.
+    setLocalSettingsOpen(open => {
+      if (open) setModelMenuOpen(false);
+      return !open;
+    });
+  };
   return (
     <div
       className={`node-generation-body ${(data.linkedAssets?.length ?? 0) > 0 ? "has-linked-assets" : ""}`}
@@ -849,8 +1007,8 @@ function GenerationNodeBody({
             {maskSource && <button type="button" onClick={() => data.onEditMask?.(maskSource.id, nodeId)}>
               <Brush size={13} />{parameters.maskAssetId ? "编辑蒙版" : "绘制蒙版"}
             </button>}
-            {maskEnabled && (!data.connectionId || !data.model || !data.imageEditingCapabilities?.mask || data.modelOptionsError) && <button type="button" className="node-mask-choose-model" onClick={() => {
-              selectNode(); setSettingsOpen(true);
+            {maskEnabled && (!data.connectionId || !data.model || !data.imageEditingCapabilities?.mask || data.modelOptionsError) && <button type="button" className="node-mask-choose-model" onClick={(event) => {
+              selectNode(); requestConfiguration(event.currentTarget);
             }}>选择可编辑模型</button>}
             {maskEnabled && <button type="button" className="node-mask-remove" aria-label="移除蒙版" title="移除蒙版" onClick={() => {
               const next = { ...parameters }; delete next.maskAssetId; delete next.maskSourceAssetId; delete next.mask;
@@ -889,28 +1047,31 @@ function GenerationNodeBody({
           ref={attachSettingsTrigger}
           type="button"
           aria-label={`打开 ${data.label} 模型与参数`}
+          aria-haspopup="dialog"
           title={`${connectionName} · ${modelName} · ${summary || "使用 API 默认参数"}`}
+          // Defer source selection until the native click has been delivered.
+          // Selecting on pointerdown can reconcile this node before pointerup
+          // and swallow the first click that was meant to open its parameters.
+          onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => {
             event.stopPropagation();
-            setSettingsOpen((open) => {
-              if (open) setModelMenuOpen(false);
-              return !open;
-            });
+            selectNode(event);
+            requestConfiguration(event.currentTarget);
           }}
         >
           <SlidersHorizontal size={13} />
           <span className="node-config-copy">
             <strong>
-              {modelName}
+              {currentConnectionOption?.supplierLabel ?? connectionName} · {modelName}
             </strong>
-            <small title={connectionName}>{connectionName.replace(/\s*·\s*画布$/u, "")} · {summary || "API 默认参数"} · {modelPickerPriceData(selectedModel)}</small>
+            {modelPriceLabel && modelPriceLabel !== "—" ? <small className="node-model-price" title={modelPriceLabel}>{modelPriceLabel}</small> : null}
           </span>
         </button>
         <button
           className="node-delete-button"
           type="button"
           aria-label={`删除 ${data.label} 节点`}
-          title="删除节点"
+          title="删除节点（Delete）"
           onClick={(event) => {
             event.stopPropagation();
             data.onDelete?.();
@@ -922,7 +1083,7 @@ function GenerationNodeBody({
           className="node-run-button"
           type="button"
           aria-label={`运行 ${data.label} 节点`}
-          title={maskProblem ?? (connectionAvailable ? (running ? "创建新的独立任务，当前任务继续生成" : "运行") : "当前 API 连接不可用")}
+          title={maskProblem ?? (connectionAvailable ? (running ? "创建新的独立任务，当前任务继续生成（Ctrl+Enter）" : "运行节点（Ctrl+Enter）") : "当前 API 连接不可用")}
           disabled={!connectionAvailable || Boolean(maskProblem)}
           onClick={(event) => {
             event.stopPropagation();
@@ -946,6 +1107,16 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
   const [reusingPrompt, setReusingPrompt] = useState(false);
   const [recoveringResult, setRecoveringResult] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [failureOpen, setFailureOpen] = useState(false);
+  const completionFlash = useRef<HTMLSpanElement>(null);
+  const visualStatus = nodeVisualStatus(data.generatedResult ? data.generatedStatus ?? (data.assetId ? "succeeded" : "queued") : data.status);
+  const previousStatus = useRef(visualStatus);
+  useEffect(() => {
+    if (visualStatus === "succeeded" && ["running", "queued"].includes(previousStatus.current) && canvasMotionEnabled()) {
+      completionFlash.current?.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 600, easing: "cubic-bezier(.2,.8,.2,1)" });
+    }
+    previousStatus.current = visualStatus;
+  }, [visualStatus]);
   const node = { id, type: data.nodeType ?? "custom", data } as CanvasNode;
   const inputAsset = data.assets?.find((asset) => asset.id === data.assetId);
   const outputIds = data.lastOutputAssetIds ?? [];
@@ -1247,8 +1418,8 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
           ) : null}
         </div>
       </ResultToolbar> : null}
-      <NodeResizer
-        isVisible={selected && (data.selectionSize ?? 1) <= 1}
+      {selected && (data.selectionSize ?? 1) <= 1 && <NodeResizeControl
+        position="bottom-right" className="node-resize-corner" aria-label={`调整 ${data.label} 节点尺寸`}
         minWidth={
           generatedResult
             ? 120
@@ -1263,16 +1434,19 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
           generatedResult && !generatedProblem && !generatedCancelled
         }
         onResizeStart={() => data.onResizeStart?.()}
-      />
+      ><span aria-hidden="true" /></NodeResizeControl>}
       <div
         className={`node-card ${selected ? "selected" : ""} ${generatedResult ? "generated-result-node" : ""}`}
         data-node-type={data.nodeType}
+        data-node-status={visualStatus}
         data-mask-edit={maskEdit || undefined}
         data-has-image-reference={hasImageReference || undefined}
         data-pending-import={data.pendingImport || undefined}
         data-director-draft={data.directorDraft || undefined}
         data-connection-highlight={data.connectionHighlight}
+        data-connection-active={data.connectionPreviewActive || undefined}
         data-generated-result={generatedResult || undefined}
+        data-result-kind={generatedResult ? data.assetKind : undefined}
         data-generated-status={generatedResult ? generatedStatus : undefined}
         data-media-zoom={generatedResult ? mediaZoom : undefined}
         onClick={(event) => {
@@ -1280,23 +1454,39 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
           selectNode(event);
         }}
       >
+        <span ref={completionFlash} className="node-complete-flash" aria-hidden="true" />
+        {visualStatus === "running" && <span className="node-progress-track" aria-hidden="true"><span className="node-progress-fill" /></span>}
         <PortHandles node={node} direction="input" />
         <PortHandles node={node} direction="output" />
         {!generatedResult ? (
-          <div className="node-head">
+          <div className="node-head"
+            title={generationNode ? "双击打开模型与参数" : undefined}
+            onDoubleClick={generationNode && data.onRequestConfiguration ? event => {
+              event.preventDefault();
+              event.stopPropagation();
+              selectNode(event);
+              data.onRequestConfiguration?.(event.currentTarget.closest<HTMLElement>(".react-flow__node") ?? event.currentTarget);
+            } : undefined}>
             <div className="node-title">
               <span className="node-icon">
                 {icons[data.nodeType ?? ""] ?? <Sparkles size={14} />}
               </span>
               <ReadableName text={data.label} />
             </div>
-            <span
-              className={`node-status ${data.status ?? ""}`}
-              role="status"
-              aria-label={`状态：${data.status === "succeeded" ? "已完成" : data.status === "failed" || data.status === "needs_attention" ? "需要处理" : data.status ? pendingGeneratedResultLabel(data.status) : "等待开始"}`}
-            />
+            {visualStatus !== "idle" && <NodeStateLabel key={`${visualStatus}:${data.runStartedAt}`} status={visualStatus} since={data.runStartedAt} />}
           </div>
-        ) : null}
+        ) : <div className="node-head node-result-head">
+          <div className="node-title node-result-title">
+            <span className="node-icon">{icons[data.assetKind === "image" ? "image-generation" : data.assetKind === "video" ? "video-generation" : data.assetKind === "audio" ? "music-generation" : "preview"] ?? <Sparkles size={14} />}</span>
+            <span title={data.label}>{data.label}</span>
+          </div>
+          <NodeStateLabel key={`${visualStatus}:${data.generatedCreatedAt}`} status={visualStatus} since={data.generatedCreatedAt} result />
+        </div>}
+        {visualStatus === "failed" && !generatedResult && <div className="node-error-summary nodrag nopan nowheel">
+          <span title={data.runError?.message}>{data.runError?.message ?? "运行失败，请查看原因"}</span>
+          <button type="button" onClick={event => { event.stopPropagation(); setFailureOpen(open => !open); }}>查看原因</button>
+          {failureOpen && <FailureDiagnosis error={localizeRunError(data.runError) as RunErrorDetails | null} status={data.status} />}
+        </div>}
         <div className="node-body">
           {data.nodeType === "prompt" ? (
             <div
@@ -1328,7 +1518,7 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
                 }
               >
                 <div
-                  className={`generated-result-viewport ${data.assetKind === "image" && inputPreviewUrl && !fakeResult ? "previewable-image" : ""}`}
+                  className={`generated-result-viewport ${assetHasKnownAlpha(inputAsset) ? "node-image-transparent" : ""} ${data.assetKind === "image" && inputPreviewUrl && !fakeResult ? "previewable-image" : ""}`}
                   onDoubleClick={(event) => {
                     if (
                       data.assetKind !== "image" ||
@@ -1358,12 +1548,14 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
                         {pendingGeneratedResultLabel(generatedStatus, data.generatedDetails?.submissionPhase)}
                       </strong>
                       <WaitElapsed since={data.generatedCreatedAt} />
-                      {data.onCancelTask && generatedStatus !== "cancel_requested" ? <button className="result-info-button nodrag nopan" type="button" disabled={cancelling}
-                        title={data.cancelTaskLabel === "停止跟踪" ? "停止本地跟踪；网站任务可能仍在执行" : "请求取消当前任务；已被供应商处理的请求可能无法撤回"} onClick={async (event) => {event.stopPropagation();setCancelling(true);try {await data.onCancelTask?.();} finally {setCancelling(false);}}}>{cancelling ? "正在处理" : data.cancelTaskLabel ?? "取消任务"}</button> : null}
                       {generatedStatus === "archiving" ? (
                         <small>生成已完成，正在取回原图，无需重新生成</small>
                       ) : null}
-                      <ResultInformation nodeId={id} data={data} asset={inputAsset} />
+                      <div className="generated-result-footer">
+                        {data.onCancelTask && generatedStatus !== "cancel_requested" ? <button className="result-info-button nodrag nopan" type="button" disabled={cancelling}
+                          title={data.cancelTaskLabel === "停止跟踪" ? "停止本地跟踪；网站任务可能仍在执行" : "请求取消当前任务；已被供应商处理的请求可能无法撤回"} onClick={async (event) => {event.stopPropagation();setCancelling(true);try {await data.onCancelTask?.();} finally {setCancelling(false);}}}>{cancelling ? "正在处理" : data.cancelTaskLabel ?? "取消任务"}</button> : null}
+                        <ResultInformation nodeId={id} data={data} asset={inputAsset} />
+                      </div>
                     </div>
                   ) : (generatedProblem || generatedCancelled) && !hasArchivedGeneratedMedia ? (
                     <div
@@ -1384,7 +1576,10 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
                       </strong>
                       <ResultInformation nodeId={id} data={data} asset={inputAsset} />
                       <TaskEvidence request={{ supplier: data.generatedSupplier, connectionName: data.generatedConnectionName, modelGroup: data.generatedGroup }} evidence={data.generatedDetails?.taskEvidence} />
-                      {generatedProblem ? <FailureDiagnosis error={generatedErrorDetails} providerTaskStatus={data.generatedDetails?.taskEvidence?.status} recoveryAction={data.generatedRecoveryAction} /> : generatedError ? <span className="result-error-summary">{generatedError}</span> : null}
+                      {generatedProblem ? <div className="node-error-summary">
+                        <span title={generatedError ?? undefined}>{generatedError ?? "任务失败，请查看原因"}</span>
+                        <ResultInformation nodeId={id} data={data} asset={inputAsset} actionLabel="查看原因" />
+                      </div> : generatedError ? <span className="result-error-summary">{generatedError}</span> : null}
                       {!generatedProblem && taskOutcomeNote(generatedStatus, data.generatedDetails?.taskEvidence, data.generatedRecoveryAction) ? (
                         <small className="generated-result-attention-note">
                           {taskOutcomeNote(generatedStatus, data.generatedDetails?.taskEvidence, data.generatedRecoveryAction)}
@@ -1583,7 +1778,7 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
             ) : inputPreviewUrl &&
               (inputAsset?.kind ?? data.assetKind) === "image" ? (
               <div
-                className="node-preview asset-node-preview previewable-image"
+                className={`node-preview asset-node-preview previewable-image ${assetHasKnownAlpha(inputAsset) ? "node-image-transparent" : ""}`}
                 draggable={Boolean(data.assetId)}
                 onDragStart={(event) =>
                   handleAssetDragStart(event, data.assetId)
@@ -1695,11 +1890,11 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
               {data.assetKind === "image" && data.assetId && !data.pendingImport &&
                 <button type="button" aria-label="绘制蒙版" onClick={event => {
                   event.stopPropagation(); data.onEditMask?.(data.assetId!);
-                }}><Brush size={12} />蒙版</button>}
+                }} title="绘制蒙版"><Brush size={14} /></button>}
               <button
                 type="button"
                 aria-label={`运行 ${data.label} 节点`}
-                title="运行"
+                title="运行节点（Ctrl+Enter）"
                 onPointerDown={() => {
                   const active = document.activeElement;
                   if (
@@ -1713,18 +1908,18 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
                   data.onRun?.();
                 }}
               >
-                <Play size={10} /> 运行
+                <Play size={14} />
               </button>
               <button
                 type="button"
                 aria-label={`删除 ${data.label} 节点`}
-                title="删除"
+                title="删除节点（Delete）"
                 onClick={(event) => {
                   event.stopPropagation();
                   data.onDelete?.();
                 }}
               >
-                <X size={10} />
+                <X size={14} />
               </button>
             </div>
           ) : null}

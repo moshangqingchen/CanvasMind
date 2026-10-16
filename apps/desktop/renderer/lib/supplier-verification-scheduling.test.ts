@@ -22,11 +22,11 @@ beforeEach(() => {
 afterEach(() => { delete scope.__superCanvasSupplierVerification; vi.unstubAllEnvs(); });
 
 describe("durable automatic supplier onboarding", () => {
-  it.each(["canvas", "agent"])("resumes a saved %s Key on startup and clears its marker only after the plan exists", async usage => {
+  it.each(["canvas", "agent"])("prepares a saved %s Key on startup without granting paid permission and clears its marker only after the plan exists", async usage => {
     connection.config.usage = usage;
-    mocks.save.mockImplementation(async value => { expect(mocks.plan).toHaveBeenCalledWith("supplier", false, { onboarding: true }); connection = value; return value; });
+    mocks.save.mockImplementation(async value => { expect(mocks.plan).toHaveBeenCalledWith("supplier", true, { onboarding: true }); connection = value; return value; });
     await resumeSupplierVerification();
-    expect(mocks.plan).toHaveBeenCalledExactlyOnceWith("supplier", false, { onboarding: true });
+    expect(mocks.plan).toHaveBeenCalledExactlyOnceWith("supplier", true, { onboarding: true });
     expect(connection.config.supplierVerificationRequestId).toBeUndefined();
     mocks.plan.mockClear();
     await resumeSupplierVerification();
@@ -41,7 +41,7 @@ describe("durable automatic supplier onboarding", () => {
   it("does not turn a normal directory refresh into permission to release a preparation hold", async () => {
     delete connection.config.supplierVerificationRequestId;
     await scheduleSupplierVerification("supplier");
-    expect(mocks.plan).toHaveBeenCalledExactlyOnceWith("supplier");
+    expect(mocks.plan).toHaveBeenCalledExactlyOnceWith("supplier", true);
   });
   it("coalesces simultaneous saves while retaining a newer request during the first scan", async () => {
     let finish!: () => void;

@@ -3,20 +3,23 @@ import type { ModelDescriptor } from "@super-canvas/providers";
 import type { ProviderConnectionView } from "../lib/client-api";
 import type { SupplierRecord } from "../lib/client-suppliers";
 
-async function fixture(page: Page, count = 3) {
+async function fixture(page: Page, count = 3, options: { metadata?: boolean; groups?: number } = {}) {
   const models: ModelDescriptor[] = Array.from({ length: count }, (_, index) => ({
     id: `model-${index}`, name: `创作模型 ${index}`, operations: ["image.generate"],
     metadata: { priceLabel: "¥0.20 / 张", ...(index === 1 ? { imageCapabilitiesVerifiedAt: "2026-09-21T03:00:00.000Z" } : {}) },
   }));
   let suppliers: SupplierRecord[] = ["主供应商", "备用供应商"].map((name, index) => ({
     id: `usability-${index}`, supplierKey: `usability-${index}`, name, kind: "openai-compatible", siteUrl: "https://example.invalid", apiUrl: "https://example.invalid/v1",
-    catalog: { groups: [{ id: "vip", label: "创作组", source: "catalog", models: [{ id: "public-only", name: "公开目录模型", capability: "image" }] }] },
-    scanStatus: "live", scannedAt: "2026-09-22T03:00:00.000Z", scanLastSuccessAt: "2026-09-21T03:00:00.000Z",
+    catalog: { groups: Array.from({ length: options.groups ?? 1 }, (_, groupIndex) => ({
+      id: groupIndex ? `z-after-${groupIndex}` : "vip", label: groupIndex ? `后续分组 ${groupIndex}` : "创作组", source: "catalog", supplierGroupId: options.metadata === false ? undefined : groupIndex ? String(7 + groupIndex) : "007",
+      details: options.metadata === false ? undefined : { source: "key-groups", rateMultiplier: 1.25 },
+      models: [{ id: "public-only", name: "公开目录模型", capability: "image" }] })) },
+    scanStatus: "live", scannedAt: "2026-09-22T03:00:00.000Z", scanLastSuccessAt: options.metadata === false ? undefined : "2026-09-21T03:00:00.000Z",
     createdAt: "2026-09-21T03:00:00.000Z", updatedAt: "2026-09-21T03:00:00.000Z",
   }));
   let connections: ProviderConnectionView[] = suppliers.map(supplier => ({
     id: `connection-${supplier.id}`, name: `${supplier.name}主账号`, provider: "openai", apiKey: "", apiKeySet: true,
-    config: { supplierId: supplier.id, supplierKey: supplier.supplierKey, baseUrl: supplier.apiUrl, modelGroup: "vip", usage: "canvas", modelCatalogModels: models, scannedModelIds: models.map(model => model.id), modelScanStatus: "live", modelScanCheckedAt: "2026-09-22T03:00:00.000Z", modelScanLastSuccessAt: "2026-09-21T03:00:00.000Z" },
+    config: { supplierId: supplier.id, supplierKey: supplier.supplierKey, baseUrl: supplier.apiUrl, modelGroup: "vip", usage: "canvas", modelCatalogModels: models, scannedModelIds: models.map(model => model.id), modelScanStatus: "live", modelScanCheckedAt: "2026-09-22T03:00:00.000Z", modelScanLastSuccessAt: options.metadata === false ? undefined : "2026-09-21T03:00:00.000Z" },
   }));
   const calls: { method: string; path: string; cached: boolean }[] = [];
   const writes: Record<string, unknown>[] = [];
@@ -54,6 +57,120 @@ async function fixture(page: Page, count = 3) {
   return { dialog, calls, writes, connections: () => connections };
 }
 
+for (const viewport of [
+  { width: 1024, height: 768 },
+  { width: 1366, height: 768 },
+  { width: 1920, height: 1080 },
+]) {
+  test(`供应商概览在 ${viewport.width} 像素下使用实色 Bento 且没有遮挡`, async ({ page }, testInfo) => {
+    await page.setViewportSize(viewport);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const { dialog, writes } = await fixture(page, 125);
+    await expect(dialog).toHaveCSS("border-top-left-radius", "20px");
+    expect(await dialog.evaluate(element => {
+      const color = getComputedStyle(element).backgroundColor;
+      return color.startsWith("rgba") ? Number.parseFloat(color.slice(color.lastIndexOf(",") + 1)) : 1;
+    })).toBe(1);
+    const bounds = await dialog.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.x).toBeGreaterThanOrEqual(8);
+    expect(bounds!.y).toBeGreaterThanOrEqual(8);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width);
+    expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(viewport.height);
+    const sidebar = await dialog.getByRole("complementary", { name: "供应商列表" }).boundingBox();
+    const main = await dialog.locator(".sm-main").boundingBox();
+    expect(sidebar).not.toBeNull();
+    expect(main).not.toBeNull();
+    expect(sidebar!.x + sidebar!.width).toBeLessThanOrEqual(main!.x);
+    await expect(dialog.locator('[data-supplier-stat="groups"] strong')).toHaveText("1");
+    await expect(dialog.locator('[data-supplier-stat="models"] strong')).toHaveText("1");
+    await expect(dialog.locator('[data-supplier-stat="updated"] time')).toHaveAttribute("datetime", "2026-09-21T03:00:00.000Z");
+    const cards = await dialog.locator(".sm-supplier-overview > div").all();
+    let previousRight = 0;
+    for (const card of cards) {
+      const cardBounds = await card.boundingBox();
+      expect(cardBounds).not.toBeNull();
+      expect(cardBounds!.x).toBeGreaterThanOrEqual(previousRight);
+      previousRight = cardBounds!.x + cardBounds!.width;
+    }
+    expect(await dialog.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+    expect(await dialog.locator(".sm-main").evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+    await expect(dialog.getByRole("button", { name: "关闭设置", exact: true })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`supplier-bento-${viewport.width}.png`), fullPage: true });
+    expect(writes).toEqual([]);
+  });
+}
+
+test("供应商首字配色不受筛选影响，组头展示原编号、倍率、Key 与刷新时间", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const { dialog, writes } = await fixture(page);
+  const entry = dialog.locator(".sm-supplier-row").filter({ has: page.locator(".sm-supplier-label strong", { hasText: /^主供应商$/u }) });
+  const avatar = entry.locator(".sm-supplier-avatar");
+  await expect(avatar).toHaveText("主");
+  const style = await avatar.getAttribute("style");
+  expect(style).toContain("--sm-identity-from");
+  await expect(entry.locator(".sm-supplier-state")).toHaveAttribute("data-state", "updated");
+  await expect(entry.locator(".sm-connection-count")).toHaveText("1");
+  const search = dialog.getByRole("textbox", { name: "搜索供应商", exact: true });
+  await search.fill("主供应商");
+  await expect(avatar).toHaveAttribute("style", style!);
+  await search.fill("");
+  await expect(avatar).toHaveAttribute("style", style!);
+  const group = dialog.locator(".sm-group-card").filter({ has: page.getByRole("button", { name: "vip", exact: true }) });
+  const toggle = group.getByRole("button", { name: "vip", exact: true });
+  await expect(group.locator(".sm-group-stable-id")).toHaveText("编号 007");
+  await expect(group.locator(".sm-group-rate")).toHaveText("倍率 1.25×");
+  await expect(group.locator(".sm-group-key-status")).toHaveText("Key 已保存");
+  await expect(group.locator("time.sm-group-refreshed")).toHaveAttribute("datetime", "2026-09-21T03:00:00.000Z");
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(group.locator(":scope > div")).toBeHidden();
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await expect(group.locator(":scope > div")).toBeVisible();
+  await expect(group.getByRole("button", { name: "刷新 vip 型号", exact: true })).toBeEnabled();
+  expect(writes).toEqual([]);
+});
+
+test("供应商缺少编号、倍率或刷新时间时使用占位符，不补造目录数据", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const { dialog, writes } = await fixture(page, 3, { metadata: false });
+  await expect(dialog.locator('[data-supplier-stat="updated"] strong')).toHaveText("—");
+  await expect(dialog.locator(".sm-group-stable-id")).toHaveText("编号 —");
+  await expect(dialog.locator(".sm-group-rate")).toHaveText("倍率 —");
+  await expect(dialog.locator(".sm-group-refreshed")).toHaveText("刷新 —");
+  await expect(dialog.locator('[data-supplier-stat="models"] strong')).toHaveText("1");
+  expect(writes).toEqual([]);
+});
+
+test("供应商型号表保留虚拟化，滚动时表头可读且价格右对齐", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const { dialog, writes } = await fixture(page, 125, { groups: 8 });
+  const list = dialog.getByRole("list", { name: "Key 实际读取型号列表", exact: true });
+  await expect(list).toBeVisible();
+  expect(await list.locator(".sm-model-item").count()).toBeLessThan(50);
+  const header = dialog.locator(".sm-model-columns:visible").first();
+  await header.scrollIntoViewIfNeeded();
+  await expect(header).toHaveCSS("position", "sticky");
+  const before = await header.boundingBox();
+  await list.evaluate(element => { element.scrollTop = 200; });
+  await expect.poll(async () => (await header.boundingBox())?.y).toBe(before?.y);
+  await expect(header).toBeInViewport({ ratio: 1 });
+  const price = list.locator(".sm-model-price").first();
+  await expect(price).toHaveCSS("text-align", "right");
+  await expect(price).toHaveCSS("font-variant-numeric", "tabular-nums");
+  const main = dialog.locator(".sm-main");
+  await main.evaluate(element => {
+    const columns = element.querySelector<HTMLElement>(".sm-model-columns")!;
+    element.scrollTop += columns.getBoundingClientRect().top - element.getBoundingClientRect().top + 24;
+  });
+  const relativeTop = async () => (await header.boundingBox())!.y - (await main.boundingBox())!.y;
+  await expect.poll(relativeTop).toBeGreaterThanOrEqual(-1);
+  await expect.poll(relativeTop).toBeLessThanOrEqual(32);
+  await expect(header).toBeInViewport({ ratio: 1 });
+  expect(writes).toEqual([]);
+});
+
 test("保存 Key 后自动读取目录，默认模型保存不扫描，测试和刷新各扫描一次", async ({ page }) => {
   const { dialog, calls, writes, connections } = await fixture(page);
   await dialog.getByRole("tab", { name: "连接配置", exact: true }).click();
@@ -84,7 +201,18 @@ test("保存 Key 后自动读取目录，默认模型保存不扫描，测试和
 test("单分组也能搜索Key模型名称，列表分页和窄屏显示保持可用", async ({ page }, testInfo) => {
   const { dialog } = await fixture(page, 125);
   await expect(dialog.getByLabel("查找分组或模型", { exact: true })).toBeVisible();
-  await expect(dialog.locator(".sm-model-item")).toHaveCount(50);
+  const modelList = dialog.getByRole("list", { name: "Key 实际读取型号列表", exact: true });
+  await expect(modelList).toBeVisible();
+  expect(await modelList.locator(".sm-model-item").count()).toBeLessThan(50);
+  await expect(dialog.getByText("第 1 / 3 页 · 每页最多 50 个", { exact: true })).toBeVisible();
+  const firstPageIds = new Set<string>();
+  for (let step = 0; step <= 100; step++) {
+    await modelList.evaluate((element, index) => { element.scrollTop = index * element.clientHeight / 2; }, step);
+    await modelList.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    for (const id of await modelList.locator(".sm-model-name code").allTextContents()) firstPageIds.add(id);
+    if (await modelList.evaluate(element => element.scrollTop + element.clientHeight >= element.scrollHeight - 1)) break;
+  }
+  expect([...firstPageIds].sort()).toEqual(Array.from({ length: 50 }, (_, index) => `model-${index}`).sort());
   await dialog.getByRole("button", { name: "下一页", exact: true }).click();
   await expect(dialog.locator(".sm-model-item").first()).toContainText("model-50");
   await dialog.getByLabel("查找分组或模型", { exact: true }).fill("创作模型 124");

@@ -13,7 +13,8 @@ import {
   cangyuanImageConnectorForGroup,
 } from "../lib/provider-presets";
 import { applyMonsterImageCapabilities } from "@super-canvas/providers/monster-image-capabilities";
-import { attachedPanelGeometry } from "./attached-panel-geometry";
+import { floatingPanelGeometry } from "./floating-panel-geometry";
+import { clickBlankCanvas, setCanvasZoomWithWheel } from "./canvas-test-actions";
 
 const REFERENCE_ASSET_NAME = "e2e reference asset.png";
 const PNG_1X1 = Buffer.from(
@@ -498,10 +499,35 @@ async function expectInsideViewport(
   viewportWidth: number,
 ): Promise<void> {
   await expect(locator).toBeVisible();
+  // Panels enter with a short transform. Check their settled geometry rather
+  // than sampling a subpixel translation during that finite entrance.
+  await locator.evaluate(async element => {
+    await Promise.all(element.getAnimations().filter(animation => {
+      const timing = animation.effect?.getComputedTiming();
+      return timing && Number.isFinite(timing.endTime);
+    }).map(animation => animation.finished.catch(() => undefined)));
+  });
   const bounds = await locator.boundingBox();
   expect(bounds).not.toBeNull();
   expect(bounds!.x).toBeGreaterThanOrEqual(0);
   expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewportWidth + 0.5);
+}
+
+async function settledViewportTransform(page: Page): Promise<string> {
+  // React Flow animates through rAF rather than CSS animations. Wait for the
+  // actual transform to stop changing before recording an idempotence target.
+  return page.locator(".react-flow__viewport").evaluate(async element => {
+    const started = performance.now();
+    let previous = getComputedStyle(element).transform;
+    let stableSince = started;
+    while (performance.now() - started < 5_000) {
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+      const current = getComputedStyle(element).transform;
+      if (current !== previous) { previous = current; stableSince = performance.now(); }
+      if (performance.now() - stableSince >= 200) return current;
+    }
+    throw new Error("Canvas viewport did not finish its animation");
+  });
 }
 
 async function openLibrary(page: Page): Promise<void> {
@@ -513,8 +539,12 @@ async function openLibrary(page: Page): Promise<void> {
 }
 
 async function openNodeParameters(node: Locator, connection?: ProviderConnectionResponse): Promise<Locator> {
+  // New-node locators may use last(); capture the actual owner before opening
+  // the root-owned card rather than looking for a descendant of that node.
+  const nodeId = await node.getAttribute("data-id");
+  if (!nodeId) throw new Error("A node data-id is required to open its parameters");
   await node.getByRole("button", { name: /^打开 .* 模型与参数$/u }).click();
-  const panel = node.getByRole("dialog");
+  const panel = node.page().locator(`.canvas-parameter-deck [data-parameter-node-id=${JSON.stringify(nodeId)}]`).getByRole("dialog");
   await expect(panel).toBeVisible();
   if (connection) {
     await panel.getByRole("combobox", { name: / 供应商$/u }).selectOption(String(connection.config.supplierKey ?? connection.provider));
@@ -562,7 +592,7 @@ async function runNodeAndWait(
     .toBe("succeeded");
   await expect(
     page.locator(`.react-flow__node[data-id="${nodeId}"]`).getByRole("status"),
-  ).toHaveAccessibleName("状态：已完成");
+  ).toHaveAccessibleName("状态：完成");
   return getJson<RunResponse>(page.request, `/api/runs/${initial.run.id}`);
 }
 
@@ -743,7 +773,16 @@ async function createOfflineImageModelFixture(
 }
 
 test.describe("超级画布完整验收", () => {
-  test.beforeEach(async ({ request }) => {
+  test.beforeEach(async ({ page, request }) => {
+    // Canvas interaction fixtures start with an unobstructed canvas. Tests that
+    // exercise the Agent open it explicitly; a saved open preference survives
+    // reloads so the resize/persistence assertions still test the real state.
+    await page.addInitScript(() => {
+      try {
+        if (localStorage.getItem("super-canvas:inspector-open") === null)
+          localStorage.setItem("super-canvas:inspector-open", "false");
+      } catch { /* The canvas remains usable if storage is disabled. */ }
+    });
     await resetWorkspace(request);
   });
 
@@ -960,8 +999,13 @@ test.describe("超级画布完整验收", () => {
       await expect(prompt).toBeEnabled();
       for (const label of ["新建图片节点", "新建视频节点", "新建音乐节点"])
         await expect(page.getByRole("button", { name: label, exact: true })).toBeDisabled();
-      for (const title of ["新建图片生成节点", "新建视频生成节点"])
-        await expect(page.locator(".top-create-actions").getByTitle(title, { exact: true })).toBeDisabled();
+      await page.getByRole("button", { name: "添加节点", exact: true }).click();
+      const addMenu = page.getByRole("menu", { name: "添加创作节点", exact: true });
+      for (const label of ["图片生成", "视频生成", "音乐生成"])
+        await expect(addMenu.getByRole("menuitem", { name: new RegExp(`^${label}`, "u") })).toBeDisabled();
+      await expect(addMenu.getByRole("menuitem", { name: /^Prompt/u })).toBeEnabled();
+      await page.keyboard.press("Escape");
+      await expect(addMenu).toBeHidden();
       await pane.dispatchEvent("contextmenu", { button: 2, clientX: 850, clientY: 550 });
       const createMenu = page.getByRole("menu", { name: "新建节点", exact: true });
       for (const label of ["图片节点", "视频节点", "音乐节点"])
@@ -972,7 +1016,7 @@ test.describe("超级画布完整验收", () => {
       for (const label of ["图片生成", "视频生成"])
         await expect(page.locator(".node-menu").getByRole("button", { name: label, exact: true })).toBeDisabled();
       await expect(page.locator(".node-menu").getByRole("button", { name: "Prompt", exact: true })).toBeEnabled();
-      await page.getByRole("button", { name: "关闭素材库", exact: true }).click();
+      await page.getByRole("button", { name: "关闭节点库", exact: true }).click();
       await expect(page.locator('.react-flow__node[data-id="e2e-prompt"]')).toBeVisible();
       await prompt.click();
       await expect.poll(async () => (await getJson<CanvasResponse>(request, `/api/canvas/${fixture.id}`)).graph.nodes.length).toBe(fixture.graph.nodes.length + 1);
@@ -1102,6 +1146,7 @@ test.describe("超级画布完整验收", () => {
       await expect(page).toHaveURL(/\/$/u);
       await expect(page.getByRole("heading", { name: "我的画布", exact: true })).toBeVisible();
       await page.locator(`a[href="/canvas/${healthy.id}"]`).last().click();
+      await page.locator('.react-flow__node[data-id="e2e-prompt"] .prompt-overview').click();
       const editor = page.locator('.react-flow__node[data-id="e2e-prompt"] .tiptap-prompt');
       await expect(editor).toContainText("电影感的未来城市");
       await editor.fill("从损坏画布返回后仍可编辑保存健康项目");
@@ -1175,6 +1220,7 @@ test.describe("超级画布完整验收", () => {
     const promptNode = page
       .locator('.react-flow__node:has(.node-card[data-node-type="prompt"])')
       .last();
+    await promptNode.locator(".prompt-overview").click();
     const editor = promptNode.locator(".tiptap-prompt");
     await expect(editor).toBeVisible();
     await editor.click();
@@ -1211,6 +1257,7 @@ test.describe("超级画布完整验收", () => {
     expect(savedPromptId).toBeDefined();
 
     await page.reload();
+    await page.locator(`.react-flow__node[data-id="${String(savedPromptId)}"] .prompt-overview`).click();
     const restoredEditor = page
       .locator(`.react-flow__node[data-id="${String(savedPromptId)}"]`)
       .locator(".tiptap-prompt");
@@ -1221,6 +1268,7 @@ test.describe("超级画布完整验收", () => {
     await openWorkspace(page);
     await expect(page.getByRole("button", { name: "画布自动保存状态" })).toContainText("已保存");
     const before = await savedCanvas(page);
+    await page.locator('.react-flow__node[data-id="e2e-prompt"] .prompt-overview').click();
     const editor = page.locator('.react-flow__node[data-id="e2e-prompt"] .tiptap-prompt');
     await editor.fill("返回主界面前的最新灵感");
     await page.getByRole("button", { name: "返回主界面", exact: true }).click();
@@ -1229,6 +1277,7 @@ test.describe("超级画布完整验收", () => {
     const persisted = await getJson<CanvasResponse>(page.request, `/api/canvas/${before.id}`);
     expect(JSON.stringify(persisted.graph.nodes.find((node) => node.id === "e2e-prompt")?.data.parts)).toContain("返回主界面前的最新灵感");
     await page.locator(`a[href="/canvas/${before.id}"]`).last().click();
+    await page.locator('.react-flow__node[data-id="e2e-prompt"] .prompt-overview').click();
     await expect(editor).toContainText("返回主界面前的最新灵感");
   });
 
@@ -1244,11 +1293,13 @@ test.describe("超级画布完整验收", () => {
       } else await route.continue();
     };
     await page.route(canvasRoute, failSave);
+    await page.locator('.react-flow__node[data-id="e2e-prompt"] .prompt-overview').click();
     const editor = page.locator('.react-flow__node[data-id="e2e-prompt"] .tiptap-prompt');
     await editor.fill("浏览器后退时保留的离线草稿");
     await page.goBack();
     await expect(page).toHaveURL(/\/$/u);
     await page.locator(`a[href="/canvas/${canvas.id}"]`).last().click();
+    await page.locator('.react-flow__node[data-id="e2e-prompt"] .prompt-overview').click();
     await expect(editor).toContainText("浏览器后退时保留的离线草稿");
     await page.unroute(canvasRoute, failSave);
     await editor.press("ControlOrMeta+s");
@@ -1257,6 +1308,7 @@ test.describe("超级画布完整验收", () => {
       return JSON.stringify(saved.graph.nodes.find((node) => node.id === "e2e-prompt")?.data.parts);
     }).toContain("浏览器后退时保留的离线草稿");
     await page.reload();
+    await page.locator('.react-flow__node[data-id="e2e-prompt"] .prompt-overview').click();
     await expect(editor).toContainText("浏览器后退时保留的离线草稿");
   });
 
@@ -1271,6 +1323,7 @@ test.describe("超级画布完整验收", () => {
     const externalSave = await request.put(`/api/canvas/${canvas.id}`, { data: { graph: serverGraph, title: latest.title } });
     expect(externalSave.ok()).toBeTruthy();
     const external = await externalSave.json() as CanvasResponse;
+    await page.locator('.react-flow__node[data-id="e2e-prompt"] .prompt-overview').click();
     const editor = page.locator('.react-flow__node[data-id="e2e-prompt"] .tiptap-prompt');
     await editor.fill("需要保留的本地冲突副本");
     let conflict = page.getByRole("dialog", { name: "画布已在其他窗口更新" });
@@ -1284,7 +1337,7 @@ test.describe("超级画布完整验收", () => {
     await page.locator(`a[href="/canvas/${canvas.id}"]`).last().click();
     conflict = page.getByRole("dialog", { name: "画布已在其他窗口更新" });
     await expect(conflict).toBeVisible();
-    await expect(editor).toContainText("需要保留的本地冲突副本");
+    await expect(page.locator('.react-flow__node[data-id="e2e-prompt"] .canvas-prompt-content')).toContainText("需要保留的本地冲突副本");
     const protectedCanvas = await getJson<CanvasResponse>(request, `/api/canvas/${canvas.id}`);
     expect(protectedCanvas.revision).toBe(external.revision);
     expect(protectedCanvas.graph.nodes.find((node) => node.id === "e2e-preview")?.data.label).toBe("服务器保留的较新内容");
@@ -1338,6 +1391,7 @@ test.describe("超级画布完整验收", () => {
       await page.locator(`a[href="/canvas/${canvas.id}"]`).last().click();
       await expect(page.getByRole("button", { name: "画布自动保存状态" })).toContainText("已保存");
       await page.route(canvasRoute, holdFirstSave);
+      await page.locator('.react-flow__node[data-id="e2e-prompt"] .prompt-overview').click();
       const editor = page.locator('.react-flow__node[data-id="e2e-prompt"] .tiptap-prompt');
       await editor.fill("A 画布正在保存的第一版");
       await expect.poll(() => serverAccepted).toBe(true);
@@ -1350,6 +1404,8 @@ test.describe("超级画布完整验收", () => {
       await page.locator(`a[href="/canvas/${canvas.id}"]`).last().click();
       await expect(page).toHaveURL(new RegExp(`/canvas/${canvas.id}$`, "u"));
       releaseSave?.();
+      await expect(page.locator('.react-flow__node[data-id="e2e-prompt"] .prompt-overview')).toContainText("A 画布应保留的最新第二版");
+      await page.locator('.react-flow__node[data-id="e2e-prompt"] .prompt-overview').click();
       await expect(editor).toContainText("A 画布应保留的最新第二版");
       await expect(page.getByRole("dialog", { name: "画布已在其他窗口更新" })).toHaveCount(0);
       await expect.poll(async () => JSON.stringify((await getJson<CanvasResponse>(request, `/api/canvas/${canvas.id}`)).graph)).toContain("A 画布应保留的最新第二版");
@@ -1394,6 +1450,7 @@ test.describe("超级画布完整验收", () => {
       beforeExternalUpdate.revision,
     );
 
+    await page.locator('.react-flow__node[data-id="e2e-prompt"] .prompt-overview').click();
     const promptEditor = page
       .locator('.react-flow__node[data-id="e2e-prompt"]')
       .locator(".tiptap-prompt");
@@ -1486,6 +1543,7 @@ test.describe("超级画布完整验收", () => {
   test("提示词按 Enter 会另起一行并在刷新后保留", async ({ page }) => {
     await openWorkspace(page);
     const promptNode = page.locator('.react-flow__node[data-id="e2e-image"]');
+    await promptNode.locator(".prompt-overview").click();
     const editor = promptNode.locator(".tiptap-prompt");
     await expect(editor).toBeVisible();
     await editor.fill("第一行提示词");
@@ -1512,6 +1570,7 @@ test.describe("超级画布完整验收", () => {
       .toBe("第一行提示词\n第二行提示词");
 
     await page.reload();
+    await page.locator('.react-flow__node[data-id="e2e-image"] .prompt-overview').click();
     const restoredEditor = page
       .locator('.react-flow__node[data-id="e2e-image"]')
       .locator(".tiptap-prompt");
@@ -1698,6 +1757,7 @@ test.describe("超级画布完整验收", () => {
     await expect(
       page.locator("aside.inspector").getByLabel("节点名称"),
     ).toHaveCount(0);
+    await page.getByRole("button", { name: "打开智能体", exact: true }).click();
     await expect(page.locator("aside.inspector .agent-panel")).toBeVisible();
     await expect(edge("e2e-video-preview")).toHaveClass(
       /\bedge-connected-to-selection\b/u,
@@ -1716,13 +1776,7 @@ test.describe("超级画布完整验收", () => {
 
     await imageNode.locator(".node-head").click();
     await expect(imageNode.locator(".node-card")).toHaveClass(/\bselected\b/u);
-    const pane = page.locator(".react-flow__pane");
-    const paneBounds = await pane.boundingBox();
-    expect(paneBounds).not.toBeNull();
-    await page.mouse.click(
-      paneBounds!.x + paneBounds!.width / 2,
-      paneBounds!.y + paneBounds!.height - 24,
-    );
+    await clickBlankCanvas(page);
     await expect(page.locator(".node-card.selected")).toHaveCount(0);
     await page.getByRole("button", { name: "打开智能体", exact: true }).click();
     await expect(page.locator("aside.inspector .agent-panel")).toBeVisible();
@@ -1748,7 +1802,7 @@ test.describe("超级画布完整验收", () => {
 
     await openLibrary(page);
     await expect(page.getByText("上传图片、视频或音频")).toBeVisible();
-    await page.getByRole("button", { name: "关闭素材库" }).click();
+    await page.getByRole("button", { name: "关闭节点库" }).click();
     await page
       .getByRole("button", { name: "打开项目菜单", exact: true })
       .click();
@@ -1831,24 +1885,46 @@ test.describe("超级画布完整验收", () => {
     await expect
       .poll(async () => (await savedCanvas(page)).graph.nodes.length)
       .toBe(10);
+    // Loading legacy result nodes adds their protected source edges before the
+    // normal autosave. Capture the normalized graph so tidy itself must still
+    // preserve the complete edge array exactly.
+    await expect.poll(async () => (await savedCanvas(page)).graph.edges
+      .map(edge => edge.id)
+      .filter(id => typeof id === "string" && id.startsWith("edge-generated-tidy-result-"))
+      .sort()).toEqual(Array.from({ length: 4 }, (_, index) => `edge-generated-tidy-result-${index}`));
     const beforeTidy = await savedCanvas(page);
-    const beforeImagePosition = beforeTidy.graph.nodes.find(
-      (node) => node.id === "e2e-image",
-    )!.position;
+    const beforePositions = Object.fromEntries(beforeTidy.graph.nodes.map(node => [node.id, node.position]));
+    const anchor = (nodes: CanvasGraphNode[]) => ({
+      x: Math.min(...nodes.map(node => node.position.x)),
+      y: Math.min(...nodes.map(node => node.position.y)),
+    });
 
     await page.getByRole("button", { name: "一键整理画布" }).click();
     await expect(
-      page.getByText(/已按关联分组并横向整理 10 个节点/),
+      page.getByText("已整理 10 个节点", { exact: true }),
     ).toBeVisible();
     await expect
       .poll(async () => {
         const saved = await savedCanvas(page);
-        return saved.graph.nodes.find((node) => node.id === "e2e-image")
-          ?.position;
+        return Object.fromEntries(saved.graph.nodes.map(node => [node.id, node.position]));
       })
-      .not.toEqual(beforeImagePosition);
+      .not.toEqual(beforePositions);
 
+    await settledViewportTransform(page);
+    await page.keyboard.press("ControlOrMeta+S");
     const arranged = await savedCanvas(page);
+    // The anchor node may legitimately stay still; the entire graph must
+    // change while preserving its original top-left anchor and all edges.
+    expect(anchor(arranged.graph.nodes)).toEqual(anchor(beforeTidy.graph.nodes));
+    expect(arranged.graph.edges).toEqual(beforeTidy.graph.edges);
+    const overlaps = await page.locator(".react-flow__node").evaluateAll(elements => {
+      const boxes = elements.map(element => ({ id: element.getAttribute("data-id"), bounds: element.getBoundingClientRect() }));
+      return boxes.flatMap((left, index) => boxes.slice(index + 1).flatMap(right =>
+        Math.min(left.bounds.right, right.bounds.right) > Math.max(left.bounds.left, right.bounds.left)
+          && Math.min(left.bounds.bottom, right.bounds.bottom) > Math.max(left.bounds.top, right.bounds.top)
+          ? [[left.id, right.id]] : []));
+    });
+    expect(overlaps).toEqual([]);
     const node = (id: string) =>
       arranged.graph.nodes.find((candidate) => candidate.id === id)!;
     const source = node("e2e-image");
@@ -1867,17 +1943,46 @@ test.describe("超级画布完整验收", () => {
     const otherPrompt = node("tidy-other-prompt");
     const otherImage = node("tidy-other-image");
     expect(otherImage.position.x).toBeGreaterThan(otherPrompt.position.x);
-    expect(otherPrompt.position.x).toBeGreaterThan(
-      Math.max(
-        source.position.x,
-        video.position.x,
-        ...results.map((result) => result.position.x + 220),
-      ),
+    // Independent workflows keep their reading order and may wrap to the next
+    // row when the measured first workflow exceeds the viewport packing width.
+    const firstWorkflow = arranged.graph.nodes.filter(
+      (item) => item.id.startsWith("e2e-") || item.id.startsWith("tidy-result-"),
     );
+    const firstRight = Math.max(...firstWorkflow.map((item) =>
+      item.position.x + (item.measured?.width ?? item.width ?? (Number(item.style?.width) || 300)),
+    ));
+    const firstBottom = Math.max(...firstWorkflow.map((item) =>
+      item.position.y + (item.measured?.height ?? item.height ?? (Number(item.style?.height) || 200)),
+    ));
+    expect(
+      otherPrompt.position.x >= firstRight + 160 ||
+      otherPrompt.position.y >= firstBottom + 160,
+    ).toBe(true);
 
     const arrangedPositions = Object.fromEntries(
       arranged.graph.nodes.map((item) => [item.id, item.position]),
     );
+    // Repeating an already-idempotent tidy must still find the content after panning.
+    const viewport = page.locator(".react-flow__viewport");
+    const centeredTransform = await settledViewportTransform(page);
+    const paneBox = await page.locator(".react-flow__pane").boundingBox();
+    expect(paneBox).not.toBeNull();
+    await page.mouse.move(paneBox!.x + paneBox!.width / 2, paneBox!.y + paneBox!.height / 2);
+    await page.mouse.down({ button: "middle" });
+    await page.mouse.move(paneBox!.x + paneBox!.width / 2 + 180, paneBox!.y + paneBox!.height / 2 + 80, { steps: 8 });
+    await page.mouse.up({ button: "middle" });
+    await expect.poll(() => viewport.evaluate(element => getComputedStyle(element).transform)).not.toBe(centeredTransform);
+    await page.getByRole("button", { name: "一键整理画布" }).click();
+    await expect(page.getByText("画布已经很整齐了", { exact: true })).toBeVisible();
+    await settledViewportTransform(page);
+    await expect.poll(() => viewport.evaluate(element => getComputedStyle(element).transform)).toBe(centeredTransform);
+    expect(Object.fromEntries((await savedCanvas(page)).graph.nodes.map(item => [item.id, item.position]))).toEqual(arrangedPositions);
+    // The no-op second tidy must not add a history entry: one undo restores
+    // the original graph, and redo restores the complete arranged result.
+    await page.keyboard.press("ControlOrMeta+Z");
+    await expect.poll(async () => Object.fromEntries((await savedCanvas(page)).graph.nodes.map(item => [item.id, item.position]))).toEqual(beforePositions);
+    await page.keyboard.press("ControlOrMeta+Shift+Z");
+    await expect.poll(async () => Object.fromEntries((await savedCanvas(page)).graph.nodes.map(item => [item.id, item.position]))).toEqual(arrangedPositions);
     await page.reload();
     await expect(
       page.getByRole("button", { name: "一键整理画布" }),
@@ -1937,9 +2042,11 @@ test.describe("超级画布完整验收", () => {
     await page.getByRole("button", { name: "Fit View" }).click();
     await expect(page.locator(".react-flow__node")).toHaveCount(2);
 
-    const zoom = await page
-      .locator(".react-flow__viewport")
-      .evaluate((node) => new DOMMatrix(getComputedStyle(node).transform).a);
+    await expect.poll(() => page.locator(".react-flow__viewport")
+      .evaluate(node => new DOMMatrix(getComputedStyle(node).transform).a)).toBeLessThan(0.05);
+    await settledViewportTransform(page);
+    const zoom = await page.locator(".react-flow__viewport")
+      .evaluate(node => new DOMMatrix(getComputedStyle(node).transform).a);
     expect(zoom).toBeGreaterThanOrEqual(0.02);
     expect(zoom).toBeLessThan(0.05);
 
@@ -2000,7 +2107,7 @@ test.describe("超级画布完整验收", () => {
       .toMatchObject({ size: "1536x1024", quality: "high", n: 3 });
   });
 
-  test("模型参数在窄窗口避让工具，按空间贴附节点并保持同比缩放", async ({ page }, testInfo) => {
+  test("模型参数浮卡在窄窗口避让工具，画布缩放后仍保持可读", async ({ page }, testInfo) => {
     await openWorkspace(page);
     const node = page.locator('.react-flow__node[data-id="e2e-image"]');
     await node.getByRole("button", { name: /打开 E2E 图片生成 模型与参数/u }).click();
@@ -2010,31 +2117,31 @@ test.describe("超级画布完整验收", () => {
     const inspector = page.getByRole("button", { name: "智能体面板", exact: true });
     if (await inspector.getAttribute("aria-expanded") === "true") await inspector.click();
     await expect(inspector).toHaveAttribute("aria-expanded", "false");
-    const assertAttached = () => expect.poll(async () => (await attachedPanelGeometry(dialog)).attachmentError).toBeLessThanOrEqual(1);
+    const assertFloating = () => expect.poll(async () => (await floatingPanelGeometry(dialog)).floatingError).toBeLessThanOrEqual(1);
     for (const width of [1280, 900, 390]) {
       await page.setViewportSize({ width, height: 820 });
-      await assertAttached();
+      await assertFloating();
       await dialog.getByRole("button", { name: "关闭模型与参数面板", exact: true }).click({ trial: true });
       await page.getByRole("button", { name: "打开节点与素材库", exact: true }).click({ trial: true });
     }
     await page.setViewportSize({ width: 1280, height: 820 });
-    const beforeZoom = (await attachedPanelGeometry(dialog)).zoom;
-    await page.locator(".react-flow__controls-zoomout").click();
-    await expect.poll(async () => (await attachedPanelGeometry(dialog)).zoom).toBeLessThan(beforeZoom);
-    await assertAttached();
+    const beforeZoom = (await floatingPanelGeometry(dialog)).zoom;
+    await page.getByRole("button", { name: "Zoom Out", exact: true }).click();
+    await expect.poll(async () => (await floatingPanelGeometry(dialog)).zoom).toBeLessThan(beforeZoom);
+    await assertFloating();
     expect((await savedCanvas(page)).graph.nodes.find(node => node.id === "e2e-image")!.position).toEqual(initialPosition);
     await page.screenshot({ path: testInfo.outputPath("narrow-clamped-model-panel.png") });
     await page.keyboard.press("Escape");
     await expect(dialog).toHaveCount(0);
   });
 
-  for (const zoom of [0.4, 1, 1.74]) test(`参数面板跟随节点移动、同比缩放和边角调整：${zoom}`, async ({ page, request }, testInfo) => {
+  for (const zoom of [0.4, 1, 1.74]) test(`参数浮卡在节点移动、画布缩放和节点调整后保持固定：${zoom}`, async ({ page, request }, testInfo) => {
     await page.setViewportSize({ width: 1440, height: 1000 });
     const canvas = await getJson<CanvasResponse>(request, "/api/canvas");
     const image = canvas.graph.nodes.find(node => node.id === "e2e-image")!;
     image.position = { x: 70, y: 35 };
     image.style = { width: 420, height: 180 };
-    canvas.graph.nodes = [image]; canvas.graph.edges = []; canvas.graph.viewport = { x: 30, y: 120, zoom };
+    canvas.graph.nodes = [image]; canvas.graph.edges = []; canvas.graph.viewport = { x: 30, y: 120, zoom: zoom < .55 ? 1 : zoom };
     expect((await request.put(`/api/canvas/${canvas.id}`, { data: { graph: canvas.graph } })).ok()).toBe(true);
     await gotoCanvasPage(page);
     const card = page.locator('.react-flow__node[data-id="e2e-image"] .node-card');
@@ -2044,7 +2151,9 @@ test.describe("超级画布完整验收", () => {
     const inspector = page.getByRole("button", { name: "智能体面板", exact: true });
     if (await inspector.getAttribute("aria-expanded") === "true") await inspector.click();
     await expect(inspector).toHaveAttribute("aria-expanded", "false");
-    const assertAttached = () => expect.poll(async () => (await attachedPanelGeometry(panel)).attachmentError).toBeLessThanOrEqual(1);
+    if (zoom < .55) await setCanvasZoomWithWheel(page, zoom);
+    await expect(page.locator(".canvas-zoom-value")).toHaveText(`${Math.round(zoom * 100)}%`);
+    const assertFloating = () => expect.poll(async () => (await floatingPanelGeometry(panel)).floatingError).toBeLessThanOrEqual(1);
     const assertScrollable = async () => {
       const body = panel.locator(".node-config-popover-body");
       await expect(body).toHaveCSS("overflow-y", "auto");
@@ -2055,56 +2164,65 @@ test.describe("超级画布完整验收", () => {
         await expect(body).toHaveJSProperty("scrollTop", 0);
       }
     };
-    await assertAttached();
+    await assertFloating();
     await assertScrollable();
     expect((await savedCanvas(page)).graph.nodes.find(node => node.id === "e2e-image")!.position).toEqual(image.position);
     await panel.getByRole("button", { name: "关闭模型与参数面板", exact: true }).click({ trial: true });
-    // Keep the compact/high-zoom bounds check above, then give the full panel
-    // room beside the node so the drag and resize handles are exposed. Placement
-    // may choose any clear side; wait for the full-width layout after resizing
-    // the viewport instead of reading its previous valid side on the first frame.
+    // Keep the compact/high-zoom bounds check, then exercise node movement and
+    // resize independently of the fixed card in a taller viewport.
     await page.setViewportSize({ width: 1440, height: 1800 });
-    await expect.poll(async () => Math.abs((await panel.boundingBox())!.width - (await card.boundingBox())!.width)).toBeLessThanOrEqual(1);
-    await assertAttached();
+    await expect(panel).toHaveCSS("width", "380px");
+    await assertFloating();
     const pinnedBox = await panel.boundingBox();
-    const pinnedGeometry = await attachedPanelGeometry(panel);
-    expect(pinnedBox!.width).toBeCloseTo((await card.boundingBox())!.width, 0);
+    const pinnedGeometry = await floatingPanelGeometry(panel);
+    expect(pinnedBox!.width).toBeCloseTo(380, 0);
     const header = card.locator(".node-head");
     const bounds = await header.boundingBox();
     const dragX = bounds!.x + bounds!.width * 0.7;
     await page.mouse.move(dragX, bounds!.y + bounds!.height / 2);
     await page.mouse.down(); await page.mouse.move(dragX + 80, bounds!.y + bounds!.height / 2 + 20, { steps: 8 }); await page.mouse.up();
-    await assertAttached();
-    const draggedGeometry = await attachedPanelGeometry(panel);
-    expect(draggedGeometry.cardTop).toBeGreaterThan(pinnedGeometry.cardTop);
-    expect(draggedGeometry.direction).not.toBe("overlapping");
-    expect(draggedGeometry.y).toBeGreaterThan(pinnedGeometry.y);
+    await assertFloating();
+    const draggedGeometry = await floatingPanelGeometry(panel);
+    expect(draggedGeometry.ownerPresent).toBe(true);
+    expect(draggedGeometry.cardTop!).toBeGreaterThan(pinnedGeometry.cardTop!);
+    expect(draggedGeometry.x).toBeCloseTo(pinnedGeometry.x, 0);
+    expect(draggedGeometry.y).toBeCloseTo(pinnedGeometry.y, 0);
     expect((await panel.boundingBox())!.width).toBeCloseTo(pinnedBox!.width, 0);
     await expect.poll(async () => (await savedCanvas(page)).graph.nodes.find(node => node.id === "e2e-image")!.position).not.toEqual(image.position);
     const draggedPosition = (await savedCanvas(page)).graph.nodes.find(node => node.id === "e2e-image")!.position;
-    const beforeZoom = await attachedPanelGeometry(panel);
+    const beforeZoom = await floatingPanelGeometry(panel);
     await page.mouse.move(100, 880);
     await page.mouse.wheel(0, 400);
-    await expect.poll(async () => (await attachedPanelGeometry(panel)).zoom).toBeLessThan(beforeZoom.zoom);
-    await assertAttached();
-    const afterZoom = await attachedPanelGeometry(panel);
-    expect(afterZoom.width / beforeZoom.width).toBeCloseTo(afterZoom.zoom / beforeZoom.zoom, 3);
+    await expect.poll(async () => (await floatingPanelGeometry(panel)).zoom).toBeLessThan(beforeZoom.zoom);
+    await assertFloating();
+    const afterZoom = await floatingPanelGeometry(panel);
+    expect(afterZoom.width).toBeCloseTo(beforeZoom.width, 0);
+    expect(afterZoom.height).toBeCloseTo(beforeZoom.height, 0);
+    expect(afterZoom.x).toBeCloseTo(beforeZoom.x, 0);
+    expect(afterZoom.y).toBeCloseTo(beforeZoom.y, 0);
     expect((await savedCanvas(page)).graph.nodes.find(node => node.id === "e2e-image")!.position).toEqual(draggedPosition);
     const beforeResize = await card.boundingBox();
-    const handle = page.locator('.react-flow__node[data-id="e2e-image"] .react-flow__resize-control.handle.bottom.right');
+    await card.locator(".node-head").click();
+    await card.hover();
+    // NodeResizeControl renders the existing corner handle as a sibling of
+    // the card; the upstream component does not forward aria-label props.
+    const handle = page.locator('.react-flow__node[data-id="e2e-image"] .node-resize-corner.bottom.right');
+    await expect(handle).toBeVisible();
+    await expect(handle).toHaveCSS("opacity", "1");
     const resizeBox = await handle.boundingBox();
+    expect(resizeBox).not.toBeNull();
     await page.mouse.move(resizeBox!.x + resizeBox!.width / 2, resizeBox!.y + resizeBox!.height / 2);
     await page.mouse.down(); await page.mouse.move(resizeBox!.x + 65, resizeBox!.y + 20, { steps: 8 }); await page.mouse.up();
     await expect.poll(async () => (await card.boundingBox())!.width).toBeGreaterThan(beforeResize!.width + 20);
-    await assertAttached();
-    expect((await panel.boundingBox())!.width).toBeGreaterThan(beforeResize!.width + 20);
+    await assertFloating();
+    expect((await panel.boundingBox())!.width).toBeCloseTo(pinnedBox!.width, 0);
     expect((await savedCanvas(page)).graph.nodes.find(node => node.id === "e2e-image")!.position).toEqual(draggedPosition);
     await page.setViewportSize({ width: 1440, height: 1000 });
-    await assertAttached();
+    await assertFloating();
     await assertScrollable();
     await panel.getByRole("button", { name: "关闭模型与参数面板", exact: true }).click({ trial: true });
     expect((await savedCanvas(page)).graph.nodes.find(node => node.id === "e2e-image")!.position).toEqual(draggedPosition);
-    await page.screenshot({ path: testInfo.outputPath("attached-panel.png") });
+    await page.screenshot({ path: testInfo.outputPath("fixed-parameter-card.png") });
   });
 
   test("图片和视频只显示各自分组，混合分组按输出型号区分且不生成", async ({ page, request }) => {
@@ -2126,7 +2244,12 @@ test.describe("超级画布完整验收", () => {
     let submissions = 0; await page.route("**/api/runs", route => { if (route.request().method() === "POST") submissions++; return route.continue(); });
     await openWorkspace(page);
     for (const [id, label, included, excluded, modelName] of [["e2e-image", "E2E 图片生成", "图片专组", "视频专组", "图片型号"], ["e2e-video", "E2E 视频生成", "视频专组", "图片专组", "视频型号"]]) {
-      await page.locator(`.react-flow__node[data-id="${id}"]`).getByRole("button", { name: `打开 ${label} 模型与参数` }).click();
+      const node = page.locator(`.react-flow__node[data-id="${id}"]`);
+      // The existing graph deliberately overlaps the two cards. Select the
+      // visible header to bring this card forward before using its footer.
+      await node.locator(".node-head").click();
+      await expect(node).toHaveClass(/selected/u);
+      await node.getByRole("button", { name: `打开 ${label} 模型与参数` }).click();
       const panel = page.getByRole("dialog", { name: `${label} 模型与参数` });
       const groups = await panel.getByLabel(`${label} 模型群组`).locator("option").allTextContents();
       expect(groups).toContain(included); expect(groups).toContain("综合组"); expect(groups).not.toContain(excluded);
@@ -2150,7 +2273,8 @@ test.describe("超级画布完整验收", () => {
     await openWorkspace(page);
 
     const imageNode = page.locator('.react-flow__node[data-id="e2e-image"]');
-    await imageNode.click();
+    await imageNode.locator(".node-head").click();
+    await imageNode.locator(".prompt-overview").click();
     const imageEditor = imageNode.locator(".tiptap-prompt");
     await expect(imageEditor).toBeVisible();
     await imageEditor.pressSequentially("节点内的电影感城市海报", { delay: 5 });
@@ -2172,7 +2296,8 @@ test.describe("超级画布完整验收", () => {
       .click();
 
     const videoNode = page.locator('.react-flow__node[data-id="e2e-video"]');
-    await videoNode.click();
+    await videoNode.locator(".node-head").click();
+    await videoNode.locator(".prompt-overview").click();
     const videoEditor = videoNode.locator(".tiptap-prompt");
     await expect(videoEditor).toBeVisible();
     await videoEditor.pressSequentially("镜头缓慢向前推进", { delay: 5 });
@@ -2227,7 +2352,8 @@ test.describe("超级画布完整验收", () => {
     const restoredImage = page.locator(
       '.react-flow__node[data-id="e2e-image"]',
     );
-    await restoredImage.click();
+    await restoredImage.locator(".node-head").click();
+    await restoredImage.locator(".prompt-overview").click();
     await expect(restoredImage.locator(".tiptap-prompt")).toContainText(
       "节点内的电影感城市海报",
     );
@@ -2281,6 +2407,18 @@ test.describe("超级画布完整验收", () => {
     const results = page.locator(".generated-result-node");
     await expect(results).toHaveCount(2);
     await expect.poll(async () => (await savedCanvas(page)).graph.nodes.filter(n => n.data.generatedResult).map(n => n.data.generatedStatus).sort()).toEqual(["running", "succeeded"]);
+    await clickBlankCanvas(page);
+    const runningResult = page.locator('.react-flow__node:has(.generated-result-node[data-generated-status="running"])');
+    await expect(runningResult).toHaveCount(1);
+    const runningResultId = await runningResult.getAttribute("data-id");
+    const runningEdge = page.locator(`.react-flow__edge[data-id="edge-generated-${runningResultId}"]`);
+    await expect(runningEdge.locator(".studio-edge.is-running.is-flowing")).toHaveCount(1);
+    await expect(runningEdge.locator(".react-flow__edge-path")).toHaveCSS("animation-name", "none");
+    const runningMotion = page.locator(`.studio-edge-motion[data-edge-id="edge-generated-${runningResultId}"].is-running`);
+    await expect(runningMotion).toBeVisible();
+    await expect(runningMotion).toHaveCSS("overflow", "hidden");
+    await expect(runningMotion.locator(".studio-edge-dash")).toHaveCount(1);
+    await expect(runningMotion.locator(".studio-edge-dash")).toHaveCSS("animation-name", "edge-running-dash");
     await expect(button).toHaveText("再生成一张");
     await page.reload();
     await expect(results).toHaveCount(2);
@@ -2363,12 +2501,16 @@ test.describe("超级画布完整验收", () => {
         '.react-flow__edge[data-id^="edge-generated-"]',
       );
       await expect(pendingEdges).toHaveCount(2);
+      await clickBlankCanvas(page);
       for (const resultNodeId of pendingNodeIds) {
         const edge = page.locator(
           `.react-flow__edge[data-id="edge-generated-${resultNodeId}"]`,
         );
         await expect(edge).toHaveCount(1);
-        await expect(edge.locator(".studio-edge-light")).toHaveCount(1);
+        await expect(edge.locator(".react-flow__edge-path")).toHaveCount(1);
+        await expect(edge.locator(".react-flow__edge-path")).toHaveCSS("animation-name", "none");
+        await expect(edge.locator(".studio-edge.is-running")).toHaveCount(0);
+        await expect(page.locator(`.studio-edge-motion[data-edge-id="edge-generated-${resultNodeId}"]`)).toHaveCount(0);
 
         const resultNode = page.locator(
           `.react-flow__node[data-id="${resultNodeId}"]`,
@@ -2380,6 +2522,21 @@ test.describe("超级画布完整验收", () => {
           1,
         );
       }
+      // Selection adds one local dash overlay; the queued task itself never
+      // animates the main SVG or starts an autonomous flow.
+      await sourceNode.locator(".node-head").click();
+      for (const resultNodeId of pendingNodeIds) {
+        const edgeId = `edge-generated-${resultNodeId}`;
+        const edge = page.locator(`.react-flow__edge[data-id="${edgeId}"]`);
+        const motion = page.locator(`.studio-edge-motion[data-edge-id="${edgeId}"].is-focused`);
+        await expect(edge.locator(".studio-edge.is-focused.is-flowing")).toHaveCount(1);
+        await expect(edge.locator(".react-flow__edge-path")).toHaveCSS("animation-name", "none");
+        await expect(motion).toBeVisible();
+        await expect(motion).toHaveCSS("overflow", "hidden");
+        await expect(motion.locator(".studio-edge-dash")).toHaveCount(1);
+      }
+      await clickBlankCanvas(page);
+      for (const resultNodeId of pendingNodeIds) await expect(page.locator(`.studio-edge-motion[data-edge-id="edge-generated-${resultNodeId}"]`)).toHaveCount(0);
       await expect(sourceNode.getByLabel("输出 图片（image）")).toHaveCount(1);
       const sourceBounds = await sourceNode.boundingBox();
       expect(sourceBounds).not.toBeNull();
@@ -2431,6 +2588,8 @@ test.describe("超级画布完整验收", () => {
         );
         await expect(edge).toHaveCount(1);
         await expect(edge).not.toHaveClass(/\banimated\b/u);
+        await expect(edge.locator(".react-flow__edge-path")).toHaveCSS("animation-name", "none");
+        await expect(page.locator(`.studio-edge-motion[data-edge-id="edge-generated-${resultNodeId}"]`)).toHaveCount(0);
       }
 
       const completed = await getJson<RunResponse>(
@@ -2638,7 +2797,11 @@ test.describe("超级画布完整验收", () => {
         `.react-flow__edge[data-id="edge-generated-${pendingNodeId}"]`,
       );
       await expect(resultEdge).toHaveCount(1);
-      await expect(resultEdge.locator(".studio-edge-light")).toHaveCount(1);
+      await clickBlankCanvas(page);
+      await expect(resultEdge.locator(".react-flow__edge-path")).toHaveCount(1);
+      await expect(resultEdge.locator(".react-flow__edge-path")).toHaveCSS("animation-name", "none");
+      await expect(resultEdge.locator(".studio-edge.is-running")).toHaveCount(0);
+      await expect(page.locator(`.studio-edge-motion[data-edge-id="edge-generated-${pendingNodeId}"]`)).toHaveCount(0);
       await expect(resultNode.getByLabel("输入 生成来源（image）")).toHaveCount(
         1,
       );
@@ -2702,6 +2865,9 @@ test.describe("超级画布完整验收", () => {
       expect(await resultNode.getAttribute("data-id")).toBe(pendingNodeId);
       await expect(resultEdge).toHaveCount(1);
       await expect(resultEdge).not.toHaveClass(/\banimated\b/u);
+      await expect(resultEdge.locator(".studio-edge.is-error")).toHaveCount(1);
+      await expect(resultEdge.locator(".react-flow__edge-path")).toHaveCSS("animation-name", "none");
+      await expect(page.locator(`.studio-edge-motion[data-edge-id="edge-generated-${pendingNodeId}"]`)).toHaveCount(0);
 
       await expect
         .poll(async () => {
@@ -2906,6 +3072,7 @@ test.describe("超级画布完整验收", () => {
       resultNode.getByRole("img", { name: REFERENCE_ASSET_NAME }),
     ).toBeVisible();
 
+    await page.getByRole("button", { name: "打开智能体", exact: true }).click();
     await expect(page.getByRole("button", { name: "智能体面板", exact: true })).toHaveAttribute("aria-expanded", "true");
     const inspector = page.locator(".inspector");
     const resizeHandle = page.getByRole("separator", {
@@ -3335,6 +3502,26 @@ test.describe("超级画布完整验收", () => {
       "data-connection-highlight",
       "compatible",
     );
+    await expect(targetHandle).toHaveAttribute("data-connection-compatible", "true");
+    const heldCompatibleStyle = await targetHandle.evaluate(element => {
+      const style = getComputedStyle(element);
+      const probe = document.createElement("span");
+      probe.style.color = "var(--port-image)";
+      document.body.append(probe);
+      const typeColor = getComputedStyle(probe).color;
+      probe.remove();
+      return { interacting: Boolean(element.closest(".is-interacting")), scale: style.scale,
+        background: style.backgroundColor, shadow: style.boxShadow, typeColor };
+    });
+    await testInfo.attach("held-compatible-port-style", { body: JSON.stringify(heldCompatibleStyle), contentType: "application/json" });
+    expect(heldCompatibleStyle).toMatchObject({ interacting: true, scale: "1.2", background: heldCompatibleStyle.typeColor });
+    expect(heldCompatibleStyle.shadow).not.toBe("none");
+    expect(heldCompatibleStyle.shadow).toContain("4px");
+    const incompatibleHandle = target.locator('.react-flow__handle.target[data-port-kind="text"]');
+    await expect(incompatibleHandle).toHaveAttribute("data-connection-active", "true");
+    await expect(incompatibleHandle).not.toHaveAttribute("data-connection-compatible", "true");
+    await expect(incompatibleHandle).toHaveCSS("opacity", "0.35");
+    await expect(incompatibleHandle).toHaveCSS("box-shadow", "none");
     await page.mouse.move(
       targetBox!.x + targetBox!.width / 2,
       targetBox!.y + targetBox!.height / 2,
@@ -3349,6 +3536,7 @@ test.describe("超级画布完整验收", () => {
     await expect(target.locator(".node-linked-asset-copy small")).toHaveText(
       REFERENCE_ASSET_NAME,
     );
+    await target.locator(".prompt-overview").click();
     const editor = target.locator(".tiptap-prompt");
     await editor.fill("");
     await editor.type("@");
@@ -3584,6 +3772,7 @@ test.describe("超级画布完整验收", () => {
     const createdId = await createdNode.getAttribute("data-id");
     expect(createdId).toBeTruthy();
 
+    await createdNode.locator(".prompt-overview").click();
     const editor = createdNode.locator(".tiptap-prompt");
     await editor.pressSequentially("一张可以立即运行的霓虹街景", { delay: 5 });
     const inspector = await openNodeParameters(createdNode, connection);
@@ -3719,11 +3908,12 @@ test.describe("超级画布完整验收", () => {
     const restored = page.locator(
       `.react-flow__node[data-id="${String(createdId)}"]`,
     );
+    await restored.locator(".prompt-overview").click();
     await expect(restored.locator(".tiptap-prompt")).toContainText(
       "一张可以立即运行的霓虹街景",
     );
-    await expect(restored).toContainText("1536x1024");
-    await expect(restored).toContainText("high");
+    await expect(restored.locator(".node-config-summary")).toHaveAttribute("title", /1536x1024/u);
+    await expect(restored.locator(".node-config-summary")).toHaveAttribute("title", /high/u);
     await expect(restored.locator(".node-generation-preview")).toHaveCount(0);
     await page.getByRole("button", { name: "Fit View" }).click();
     await expect(
@@ -4107,11 +4297,12 @@ test.describe("超级画布完整验收", () => {
     ).toBeVisible();
     await page
       .locator("aside.sidebar")
-      .getByRole("button", { name: "关闭素材库" })
+      .getByRole("button", { name: "关闭节点库" })
       .click();
 
     const promptNode = page.locator('.react-flow__node[data-id="e2e-image"]');
-    await promptNode.click();
+    await promptNode.locator(".node-head").click();
+    await promptNode.locator(".prompt-overview").click();
     const editor = promptNode.locator(".tiptap-prompt");
     await expect(editor).toBeVisible();
     await editor.fill("保留建筑轮廓，生成雨夜电影镜头 ");
@@ -4447,6 +4638,7 @@ test.describe("超级画布完整验收", () => {
       await route.continue();
     };
     await page.route(canvasRoute, failSave);
+    await page.locator('.react-flow__node[data-id="e2e-prompt"] .prompt-overview').click();
     await page.locator('.react-flow__node[data-id="e2e-prompt"] .tiptap-prompt').fill("不应在导入后恢复的旧草稿");
     await expect(page.getByRole("button", { name: "画布自动保存状态" })).toContainText("保存失败");
     await page.unroute(canvasRoute, failSave);
@@ -4503,7 +4695,7 @@ test.describe("超级画布完整验收", () => {
     await page.setViewportSize({ width: viewportWidth, height: 820 });
     await openWorkspace(page);
 
-    const topbar = page.locator(".topbar");
+    const topbar = page.getByLabel("画布工作台", { exact: true });
     await expectInsideViewport(topbar, viewportWidth);
     for (const entry of [
       page.getByRole("button", { name: "打开节点与素材库" }),
@@ -4548,13 +4740,13 @@ test.describe("超级画布完整验收", () => {
 
     const inspector = page.locator("aside.inspector");
     await expect(inspector).toBeHidden();
-    await page.locator('.react-flow__node[data-id="e2e-prompt"]').click();
+    await page.locator('.react-flow__node[data-id="e2e-prompt"] .node-head').click();
     await expect(inspector).toBeHidden();
     await page.getByRole("button", { name: "打开智能体", exact: true }).click();
     await expect(inspector).toBeVisible();
     await expect(inspector.locator(".agent-panel")).toBeVisible();
     await expect(
-      page.locator('.react-flow__node[data-id="e2e-prompt"] .tiptap-prompt'),
+      page.locator('.react-flow__node[data-id="e2e-prompt"] .prompt-overview'),
     ).toBeVisible();
 
     const bounds = await inspector.boundingBox();
@@ -4637,6 +4829,7 @@ test.describe("超级画布完整验收", () => {
 
     await expect(sidebar).toBeHidden();
     await expect(inspector).toBeHidden();
+    await page.locator('.react-flow__node:has(.node-card[data-node-type="prompt"]) .prompt-overview').last().click();
     await expect(
       page
         .locator(
@@ -4672,6 +4865,8 @@ test.describe("超级画布完整验收", () => {
       page.locator('.react-flow__node[data-id="e2e-prompt"]'),
     ).toHaveClass(/selected/);
 
+    await page.getByRole("button", { name: "打开智能体", exact: true }).click();
+    await expect(page.locator("aside.inspector .agent-panel header strong")).toBeVisible();
     const copyResult = await page.evaluate(() => {
       const paragraph =
         document.querySelector<HTMLElement>("aside.inspector .agent-panel header strong");

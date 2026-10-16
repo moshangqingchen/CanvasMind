@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, Tray, ipcMain, dialog, shell, safeStorage, nativeImage } from "electron";
+import { app, BrowserWindow, Menu, Tray, ipcMain, dialog, shell, safeStorage, nativeImage, nativeTheme } from "electron";
 import electronUpdater from "electron-updater";
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
@@ -18,6 +18,7 @@ import { ReferenceChannel } from "./reference-channel.mjs";
 import { exitWaitPresentation } from "./exit-policy.mjs";
 import { DesktopRendererRecovery, rendererLoadFailure } from "./renderer-recovery.mjs";
 import { mediaToolEnvironment } from "./media-tools.mjs";
+import { applyThemeSource, readThemeSource, saveThemeSource, themeBackground } from "./theme.mjs";
 
 app.setAppUserModelId(APP_ID);
 const smoke = process.argv.includes("--smoke-test");
@@ -43,6 +44,7 @@ let window, tray, backend, origin, token, secrets, updater, rendererRecovery;
 let referenceChannel, configuringReference = false;
 let starting = false, quitting = false, intentionalStop = false, waitingExit = false, applyUpdate = false;
 let exitTimer, updateTimer;
+let themeSource = "system", themeWrite = Promise.resolve();
 let exitEpoch = 0;
 const developmentWatchers = new Set();
 const stopDevelopmentWatchers = async () => {
@@ -207,7 +209,7 @@ async function start() {
 }
 function createMainWindow(bounds = {}) {
   const created = new BrowserWindow({ title: "超级画布", width: 1440, height: 960, ...bounds, minWidth: 980, minHeight: 680, show: false,
-    backgroundColor: "#101114", icon: join(__dirname, "icon.png"),
+    backgroundColor: themeBackground(nativeTheme), icon: join(__dirname, "icon.png"),
     webPreferences: { preload: join(__dirname, "preload.cjs"), contextIsolation: true, sandbox: true, nodeIntegration: false, backgroundThrottling: false, offscreen: smoke && !smokeWindowed } });
   created.webContents.on("render-process-gone", (_event, details) => {
     if (created !== window) return;
@@ -363,11 +365,16 @@ if (locked) {
   app.on("second-instance", show);
   app.on("before-quit", (event) => { if (!quitting) { event.preventDefault(); void requestExit(); } });
   app.on("window-all-closed", () => {});
+  nativeTheme.on("updated", () => {
+    if (window && !window.isDestroyed()) window.setBackgroundColor(themeBackground(nativeTheme));
+  });
   app.on("child-process-gone", (_event, details) => {
     void log(`child process gone: type=${details.type} reason=${details.reason} exitCode=${details.exitCode}`).catch(() => {});
   });
   app.whenReady().then(async () => {
     await mkdir(logRoot, { recursive: true });
+    themeSource = await readThemeSource(dataRoot);
+    applyThemeSource(nativeTheme, themeSource);
     if (process.platform === "win32" && app.isPackaged && !smoke) {
       // Keep existing desktop shortcuts on a stable ICO when the EXE is replaced.
       const icon = join(process.resourcesPath, "app-icon.ico");
@@ -425,6 +432,14 @@ if (locked) {
     handle("desktop:open-logs", () => shell.openPath(logRoot));
     handle("desktop:retry", () => start());
     handle("desktop:cancel-exit", cancelExit);
+    handle("desktop:theme-source", source => {
+      applyThemeSource(nativeTheme, source);
+      if (themeSource === source) return;
+      themeSource = source;
+      // Serialize the tiny mirror so rapid switches cannot leave an older choice.
+      themeWrite = themeWrite.catch(() => {}).then(() => saveThemeSource(dataRoot, source));
+      return themeWrite.catch(error => log(`appearance preference: ${error.message}`));
+    });
     handle("desktop:reference-status", () => referenceChannel?.snapshot() ?? { enabled: false, baseUrl: "", tokenConfigured: false, phase: "disabled", message: "本机资料尚未初始化", port: 3210 });
     handle("desktop:reference-save", async input => {
       if (!referenceChannel || !backend || waitingExit || configuringReference) throw new Error("请等待当前操作完成后重试");

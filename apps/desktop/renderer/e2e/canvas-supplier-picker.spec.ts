@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { clickBlankCanvas } from "./canvas-test-actions";
-import { attachedPanelGeometry } from "./attached-panel-geometry";
+import { clickBlankCanvas, setCanvasZoomWithWheel } from "./canvas-test-actions";
+import { floatingPanelGeometry } from "./floating-panel-geometry";
 
 async function chooseOpenNativeOption(
   page: Page,
@@ -103,8 +103,9 @@ for (const zoom of [0.4, 1, 1.74])
         title: "供应商鼠标回归",
         graph: {
           schemaVersion: 1,
-          // Keep the 40% panel exposed to real pointer input beside the floating rail.
-          viewport: { x: zoom < 0.5 ? 140 : 0, y: 0, zoom },
+          // Compact LOD intentionally hides the footer trigger. Open at 1x,
+          // then retain all real-pointer/native-popup checks at 40% below.
+          viewport: { x: zoom < 0.5 ? 140 : 0, y: 0, zoom: zoom < .55 ? 1 : zoom },
           edges: [],
           nodes: [
             {
@@ -146,7 +147,8 @@ for (const zoom of [0.4, 1, 1.74])
       await sidebar.click();
     await expect(sidebar).toHaveAttribute("aria-expanded", "false");
     const panel = page.getByRole("dialog", { name: "选择测试 模型与参数", exact: true });
-    await expect.poll(async () => (await attachedPanelGeometry(panel)).attachmentError)
+    if (zoom < .55) await setCanvasZoomWithWheel(page, zoom);
+    await expect.poll(async () => (await floatingPanelGeometry(panel)).floatingError)
       .toBeLessThanOrEqual(1);
     if (zoom < 0.5) {
       await expect(page.locator(".canvas-zoom-value")).toHaveText("40%");
@@ -184,7 +186,13 @@ for (const zoom of [0.4, 1, 1.74])
       page.locator('.react-flow__node[data-id="source"]'),
     ).not.toHaveClass(/selected/);
     await expect(sidebar).toHaveAttribute("aria-expanded", selectionState!);
-    await chooseOpenNativeOption(page, supplier, connections[2]!.supplierKey);
+    const supplierModelsPath = `/api/providers/${connections[2]!.id}/models`;
+    const [supplierModelsRequest] = await Promise.all([
+      page.waitForRequest(request => request.method() === "GET" && new URL(request.url()).pathname === supplierModelsPath),
+      chooseOpenNativeOption(page, supplier, connections[2]!.supplierKey),
+    ]);
+    // The active floating editor must keep loading its new connection after canvas selection was cleared.
+    expect(new URL(supplierModelsRequest.url()).pathname).toBe(supplierModelsPath);
     const quality = page.getByRole("dialog", { name: "选择测试 模型与参数" }).getByLabel("质量", { exact: true });
     await expect(quality).toHaveValue("max");
     const group = page.getByRole("combobox", {
@@ -195,7 +203,12 @@ for (const zoom of [0.4, 1, 1.74])
     await expect
       .poll(() => group.evaluate((el) => el.matches(":open")))
       .toBe(true);
-    await chooseOpenNativeOption(page, group, "标准");
+    const groupModelsPath = `/api/providers/${connections[3]!.id}/models`;
+    const [groupModelsRequest] = await Promise.all([
+      page.waitForRequest(request => request.method() === "GET" && new URL(request.url()).pathname === groupModelsPath),
+      chooseOpenNativeOption(page, group, "标准"),
+    ]);
+    expect(new URL(groupModelsRequest.url()).pathname).toBe(groupModelsPath);
     await expect(quality).toHaveValue("max");
     await quality.selectOption("low");
     await expect.poll(savedData).toMatchObject({ model: "gpt-image-2.5", qualityMode: "custom", parameters: { quality: "low" } });
@@ -237,9 +250,11 @@ for (const zoom of [0.4, 1, 1.74])
       page.locator('.react-flow__node[data-id="source"]'),
     ).not.toHaveClass(/selected/);
     await page.reload();
+    if (zoom < .55) await setCanvasZoomWithWheel(page, 1);
     await page
       .getByRole("button", { name: "打开 选择测试 模型与参数", exact: true })
       .click();
+    if (zoom < .55) await setCanvasZoomWithWheel(page, zoom);
     await expect(supplier).toHaveValue(connections[2]!.supplierKey);
     await expect(group).toHaveValue("标准");
     await expect(quality).toHaveValue("low");
@@ -260,7 +275,7 @@ test("同群组多连接保留身份，旧智能体 Key 的图片模型可选择
     id: index ? `picker-image-${String(index).padStart(3, "0")}` : "gpt-image-2",
     name: `列表模型 ${String(index).padStart(3, "0")}`,
     operations: ["image.generate"], inputKinds: ["text"], outputKinds: ["image"],
-    metadata: { canvasRunnable: index !== 98, priceLabel: "¥0.1/张", ...(index === 97 ? { imageCapabilitiesVerifiedAt: "2026-09-22" } : {}) },
+    metadata: { canvasRunnable: index !== 98, priceLabel: index === 38 ? "¥0.1/张 · 隔离测试：参考素材与最高质量条件下的完整展示报价" : "¥0.1/张", ...(index === 97 ? { imageCapabilitiesVerifiedAt: "2026-09-22" } : {}) },
   }));
   const supplierResponse = await request.post("/api/suppliers", { data: { name: "多连接选择回归", siteUrl: "https://multi-picker.invalid", apiUrl: "https://multi-picker.invalid" } });
   expect(supplierResponse.ok()).toBeTruthy();
@@ -309,15 +324,43 @@ test("同群组多连接保留身份，旧智能体 Key 的图片模型可选择
   await picker.click();
   const search = panel.getByRole("combobox", { name: "搜索模型名称或 ID", exact: true });
   await expect(search).toBeFocused();
-  await expect(panel.getByRole("listbox").getByRole("option")).toHaveCount(40);
+  const modelList = panel.getByRole("listbox");
+  const mountedOptions = modelList.getByRole("option");
+  // The page still represents 40 options, while the DOM contains only the
+  // variable-height viewport, its overscan and the keyboard-active option.
+  await expect.poll(() => mountedOptions.count()).toBeGreaterThan(0);
+  await expect.poll(() => mountedOptions.count()).toBeLessThan(40);
+  await expect(modelList.locator('[data-virtual-model-list]')).toHaveCount(1);
+  await expect(panel.getByRole("option", { name: "列表模型 000", exact: true })).toHaveAttribute("aria-setsize", "101");
+  await expect(panel.getByRole("option", { name: "列表模型 000", exact: true }).locator("svg.lucide-check")).toHaveCount(1);
+  await modelList.hover();
+  await page.mouse.wheel(0, 3000);
+  const endOfPage = panel.getByRole("option", { name: "列表模型 038", exact: true });
+  await expect(endOfPage).toBeInViewport();
+  await expect(endOfPage).toHaveAttribute("aria-posinset", "40");
+  // A longer quotation expands its row rather than being clipped by a fixed
+  // virtual-item height or overlapping its neighbour.
+  const rowGeometry = await endOfPage.evaluate(element => {
+    const row = element.getBoundingClientRect();
+    const price = element.querySelector('[id$="-price"]')!.getBoundingClientRect();
+    const previous = element.parentElement!.querySelector('[data-index="38"]')!.getBoundingClientRect();
+    return { height: row.height, previousHeight: previous.height, gap: row.top - previous.bottom,
+      priceInside: price.left >= row.left && price.right <= row.right + 1 && price.top >= row.top && price.bottom <= row.bottom + 1 };
+  });
+  expect(rowGeometry.height).toBeGreaterThan(rowGeometry.previousHeight);
+  expect(rowGeometry.gap).toBeGreaterThanOrEqual(-1);
+  expect(rowGeometry.priceInside).toBe(true);
+  await expect.poll(() => mountedOptions.count()).toBeLessThan(40);
   await panel.getByRole("button", { name: "下一页", exact: true }).click();
   await panel.getByRole("button", { name: "下一页", exact: true }).click();
   await expect(panel.getByRole("button", { name: "下一页", exact: true })).toBeDisabled();
   await expect(search).toBeFocused();
   await search.press("End");
-  await expect(panel.getByRole("option", { name: "列表模型 099", exact: true })).toBeVisible();
+  await expect(panel.getByRole("option", { name: "列表模型 099", exact: true })).toBeInViewport();
+  await expect(panel.getByRole("option", { name: "列表模型 099", exact: true })).toHaveAttribute("aria-posinset", "101");
+  await expect.poll(async () => search.getAttribute("aria-activedescendant").then(id => page.locator(`[id="${id}"]`).count())).toBe(1);
   await search.press("Home");
-  await expect(panel.getByRole("option", { name: "自动模型", exact: true })).toBeVisible();
+  await expect(panel.getByRole("option", { name: "自动模型", exact: true })).toBeInViewport();
   await search.fill("picker-image-097");
   await panel.getByLabel("模型状态筛选").selectOption("verified");
   await expect(panel.getByRole("listbox").getByRole("option")).toHaveCount(1);
@@ -339,4 +382,104 @@ test("同群组多连接保留身份，旧智能体 Key 的图片模型可选择
   await panel.getByLabel("模型状态筛选").selectOption("recent");
   await expect(panel.getByRole("listbox").getByRole("option")).toHaveCount(0);
   expect(submissions).toBe(0);
+});
+
+test("长目录暖开尺寸缓存随新报价与窄窗口重新测量", async ({ page, request }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 960 });
+  const models = Array.from({ length: 32 }, (_, index) => ({
+    id: `cache-image-${String(index).padStart(3, "0")}`, name: `缓存型号 ${String(index).padStart(3, "0")}`,
+    operations: ["image.generate"], inputKinds: ["text"], outputKinds: ["image"],
+    metadata: { canvasRunnable: true, priceLabel: "¥0.1/张" },
+  }));
+  const selected = models[5]!;
+  const createdProvider = await request.post("/api/providers", { data: {
+    name: "窗口测量隔离回归", provider: "openai", apiKey: "isolated-no-generation",
+    config: { baseUrl: "https://model-window-cache.invalid", preset: "cyberafei-api", usage: "canvas",
+      modelGroup: "尺寸估计回归", defaultModel: selected.id },
+  } });
+  expect(createdProvider.ok()).toBeTruthy();
+  const connection = await createdProvider.json();
+  let scans = 0;
+  await page.route(`**/api/providers/${connection.id}/models*`, route => {
+    scans++;
+    return route.fulfill({ json: models, headers: { "X-Model-Scan-Status": "live" } });
+  });
+  let submissions = 0;
+  await page.route("**/api/runs**", async route => {
+    if (route.request().method() === "POST") { submissions++; await route.abort(); }
+    else await route.continue();
+  });
+  const createdCanvas = await request.post("/api/canvas", { data: { title: "窗口尺寸估计回归", graph: {
+    schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 1 }, edges: [], nodes: [{
+      id: "cache-source", type: "workflow", position: { x: 110, y: 50 }, style: { width: 420, height: 180 },
+      data: { nodeType: "image-generation", label: "测量缓存", provider: "openai", connectionId: connection.id,
+        model: selected.id, parts: [], parameters: {}, inputs: [{ id: "prompt", kind: "text", label: "提示词" }],
+        outputs: [{ id: "images", kind: "image", label: "图片" }] },
+    }],
+  } } });
+  expect(createdCanvas.ok()).toBeTruthy();
+  const canvas = await createdCanvas.json();
+  await page.goto(`/canvas/${canvas.id}`);
+  await page.getByRole("button", { name: "打开 测量缓存 模型与参数", exact: true }).click();
+  const panel = page.getByRole("dialog", { name: "测量缓存 模型与参数", exact: true });
+  const picker = panel.getByRole("combobox", { name: "测量缓存 模型", exact: true });
+  await expect(picker).toContainText(selected.name);
+  const sidebar = page.getByRole("button", { name: "智能体面板", exact: true });
+  if (await sidebar.getAttribute("aria-expanded") === "true") await sidebar.click();
+  const search = panel.getByRole("combobox", { name: "搜索模型名称或 ID", exact: true });
+  const list = panel.getByRole("listbox");
+  const row = list.getByRole("option", { name: selected.name, exact: true });
+  await picker.click();
+  await expect(row).toBeInViewport();
+  await expect(row.locator("svg.lucide-check")).toHaveCount(1);
+  const originalHeight = (await row.boundingBox())!.height;
+  const originalWidth = (await list.boundingBox())!.width;
+  await search.press("Escape");
+  // Reopen the same ModelPicker instance once to exercise its saved estimates.
+  await picker.click();
+  await expect(row).toBeInViewport();
+  await search.press("Escape");
+  const nextQuote = "¥0.2/张 · 最高质量与参考图片组合，透明输出单独核算，完整报价条件必须换行保留。".repeat(4);
+  selected.metadata.priceLabel = nextQuote;
+  const scansBeforeChange = scans;
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect.poll(() => scans).toBeGreaterThan(scansBeforeChange);
+  await expect(panel.getByLabel("当前供应商报价", { exact: true })).toContainText(nextQuote);
+  await page.setViewportSize({ width: 390, height: 844 });
+  for (let reopen = 0; reopen < 2; reopen++) {
+    await picker.click();
+    await expect(list.locator('[data-virtual-model-list]')).toHaveCount(1);
+    await expect(row.locator('[id$="-price"]')).toHaveText(nextQuote);
+    await expect(row.locator("svg.lucide-check")).toHaveCount(1);
+    await expect.poll(() => list.getByRole("option").count()).toBeLessThan(33);
+    await expect.poll(() => list.evaluate(element => element.getBoundingClientRect().width)).toBeLessThan(originalWidth - 20);
+    await expect.poll(() => row.evaluate(element => {
+      const bounds = element.getBoundingClientRect();
+      const price = element.querySelector('[id$="-price"]')!.getBoundingClientRect();
+      return price.left >= bounds.left - 1 && price.right <= bounds.right + 1
+        && price.top >= bounds.top - 1 && price.bottom <= bounds.bottom + 1;
+    })).toBe(true);
+    await expect.poll(async () => (await row.boundingBox())!.height).toBeGreaterThan(originalHeight + 20);
+    await expect.poll(() => row.evaluate(element => {
+      const next = element.parentElement!.querySelector('[data-index="7"]');
+      return next ? next.getBoundingClientRect().top - element.getBoundingClientRect().bottom : -Infinity;
+    })).toBeGreaterThanOrEqual(-1);
+    const menu = panel.locator(".node-model-select-options");
+    await expect.poll(() => menu.evaluate(element => {
+      const bounds = element.getBoundingClientRect();
+      return bounds.left >= 11 && bounds.right <= window.innerWidth - 11
+        && bounds.top >= 11 && bounds.bottom <= window.innerHeight - 11;
+    })).toBe(true);
+    await search.press("End");
+    const last = list.getByRole("option", { name: models.at(-1)!.name, exact: true });
+    await expect(last).toBeInViewport();
+    await expect(last).toHaveAttribute("aria-posinset", "33");
+    await search.press("Escape");
+    await expect(picker).toBeFocused();
+  }
+  await picker.click();
+  await page.screenshot({ path: testInfo.outputPath("window-cache-updated-price-mobile.png") });
+  expect(submissions).toBe(0);
+  const saved = await (await request.get(`/api/canvas/${canvas.id}`)).json();
+  expect(saved.graph.nodes[0].data).toMatchObject({ connectionId: connection.id, model: selected.id });
 });

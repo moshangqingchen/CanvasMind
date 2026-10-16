@@ -4,7 +4,7 @@ import type { AgentModelOption } from "../lib/agent-models";
 import type { AssetView } from "../components/types";
 
 /** All API traffic is isolated. No user configuration, upstream or paid model is used. */
-async function scenario(page: Page, mode: "text" | "media" | "failure" | "disconnect") {
+async function scenario(page: Page, mode: "text" | "media" | "failure" | "disconnect", openAgent = true) {
   const canvasId = "agent-e2e";
   const assets: AssetView[] = [];
   const canvas = {
@@ -300,12 +300,60 @@ async function scenario(page: Page, mode: "text" | "media" | "failure" | "discon
     });
   });
   await page.goto(`/canvas/${canvasId}`);
-  await page.getByRole("button", { name: "打开智能体", exact: true }).click();
-  await expect(page.getByLabel("智能体模型", { exact: true })).toHaveValue(
-    "brain-a\nbrain",
-  );
+  if (openAgent) {
+    await page.getByRole("button", { name: "打开智能体", exact: true }).click();
+    await expect(page.getByLabel("智能体模型", { exact: true })).toHaveValue(
+      "brain-a\nbrain",
+    );
+  }
   return { counts: () => ({ executed, materialized, turns }), session, model, canvas, assets };
 }
+
+test("智能体首次展开前不请求型号，收起再展开保留未发送草稿", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("super-canvas:inspector-open", "false"));
+  let modelRequests = 0;
+  page.on("request", request => { if (new URL(request.url()).pathname === "/api/agent/models") modelRequests++; });
+  await scenario(page, "text", false);
+  const openAgent = page.getByRole("button", { name: "打开智能体", exact: true });
+  await expect(openAgent).toBeVisible();
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await expect(page.getByLabel("创作任务要求")).toHaveCount(0);
+  expect(modelRequests).toBe(0);
+  await openAgent.click();
+  const panel = page.getByLabel("通用创作智能体", { exact: true });
+  const input = panel.getByLabel("创作任务要求");
+  await expect(input).toBeVisible();
+  await expect.poll(() => modelRequests).toBeGreaterThan(0);
+  await input.fill("这段创作想法还没有发送，重新展开后继续编辑");
+  await panel.getByRole("button", { name: "关闭智能体", exact: true }).click();
+  await expect(panel).not.toBeVisible();
+  await openAgent.click();
+  await expect(input).toHaveValue("这段创作想法还没有发送，重新展开后继续编辑");
+});
+for (const preference of ["system", "application"] as const) {
+test(`${preference} 减少动态效果时智能体新消息立即滚动，不触发平滑滚动`, async ({ page }) => {
+  if (preference === "system") await page.emulateMedia({ reducedMotion: "reduce" });
+  else await page.addInitScript(() => localStorage.setItem("super-canvas:gentle-motion", "off"));
+  await page.addInitScript(() => {
+    const scrollTo = Element.prototype.scrollTo;
+    const observed = window as typeof window & { __agentScroll: Array<ScrollBehavior | undefined> };
+    observed.__agentScroll = [];
+    Element.prototype.scrollTo = function(optionsOrX?: ScrollToOptions | number, y?: number) {
+      if (typeof optionsOrX === "object") observed.__agentScroll.push(optionsOrX.behavior);
+      return Reflect.apply(scrollTo, this, typeof optionsOrX === "number" ? [optionsOrX, y] : [optionsOrX]);
+    };
+  });
+  const s = await scenario(page, "text");
+  await page.evaluate(() => { (window as typeof window & { __agentScroll: unknown[] }).__agentScroll = []; });
+  await page.getByLabel("创作任务要求").fill("给我写一个广告分镜");
+  await page.getByRole("button", { name: "发送任务" }).click();
+  await expect(page.getByRole("button", { name: "15 秒", exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => (window as typeof window & { __agentScroll: unknown[] }).__agentScroll)).toContain("instant");
+  expect(await page.evaluate(() => (window as typeof window & { __agentScroll: unknown[] }).__agentScroll)).not.toContain("smooth");
+  expect(s.counts().executed).toBe(0);
+});
+}
+
 test("纯文字分镜任务追问、编辑与刷新恢复，不强制生成节点", async ({ page }) => {
   const s = await scenario(page, "text");
   await page.getByLabel("创作任务要求").fill("给我写一个广告分镜");
@@ -449,20 +497,34 @@ test("供应商声明的图片视频音频数量用于上传校验，并明确�
   expect(s.counts().turns).toBe(0);
 });
 
-test("切换为不支持素材的模型时保留附件，发送前明确拦截，切回后可继续", async ({ page }) => {
+test("长附件名可查看全文，切换为不支持素材的模型时保留附件，切回后可继续", async ({ page }) => {
   const s = await scenario(page, "text");
+  const name = "客户春季活动主视觉第二轮修改参考图_保留透明背景与完整中文说明_最终确认版本.png";
+  const panel = page.getByRole("region", { name: "通用创作智能体" });
+  await expect(panel.getByRole("button", { name: "新创作任务", exact: true })).toHaveAttribute("title", "新建创作任务");
+  await expect(panel.getByRole("button", { name: "添加参考素材", exact: true })).toHaveAttribute("title", "添加参考素材");
+  await expect(panel.getByRole("button", { name: "发送任务", exact: true })).toHaveAttribute("title", "发送消息（输入文字后可按 Enter；Shift+Enter 换行）");
   await page.route("**/api/assets/upload**", (route) => route.fulfill({ json: {
-    id: "switch-image", name: "reference.png", kind: "image", size: 8, mimeType: "image/png", metadata: {},
+    id: "switch-image", name, kind: "image", size: 8, mimeType: "image/png", metadata: {},
   } }));
   const picker = page.locator('section[aria-label="通用创作智能体"] input[type="file"]');
-  await picker.setInputFiles({ name: "reference.png", mimeType: "image/png", buffer: Buffer.from("fixture") });
-  await expect(page.getByRole("button", { name: "移除 reference.png" })).toBeVisible();
+  await picker.setInputFiles({ name, mimeType: "image/png", buffer: Buffer.from("fixture") });
+  const remove = panel.getByRole("button", { name: `移除 ${name}`, exact: true });
+  await expect(remove).toBeVisible();
+  await expect(remove).toHaveAttribute("title", `移除参考素材：${name}`);
+  const attachmentName = remove.locator("..").locator("small");
+  await expect(attachmentName).toHaveAttribute("title", name);
+  expect(await attachmentName.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true);
   await page.getByLabel("智能体 API 供应商").selectOption("site-b");
   await expect(page.getByRole("button", { name: "添加参考素材" })).toBeDisabled();
   await page.getByLabel("创作任务要求").fill("看看参考图");
   await page.getByRole("button", { name: "发送任务", exact: true }).click();
   await expect(page.getByRole("region", { name: "通用创作智能体" }).getByRole("alert")).toContainText("当前模型暂不可读取图片");
-  await expect(page.getByRole("button", { name: "移除 reference.png" })).toBeVisible();
+  await expect(remove).toBeVisible();
+  const dismissError = panel.getByRole("button", { name: "关闭智能体错误", exact: true });
+  await expect(dismissError).toHaveAttribute("title", "关闭错误提示");
+  await dismissError.click();
+  await expect(panel.getByRole("alert")).toHaveCount(0);
   await expect(page.getByLabel("创作任务要求")).toHaveValue("看看参考图");
   expect(s.counts().turns).toBe(0);
   await page.getByLabel("智能体 API 供应商").selectOption("site-a");
@@ -545,3 +607,62 @@ test("刚上传的图片在失败后重新编辑仍保留，并刷新模型能�
   await expect(page.getByRole("button", { name: "移除 reference.png" })).toBeVisible();
   expect(s.counts().turns).toBe(1);
 });
+
+for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 1080 }]) {
+  test(`${viewport.width}×${viewport.height}智能体输入区紧凑，全部型号控件直接可见并保留对话空间`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await page.addInitScript(() => localStorage.setItem("super-canvas:agent-model-expanded", "true"));
+    let external = 0;
+    const errors: string[] = [];
+    page.on("pageerror", error => errors.push(error.message));
+    await page.route("**/*", route => {
+      const url = new URL(route.request().url());
+      if (["http:", "https:"].includes(url.protocol) && !["localhost", "127.0.0.1"].includes(url.hostname)) {
+        external++; return route.abort();
+      }
+      return route.fallback();
+    });
+    const s = await scenario(page, "text");
+    const panel = page.getByRole("region", { name: "通用创作智能体", exact: true });
+    const longName = "创作模型完整名称_长上下文与多模态参考资料_保持真实型号全文";
+    const notice = "当前渠道的思考强度以供应商目录为准；长说明可悬停完整查看，不挤占聊天区域。";
+    Object.assign(s.model, {
+      supplierName: "隔离创作供应商_完整名称与渠道说明",
+      group: "创作分组_长名称与稳定分组说明",
+      connectionName: "主创作连接_保留完整连接名称",
+      modelName: longName, reasoningNotice: notice, reasoningSource: "provider-catalog",
+      inputLimits: { maxImages: 4, maxAssets: 8 },
+    });
+    // Exercise all five selectors, including the optional group connection,
+    // with long real display values and a capability notice at the same time.
+    await page.route("**/api/agent/models", route => route.fulfill({ json: [s.model, {
+      ...s.model, connectionId: "brain-extra", connectionName: "备用创作连接_完整名称",
+    }] }));
+    await panel.getByRole("button", { name: "刷新模型列表", exact: true }).click();
+    const labels = ["智能体 API 供应商", "智能体模型群组", "智能体分组连接", "智能体模型", "思考强度"];
+    for (const label of labels) {
+      const control = panel.getByRole("combobox", { name: label, exact: true });
+      await expect(control).toBeVisible();
+      await expect(control).toBeInViewport({ ratio: 1 });
+      await expect(control).toHaveAttribute("title", /.+/u);
+      await expect.poll(async () => (await control.boundingBox())?.height ?? 0).toBe(32);
+    }
+    await expect(panel.getByLabel("智能体模型", { exact: true })).toHaveAttribute("title", longName);
+    await expect(panel.getByLabel("思考强度", { exact: true })).toHaveAttribute("title", new RegExp(notice, "u"));
+    const support = panel.locator('[aria-label="模型参考素材支持"]');
+    await expect(support).toHaveAttribute("title", /图片：默认支持 · 最多 4 张.*供应商每轮总量：最多 8 个附件.*本应用每轮最多 16 个附件/u);
+    await expect.poll(() => support.evaluate(element => getComputedStyle(element).whiteSpace)).toBe("nowrap");
+    await expect.poll(() => support.evaluate(element => getComputedStyle(element).textOverflow)).toBe("ellipsis");
+    const composer = panel.locator(".agent-composer");
+    const conversation = panel.getByRole("list", { name: "智能体对话", exact: true });
+    await expect.poll(async () => (await composer.boundingBox())?.height ?? Infinity).toBeLessThanOrEqual(300);
+    await expect.poll(async () => (await conversation.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(250);
+    await expect.poll(() => composer.evaluate(element => element.scrollHeight - element.clientHeight)).toBeLessThanOrEqual(1);
+    const input = panel.getByRole("textbox", { name: "创作任务要求", exact: true });
+    await expect.poll(async () => (await input.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(70);
+    await expect.poll(() => input.evaluate(element => getComputedStyle(element).resize)).toBe("vertical");
+    await expect(panel.getByRole("button", { name: "添加参考素材", exact: true })).toBeInViewport({ ratio: 1 });
+    await expect(panel.getByRole("button", { name: "发送任务", exact: true })).toBeInViewport({ ratio: 1 });
+    expect({ external, errors, ...s.counts() }).toEqual({ external: 0, errors: [], executed: 0, materialized: 0, turns: 0 });
+  });
+}

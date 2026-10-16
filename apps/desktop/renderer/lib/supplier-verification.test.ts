@@ -451,7 +451,93 @@ async function fixture(overrides: Partial<VerificationDependencies> = {}) {
   };
 }
 
-describe("durable paid verification", () => {
+describe("verification paid authorization boundary", () => {
+  it("does not submit an unpaused persisted queue on default kick, repeated startup or directory planning", async () => {
+    const f = await fixture();
+    await f.service.plan(supplier.id);
+    const before = (await f.repository.getSupplierVerification(supplier.id))!;
+    expect(before.paused).toBe(false);
+    expect(before.cases[0]?.status).toBe("queued");
+    await f.service.kick();
+    await f.service.plan(supplier.id);
+    await f.service.kick();
+    await new SupplierVerificationService(f.deps).kick();
+    expect(f.submit).not.toHaveBeenCalled();
+    const after = (await f.repository.getSupplierVerification(supplier.id))!;
+    expect(after.used).toBe(0);
+    expect(after.cases.map(test => test.requestId)).toEqual(before.cases.map(test => test.requestId));
+  });
+  it("keeps new Key onboarding as a preparation hold and never inherits paid permission", async () => {
+    const f = await fixture();
+    await f.service.plan(supplier.id, true);
+    await f.repository.saveConnection({ ...connection, id: "new-key" });
+    await f.service.plan(supplier.id, true, { onboarding: true });
+    await f.service.kick();
+    expect(f.submit).not.toHaveBeenCalled();
+    expect((await f.repository.getSupplierVerification(supplier.id))!).toMatchObject({ paused: true, pauseReason: "preview", used: 0 });
+  });
+  it("restores and archives an already submitted task for free while leaving other queued cases untouched", async () => {
+    const poll = vi.fn<VerificationDependencies["poll"]>(async (_, task) => ({ ...task, status: "succeeded" }));
+    const f = await fixture({ models: async () => [model, { ...model, id: "gpt-image-2-other" }], poll });
+    await f.service.plan(supplier.id);
+    const saved = (await f.repository.getSupplierVerification(supplier.id))!;
+    Object.assign(saved.cases[0]!, { status: "running", submittedAt: "2026-10-14T12:00:00Z", task: { providerTaskId: "original-task", status: "running" } });
+    saved.used = 1;
+    await f.repository.saveSupplierVerification(saved, saved.revision);
+    await new SupplierVerificationService(f.deps).kick();
+    expect(poll).toHaveBeenCalledOnce();
+    expect(poll.mock.calls[0]?.[1].providerTaskId).toBe("original-task");
+    expect(f.submit).not.toHaveBeenCalled();
+    const result = (await f.repository.getSupplierVerification(supplier.id))!;
+    expect(result.cases.map(test => test.status)).toEqual(["succeeded", "queued"]);
+    expect(result.used).toBe(1);
+  });
+  it("does not buy a retry when restart finds a request-matched free failure", async () => {
+    const f = await fixture();
+    await f.service.plan(supplier.id);
+    const saved = (await f.repository.getSupplierVerification(supplier.id))!;
+    Object.assign(saved.cases[0]!, {
+      status: "inconclusive", submittedAt: "2026-10-14T12:00:00Z",
+      actualCharge: { amount: 0, currency: "CNY", unit: "image", checkedAt: "now", requestId: saved.cases[0]!.requestId },
+    });
+    saved.used = 1;
+    await f.repository.saveSupplierVerification(saved, saved.revision);
+    const restarted = new SupplierVerificationService(f.deps);
+    await restarted.kick();
+    await restarted.action(supplier.id, "reconcile");
+    await restarted.kick();
+    expect(f.submit).not.toHaveBeenCalled();
+    expect((await f.repository.getSupplierVerification(supplier.id))?.used).toBe(1);
+  });
+  it("does not treat resume as new paid permission, and an explicitly selected case runs exactly once", async () => {
+    const f = await fixture({ models: async () => [model, { ...model, id: "gpt-image-2-other" }] });
+    await f.service.plan(supplier.id, true);
+    await f.service.action(supplier.id, "resume");
+    await f.service.kick();
+    expect(f.submit).not.toHaveBeenCalled();
+    const selected = (await f.repository.getSupplierVerification(supplier.id))!.cases[0]!;
+    await f.service.runQueuedCase(supplier.id, selected.id);
+    await f.service.kick();
+    expect(f.submit).toHaveBeenCalledOnce();
+    expect(f.submit.mock.calls[0]?.[0].requestId).toBe(selected.requestId);
+    await expect(f.service.runQueuedCase(supplier.id, selected.id)).rejects.toThrow("尚未提交");
+    expect((await f.repository.getSupplierVerification(supplier.id))?.cases[1]?.status).toBe("queued");
+  });
+  it("does not carry an explicit paid drain permission into later automatic work or process restart", async () => {
+    const f = await fixture();
+    await f.service.plan(supplier.id);
+    await f.service.kick({ paidGenerationAuthorized: true });
+    expect(f.submit).toHaveBeenCalledOnce();
+    f.deps.models = async () => [queueDescriptor(model), queueDescriptor({ ...model, id: "gpt-image-2-new" })];
+    await f.service.plan(supplier.id);
+    await f.service.kick();
+    await new SupplierVerificationService(f.deps).kick();
+    expect(f.submit).toHaveBeenCalledOnce();
+    expect((await f.repository.getSupplierVerification(supplier.id))?.cases.find(test => test.modelId === "gpt-image-2-new")?.status).toBe("queued");
+  });
+});
+
+describe("durable paid verification with explicit drain authorization", () => {
   it("captures the official group identity on newly planned cases", async () => {
     const f = await fixture();
     await f.repository.saveConnection({ ...connection, config: { ...connection.config, accountKeyGroupId: "115" } });
@@ -469,7 +555,7 @@ describe("durable paid verification", () => {
     const f = await fixture({ poll });
     f.submit.mockResolvedValue({ providerTaskId: "known-image", status: "running" });
     await f.service.plan(supplier.id);
-    await f.service.kick();
+    await f.service.kick({ paidGenerationAuthorized: true });
     expect(poll).toHaveBeenCalledOnce();
     expect(f.submit).toHaveBeenCalledOnce();
     const record = (await f.repository.getSupplierVerification(supplier.id))!;
@@ -477,7 +563,7 @@ describe("durable paid verification", () => {
     expect(record.cases[0]?.task?.providerTaskId).toBe("known-image");
   });
 
-  it.each([false, true])("automatically starts a newly added Key after a preparation-only hold (legacy=%s)", async legacy => {
+  it.each([false, true])("starts a newly added Key only with explicit paid authorization after a preparation-only hold (legacy=%s)", async legacy => {
     const f = await fixture({ models: async () => [] });
     await f.service.plan(supplier.id, true);
     const prepared = (await f.repository.getSupplierVerification(supplier.id))!;
@@ -488,19 +574,19 @@ describe("durable paid verification", () => {
     await f.repository.saveConnection({ ...connection, id: "new-key" });
     f.deps.models = async key => key.id === "new-key" ? [queueDescriptor(model)] : [];
     await f.service.plan(supplier.id, false, { onboarding: true });
-    await f.service.kick();
+    await f.service.kick({ paidGenerationAuthorized: true });
     expect(f.submit).toHaveBeenCalledOnce();
     expect(f.submit.mock.calls[0]?.[0].connectionId).toBe("new-key");
     expect((await f.repository.getSupplierVerification(supplier.id))!).toMatchObject({ paused: false, used: 1 });
     await f.service.plan(supplier.id, false, { onboarding: true });
-    await f.service.kick();
+    await f.service.kick({ paidGenerationAuthorized: true });
     expect(f.submit).toHaveBeenCalledOnce();
   });
   it("keeps preview and ordinary planning from starting prepared paid cases", async () => {
     const f = await fixture();
     await f.service.plan(supplier.id, true);
     await f.service.plan(supplier.id);
-    await f.service.kick();
+    await f.service.kick({ paidGenerationAuthorized: true });
     expect(f.submit).not.toHaveBeenCalled();
     expect((await f.repository.getSupplierVerification(supplier.id))!).toMatchObject({ paused: true, pauseReason: "preview" });
   });
@@ -511,7 +597,7 @@ describe("durable paid verification", () => {
     await f.service.plan(supplier.id, true);
     await f.repository.saveConnection({ ...connection, id: "new-key" });
     await f.service.plan(supplier.id, false, { onboarding: true });
-    await f.service.kick();
+    await f.service.kick({ paidGenerationAuthorized: true });
     expect(f.submit).not.toHaveBeenCalled();
     expect((await f.repository.getSupplierVerification(supplier.id))!).toMatchObject({ paused: true, pauseReason: "manual" });
   });
@@ -524,7 +610,7 @@ describe("durable paid verification", () => {
       held.reason = "已有任务需要核对";
       await f.repository.saveSupplierVerification(held, held.revision);
       await f.service.plan(supplier.id, false, { onboarding: true });
-      await f.service.kick();
+      await f.service.kick({ paidGenerationAuthorized: true });
       expect(f.submit).not.toHaveBeenCalled();
       expect((await f.repository.getSupplierVerification(supplier.id))?.paused).toBe(true);
     }
@@ -538,7 +624,7 @@ describe("durable paid verification", () => {
     await f.repository.saveSupplierVerification(held, held.revision);
     await f.repository.saveConnection({ ...connection, id: "new-key" });
     await f.service.plan(supplier.id, false, { onboarding: true });
-    await f.service.kick();
+    await f.service.kick({ paidGenerationAuthorized: true });
     expect(f.submit).not.toHaveBeenCalled();
     expect((await f.repository.getSupplierVerification(supplier.id))?.paused).toBe(true);
   });
@@ -547,7 +633,7 @@ describe("durable paid verification", () => {
     const f = await fixture({ models });
     await f.repository.saveConnection({ ...connection, config: { ...connection.config, usage: "agent" } });
     await f.service.plan(supplier.id);
-    await f.service.kick();
+    await f.service.kick({ paidGenerationAuthorized: true });
     expect(models).toHaveBeenCalledOnce();
     expect(f.submit).not.toHaveBeenCalled();
     expect((await f.repository.getSupplierVerification(supplier.id))!.cases).toEqual([]);
@@ -561,12 +647,12 @@ describe("durable paid verification", () => {
       if (test.quality === "xhigh") throw Object.assign(new Error("temporarily busy"), { details: { status: 503, responseBody: { charged: false } } });
       return { providerTaskId: test.id, status: "succeeded" };
     });
-    await f.service.plan(supplier.id); await f.service.kick();
+    await f.service.plan(supplier.id); await f.service.kick({ paidGenerationAuthorized: true });
     expect(f.submit.mock.calls.map(([test]) => [test.resolution, test.quality])).toEqual([["4K", "max"], ["4K", "xhigh"], ["4K", "high"]]);
     const record = (await f.repository.getSupplierVerification(supplier.id))!;
     expect(record.cases.map(test => test.status)).toEqual(["unsupported", "inconclusive", "succeeded"]);
     expect(record.cases[1]?.rejectedParameter).toBeUndefined();
-    await f.service.plan(supplier.id); await f.service.kick();
+    await f.service.plan(supplier.id); await f.service.kick({ paidGenerationAuthorized: true });
     expect(f.submit).toHaveBeenCalledTimes(3);
     const effective = effectiveImageCapabilities({ supplier, connection, model: (await f.deps.models(connection))[0]!, fingerprint: verificationFingerprint(connection, "server-secret"), tests: record.cases });
     expect(effective.model.parameters?.find(p => p.key === "quality")?.default).toBe("high");
@@ -576,18 +662,18 @@ describe("durable paid verification", () => {
     const charge = vi.fn<NonNullable<VerificationDependencies["charge"]>>(async () => undefined);
     const f = await fixture({ charge });
     f.submit.mockRejectedValueOnce(Object.assign(new Error("unsupported " + parameter), {details:{status:400}}));
-    await f.service.plan(supplier.id); await f.service.kick();
+    await f.service.plan(supplier.id); await f.service.kick({ paidGenerationAuthorized: true });
     const first = (await f.repository.getSupplierVerification(supplier.id))!;
     expect(first.paused).toBe(true);
     expect(first.cases).toHaveLength(1);
     expect(first.cases[0]).toMatchObject({status:"unsupported",rejectedParameter:parameter === "quality" ? "quality" : "resolution"});
     await expect(f.service.action(supplier.id,"resume")).rejects.toThrow("核对");
-    await new SupplierVerificationService(f.deps).kick();
+    await new SupplierVerificationService(f.deps).kick({ paidGenerationAuthorized: true });
     expect(f.submit).toHaveBeenCalledTimes(1);
     charge.mockImplementation(async (_, test) => ({amount:0,currency:"CNY",unit:"request",checkedAt:"now",requestId:test.requestId}));
     await f.service.action(supplier.id,"reconcile");
     expect(f.submit).toHaveBeenCalledTimes(1);
-    await f.service.action(supplier.id,"resume"); await f.service.kick();
+    await f.service.action(supplier.id,"resume"); await f.service.kick({ paidGenerationAuthorized: true });
     expect(f.submit).toHaveBeenCalledTimes(2);
     expect(f.submit.mock.calls[1]?.[0]).toMatchObject(parameter === "quality" ? {resolution:"4K",quality:"medium"} : {resolution:"2K",quality:"high"});
   });
@@ -595,7 +681,7 @@ describe("durable paid verification", () => {
     for (const charge of [async () => undefined, async () => { throw new Error("billing offline"); }]) {
       const f = await fixture({ charge });
       f.submit.mockRejectedValue(Object.assign(new Error("gateway busy"), { details: { status: 503 } }));
-      await f.service.plan(supplier.id); await f.service.kick();
+      await f.service.plan(supplier.id); await f.service.kick({ paidGenerationAuthorized: true });
       expect(f.submit).toHaveBeenCalledTimes(1);
       expect((await f.repository.getSupplierVerification(supplier.id))?.paused).toBe(true);
     }
@@ -603,13 +689,13 @@ describe("durable paid verification", () => {
   it("uses a request-matched zero charge to retry a failed asynchronous task", async () => {
     const f = await fixture({ charge: async (_, test) => ({ amount: test.quality === "high" ? 0 : 0.1, currency: "CNY", unit: "image", checkedAt: "now", requestId: test.requestId }) });
     f.submit.mockImplementation(async test => ({ providerTaskId: test.id, status: test.quality === "high" ? "failed" : "succeeded", error: "busy" }));
-    await f.service.plan(supplier.id); await f.service.kick();
+    await f.service.plan(supplier.id); await f.service.kick({ paidGenerationAuthorized: true });
     expect(f.submit.mock.calls.map(([test]) => test.quality)).toEqual(["high", "medium"]);
   });
   it("keeps highest capabilities provisional on upstream account outages and continues other models", async () => {
     const f = await fixture({ models: async () => [model, { ...model, id: "gpt-image-2-other" }] });
     f.submit.mockRejectedValueOnce(Object.assign(new Error("No available accounts for this group"), { details: { status: 503 } }));
-    await f.service.plan(supplier.id); await f.service.kick();
+    await f.service.plan(supplier.id); await f.service.kick({ paidGenerationAuthorized: true });
     const record = (await f.repository.getSupplierVerification(supplier.id))!;
     expect(record.paused).toBe(false);
     expect(record.cases[0]).toMatchObject({ status: "inconclusive", provisional: true, resolution: "4K", quality: "high" });
@@ -620,15 +706,15 @@ describe("durable paid verification", () => {
   });
   it("does not reclassify an undersized returned image as unsupported or buy another image", async () => {
     const f = await fixture({ archive: async () => ({ assetId: "small", width: 1024, height: 576 }) });
-    await f.service.plan(supplier.id); await f.service.kick();
-    await f.service.plan(supplier.id); await f.service.kick();
+    await f.service.plan(supplier.id); await f.service.kick({ paidGenerationAuthorized: true });
+    await f.service.plan(supplier.id); await f.service.kick({ paidGenerationAuthorized: true });
     expect(f.submit).toHaveBeenCalledTimes(1);
     expect((await f.repository.getSupplierVerification(supplier.id))?.cases[0]).toMatchObject({ status: "inconclusive", resolutionMismatch: true, rejectedParameter: undefined, actualWidth: 1024 });
   });
   it("retries a free failure at the lowest quality later without a tight loop", async () => {
     const f = await fixture({ models: async () => [{ ...model, parameters: [{ key: "quality", label: "Q", control: "select", options: [{value:"low",label:"low"}] }] }] });
     f.submit.mockRejectedValue(Object.assign(new Error("busy"), { details: { status: 503, responseBody: { billed: false } } }));
-    await f.service.plan(supplier.id); await f.service.kick();
+    await f.service.plan(supplier.id); await f.service.kick({ paidGenerationAuthorized: true });
     expect(f.submit).toHaveBeenCalledTimes(1);
     const record = (await f.repository.getSupplierVerification(supplier.id))!;
     expect(record.cases[1]).toMatchObject({ status: "queued", quality: "low", retryOf: record.cases[0]?.id, nextAttemptAt: expect.any(String) });
@@ -636,7 +722,7 @@ describe("durable paid verification", () => {
   });
   it("uses explicit channel quality/resolution declarations without generating", async () => {
     const f = await fixture({ models: async () => [{ ...model, metadata: { supplierChannelDescription: "支持1K、2K、4K；支持low，medium，high" } }] });
-    await f.service.plan(supplier.id); await f.service.kick();
+    await f.service.plan(supplier.id); await f.service.kick({ paidGenerationAuthorized: true });
     expect(f.submit).not.toHaveBeenCalled();
   });
   it("recovers a saved free failure after a crash between failure and retry persistence", async () => {
@@ -647,7 +733,7 @@ describe("durable paid verification", () => {
     first.actualCharge = { amount: 0, currency: "CNY", unit: "image", checkedAt: "now", requestId: first.requestId };
     record.paused = false; record.used = 1;
     await f.repository.saveSupplierVerification(record, record.revision);
-    await new SupplierVerificationService(f.deps).kick();
+    await new SupplierVerificationService(f.deps).kick({ paidGenerationAuthorized: true });
     expect(f.submit).toHaveBeenCalledTimes(1);
     expect(f.submit.mock.calls[0]?.[0].quality).toBe("medium");
     expect(f.submit.mock.calls[0]?.[0].requestId).not.toBe(first.requestId);
@@ -655,12 +741,12 @@ describe("durable paid verification", () => {
   it("cancels an old queued test when new free documentation fully settles its capabilities", async () => {
     const f = await fixture(); await f.service.plan(supplier.id, true);
     f.deps.document = async () => "支持1K、2K、4K；quality: high";
-    await f.service.plan(supplier.id, true); await f.service.action(supplier.id, "resume"); await f.service.kick();
+    await f.service.plan(supplier.id, true); await f.service.action(supplier.id, "resume"); await f.service.kick({ paidGenerationAuthorized: true });
     expect(f.submit).not.toHaveBeenCalled();
   });
   it("pays once for 4K and keeps inferred 2K after restart and replanning", async () => {
     const f = await fixture();
-    await f.service.plan(supplier.id); await f.service.kick();
+    await f.service.plan(supplier.id); await f.service.kick({ paidGenerationAuthorized: true });
     const record = (await f.repository.getSupplierVerification(supplier.id))!;
     expect(f.submit.mock.calls.map(([test]) => test.resolution)).toEqual(["4K"]);
     expect(record.used).toBe(1); expect(record.limit).toBe(1);
@@ -670,15 +756,15 @@ describe("durable paid verification", () => {
     expect(record.evidence.find(item => item.resolution === "2K")).toMatchObject({ status: "inferred", kind: "inference" });
     const repository = new MemoryRepository(f.repository.exportSnapshot());
     const restarted = new SupplierVerificationService({ ...f.deps, repository });
-    await restarted.plan(supplier.id); await restarted.kick();
+    await restarted.plan(supplier.id); await restarted.kick({ paidGenerationAuthorized: true });
     expect(f.submit).toHaveBeenCalledTimes(1);
     expect((await repository.getSupplierVerification(supplier.id))?.evidence.find(item => item.resolution === "2K")?.status).toBe("inferred");
   });
   it("falls back to one 2K probe only when 4K is explicitly unsupported", async () => {
     const f = await fixture();
     f.submit.mockRejectedValueOnce(Object.assign(new Error("unsupported size"), { details: { status: 400, responseBody: { charged: false } } }));
-    await f.service.plan(supplier.id); await f.service.kick();
-    await f.service.plan(supplier.id); await f.service.kick();
+    await f.service.plan(supplier.id); await f.service.kick({ paidGenerationAuthorized: true });
+    await f.service.plan(supplier.id); await f.service.kick({ paidGenerationAuthorized: true });
     expect(f.submit.mock.calls.map(([test]) => test.resolution)).toEqual(["4K", "2K"]);
     const record = (await f.repository.getSupplierVerification(supplier.id))!;
     expect(record.cases.map(test => test.status)).toEqual(["unsupported", "succeeded"]);
@@ -689,11 +775,11 @@ describe("durable paid verification", () => {
     const old = (await f.repository.getSupplierVerification(supplier.id))!;
     old.cases.reverse();
     await f.repository.saveSupplierVerification(old, old.revision);
-    await f.service.kick();
+    await f.service.kick({ paidGenerationAuthorized: true });
     expect(f.submit.mock.calls.map(([test]) => test.resolution)).toEqual(["4K"]);
     const disabled = await fixture(); await disabled.service.plan(supplier.id);
     await disabled.repository.saveConnection({ ...connection, config: { ...connection.config, usage: "disabled" } });
-    await disabled.service.kick();
+    await disabled.service.kick({ paidGenerationAuthorized: true });
     expect(disabled.submit).not.toHaveBeenCalled();
   });
   it("never schedules video models for paid probes, including stale mixed operation declarations", async () => {
@@ -701,13 +787,13 @@ describe("durable paid verification", () => {
       { ...model, id: "grok-imagine-video", operations: ["video.generate", "video.image-to-video"], inputKinds: ["image"], outputKinds: ["video"] },
       { ...model, id: "opaque-video", metadata: { catalogCapability: "video" } },
     ] });
-    await f.service.plan(supplier.id); await f.service.kick();
+    await f.service.plan(supplier.id); await f.service.kick({ paidGenerationAuthorized: true });
     expect((await f.repository.getSupplierVerification(supplier.id))?.cases).toHaveLength(0);
     expect(f.submit).not.toHaveBeenCalled();
   });
   it("identifies a completed but empty image response without retrying or claiming unsupported", async () => {
     const f = await fixture({ archive: async () => { throw new EmptyVerificationImageError(); } });
-    await f.service.plan(supplier.id); await f.service.kick();
+    await f.service.plan(supplier.id); await f.service.kick({ paidGenerationAuthorized: true });
     const record = (await f.repository.getSupplierVerification(supplier.id))!;
     expect(record.used).toBe(1); expect(record.paused).toBe(true);
     expect(record.cases[0]).toMatchObject({ status: "inconclusive", reason: expect.stringContaining("没有提供图片") });
@@ -716,7 +802,7 @@ describe("durable paid verification", () => {
   });
   it("never reserves or submits a case rejected by local adapter validation", async () => {
     const f = await fixture({validate:async()=>"当前协议不接受此尺寸"});
-    await f.service.plan(supplier.id); await f.service.kick();
+    await f.service.plan(supplier.id); await f.service.kick({ paidGenerationAuthorized: true });
     const record=(await f.repository.getSupplierVerification(supplier.id))!;
     expect(record.used).toBe(0);expect(f.submit).not.toHaveBeenCalled();
     expect(record.cases.every(c=>c.status==="cancelled"&&c.reason?.startsWith("未提交："))).toBe(true);
@@ -728,15 +814,15 @@ describe("durable paid verification", () => {
     const record = (await f.repository.getSupplierVerification(supplier.id))!;
     expect(record.used).toBe(0);
     expect(record.cases.filter(c=>c.status==="queued").map(c=>c.resolution)).toEqual(["1K"]);
-    await f.service.action(supplier.id,"resume"); await f.service.kick();
+    await f.service.action(supplier.id,"resume"); await f.service.kick({ paidGenerationAuthorized: true });
     expect(f.submit).toHaveBeenCalledTimes(1);
     expect(f.submit.mock.calls[0]?.[0].resolution).toBe("1K");
   });
   it("prepares reviewable cases without spending even when another queue wake occurs", async () => {
-    const f = await fixture(); await f.service.plan(supplier.id, true); await f.service.kick();
+    const f = await fixture(); await f.service.plan(supplier.id, true); await f.service.kick({ paidGenerationAuthorized: true });
     expect(f.submit).not.toHaveBeenCalled();
     expect((await f.repository.getSupplierVerification(supplier.id))?.cases).toHaveLength(1);
-    await f.service.action(supplier.id, "resume"); await f.service.kick();
+    await f.service.action(supplier.id, "resume"); await f.service.kick({ paidGenerationAuthorized: true });
     expect(f.submit).toHaveBeenCalledTimes(1);
   });
 
@@ -744,7 +830,7 @@ describe("durable paid verification", () => {
     for (const status of [402, 429]) {
       const f = await fixture();
       f.submit.mockRejectedValueOnce(Object.assign(new Error("rejected"), { details: { status } }));
-      await f.service.plan(supplier.id); await f.service.kick();
+      await f.service.plan(supplier.id); await f.service.kick({ paidGenerationAuthorized: true });
       const record = (await f.repository.getSupplierVerification(supplier.id))!;
       expect(record.used).toBe(1); expect(record.paused).toBe(true); expect(record.cases[0]?.status).toBe("inconclusive");
     }
@@ -753,7 +839,7 @@ describe("durable paid verification", () => {
   it("imports the legacy uncertain request by its connection-to-supplier binding", async () => {
     const f = await fixture();
     await f.repository.saveConnection({ ...connection, id: "ff52083f-e2bb-4563-9323-1c3e05971e9d" });
-    await f.service.plan(supplier.id); await f.service.kick();
+    await f.service.plan(supplier.id); await f.service.kick({ paidGenerationAuthorized: true });
     const record = (await f.repository.getSupplierVerification(supplier.id))!;
     expect(record.used).toBe(1);
     expect(record.paused).toBe(true);
@@ -781,9 +867,9 @@ describe("durable paid verification", () => {
       f.service.plan(supplier.id),
       f.service.plan(supplier.id),
     ]);
-    await Promise.all([f.service.kick(), f.service.kick()]);
+    await Promise.all([f.service.kick({ paidGenerationAuthorized: true }), f.service.kick({ paidGenerationAuthorized: true })]);
     await f.service.plan(supplier.id);
-    await f.service.kick();
+    await f.service.kick({ paidGenerationAuthorized: true });
     expect(f.submit).toHaveBeenCalledTimes(8);
     expect(
       (await f.repository.getSupplierVerification(supplier.id))?.used,
@@ -797,7 +883,7 @@ describe("durable paid verification", () => {
       if (test.connectionId === connection.id) throw Object.assign(new Error("rejected"), { details: { status } });
       return { providerTaskId: test.id, status: "succeeded" };
     });
-    await f.service.plan(supplier.id); await f.service.kick();
+    await f.service.plan(supplier.id); await f.service.kick({ paidGenerationAuthorized: true });
     const record = (await f.repository.getSupplierVerification(supplier.id))!;
     expect(record.paused).toBe(false);
     expect(record.connectionBlocks).toMatchObject([{ connectionId: connection.id, kind: "authentication" }]);
@@ -806,11 +892,11 @@ describe("durable paid verification", () => {
     expect(f.submit.mock.calls.every(([test]) => test.resolution === "4K")).toBe(true);
     expect(JSON.stringify(publicVerification(record)?.connectionBlocks)).not.toContain("fingerprint");
     const restarted = new SupplierVerificationService(f.deps);
-    await restarted.kick();
+    await restarted.kick({ paidGenerationAuthorized: true });
     expect(f.submit).toHaveBeenCalledTimes(3);
     await f.repository.saveConnection({ ...connection, encryptedSecret: "fixed-key" });
     f.submit.mockResolvedValue({ providerTaskId: "fixed", status: "succeeded" });
-    await restarted.plan(supplier.id, false, { onboarding: true }); await restarted.kick();
+    await restarted.plan(supplier.id, false, { onboarding: true }); await restarted.kick({ paidGenerationAuthorized: true });
     expect((await f.repository.getSupplierVerification(supplier.id))?.connectionBlocks).toEqual([]);
     expect(f.submit).toHaveBeenCalledTimes(5);
   });
@@ -860,8 +946,8 @@ describe("durable paid verification", () => {
     expect(planned.coverage).toHaveLength(8);
     expect(planned.cases).toHaveLength(8);
     expect(planned.limit).toBe(8);
-    await f.service.kick();
-    await f.service.plan(supplier.id); await f.service.kick();
+    await f.service.kick({ paidGenerationAuthorized: true });
+    await f.service.plan(supplier.id); await f.service.kick({ paidGenerationAuthorized: true });
     expect(f.submit).toHaveBeenCalledTimes(8);
     for (const group of ["默认分组", "第二分组"])
       expect(f.submit.mock.calls.filter(([test]) => test.group === group)).toHaveLength(4);
@@ -872,9 +958,9 @@ describe("durable paid verification", () => {
     const old = (await f.repository.getSupplierVerification(supplier.id))!;
     old.policyVersion = 1; old.limit = 6; old.cases = old.cases.slice(0, 6);
     await f.repository.saveSupplierVerification(old, old.revision);
-    await f.service.kick();
+    await f.service.kick({ paidGenerationAuthorized: true });
     const submitted = f.submit.mock.calls.map(([test]) => test.requestId);
-    await f.service.plan(supplier.id); await f.service.kick();
+    await f.service.plan(supplier.id); await f.service.kick({ paidGenerationAuthorized: true });
     const expanded = (await f.repository.getSupplierVerification(supplier.id))!;
     expect(expanded.used).toBe(4); expect(expanded.limit).toBe(4);
     expect(expanded.cases.filter(test => submitted.includes(test.requestId))).toHaveLength(4);
@@ -884,7 +970,7 @@ describe("durable paid verification", () => {
     const f = await fixture({ models: async () => [{ ...model, id: "gpt-image-2-a" }, { ...model, id: "gpt-image-2-b" }] });
     await f.repository.saveConnection({ ...connection, config: { ...connection.config, modelGroup: "1k分组" } });
     await f.repository.saveConnection({ ...connection, id: "second1k", config: { ...connection.config, modelGroup: "1k低价分组" } });
-    await f.service.plan(supplier.id); await f.service.kick();
+    await f.service.plan(supplier.id); await f.service.kick({ paidGenerationAuthorized: true });
     expect(f.submit).toHaveBeenCalledTimes(4);
     expect(f.submit.mock.calls.every(([test]) => test.resolution === "1K" && test.quality === "high")).toBe(true);
   });
@@ -898,8 +984,8 @@ describe("durable paid verification", () => {
   it("bounds automatic enum corrections even if the provider keeps rejecting legal values", async () => {
     const f = await fixture();
     f.submit.mockImplementation(async test => { throw Object.assign(new Error("unsupported quality"), { details: { status: 400, responseBody: { charged: false, error: { allowed_values: test.quality === "high" ? ["max"] : ["high"] } } } }); });
-    await f.service.plan(supplier.id); await f.service.kick();
-    await f.service.plan(supplier.id); await f.service.kick();
+    await f.service.plan(supplier.id); await f.service.kick({ paidGenerationAuthorized: true });
+    await f.service.plan(supplier.id); await f.service.kick({ paidGenerationAuthorized: true });
     expect(f.submit).toHaveBeenCalledTimes(2);
     expect((await f.repository.getSupplierVerification(supplier.id))?.cases.filter(test => test.retryOf)).toHaveLength(1);
   });
@@ -914,7 +1000,7 @@ describe("durable paid verification", () => {
         return save(record, revision);
       },
     );
-    await expect(f.service.kick()).rejects.toThrow("disk full");
+    await expect(f.service.kick({ paidGenerationAuthorized: true })).rejects.toThrow("disk full");
     expect(f.submit).not.toHaveBeenCalled();
   });
   it("does not cancel existing queued cases on a free scan outage", async () => {
@@ -960,7 +1046,7 @@ describe("durable paid verification", () => {
       return { providerTaskId: test.id, status: "succeeded" };
     });
     await f.service.plan(supplier.id);
-    await f.service.kick();
+    await f.service.kick({ paidGenerationAuthorized: true });
     expect(f.submit.mock.calls.map(([test]) => test.quality)).toEqual([
       "max",
       "high",
@@ -975,7 +1061,7 @@ describe("durable paid verification", () => {
     const f = await fixture();
     f.submit.mockRejectedValue(new TypeError("fetch failed"));
     await f.service.plan(supplier.id);
-    await f.service.kick();
+    await f.service.kick({ paidGenerationAuthorized: true });
     const disk = f.repository.exportSnapshot();
     const repository = new MemoryRepository(disk);
     const restarted = new SupplierVerificationService({
@@ -983,7 +1069,7 @@ describe("durable paid verification", () => {
       repository,
     });
     await restarted.plan(supplier.id);
-    await restarted.kick();
+    await restarted.kick({ paidGenerationAuthorized: true });
     await restarted.action(supplier.id, "reconcile");
     expect(f.submit).toHaveBeenCalledTimes(1);
     expect(
@@ -1001,7 +1087,7 @@ describe("durable paid verification", () => {
     record.used = 1;
     await f.repository.saveSupplierVerification(record, record.revision);
     const restarted = new SupplierVerificationService(f.deps);
-    await restarted.kick();
+    await restarted.kick({ paidGenerationAuthorized: true });
     expect(f.submit).not.toHaveBeenCalled();
     expect(
       (await f.repository.getSupplierVerification(supplier.id))?.paused,
@@ -1016,7 +1102,7 @@ describe("durable paid verification", () => {
     record.used = 1;
     record.paused = true;
     await f.repository.saveSupplierVerification(record, record.revision);
-    await new SupplierVerificationService(f.deps).kick();
+    await new SupplierVerificationService(f.deps).kick({ paidGenerationAuthorized: true });
     expect(f.submit).not.toHaveBeenCalled();
     expect(
       (await f.repository.getSupplierVerification(supplier.id))?.cases[0]
@@ -1030,7 +1116,7 @@ describe("durable paid verification", () => {
       ...connection,
       encryptedSecret: "cipher-b",
     });
-    await f.service.kick();
+    await f.service.kick({ paidGenerationAuthorized: true });
     expect(f.submit).not.toHaveBeenCalled();
     const record = (await f.repository.getSupplierVerification(supplier.id))!;
     record.cases[0]!.task = {
@@ -1070,7 +1156,7 @@ describe("durable paid verification", () => {
       }),
     });
     await f.service.plan(supplier.id);
-    await f.service.kick();
+    await f.service.kick({ paidGenerationAuthorized: true });
     expect(f.submit).toHaveBeenCalledTimes(1);
     expect(
       (await f.repository.getSupplierVerification(supplier.id))?.reason,

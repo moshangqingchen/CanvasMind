@@ -81,8 +81,8 @@ function ProjectFilePreview({ file, onClose }: { file: ProjectFileItem; onClose:
   const [zoom, setZoom] = useState<"fit" | "actual">("fit");
   const titleId = useId();
   return <div className={`${styles.backdrop} ${styles.previewBackdrop}`} onPointerDown={event => event.stopPropagation()}>
-    <section ref={dialogRef} className={styles.previewDialog} role="dialog" aria-modal="true" aria-label="项目文件预览" aria-describedby={titleId} tabIndex={-1} onKeyDown={event => event.stopPropagation()}>
-      <header className={styles.previewHeader}><div><span className={styles.eyebrow}>项目文件预览</span><h2 id={titleId} title={file.name}>{file.name}</h2></div><button type="button" className={styles.iconButton} onClick={onClose} aria-label="关闭文件预览"><X size={20} /></button></header>
+    <section ref={dialogRef} className={styles.previewDialog} role="dialog" aria-modal="true" aria-label="项目文件预览" aria-describedby={titleId} tabIndex={-1} onKeyDown={event => { if (event.key !== "Escape") event.stopPropagation(); }}>
+      <header className={styles.previewHeader}><div><span className={styles.eyebrow}>项目文件预览</span><h2 id={titleId} title={file.name}>{file.name}</h2></div><button type="button" className={styles.iconButton} onClick={onClose} aria-label="关闭文件预览" title="关闭文件预览（Esc）"><X size={20} /></button></header>
       <div className={styles.previewStage} data-zoom={zoom}>
         {failed ? <div className={styles.empty}><ImageOff size={36} /><strong>这个文件暂时无法预览</strong><p>文件可能已移动或发生变化，请关闭预览后刷新列表。</p></div>
           : file.kind === "image" ? <img src={file.contentUrl} alt={file.name} draggable={false} onError={() => setFailed(true)} />
@@ -99,7 +99,7 @@ function DeleteProjectFilesDialog({ files, deleting, onClose, onConfirm }: { fil
   const titleId = useId();
   const descriptionId = useId();
   return <div className={`${styles.backdrop} ${styles.confirmBackdrop}`} onPointerDown={event => event.stopPropagation()}>
-    <section ref={dialogRef} className={styles.confirmDialog} role="alertdialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId} tabIndex={-1} onKeyDown={event => event.stopPropagation()}>
+    <section ref={dialogRef} className={styles.confirmDialog} role="alertdialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId} tabIndex={-1} onKeyDown={event => { if (event.key !== "Escape") event.stopPropagation(); }}>
       <span className={styles.deleteIcon}><Trash2 size={24} /></span><h2 id={titleId}>删除 {files.length} 个项目文件？</h2>
       <p id={descriptionId}>仅删除项目文件夹中的文件，已放入画布的素材保留。删除后无法从此窗口恢复。</p>
       <ul>{files.slice(0, 4).map(file => <li key={file.fileId} title={file.name}>{file.name}</li>)}{files.length > 4 && <li>以及另外 {files.length - 4} 个文件</li>}</ul>
@@ -133,6 +133,7 @@ function ProjectFilesModalSession({ projectId, projectName, onClose, onPlaceOnCa
   const listRequest = useRef<AbortController | null>(null);
   const deleteRequest = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const titleId = useId();
   const descriptionId = useId();
   const requestClose = () => { if (!busyRef.current) onClose(); };
@@ -279,21 +280,26 @@ function ProjectFilesModalSession({ projectId, projectName, onClose, onPlaceOnCa
     <div className={styles.backdrop} onPointerDown={event => event.stopPropagation()}>
       <section ref={dialogRef} className={styles.modal} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId} tabIndex={-1}
         onKeyDown={event => {
-          event.stopPropagation();
+          if (event.key !== "Escape") event.stopPropagation();
+          if (event.nativeEvent.isComposing) return;
+          const typing = event.target instanceof HTMLElement && Boolean(event.target.closest("input,textarea,[contenteditable=true]"));
+          if (!disabled && (((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") || (event.key === "/" && !typing))) {
+            event.preventDefault(); searchRef.current?.focus(); return;
+          }
           if (disabled || event.target instanceof HTMLElement && /INPUT|TEXTAREA/.test(event.target.tagName)) return;
           if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") { event.preventDefault(); selectAll(); }
           if (event.key === "Delete" && deletable.length) { event.preventDefault(); setDeleteFiles(deletable); }
         }}>
         <header className={styles.header}>
           <div className={styles.heading}><span className={styles.folderIcon}><FolderOpen size={25} /></span><div><span className={styles.eyebrow}>PROJECT FILES</span><h2 id={titleId}>项目文件</h2><p title={projectName}>{projectName}</p></div></div>
-          <div className={styles.headerActions}><button type="button" className={styles.secondary} disabled={disabled} onClick={() => { setActionError(""); setNotice(""); void refresh(); }}><RefreshCw size={15} className={loading ? styles.spinning : undefined} />刷新</button><button type="button" className={styles.iconButton} disabled={Boolean(busy)} onClick={requestClose} aria-label="关闭项目文件"><X size={21} /></button></div>
+          <div className={styles.headerActions}><button type="button" className={styles.secondary} disabled={disabled} onClick={() => { setActionError(""); setNotice(""); void refresh(); }}><RefreshCw size={15} className={loading ? styles.spinning : undefined} />刷新</button><button type="button" className={styles.iconButton} disabled={Boolean(busy)} onClick={requestClose} aria-label="关闭项目文件" title="关闭项目文件（Esc）"><X size={21} /></button></div>
         </header>
         <div className={styles.navigation}>
           <div className={styles.tabs} role="tablist" aria-label="项目文件分类">
             <button type="button" role="tab" aria-selected={section === "finished"} disabled={disabled} onClick={() => changeSection("finished")}>成品<span>{files.filter(file => file.section === "finished").length}</span></button>
             <button type="button" role="tab" aria-selected={section === "draft"} disabled={disabled} onClick={() => changeSection("draft")}>草稿<span>{files.filter(file => file.section === "draft").length}</span></button>
           </div>
-          <label className={styles.search}><Search size={16} /><input type="search" placeholder="搜索文件名称" aria-label="搜索项目文件" value={query} disabled={Boolean(busy)} onChange={event => changeQuery(event.target.value)} /></label>
+          <label className={styles.search}><Search size={16} /><input ref={searchRef} type="search" placeholder="搜索文件名称" aria-label="搜索项目文件" value={query} disabled={Boolean(busy)} onChange={event => changeQuery(event.target.value)} /></label>
         </div>
         <p className={styles.description} id={descriptionId}>当前项目文件夹中的图片、视频和音频，按修改时间排列。{ignoredFiles > 0 && <span> 另有 {ignoredFiles} 个非媒体文件未显示。</span>}</p>
         <div className={styles.selectionBar}>

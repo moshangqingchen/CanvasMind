@@ -29,7 +29,12 @@ async function createFixture(request: APIRequestContext, name: string) {
 async function settings(page: Page, name: string) {
   await page.goto("/");
   await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
-  const mobileSupplier = page.getByLabel("当前供应商", { exact: true });
+  const dialog = page.getByRole("dialog", { name: "供应商与模型设置" });
+  const mobileSupplier = dialog.getByLabel("当前供应商", { exact: true });
+  // The settings surface paints before its deferred supplier content. The
+  // picker exists on both layouts (hidden on desktop); await its attachment
+  // before branching on the actual responsive presentation.
+  await expect(mobileSupplier).toBeAttached();
   if (await mobileSupplier.isVisible()) {
     await mobileSupplier.selectOption({ label: name });
   } else {
@@ -38,7 +43,7 @@ async function settings(page: Page, name: string) {
       .filter({ has: page.locator(".sm-supplier-label") })
       .click();
   }
-  return page.getByRole("dialog", { name: "供应商与模型设置" });
+  return dialog;
 }
 test("供应商右键、键盘菜单、隐藏恢复及彻底删除不复活", async ({
   page,

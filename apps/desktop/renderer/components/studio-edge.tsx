@@ -1,78 +1,66 @@
 "use client";
 
-import { memo, useId } from "react";
-import { BaseEdge, getBezierPath, useStore, type EdgeProps } from "@xyflow/react";
+import { memo, useMemo, type CSSProperties } from "react";
+import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps } from "@xyflow/react";
 import type { StudioEdgeState } from "../lib/canvas-edge-presentation";
+import { edgeMotionBounds } from "../lib/edge-motion-bounds";
+import { edgePaletteId } from "./canvas-edge-palette";
 
 // A group drag translates both endpoints equally. Keep the curve and its SVG
-// mask in local coordinates so those expensive descendants stay memoized.
+// descendants in local coordinates so group movement reuses the same curve.
 export const StudioEdge = memo(function StudioEdge(props: EdgeProps) {
   const targetX = Math.round((props.targetX - props.sourceX) * 1000) / 1000;
   const targetY = Math.round((props.targetY - props.sourceY) * 1000) / 1000;
-  return <g transform={`translate(${props.sourceX} ${props.sourceY})`}>
-    <StudioEdgeContent {...props} sourceX={0} sourceY={0} targetX={targetX} targetY={targetY} />
-  </g>;
+  const geometry = useMemo(() => ({ sourceX: 0, sourceY: 0, targetX, targetY,
+    sourcePosition: props.sourcePosition, targetPosition: props.targetPosition, curvature: .3 }),
+    [targetX, targetY, props.sourcePosition, props.targetPosition]);
+  const [path] = useMemo(() => getBezierPath(geometry), [geometry]);
+  const bounds = useMemo(() => edgeMotionBounds(geometry), [geometry]);
+  const state = props.data?.studio as StudioEdgeState | undefined;
+  const focused = Boolean(props.selected || state?.related);
+  const running = state?.running === true;
+  const flowing = (focused || running) && !state?.preview && !state?.failed;
+  const kind = state?.kind ?? "text";
+  return <>
+    <g transform={`translate(${props.sourceX} ${props.sourceY})`}>
+      <StudioEdgeContent {...props} sourceX={0} sourceY={0} targetX={targetX} targetY={targetY} path={path} />
+    </g>
+    {flowing && <EdgeLabelRenderer>
+      <div className={`studio-edge-motion is-flowing ${focused ? "is-focused" : ""} ${running ? "is-running" : ""}`}
+        data-edge-id={props.id} aria-hidden="true" style={{
+          width: bounds.width, height: bounds.height,
+          transform: `translate(${props.sourceX + bounds.x}px, ${props.sourceY + bounds.y}px)`,
+          "--edge-color": `var(--edge-port-${kind})`,
+        } as CSSProperties}>
+        <svg viewBox={`${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}`}>
+          <path d={path} className="studio-edge-dash" />
+        </svg>
+      </div>
+    </EdgeLabelRenderer>}
+  </>;
 });
 
-/** Selection-only light, drawn with a continuous vector mask instead of stepped dashes. */
+/** The main SVG stays static; only a bounded, separately painted overlay moves. */
 const StudioEdgeContent = memo(function StudioEdgeContent({
-  id, sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition,
+  id, path, targetX, targetY,
   selected, data, style, markerStart, markerEnd,
-}: EdgeProps) {
-  const gradientId = `edge-gradient-${useId().replace(/:/g, "")}`;
-  const maskId = `${gradientId}-mask`;
-  const featherId = `${gradientId}-feather`;
-  const [path] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, curvature: .3 });
+}: EdgeProps & { path: string }) {
   const state = data?.studio as StudioEdgeState | undefined;
   const focused = Boolean(selected || state?.related);
-  const illuminated = focused && !state?.preview && !state?.failed;
-  const zoom = useStore((state) => illuminated ? state.transform[2] : 1);
-  const start = state?.failed ? "#ee8e9e" : "#1684dd";
-  const end = state?.failed ? "#ee8e9e" : "#55dff3";
-  // User-space bounds also cover horizontal, vertical and backwards Bézier curves.
-  // The Bézier control hull bounds the whole curve, even when it points backwards.
-  // A constant screen-space feather avoids giant square GPU surfaces for long edges.
-  const coordinates = (path.match(/-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/gi) ?? []).map(Number);
-  const xs = coordinates.filter((_,i) => i % 2 === 0), ys = coordinates.filter((_,i) => i % 2 === 1);
-  const margin = 10 / zoom;
-  const bounds = {x: Math.min(...xs)-margin, y: Math.min(...ys)-margin,
-    width: Math.max(...xs)-Math.min(...xs)+margin*2, height: Math.max(...ys)-Math.min(...ys)+margin*2};
+  const running = state?.running === true;
+  const flowing = (focused || running) && !state?.preview && !state?.failed;
+  const kind = state?.kind ?? "text";
+  const targetKind = state?.targetKind ?? kind;
+  // SVG objectBoundingBox paint servers are undefined for a zero-height path.
+  // Keep exact straight chains visible with their data color; never nudge ports.
+  const paint = kind !== targetKind && Math.abs(targetY) > .01 && Math.abs(targetX) > .01
+    ? `url(#${edgePaletteId(kind, targetKind, targetX < 0)})` : `var(--edge-port-${kind})`;
   return (
-    <g className={`studio-edge ${focused ? "is-focused" : ""} ${state?.failed ? "is-error" : ""} ${state?.dimmed && !selected ? "is-dimmed" : ""} ${state?.preview ? "is-preview" : ""}`}>
-      <defs>
-        <linearGradient id={gradientId} gradientUnits="userSpaceOnUse" x1={sourceX} y1={sourceY} x2={targetX} y2={targetY}>
-          <stop stopColor={start} />
-          <stop offset="1" stopColor={end} />
-        </linearGradient>
-        {illuminated && <>
-          <radialGradient id={featherId} cx="50%" cy="50%" r="50%" fx="72%" fy="50%">
-            <stop stopColor="white" stopOpacity="1" />
-            <stop offset=".18" stopColor="white" stopOpacity=".88" />
-            <stop offset=".42" stopColor="white" stopOpacity=".48" />
-            <stop offset=".7" stopColor="white" stopOpacity=".12" />
-            <stop offset="1" stopColor="white" stopOpacity="0" />
-          </radialGradient>
-          <mask id={maskId} maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" {...bounds} style={{ maskType: "alpha" }}>
-            <g className="studio-edge-light" style={{ offsetPath: `path("${path}")` }}>
-              <ellipse cx={-35 / zoom} cy="0" rx={70 / zoom} ry={18 / zoom} fill={`url(#${featherId})`} />
-            </g>
-          </mask>
-
-        </>}
-      </defs>
+    <g className={`studio-edge ${focused ? "is-focused" : ""} ${selected ? "is-selected" : ""} ${running ? "is-running" : ""} ${flowing ? "is-flowing" : ""} ${state?.failed ? "is-error" : ""} ${state?.preview ? "is-preview" : ""}`}
+      data-port-kind={kind} data-target-port-kind={targetKind} style={{ "--edge-color": `var(--edge-port-${kind})`, "--edge-paint": paint } as CSSProperties}>
+      {focused && <path className="studio-edge-glow" d={path} aria-hidden="true" />}
       <BaseEdge id={id} path={path} interactionWidth={24} markerStart={markerStart} markerEnd={markerEnd}
-        style={{ ...style, stroke: focused || state?.failed ? `url(#${gradientId})` : undefined }} />
-      {illuminated && <g className="studio-edge-beam" mask={`url(#${maskId})`} aria-hidden="true">
-        <path className="studio-edge-glow" d={path} fill="none" style={{ strokeWidth: 7, opacity: .12 }} />
-        <path className="studio-edge-glow" d={path} fill="none" style={{ strokeWidth: 4, opacity: .22 }} />
-        <path className="studio-edge-signal" d={path} fill="none" />
-      </g>}
-      {illuminated && <g className="studio-edge-terminals" aria-hidden="true">
-        <circle className="studio-edge-terminal-halo" cx={sourceX} cy={sourceY} r={6 / zoom} />
-        <circle className="studio-edge-terminal-halo" cx={targetX} cy={targetY} r={6 / zoom} />
-        <circle className="studio-edge-terminal" cx={sourceX} cy={sourceY} r={2.4 / zoom} />
-        <circle className="studio-edge-terminal" cx={targetX} cy={targetY} r={2.4 / zoom} />
-      </g>}
+        style={{ ...style, stroke: "var(--edge-paint)" }} />
     </g>
   );
 });

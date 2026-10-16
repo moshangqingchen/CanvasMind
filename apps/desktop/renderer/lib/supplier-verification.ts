@@ -274,8 +274,8 @@ export async function scheduleSupplierVerification(id: string) {
       const requested = (await repository.listConnections()).filter(connection => connection.config.supplierId === id
         && connection.config.supplierVerificationRequestId && shouldAutomaticallyVerifyConnection(null, connection));
       const record = requested.length
-        ? await service.plan(id, false, { onboarding: true })
-        : await service.plan(id);
+        ? await service.plan(id, true, { onboarding: true })
+        : await service.plan(id, true);
       for (const original of requested) {
         // A failed free lookup remains pending for the next app launch.
         if (!record || record.skipped.some(item => item.connectionId === original.id && !item.modelId)) continue;

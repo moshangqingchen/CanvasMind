@@ -71,13 +71,6 @@ export function useDialogFocus(
       const dialog = dialogRef.current;
       if (!dialog || openDialogs.at(-1) !== entry) return;
 
-      if (event.key === "Escape" && !event.isComposing) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        onCloseRef.current();
-        return;
-      }
-
       if (event.key !== "Tab") return;
 
       const focusable = getFocusableElements(dialog);
@@ -106,10 +99,22 @@ export function useDialogFocus(
       }
     };
 
+    // Inner menus receive Escape first. Stop the event before it reaches canvas
+    // window shortcuts only when the top dialog actually handles the dismissal.
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing || event.keyCode === 229 ||
+        !dialogRef.current || openDialogs.at(-1) !== entry) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      onCloseRef.current();
+    };
+
     document.addEventListener("keydown", handleKeyDown, true);
+    document.addEventListener("keydown", handleEscape);
     return () => {
       window.cancelAnimationFrame(focusDialog);
       document.removeEventListener("keydown", handleKeyDown, true);
+      document.removeEventListener("keydown", handleEscape);
       const wasTopDialog = openDialogs.at(-1) === entry;
       const index = openDialogs.indexOf(entry);
       if (index >= 0) openDialogs.splice(index, 1);

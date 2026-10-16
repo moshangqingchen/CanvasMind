@@ -1,0 +1,26 @@
+.dialog:global(.project-import-modal) { display:flex; flex-direction:column; width:min(650px,calc(100vw - 32px)); max-height:calc(100dvh - 48px); padding:0; overflow:hidden; border-radius:20px; background:var(--surface-floating); color:var(--text); }
+.dialog :global(.modal-head) { padding:20px 24px; background:linear-gradient(115deg,var(--panel-2),color-mix(in srgb, var(--info-wash) 25.00%, transparent)),var(--surface-floating); }
+.dialog :global(.project-import-body) { flex:1; min-height:0; overflow:auto; overscroll-behavior:contain; padding:20px 24px; }
+.dialog :global(.project-import-source) { display:flex; align-items:center; gap:12px; padding:16px; border:0; border-radius:16px; background:var(--surface-node); }
+.dialog :global(.project-import-source-icon) { display:grid; place-items:center; width:42px; height:42px; flex:0 0 42px; border-radius:13px; color:var(--on-accent); background:var(--primary-fill,linear-gradient(135deg,var(--panel-3),var(--panel-3))); box-shadow:inset 0 1px color-mix(in srgb, var(--highlight) 18.82%, transparent); }
+.dialog :global(.project-import-source) > div { display:grid; min-width:0; gap:4px; }
+.dialog :global(.project-import-source) strong { overflow-wrap:anywhere; font-size:14px; }
+.dialog :global(.project-import-source) > div > span { color:var(--text-secondary); font-size:12px; line-height:1.6; }
+.dialog :global(.project-import-summary) { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin:12px 0 16px; }
+.dialog :global(.project-import-summary) > div { min-width:0; padding:12px; border:0; border-radius:14px; background:var(--surface-node); }
+.dialog :global(.project-import-summary) dt { color:var(--text-secondary); font-size:11px; }
+.dialog :global(.project-import-summary) dd { margin:5px 0 0; color:var(--text); font-size:22px; font-weight:700; font-variant-numeric:tabular-nums; }
+.dialog :global(.project-import-summary) > div:nth-child(2) dd { color:var(--status-success); }
+.dialog :global(.project-import-summary) > div:nth-child(3) dd { color:var(--status-warn); }
+.dialog :global(.project-import-summary) > div:nth-child(4) dd { color:var(--status-running); }
+.dialog :global(.project-import-warning), .dialog :global(.project-import-ready), .dialog :global(.project-import-error) { border-radius:12px; font-size:12px; line-height:1.7; }
+.dialog :global(.project-import-ready) { padding:10px 12px; color:var(--status-success); background:color-mix(in srgb, var(--success-wash) 25.00%, transparent); }
+.dialog :global(.project-import-backup-option) { display:flex; align-items:flex-start; gap:10px; margin-top:16px; padding:14px; border:1px solid var(--line); border-radius:14px; background:var(--surface-node); }
+.dialog :global(.project-import-backup-option) input { flex-shrink:0; margin-top:3px; accent-color:var(--accent); }
+.dialog :global(.project-import-backup-option) strong { font-size:12px; }
+.dialog :global(.project-import-backup-option) small { display:block; margin-top:5px; color:var(--text-secondary); font-size:11px; }
+.dialog :global(.project-import-actions) { display:flex; flex-shrink:0; justify-content:flex-end; gap:8px; padding:16px 24px; border-top:1px solid var(--line); background:var(--surface-floating); }
+.dialog :global(.button) { border-radius:999px; }
+.dialog :global(.button.primary) { color:var(--on-accent); background:var(--primary-fill,linear-gradient(120deg,var(--panel-3),var(--surface-floating))); border-color:transparent; box-shadow:inset 0 1px color-mix(in srgb, var(--highlight) 18.82%, transparent); }
+.dialog :is(button,input):focus-visible { outline:2px solid var(--focus-ring); outline-offset:2px; }
+@media (max-width:540px) { .dialog :global(.modal-head),.dialog :global(.project-import-body),.dialog :global(.project-import-actions) { padding-inline:16px; } .dialog :global(.project-import-summary) { grid-template-columns:repeat(2,minmax(0,1fr)); } }

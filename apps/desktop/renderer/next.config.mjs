@@ -17,7 +17,8 @@ const nextConfig = {
     "./test-results*/**/*", "./playwright-report/**/*", "./blob-report/**/*",
     "../stage/**/*", "../release/**/*",
   ] },
-  distDir: ".next-desktop",
+  // Keep visual previews separate from the frozen production build used by A/B tests.
+  distDir: process.env.SUPERCANVAS_UI_PREVIEW === "1" ? ".next-aurora-preview" : ".next-desktop",
   // Runtime response caches can exceed Windows installer path limits. Keep them in memory.
   experimental: { proxyClientMaxBodySize: "500mb", isrFlushToDisk: false },
   transpilePackages: ["@super-canvas/core", "@super-canvas/db", "@super-canvas/providers", "@super-canvas/runtime", "@super-canvas/storage"],

@@ -12,6 +12,9 @@ let seedGeneration = 0;
 const pending = new Map<string, Promise<SupplierBillingSnapshot>>();
 const listeners = new Set<() => void>();
 const subscribe = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; };
+const noopSubscribe = () => () => {};
+const emptySnapshot = () => empty;
+const billingSnapshot = () => entries;
 const publish = () => listeners.forEach(listener => listener());
 export function seedSupplierBilling(suppliers: SupplierRecord[]) {
   seedGeneration++;
@@ -31,8 +34,8 @@ export async function loadSupplierBilling() {
   }
   return loading;
 }
-export function useSupplierBillingOverview() {
-  const value = useSyncExternalStore(subscribe, () => entries, () => empty);
+export function useSupplierBillingOverview(subscribed = true) {
+  const value = useSyncExternalStore(subscribed ? subscribe : noopSubscribe, subscribed ? billingSnapshot : emptySnapshot, emptySnapshot);
   useEffect(() => { void loadSupplierBilling().catch(() => undefined); }, []);
   return value;
 }

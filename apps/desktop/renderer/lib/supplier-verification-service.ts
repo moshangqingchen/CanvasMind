@@ -215,6 +215,10 @@ export function publicVerification(record: SupplierVerificationRecord | null) {
 export class SupplierVerificationService {
   private working: Promise<void> | null = null;
   private wakeAgain = false;
+  // A saved queue, a new Key and a directory refresh are not paid permission.
+  // This allowance exists only for an explicitly authorized drain in this
+  // process; startup and background kick() calls always recover for free.
+  private paidGenerationAuthorized = false;
   private recover = true;
   private retryTimer: ReturnType<typeof setTimeout> | undefined;
   constructor(private readonly deps: VerificationDependencies) {}
@@ -706,12 +710,18 @@ export class SupplierVerificationService {
     return this.deps.repository.getSupplierVerification(id);
   }
 
-  kick(): Promise<void> {
+  kick(options: { paidGenerationAuthorized?: true } = {}): Promise<void> {
+    // Do not lose a manual allowance if an earlier free-only recovery has
+    // already passed its queue loop but is still finishing bookkeeping.
+    if (this.working && options.paidGenerationAuthorized === true)
+      return this.working.then(() => this.kick(options));
     if (this.retryTimer) clearTimeout(this.retryTimer);
+    if (options.paidGenerationAuthorized === true) this.paidGenerationAuthorized = true;
     this.wakeAgain = true;
     if (!this.working)
       this.working = this.drain().finally(() => {
         this.working = null;
+        this.paidGenerationAuthorized = false;
       });
     return this.working;
   }
@@ -897,6 +907,7 @@ export class SupplierVerificationService {
     do {
       this.wakeAgain = false;
       for (;;) {
+        if (!this.paidGenerationAuthorized) break;
         if (this.deps.canSubmit && !this.deps.canSubmit()) break;
         const connections = new Map((await this.deps.repository.listConnections()).map(connection => [connection.id, connection]));
         const eligible = (record: SupplierVerificationRecord, test: SupplierVerificationCase) =>
@@ -922,7 +933,7 @@ export class SupplierVerificationService {
       .flatMap(record => record.cases.filter(test => !connectionBlocked(record, latestConnections.get(test.connectionId), this.deps.fingerprintKey)))
       .filter(test => test.status === "queued" && test.nextAttemptAt)
       .map(test => Date.parse(test.nextAttemptAt!)).filter(Number.isFinite).sort((a, b) => a - b)[0];
-    if (next !== undefined) {
+    if (next !== undefined && this.paidGenerationAuthorized) {
       this.retryTimer = setTimeout(() => { void this.kick().catch(() => {}); }, Math.max(1000, next - Date.now()));
       this.retryTimer.unref?.();
     }

@@ -61,14 +61,74 @@ test("快捷键弹窗约束 Tab，Escape 关闭后返回入口", async ({ page }
   await page.keyboard.press("Shift+/");
   const dialog = page.getByRole("dialog", { name: "键盘快捷键", exact: true });
   const close = dialog.getByRole("button", { name: "关闭", exact: true });
+  const search = dialog.getByRole("textbox", { name: "搜索快捷键" });
+  // With an empty query the modal has two focusable controls; querying adds a
+  // third, the clear-search button. Keep the original initial-focus contract.
   await expect(close).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(search).toBeFocused();
+  await search.fill("撤销");
+  await expect(dialog.locator(".shortcuts-group")).toHaveCount(1);
+  await expect(dialog.locator(".shortcuts-label")).toHaveText("撤销");
+  const clear = dialog.getByRole("button", { name: "清除快捷键搜索", exact: true });
+  await page.keyboard.press("Tab");
+  await expect(clear).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(close).toBeFocused();
   await page.keyboard.press("Shift+Tab");
-  await expect(close).toBeFocused();
+  await expect(clear).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(search).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
   await expect(trigger).toBeFocused();
+});
+
+test("项目菜单 Escape 只关闭菜单并归还入口，保留画布选择模式", async ({ page }) => {
+  await page.setViewportSize({ width: 1680, height: 960 });
+  await openMockCanvas(page);
+  const selectionMode = page.getByRole("button", { name: "选择节点模式", exact: true });
+  await selectionMode.click();
+  const trigger = page.getByRole("button", { name: "打开项目菜单", exact: true });
+  await trigger.click();
+  const menu = page.getByRole("menu", { name: "项目操作", exact: true });
+  const firstItem = menu.getByRole("menuitem").first();
+  await firstItem.focus();
+  for (const inputMethod of [{ isComposing: true }, { keyCode: 229 }]) {
+    await firstItem.dispatchEvent("keydown", { key: "Escape", bubbles: true, cancelable: true, ...inputMethod });
+    await expect(menu).toBeVisible();
+    await expect(selectionMode).toHaveAttribute("aria-pressed", "true");
+  }
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await expect(selectionMode).toHaveAttribute("aria-pressed", "true");
+  // Escape with no overlaid layer keeps its existing canvas-mode shortcut.
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "抓手模式", exact: true })).toHaveAttribute("aria-pressed", "true");
+});
+
+test("侧栏项目右键菜单 Escape 保留选择模式并回到原画布卡片", async ({ page }) => {
+  await page.setViewportSize({ width: 1680, height: 960 });
+  await openMockCanvas(page);
+  const selectionMode = page.getByRole("button", { name: "选择节点模式", exact: true });
+  await selectionMode.click();
+  await page.getByRole("button", { name: "打开画布列表", exact: true }).click();
+  const projectCard = page.locator(".project-row-main").filter({ hasText: project.title });
+  await projectCard.focus();
+  await projectCard.click({ button: "right" });
+  const menu = page.getByRole("menu", { name: `${project.title} 的项目操作`, exact: true });
+  const firstItem = menu.getByRole("menuitem").first();
+  await firstItem.focus();
+  for (const inputMethod of [{ isComposing: true }, { keyCode: 229 }]) {
+    await firstItem.dispatchEvent("keydown", { key: "Escape", bubbles: true, cancelable: true, ...inputMethod });
+    await expect(menu).toBeVisible();
+    await expect(selectionMode).toHaveAttribute("aria-pressed", "true");
+  }
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await expect(projectCard).toBeFocused();
+  await expect(selectionMode).toHaveAttribute("aria-pressed", "true");
 });
 
 test("任务取回失败仍可立即重试，轮询保留操作错误", async ({ page }) => {
@@ -97,7 +157,7 @@ test("任务取回失败仍可立即重试，轮询保留操作错误", async ({
   await expect(recover).toBeEnabled();
 });
 
-test("刷新失败保留任务及输出按钮，默认展开的错误详情支持键盘开合", async ({ page }) => {
+test("刷新失败保留任务及输出按钮，错误摘要按需展开并支持键盘开合", async ({ page }) => {
   const failed = {
     run: { ...cancelledTask.run, status: "failed", canRecoverOutputs: false },
     nodes: [{ ...cancelledTask.nodes[0], status: "failed", errorJson: { message: "供应商任务失败" } }],
@@ -110,6 +170,9 @@ test("刷新失败保留任务及输出按钮，默认展开的错误详情支�
   await page.keyboard.press("Tab");
   const errors = history.locator("summary.history-error");
   await expect(errors).toBeFocused();
+  await expect(history.locator(".history-error-detail")).not.toBeVisible();
+  await expect(errors).toContainText("查看原因");
+  await page.keyboard.press("Enter");
   await expect(history.locator(".history-error-detail")).toBeVisible();
   await page.keyboard.press("Enter");
   await expect(history.locator(".history-error-detail")).not.toBeVisible();
@@ -133,6 +196,10 @@ test("评审确认约束焦点和遮罩点击，Escape 只关闭确认层", asyn
   const confirm = page.getByRole("alertdialog", { name: "保存评审草稿", exact: true });
   const first = confirm.getByRole("button", { name: "保存并继续", exact: true });
   const last = confirm.getByRole("button", { name: "放弃草稿并继续", exact: true });
+  await expect(first).toBeFocused();
+  await page.keyboard.press("Control+f");
+  await expect(first).toBeFocused();
+  await page.keyboard.press("/");
   await expect(first).toBeFocused();
   await first.press("Shift+Tab");
   await expect(last).toBeFocused();

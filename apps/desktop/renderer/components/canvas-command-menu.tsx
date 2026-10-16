@@ -91,7 +91,7 @@ function CommandMenuDialog({ onClose, commands }: Omit<CanvasCommandMenuProps, "
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        onKeyDown={event => event.stopPropagation()}
+        onKeyDown={event => { if (event.key !== "Escape") event.stopPropagation(); }}
       >
         <header className={styles.header}>
           <div className={styles.title} id={titleId}><Command size={14} aria-hidden="true" />快捷操作</div>

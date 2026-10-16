@@ -20,12 +20,16 @@ export function settledConnectionModelScan(
   authoritative: boolean,
   status: { scanStatus?: string; complete?: boolean } = {},
 ): ConnectionModelSnapshot {
+  // A provenance-only change must update the snapshot, but need not replace
+  // the equal model rows consumed by every node on this connection.
+  const sameItems = current.connectionId === connectionId &&
+    (current.items === items || modelDescriptorListsEqual(current.items, items));
   if (current.connectionId === connectionId &&
       Boolean(current.authoritative) === authoritative &&
       current.loading === false && !current.failed &&
       current.scanStatus === status.scanStatus && current.complete === status.complete &&
-      modelDescriptorListsEqual(current.items, items)) return current;
-  return { connectionId, items: [...items], authoritative, loading: false,
+      sameItems) return current;
+  return { connectionId, items: sameItems && current.connectionId === connectionId ? current.items : [...items], authoritative, loading: false,
     scanStatus: status.scanStatus, complete: status.complete };
 }
 

@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import type { ModelDescriptor } from "@super-canvas/providers";
 import type { CanvasResponse, ProviderConnectionView } from "../lib/client-api";
 import { CANGYUAN_IMAGE_CONNECTOR } from "../lib/provider-presets";
-import { attachedPanelGeometry } from "./attached-panel-geometry";
+import { floatingPanelGeometry } from "./floating-panel-geometry";
 
 const label = "视频面板避让验收";
 const origin = "https://panel-nonoverlap.invalid";
@@ -30,7 +30,7 @@ for (const scenario of [
   { name: "画布中部节点", viewport: { width: 1440, height: 900 }, zoom: 1, x: 160, y: 230 },
   { name: "窄窗口下部节点", viewport: { width: 620, height: 820 }, zoom: 1, x: 75, y: 350 },
 ]) {
-  test(`${scenario.name} 参数框不覆盖视频节点，滚动后仍可编辑和关闭`, async ({ page, request }, testInfo) => {
+  test(`${scenario.name} 参数浮卡避让画布工具，滚动后仍可编辑和关闭`, async ({ page, request }, testInfo) => {
     await page.setViewportSize(scenario.viewport);
     const errors: string[] = [];
     let submissions = 0;
@@ -72,7 +72,7 @@ for (const scenario of [
           data: { nodeType: "video-generation", label, provider: "rest", connectionId: connection.id,
             model: model.id, qualityMode: "custom",
             parameters: Object.fromEntries(model.parameters!.map(parameter => [parameter.key, parameter.default])),
-            parts: [{ type: "text", text: "这段视频提示词和节点按钮必须保持可见，参数框不能盖在上面。" }],
+            parts: [{ type: "text", text: "独立参数浮卡滚动编辑时，节点位置和提示词应保持不变。" }],
             inputs: [{ id: "prompt", kind: "text", label: "提示词" }],
             outputs: [{ id: "video", kind: "video", label: "视频" }] },
         }],
@@ -97,7 +97,7 @@ for (const scenario of [
 
     // Include the whole canvas in the evidence, even on the old failing build.
     await page.screenshot({ path: testInfo.outputPath("opened-panel-and-node.png") });
-    const assertClear = () => expect.poll(async () => (await attachedPanelGeometry(panel)).attachmentError).toBeLessThanOrEqual(1);
+    const assertClear = () => expect.poll(async () => (await floatingPanelGeometry(panel)).floatingError).toBeLessThanOrEqual(1);
     await assertClear();
     if (scenario.name.includes("小地图")) {
       await page.getByRole("button", { name: "小地图", exact: true }).click();
@@ -105,7 +105,6 @@ for (const scenario of [
       await assertClear();
     }
     const card = page.locator('.react-flow__node[data-id="layout-video"] .node-card');
-    await card.locator(".node-head").click({ trial: true });
     await panel.getByRole("button", { name: "关闭模型与参数面板", exact: true }).click({ trial: true });
     const body = panel.locator(".node-config-popover-body");
     await expect.poll(() => body.evaluate(element => element.scrollHeight - element.clientHeight)).toBeGreaterThan(0);
@@ -126,6 +125,9 @@ for (const scenario of [
     await page.screenshot({ path: testInfo.outputPath("scrolled-panel-and-uncovered-node.png") });
     await panel.getByRole("button", { name: "关闭模型与参数面板", exact: true }).click();
     await expect(panel).toBeHidden();
+    // A floating overlay may cover world content; dismissing it must restore
+    // the original node's interaction without moving that node to make room.
+    await card.locator(".node-head").click({ trial: true });
     await page.getByRole("button", { name: `打开 ${label} 模型与参数`, exact: true }).click();
     await expect(finalField).toHaveValue("滚动后已编辑");
     await assertClear();

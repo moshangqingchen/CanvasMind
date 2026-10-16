@@ -145,8 +145,19 @@ test("官网18、Key15、交集10：八个目录型号显示官方价，键鼠�
   await expect(ui.summary).toContainText("Key 15");
   await expect(ui.summary).toContainText("双方 10");
   await expect(ui.summary).toContainText("官网额外 8");
-  await expect(ui.list.getByRole("option")).toHaveCount(24);
-  await expect(ui.list.locator('[data-catalog-only="true"]')).toHaveCount(8);
+  await expect(ui.list.getByRole("option").first()).toHaveAttribute("aria-setsize", "24");
+  expect(await ui.list.getByRole("option").count()).toBeLessThanOrEqual(24);
+  // Windowed rows retain all eight catalog-only identities. Search each one
+  // instead of requiring offscreen rows to stay mounted in the DOM.
+  for (let index = 0; index < 8; index++) {
+    await ui.search.fill(`video-official-${index}`);
+    const option = ui.list.getByRole("option", { name: `video-official-${index}`, exact: true });
+    await expect(option).toHaveAttribute("data-catalog-only", "true");
+    await expect(option).toHaveAttribute("aria-disabled", "true");
+    await expect(option).toContainText("0.62 CNY / 秒");
+    await expect(option).toContainText("官网目录 · 当前 Key 返回：0");
+  }
+  await ui.search.fill("video-official-0");
   const before = await ui.readNode();
   const extra = ui.list.getByRole("option", { name: "video-official-0", exact: true });
   await expect(extra).toHaveAttribute("aria-disabled", "true");

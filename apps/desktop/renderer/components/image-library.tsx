@@ -15,6 +15,8 @@ import {
   Maximize2,
   ArrowRight,
   Save,
+  Film,
+  Music2,
 } from "lucide-react";
 import {
   IMAGE_REVIEW_LABELS,
@@ -25,7 +27,7 @@ import {
 } from "@super-canvas/core";
 import type { AssetView } from "./types";
 import type { DeleteAssetsResult } from "../lib/client-api";
-import { filterDesignImages } from "../lib/image-design";
+import { selectLibraryRange } from "../lib/library-selection";
 import { imageResultVersions, type ProjectResult } from "../lib/project-results";
 import { DesignDeliveryCheck } from "./design-delivery-check";
 import { ImageDesignCompare, type ImageDesignCompareHandle } from "./image-design-compare";
@@ -44,9 +46,10 @@ type Props = {
   open: boolean;
   onClose: () => void;
   assets: AssetView[];
-  onPreview: (asset: AssetView) => void;
+  onPreview: (asset: AssetView, orderedAssets?: AssetView[]) => void;
   onReuseAsset: (id: string, offset?: number) => void;
   onDropAsset: (id: string, position: { x: number; y: number }) => void;
+  onDropAssets?: (ids: string[], position: { x: number; y: number }) => void;
   onDeleteAssets: (ids: string[]) => Promise<DeleteAssetsResult>;
   onSaveReview: (
     id: string,
@@ -157,6 +160,7 @@ function ImageDetails({
         <button
           className="icon-button"
           aria-label="收起作品详情"
+          title="收起作品详情"
           onClick={onClose}
         >
           <X size={16} />
@@ -321,11 +325,12 @@ export function GenerationHistoryModal(props: Props) {
     onPreview,
     onReuseAsset,
     onDropAsset,
+    onDropAssets,
     onDeleteAssets,
     onSaveReview,
     onContinueEditing,
   } = props;
-  const [scope, setScope] = useState<"project" | "all">(canvasId ? "project" : "all");
+  const [scope, setScope] = useState<"project" | "all" | "assets">(canvasId ? "project" : "all");
   const [results, setResults] = useState<ProjectResult[] | null>(null);
   const [resultsError, setResultsError] = useState("");
   const [resultsRevision, setResultsRevision] = useState(0);
@@ -345,6 +350,9 @@ export function GenerationHistoryModal(props: Props) {
   }, [open, canvasId, resultsRevision]);
   const resultById = useMemo(() => new Map((results ?? []).map(result => [result.assetId, result])), [results]);
   const [query, setQuery] = useState("");
+  const [mediaType, setMediaType] = useState<"all" | "image" | "video" | "audio">("all");
+  const searchRef = useRef<HTMLInputElement>(null);
+  const selectionAnchor = useRef<string | null>(null);
   const [filter, setFilter] = useState<ImageReviewStatus | "all">("all");
   const [tab, setTab] = useState<"all" | "starred" | "review">("all");
   const [oldest, setOldest] = useState(false);
@@ -383,20 +391,27 @@ export function GenerationHistoryModal(props: Props) {
     moved: boolean;
   } | null>(null);
   const suppressedClick = useRef(false);
+  useEffect(() => { if (open) suppressedClick.current = false; }, [open]);
   const cardRefs = useRef(new Map<string, HTMLElement>());
   const all = useMemo(
     () =>
       assets.filter(
         (asset) =>
-          asset.kind === "image" &&
-          (typeof asset.metadata.runId === "string" || readImageDesignReview(asset.metadata).revision > 0) &&
+          ["image", "video", "audio"].includes(asset.kind) &&
           asset.metadata.purpose !== "supplier-verification",
       ),
     [assets],
   );
   const images = useMemo(
     () =>
-      filterDesignImages(all.filter(asset => scope === "all" || resultById.has(asset.id)), query, filter)
+      all.filter(asset => {
+        const review = readImageDesignReview(asset.metadata);
+        const historical = typeof asset.metadata.runId === "string" || review.revision > 0;
+        return (scope === "assets" || (historical && (scope === "all" || resultById.has(asset.id)))) &&
+          (mediaType === "all" || asset.kind === mediaType) &&
+          (filter === "all" || (asset.kind === "image" && review.status === filter)) &&
+          (!query.trim() || `${asset.name}\n${review.note}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
+      })
         .filter((asset) =>
           tab === "starred"
             ? starred.has(asset.id)
@@ -407,7 +422,7 @@ export function GenerationHistoryModal(props: Props) {
         .sort(
           (a, b) => (oldest ? 1 : -1) * a.createdAt.localeCompare(b.createdAt),
         ),
-    [all, query, filter, tab, starred, oldest, scope, resultById],
+    [all, query, filter, tab, starred, oldest, scope, resultById, mediaType],
   );
   const selectedImages = images.filter((asset) => selected.has(asset.id));
   const selectedIds = new Set(selectedImages.map((asset) => asset.id));
@@ -447,6 +462,13 @@ export function GenerationHistoryModal(props: Props) {
   });
   useEffect(() => {
     try {
+      const preferences = JSON.parse(localStorage.getItem("super-canvas:library-view") ?? "{}");
+      if (preferences && typeof preferences === "object") {
+        if (typeof preferences.oldest === "boolean") setOldest(preferences.oldest);
+        if (["all", "image", "video", "audio"].includes(preferences.mediaType)) setMediaType(preferences.mediaType);
+      }
+    } catch { /* Invalid view preferences do not affect saved favorites. */ }
+    try {
       setStarred(
         new Set(
           JSON.parse(
@@ -458,17 +480,20 @@ export function GenerationHistoryModal(props: Props) {
       /* empty library */
     }
   }, []);
+  function saveView(next: { oldest: boolean; mediaType: typeof mediaType }) {
+    try { localStorage.setItem("super-canvas:library-view", JSON.stringify(next)); } catch { /* View preferences are optional. */ }
+  }
   const detailOpen = Boolean(detail);
   useLayoutEffect(() => {
     const element = scrollRef.current;
     if (!open || !element || compareIds.length) return;
     element.scrollTop = savedScroll.current;
     const measure = () =>
-      setViewport({
+      setViewport(current => current.width === element.clientWidth && current.height === element.clientHeight && Math.floor(current.scroll / ROW) === Math.floor(element.scrollTop / ROW) ? current : ({
         width: element.clientWidth,
         height: element.clientHeight,
         scroll: element.scrollTop,
-      });
+      }));
     const observer = new ResizeObserver(measure);
     observer.observe(element);
     measure();
@@ -537,8 +562,9 @@ export function GenerationHistoryModal(props: Props) {
     setViewport((current) => ({ ...current, scroll: 0 }));
     setConfirmDelete(false);
   }
-  function toggle(id: string) {
+  function toggle(id: string, shift = false, additive = false) {
     setSelected((current) => {
+      if (shift) return selectLibraryRange(images.map(asset => asset.id), selectionAnchor.current, id, additive ? current : new Set());
       const next = new Set(
         [...current].filter((id) => images.some((asset) => asset.id === id)),
       );
@@ -546,6 +572,7 @@ export function GenerationHistoryModal(props: Props) {
       else next.add(id);
       return next;
     });
+    if (!shift) selectionAnchor.current = id;
     setConfirmDelete(false);
   }
   function favorite(id: string) {
@@ -606,6 +633,14 @@ export function GenerationHistoryModal(props: Props) {
         aria-modal="true"
         aria-label="历史生成"
         tabIndex={-1}
+        onKeyDown={event => {
+          if (event.nativeEvent.isComposing || compareIds.length) return;
+          const typing = (event.target as HTMLElement).closest("input,textarea,[contenteditable=true]");
+          if (((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") || (event.key === "/" && !typing)) {
+            event.preventDefault(); event.stopPropagation();
+            if (!pendingLeave) searchRef.current?.focus();
+          }
+        }}
       >
         {compareIds.length ? (
           <ImageDesignCompare
@@ -651,6 +686,7 @@ export function GenerationHistoryModal(props: Props) {
               <label className="library-search">
                 <Search size={16} />
                 <input
+                  ref={searchRef}
                   aria-label="搜索图片名称或评审备注"
                   placeholder="搜索作品、备注…"
                   value={query}
@@ -664,6 +700,7 @@ export function GenerationHistoryModal(props: Props) {
                 className="icon-button"
                 onClick={close}
                 aria-label="关闭历史生成"
+                title="关闭历史生成（Esc）"
               >
                 <X size={19} />
               </button>
@@ -677,7 +714,11 @@ export function GenerationHistoryModal(props: Props) {
                   }}>
                     <option value="project" disabled={!canvasId}>当前项目</option>
                     <option value="all">全部项目</option>
+                    <option value="assets">全部素材（含导入）</option>
                   </select>
+                  <div className="library-media-tabs" role="group" aria-label="素材类型">
+                    {([['all', '全部'], ['image', '图片'], ['video', '视频'], ['audio', '音频']] as const).map(([value, label]) => <button type="button" key={value} data-media-type={value} aria-pressed={mediaType === value} onClick={() => { setMediaType(value); saveView({ oldest, mediaType: value }); resetScroll(); }}><span className="library-kind-dot" aria-hidden="true" />{label}</button>)}
+                  </div>
                   <span>{images.length} 张作品</span>
                   <select
                     aria-label="筛选评审状态"
@@ -699,6 +740,7 @@ export function GenerationHistoryModal(props: Props) {
                     className="library-text-button"
                     onClick={() => {
                       setOldest(!oldest);
+                      saveView({ oldest: !oldest, mediaType });
                       resetScroll();
                     }}
                   >
@@ -722,7 +764,7 @@ export function GenerationHistoryModal(props: Props) {
                   ref={scrollRef}
                   onScroll={(event) => {
                     savedScroll.current = event.currentTarget.scrollTop;
-                    setViewport((current) => ({
+                    setViewport((current) => Math.floor(current.scroll / ROW) === Math.floor(savedScroll.current / ROW) ? current : ({
                       ...current,
                       scroll: savedScroll.current,
                     }));
@@ -803,17 +845,21 @@ export function GenerationHistoryModal(props: Props) {
                             className={`generation-history-card library-card ${selectedIds.has(asset.id) ? "is-selected" : ""} ${focused === asset.id ? "is-focused" : ""}`}
                           >
                             <button
+                              type="button"
                               className="generation-history-select"
                               role="checkbox"
                               aria-checked={selectedIds.has(asset.id)}
                               aria-label={`${selectedIds.has(asset.id) ? "取消选择" : "选择"} ${asset.name}`}
-                              onClick={() => toggle(asset.id)}
+                              title="选择素材（Shift 连选 / Ctrl 多选）"
+                              onClick={event => toggle(asset.id, event.shiftKey, event.ctrlKey || event.metaKey)}
                             >
                               {selectedIds.has(asset.id) && <Check size={14} />}
                             </button>
                             <button
+                              type="button"
                               className="library-favorite"
                               aria-label={`${starred.has(asset.id) ? "取消收藏" : "收藏"} ${asset.name}`}
+                              title={starred.has(asset.id) ? "取消收藏" : "收藏"}
                               aria-pressed={starred.has(asset.id)}
                               onClick={() => favorite(asset.id)}
                             >
@@ -827,8 +873,10 @@ export function GenerationHistoryModal(props: Props) {
                               />
                             </button>
                             <button
+                              type="button"
                               className="generation-history-preview"
                               aria-label={`查看详情 ${asset.name}`}
+                              title={`${asset.name} · ${asset.kind === "image" ? "图片" : asset.kind === "video" ? "视频" : "音频"}${typeof asset.metadata.width === "number" && typeof asset.metadata.height === "number" ? ` · ${asset.metadata.width} × ${asset.metadata.height}` : ""}`}
                               onClick={(event) => {
                                 if (suppressedClick.current) {
                                   suppressedClick.current = false;
@@ -840,14 +888,14 @@ export function GenerationHistoryModal(props: Props) {
                                   event.shiftKey ||
                                   selectedIds.size
                                 )
-                                  toggle(asset.id);
-                                else setFocused(asset.id);
+                                  toggle(asset.id, event.shiftKey, event.ctrlKey || event.metaKey);
+                                else { selectionAnchor.current = asset.id; if (asset.kind === "image") setFocused(asset.id); else leave(() => onPreview(asset, images)); }
                               }}
-                              onDoubleClick={() => onPreview(asset)}
+                              onDoubleClick={() => leave(() => onPreview(asset, images))}
                               onKeyDown={(event) => {
                                 if (event.code === "Space") {
                                   event.preventDefault();
-                                  onPreview(asset);
+                                  leave(() => onPreview(asset, images));
                                 }
                               }}
                               onPointerDown={(event) => {
@@ -855,8 +903,7 @@ export function GenerationHistoryModal(props: Props) {
                                   event.button ||
                                   event.ctrlKey ||
                                   event.metaKey ||
-                                  event.shiftKey ||
-                                  selectedIds.size
+                                  event.shiftKey
                                 )
                                   return;
                                 drag.current = {
@@ -885,12 +932,15 @@ export function GenerationHistoryModal(props: Props) {
                               onPointerUp={(event) => {
                                 if (drag.current?.moved) {
                                   suppressedClick.current = true;
-                                  leave(() =>
-                                    onDropAsset(asset.id, {
+                                  leave(() => {
+                                    const position = {
                                       x: event.clientX,
                                       y: event.clientY,
-                                    }),
-                                  );
+                                    };
+                                    const ids = selectedIds.has(asset.id) ? [...selectedIds] : [asset.id];
+                                    if (onDropAssets && ids.length > 1) onDropAssets(ids, position);
+                                    else ids.forEach((id, index) => onDropAsset(id, { x: position.x + index * 24, y: position.y + index * 24 }));
+                                  });
                                 }
                                 drag.current = null;
                                 setDragging(false);
@@ -900,14 +950,16 @@ export function GenerationHistoryModal(props: Props) {
                                 setDragging(false);
                               }}
                             >
-                              <img
+                              {asset.kind === "image" ? <img
                                 src={`/api/assets/${encodeURIComponent(asset.id)}/preview?size=640`}
                                 alt={asset.name}
                                 loading="lazy"
                                 decoding="async"
                                 draggable={false}
-                              />
+                              /> : <span className="library-media-placeholder">{asset.kind === "video" ? <Film size={36} /> : <Music2 size={36} />}<span>{asset.kind === "video" ? "视频" : "音频"}</span></span>}
+                              <span className="library-preview-info" aria-hidden="true"><span>{asset.kind === "image" ? "图片" : asset.kind === "video" ? "视频" : "音频"}</span>{typeof asset.metadata.width === "number" && typeof asset.metadata.height === "number" ? <span>{asset.metadata.width} × {asset.metadata.height}</span> : null}</span>
                             </button>
+                            <button type="button" className="library-quick-add" aria-label={`放入画布 ${asset.name}`} title={`放入画布：${asset.name}`} onClick={() => leave(() => onReuseAsset(asset.id))}><Pin size={14} strokeWidth={1.75} /></button>
                             <footer>
                               <strong>
                                 <ReadableName text={asset.name} />
@@ -924,12 +976,12 @@ export function GenerationHistoryModal(props: Props) {
                                     },
                                   )}
                                 </time>
-                                <span
+                                {asset.kind === "image" ? <span
                                   className="library-status"
                                   data-status={review.status}
                                 >
                                   {IMAGE_REVIEW_LABELS[review.status]}
-                                </span>
+                                </span> : <span>{asset.mimeType}</span>}
                               </small>
                             </footer>
                           </article>
@@ -971,7 +1023,7 @@ export function GenerationHistoryModal(props: Props) {
                         <button
                           className="button small"
                           disabled={
-                            selectedIds.size < 2 || selectedIds.size > 4
+                            selectedIds.size < 2 || selectedIds.size > 4 || selectedImages.some(asset => asset.kind !== "image")
                           }
                           onClick={() =>
                             leave(() => setCompareIds([...selectedIds]))
@@ -996,6 +1048,7 @@ export function GenerationHistoryModal(props: Props) {
                         <button
                           className="icon-button danger"
                           aria-label="删除所选"
+                          title="删除所选"
                           onClick={() => setConfirmDelete(true)}
                         >
                           <Trash2 size={15} />
@@ -1003,6 +1056,7 @@ export function GenerationHistoryModal(props: Props) {
                         <button
                           className="icon-button"
                           aria-label="取消选择"
+                          title="取消选择"
                           onClick={() => setSelected(new Set())}
                         >
                           <X size={15} />
@@ -1030,7 +1084,7 @@ export function GenerationHistoryModal(props: Props) {
                   busy={saving}
                   message={messages[detail.id] ?? ""}
                   onClose={() => setFocused(null)}
-                  onPreview={() => onPreview(detail)}
+                  onPreview={() => leave(() => onPreview(detail, images))}
                   onReuse={() => leave(() => onReuseAsset(detail.id))}
                   onEdit={() => leave(() => onContinueEditing(detail.id))}
                   onCompare={() => leave(() => setCompareIds([detail.id]))}

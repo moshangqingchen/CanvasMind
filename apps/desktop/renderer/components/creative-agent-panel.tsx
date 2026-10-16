@@ -1,7 +1,8 @@
 "use client";
-import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot,
+  UserRound,
   Plus,
   Paperclip,
   Send,
@@ -46,6 +47,17 @@ import {
 } from "./agent-canvas-context";
 import styles from "./creative-agent-panel.module.css";
 import { Tk1688TextModelSelect } from "./tk1688-text-model-select";
+import { canvasMotionEnabled } from "./canvas-motion";
+import { DeferredPanelContent } from "./deferred-panel-content";
+import { VirtualList } from "./virtual-list";
+import { readUiPreference, writeUiPreference } from "../lib/ui-preferences";
+import { agentMessageBlocks } from "../lib/agent-message-blocks";
+
+const MessageContent = memo(function MessageContent({ content }: { content: string }) {
+  return agentMessageBlocks(content).map((block, index) => block.kind === "code"
+    ? <pre key={index} className={styles.codeBlock} aria-label={block.language ? `${block.language} 代码` : "代码"}><code>{block.text}</code></pre>
+    : <p key={index}>{block.text}</p>);
+});
 
 type Props = {
   connections: ProviderConnectionView[];
@@ -136,7 +148,7 @@ const resultStatuses: Record<string, { label: string; Icon: typeof Circle; tone:
   skipped: { label: "已跳过", Icon: MinusCircle, tone: "neutral" },
 };
 
-export function AgentPanel(props: Props) {
+export const AgentPanel = memo(function AgentPanel(props: Props) {
   const bridge = useContext(AgentCanvasContext);
   const [session, setSession] = useState<AgentSession | null>(null);
   const [sessions, setSessions] = useState<
@@ -154,10 +166,18 @@ export function AgentPanel(props: Props) {
   const [error, setError] = useState("");
   const [legacy, setLegacy] = useState<string[] | null>(null);
   const [useSelected, setUseSelected] = useState(true);
+  const [modelSettingsOpen, setModelSettingsOpen] = useState(true);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setModelSettingsOpen(readUiPreference("super-canvas:agent-model-expanded") !== "false"));
+    return () => cancelAnimationFrame(frame);
+  }, []);
   const [reasoningChoice, setReasoningChoice] = useState({ model: "", value: "auto" });
   const abort = useRef<AbortController | null>(null);
   const alive = useRef(true);
   const modelReadVersion = useRef(0);
+  // Compare before dispatch: an equal-state functional updater can remain in
+  // React's pending queue and retain every freshly parsed polling response.
+  const publishedModelsJson = useRef("[]");
   const operation = useRef(0);
   const activity = useRef(0);
   const working = useRef(false);
@@ -168,17 +188,17 @@ export function AgentPanel(props: Props) {
   }, [session]);
   const sessionId = session?.id;
   const conversation = useRef<HTMLDivElement>(null);
-  const missingSelection = isTk1688Model(selection.snapshot, props.connections)
+  const missingSelection = useMemo(() => isTk1688Model(selection.snapshot, props.connections)
     ? { ...selection.snapshot!, available: false, reason: "本次目录未返回已保存线路，请刷新目录或重新选择",
       metadata: { ...selection.snapshot!.metadata, tk1688CatalogStale: true } }
-    : savedTk1688Model(choice, props.connections);
-  const selected =
+    : savedTk1688Model(choice, props.connections), [selection.snapshot, choice, props.connections]);
+  const selected = useMemo(() =>
     models.find((m) => keyOf(m) === choice) ?? missingSelection ??
     models.find((m) => m.available) ??
-    models[0];
+    models[0], [models, choice, missingSelection]);
   const tk1688Selection = isTk1688Model(selected, props.connections);
-  const modelInventory = selected && !models.some(model => keyOf(model) === keyOf(selected))
-    ? [...models, selected] : models;
+  const modelInventory = useMemo(() => selected && !models.some(model => keyOf(model) === keyOf(selected))
+    ? [...models, selected] : models, [models, selected]);
   const modelKey = selected ? keyOf(selected) : "";
   const reasoningOptions = selected?.reasoningOptions ?? [{ value: "auto", label: "自动" }];
   const reasoning = reasoningChoice.model === modelKey &&
@@ -202,22 +222,22 @@ export function AgentPanel(props: Props) {
     if (model) {
       setSelection({ key: keyOf(model), snapshot: model });
       if (isTk1688Model(model, props.connections))
-        localStorage.setItem(`agent-model:${props.canvasId}`, keyOf(model));
+        writeUiPreference(`agent-model:${props.canvasId}`, keyOf(model));
     }
     setReasoningChoice({ model: "", value: "auto" });
   };
   const firstAvailable = (items: AgentModelOption[]) => items.find((m) => m.available) ?? items[0];
-  const suppliers = [
+  const suppliers = useMemo(() => [
     ...new Map(modelInventory.map((m) => [m.supplierId, m.supplierName])).entries(),
-  ];
-  const groups = [
+  ], [modelInventory]);
+  const groups = useMemo(() => [
     ...new Set(
       modelInventory
         .filter((m) => m.supplierId === selected?.supplierId)
         .map((m) => m.group),
     ),
-  ];
-  const connections = [
+  ], [modelInventory, selected?.supplierId]);
+  const connections = useMemo(() => [
     ...new Map(
       modelInventory
         .filter(
@@ -227,10 +247,15 @@ export function AgentPanel(props: Props) {
         )
         .map((m) => [m.connectionId, m.connectionName]),
     ).entries(),
-  ];
-  const groupModels = modelInventory.filter(
+  ], [modelInventory, selected?.supplierId, selected?.group]);
+  const groupModels = useMemo(() => modelInventory.filter(
     (m) => m.connectionId === selected?.connectionId,
-  );
+  ), [modelInventory, selected?.connectionId]);
+  const textPickerModels = useMemo(() => groupModels.map(model => ({
+    id: model.modelId, name: model.modelName, description: model.description,
+    metadata: model.metadata, pricing: model.pricing,
+    available: model.available, reason: model.reason,
+  })), [groupModels]);
   const modelLoad = useCallback(async () => {
     const version = ++modelReadVersion.current;
     const items = await agentRequest<AgentModelOption[]>(
@@ -238,8 +263,13 @@ export function AgentPanel(props: Props) {
       undefined,
       "GET",
     );
-    if (alive.current && version === modelReadVersion.current)
-      setModels(current => JSON.stringify(current) === JSON.stringify(items) ? current : items);
+    if (alive.current && version === modelReadVersion.current) {
+      const json = JSON.stringify(items);
+      if (json !== publishedModelsJson.current) {
+        publishedModelsJson.current = json;
+        setModels(items);
+      }
+    }
     return items;
   }, []);
   const refresh = useCallback(async (id: string) => {
@@ -272,7 +302,7 @@ export function AgentPanel(props: Props) {
   useEffect(() => {
     alive.current = true;
     const controller = new AbortController();
-    const savedModel = localStorage.getItem(`agent-model:${props.canvasId}`);
+    const savedModel = readUiPreference(`agent-model:${props.canvasId}`);
     void Promise.all([
       modelLoad(),
       agentRequest<Array<{ id: string; title: string }>>(
@@ -289,7 +319,7 @@ export function AgentPanel(props: Props) {
           key: savedModel, snapshot: items.find(model => keyOf(model) === savedModel),
         });
         setModelChoiceLoaded(true);
-        const last = window.localStorage.getItem(
+        const last = readUiPreference(
           `agent-task:${props.canvasId}`,
         );
         const id = list.find((s) => s.id === last)?.id ?? list[0]?.id;
@@ -314,14 +344,15 @@ export function AgentPanel(props: Props) {
   }, [props.canvasId, modelLoad]);
   useEffect(() => {
     if (sessionId)
-      window.localStorage.setItem(`agent-task:${props.canvasId}`, sessionId);
+      writeUiPreference(`agent-task:${props.canvasId}`, sessionId);
   }, [sessionId, props.canvasId]);
-  useEffect(() => {
+  const scrollConversation = useCallback(() => {
     conversation.current?.scrollTo({
       top: conversation.current.scrollHeight,
-      behavior: "smooth",
+      behavior: canvasMotionEnabled() ? "smooth" : "instant",
     });
-  }, [session?.messages.length, stage]);
+  }, []);
+  useEffect(() => { scrollConversation(); }, [session?.messages.length, stage, scrollConversation]);
   useEffect(() => {
     if (
       !session?.plans.some(
@@ -355,7 +386,7 @@ export function AgentPanel(props: Props) {
   }, [props.draftRequest, props.assets]);
   useEffect(() => {
     if (modelChoiceLoaded && modelKey && !tk1688Selection)
-      localStorage.setItem(`agent-model:${props.canvasId}`, modelKey);
+      writeUiPreference(`agent-model:${props.canvasId}`, modelKey);
   }, [modelChoiceLoaded, modelKey, props.canvasId, tk1688Selection]);
   useEffect(() => {
     let reading = false;
@@ -546,6 +577,16 @@ export function AgentPanel(props: Props) {
       });
       if (value.plan && alive.current) updatePlan(value.plan);
     });
+  const intentHint = intent === "chat" ? "聊想法、问问题；制作时请选择画布方案。" : "先给你检查方案，确认后再放入画布。";
+  const attachmentLimitsLabel = "本应用每轮最多 16 个附件，单个 16 MB，总计 24 MB；引用节点素材计入。";
+  const mediaSupportLabels = selected?.available ? mediaKinds.map(type => {
+    const supported = selected.capabilities[type.capability];
+    const limit = selected.inputLimits?.[type.limit];
+    return `${type.label}：${!supported ? "暂不可用" : `${type.kind === "image" && selected.imageInputStatus === "assumed" ? "默认支持" : "支持"} · ${limit === undefined ? "供应商未注明数量" : `最多 ${limit} ${type.unit}`}`}`;
+  }) : [];
+  const supplierAttachmentLimit = selected?.inputLimits?.maxAssets !== undefined
+    ? `供应商每轮总量：最多 ${selected.inputLimits.maxAssets} 个附件` : "";
+  const reasoningNotes = [reasoningOptions.length > 1 ? reasoningSourceLabel : "", selected?.reasoningNotice].filter(Boolean);
   return (
     <section
       className={`agent-panel ${styles.panel}`}
@@ -553,18 +594,21 @@ export function AgentPanel(props: Props) {
     >
       <header className={styles.header}>
         <span>
-          <Bot size={19} />
+          <span className={styles.avatar} aria-hidden="true"><Bot size={19} strokeWidth={1.75} /></span>
           <strong>创作助手</strong>
         </span>
         <div>
           <button
+            type="button"
             aria-label="新创作任务"
+            title="新建创作任务"
             disabled={busy}
             onClick={() => void run(newTask)}
           >
             <Plus size={17} />
           </button>
           <button
+            type="button"
             aria-label="刷新模型列表"
             title="刷新已接入模型"
             disabled={busy}
@@ -573,6 +617,7 @@ export function AgentPanel(props: Props) {
             <RefreshCw size={16} />
           </button>
           <button
+            type="button"
             aria-label="管理供应商与模型"
             title="管理供应商与模型"
             onClick={() => props.onManageApi(selected?.group)}
@@ -580,15 +625,17 @@ export function AgentPanel(props: Props) {
             <Plug size={17} />
           </button>
           {props.onClose && (
-            <button aria-label="关闭智能体" title="关闭智能体" onClick={props.onClose}>
+            <button type="button" aria-label="关闭智能体" title="关闭智能体" onClick={props.onClose}>
               <X size={17} />
             </button>
           )}
         </div>
       </header>
+      <DeferredPanelContent onReady={scrollConversation}>
       <div className={styles.tasks}>
         <select
           aria-label="创作任务"
+          title={session?.title ?? "选择创作任务"}
           value={session?.id ?? ""}
           disabled={busy}
           onChange={(e) =>
@@ -649,8 +696,16 @@ export function AgentPanel(props: Props) {
           旧对话
         </button>
       </div>
-      <div className={styles.conversation} ref={conversation}>
-        {legacy ? (
+      <VirtualList<AgentMessage>
+        className={styles.conversation}
+        scrollRef={conversation}
+        label="智能体对话"
+        items={legacy ? [] : session?.messages ?? []}
+        itemKey={(message) => message.id}
+        estimatedHeight={160}
+        resetKey={session?.id ?? "new"}
+        keepMountedKeys={new Set(session?.messages.filter(message => message.metadata.artifact).map(message => message.id))}
+        header={legacy ? (
           <article className={styles.card}>
             <button onClick={() => setLegacy(null)}>返回当前任务</button>
             <p>旧对话只读保留；旧附件可能只有文件名记录。</p>
@@ -660,8 +715,7 @@ export function AgentPanel(props: Props) {
             ))}
           </article>
         ) : (
-          <>
-            {!session?.messages.length && (
+          !session?.messages.length && (
               <div className={styles.welcome}>
                 <span className={styles.welcomeIcon}><Bot size={30} /></span>
                 <h3>有什么想法，聊聊吧。</h3>
@@ -672,24 +726,24 @@ export function AgentPanel(props: Props) {
                     "帮我梳理参考图里的设计思路",
                     "帮我完善这段提示词",
                   ].map((s) => (
-                    <button key={s} onClick={() => { setIntent("chat"); setDraft(s); }}>
+                    <button type="button" key={s} onClick={() => { setIntent("chat"); setDraft(s); }}>
+                      <Layers3 size={14} aria-hidden="true" />
                       {s}
                     </button>
                   ))}
                 </div>
               </div>
-            )}
-            {session?.messages.map((m) => (
+            )
+        )}
+        renderItem={(m) => (
               <article
                 key={m.id}
                 className={`${styles.message} ${m.role === "user" ? styles.user : ""}`}
               >
-                <small>{m.role === "user" ? "你" : "智能体"}</small>
-                <p>
-                  {m.metadata.kind === "tool"
+                <small><span className={styles.messageAvatar} aria-hidden="true">{m.role === "user" ? <UserRound size={13} strokeWidth={1.75} /> : <Bot size={14} strokeWidth={1.75} />}</span>{m.role === "user" ? "你" : "智能体"}</small>
+                <MessageContent content={m.metadata.kind === "tool"
                     ? `已完成：${({ read_canvas: "读取当前画布", list_models: "检查可用模型", inspect_assets: "读取参考素材", read_results: "检查生成结果" } as Record<string, string>)[String(m.metadata.tool)] ?? "读取任务资料"}`
-                    : m.content}
-                </p>
+                    : m.content} />
                 {(m.metadata.kind === "error" || m.metadata.kind === "status") &&
                   ["failed", "cancelled"].includes(String(m.metadata.status)) && (
                   <button disabled={busy} onClick={() => void editFailedRequest(m)}>重新编辑</button>
@@ -812,8 +866,9 @@ export function AgentPanel(props: Props) {
                   />
                 ) : null}
               </article>
-            ))}
-            {session?.plans.map((p) => (
+            )}
+        footer={<>
+            {!legacy && session?.plans.map((p) => (
               <PlanCard
                 key={`${p.id}:${p.version}`}
                 plan={p}
@@ -848,18 +903,17 @@ export function AgentPanel(props: Props) {
                 }
               />
             ))}
-          </>
-        )}
         {stage && (
           <p className={styles.stage} role="status">
             {stage}
           </p>
         )}
-      </div>
+        </>}
+      />
       {error && (
         <div className={styles.error} role="alert">
           {error}
-          <button aria-label="关闭智能体错误" onClick={() => setError("")}>
+          <button type="button" aria-label="关闭智能体错误" title="关闭错误提示" onClick={() => setError("")}>
             <X size={13} />
           </button>
         </div>
@@ -888,12 +942,10 @@ export function AgentPanel(props: Props) {
           <button type="button" aria-pressed={intent === "canvas-plan"} disabled={busy} onClick={() => setIntent("canvas-plan")}>
             制作画布方案
           </button>
+          <p className={styles.intentHint} title={intentHint}>{intentHint}</p>
         </div>
-        <p className={styles.intentHint}>
-          {intent === "chat" ? "聊想法、问问题；制作时请选择画布方案。" : "先给你检查方案，确认后再放入画布。"}
-        </p>
         {props.selectedNode && (
-          <label className={styles.context}>
+          <label className={styles.context} title={`引用所选节点：${props.selectedNode.data.label}`}>
             <input
               type="checkbox"
               checked={useSelected}
@@ -908,9 +960,11 @@ export function AgentPanel(props: Props) {
               {a.kind === "image" && (
                 <img alt={a.name} src={`/api/assets/${a.id}/content`} />
               )}
-              <small>{a.name}</small>
+              <small title={a.name}>{a.name}</small>
               <button
+                type="button"
                 aria-label={`移除 ${a.name}`}
+                title={`移除参考素材：${a.name}`}
                 onClick={() =>
                   setAttachments((v) => v.filter((x) => x.id !== a.id))
                 }
@@ -943,14 +997,20 @@ export function AgentPanel(props: Props) {
             }
           }}
         />
-        <details className={styles.modelSettings} open>
+        <details className={styles.modelSettings} open={modelSettingsOpen} onToggle={event => {
+          const expanded = event.currentTarget.open;
+          if (expanded === modelSettingsOpen) return;
+          setModelSettingsOpen(expanded);
+          writeUiPreference("super-canvas:agent-model-expanded", String(expanded));
+        }}>
           <summary>
             <span>对话模型</span>
             <strong title={selected?.modelName}>{selected?.modelName ?? "选择模型"}</strong>
           </summary>
-          <div className={styles.selectors}>
+          <div className={styles.selectors} data-multiple-connections={connections.length > 1 || undefined}>
           <select
             aria-label="智能体 API 供应商"
+            title={selected?.supplierName ?? "选择供应商"}
             value={selected?.supplierId ?? ""}
             disabled={busy}
             onChange={(e) => {
@@ -968,6 +1028,7 @@ export function AgentPanel(props: Props) {
           </select>
           <select
             aria-label="智能体模型群组"
+            title={selected?.group ?? "选择分组"}
             value={selected?.group ?? ""}
             disabled={busy}
             onChange={(e) => {
@@ -991,6 +1052,7 @@ export function AgentPanel(props: Props) {
           {connections.length > 1 && (
             <select
               aria-label="智能体分组连接"
+              title={selected?.connectionName ?? "选择连接"}
               value={selected?.connectionId ?? ""}
               disabled={busy}
               onChange={(e) => {
@@ -1007,17 +1069,14 @@ export function AgentPanel(props: Props) {
           {tk1688Selection ? (
             <Tk1688TextModelSelect
               label="智能体模型"
-              models={groupModels.map(model => ({
-                id: model.modelId, name: model.modelName, description: model.description,
-                metadata: model.metadata, pricing: model.pricing,
-                available: model.available, reason: model.reason,
-              }))}
+              models={textPickerModels}
               value={selected?.modelId ?? ""}
               disabled={busy}
               onChange={id => selectModel(groupModels.find(model => model.modelId === id))}
             />
           ) : <select
             aria-label="智能体模型"
+            title={selected?.modelName ?? "选择主模型"}
             value={modelKey}
             disabled={busy}
             onChange={(e) => selectModel(models.find((m) => keyOf(m) === e.target.value))}
@@ -1034,7 +1093,7 @@ export function AgentPanel(props: Props) {
           </select>}
           <select
               aria-label="思考强度"
-              title={selected?.reasoningNotice}
+              title={[`思考强度：${reasoningOptions.find(option => option.value === reasoning)?.label ?? reasoning}`, selected?.reasoningNotice].filter(Boolean).join(" · ")}
               value={reasoning}
               disabled={busy || !selected?.available}
               onChange={(e) => setReasoningChoice({ model: modelKey, value: e.target.value })}
@@ -1048,18 +1107,14 @@ export function AgentPanel(props: Props) {
               ))}
           </select>
         </div>
-        {reasoningOptions.length > 1 && reasoningSourceLabel && <small className={styles.reasoningSource}>{reasoningSourceLabel}</small>}
-        {selected?.reasoningNotice && <small className={styles.reasoningSource}>{selected.reasoningNotice}</small>}
-        {selected?.available && <div className={styles.mediaSupport} aria-label="模型参考素材支持">
-          {mediaKinds.map((type) => {
-            const supported = selected.capabilities[type.capability];
-            const limit = selected.inputLimits?.[type.limit];
-            return <span key={type.kind}>
-              {type.label}：{!supported ? "暂不可用" : `${type.kind === "image" && selected.imageInputStatus === "assumed" ? "默认支持" : "支持"} · ${limit === undefined ? "供应商未注明数量" : `最多 ${limit} ${type.unit}`}`}
-            </span>;
-          })}
-          {selected.inputLimits?.maxAssets !== undefined && <span>供应商每轮总量：最多 {selected.inputLimits.maxAssets} 个附件</span>}
-          <small>本应用每轮最多 16 个附件，单个 16 MB，总计 24 MB；引用节点素材计入。</small>
+        {reasoningNotes.length > 0 && <div className={styles.reasoningNotes} title={reasoningNotes.join(" · ")}>
+          {reasoningNotes.map(note => <small key={note} className={styles.reasoningSource}>{note}</small>)}
+        </div>}
+        {selected?.available && <div className={styles.mediaSupport} aria-label="模型参考素材支持"
+          title={[...mediaSupportLabels, supplierAttachmentLimit, attachmentLimitsLabel].filter(Boolean).join(" · ")}>
+          {mediaSupportLabels.map((label, index) => <span key={mediaKinds[index]!.kind}>{label}</span>)}
+          {supplierAttachmentLimit && <span>{supplierAttachmentLimit}</span>}
+          <small>{attachmentLimitsLabel}</small>
         </div>}
         </details>
         <div className={styles.actions}>
@@ -1075,7 +1130,9 @@ export function AgentPanel(props: Props) {
             }}
           />
           <button
+            type="button"
             aria-label="添加参考素材"
+            title="添加参考素材"
             disabled={busy || !selected?.available || !acceptedMedia.length}
             onClick={() => fileInput.current?.click()}
           >
@@ -1088,14 +1145,15 @@ export function AgentPanel(props: Props) {
               : acceptedMedia.length ? "添加参考素材" : "当前模型仅可读取文字"}
           </small>
           {busy ? (
-            <button aria-label="停止分析" onClick={stop}>
+            <button type="button" aria-label="停止分析" title="停止本次分析" onClick={stop}>
               <Square size={16} />
             </button>
           ) : (
             <button
+              type="button"
               className={styles.primary}
               aria-label="发送任务"
-              title={intent === "chat" ? "发送消息" : "制作待确认的画布方案"}
+              title={intent === "chat" ? "发送消息（输入文字后可按 Enter；Shift+Enter 换行）" : "制作待确认的画布方案（输入文字后可按 Enter；Shift+Enter 换行）"}
               disabled={
                 !selected?.available || (!draft.trim() && !attachments.length)
               }
@@ -1107,9 +1165,10 @@ export function AgentPanel(props: Props) {
           )}
         </div>
       </div>
+      </DeferredPanelContent>
     </section>
   );
-}
+});
 
 function ArtifactEditor({
   artifact,

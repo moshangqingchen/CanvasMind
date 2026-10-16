@@ -65,6 +65,10 @@ async function dragSelectedNodesFromGap(page: Page, source: Locator, result: Loc
 for (const failure of ["submission", "provider", "multi-selection", "marquee-selection"] as const) {
   test(`${failure}: 生成失败且结果被选中后仍能点击模型参数并保存`, async ({ page, request }) => {
     await page.setViewportSize({ width: 1440, height: 1080 });
+    // This scenario tests node/result selection, not the Agent. Set its
+    // isolated preference before hydration rather than sampling the initial
+    // false placeholder before the saved preference restores an open panel.
+    await page.addInitScript(() => localStorage.setItem("super-canvas:inspector-open", "false"));
     const connections: { id: string; supplierKey: string }[] = [];
     for (const name of ["失败参数供应商甲", "失败参数供应商乙"]) {
       const response = await request.post("/api/suppliers", {
@@ -129,27 +133,67 @@ for (const failure of ["submission", "provider", "multi-selection", "marquee-sel
     await page.goto(`/canvas/${canvas.id}`);
     const sidebar = page.getByRole("button", { name: "智能体面板", exact: true });
     if ((await sidebar.getAttribute("aria-expanded")) === "true") await sidebar.click();
+    await expect(sidebar).toHaveAttribute("aria-expanded", "false");
     const source = page.locator('.react-flow__node[data-id="source"]');
     await page.getByRole("button", { name: "打开 失败参数测试 模型与参数", exact: true }).click();
     const panel = page.getByRole("dialog", { name: "失败参数测试 模型与参数", exact: true });
     await expect(panel).toBeVisible();
-    await expect(source.locator(".node-config-summary strong")).toHaveText("失败回归模型甲");
+    await expect(source.locator(".node-config-summary strong")).toHaveText("失败参数供应商甲 · 失败回归模型甲");
     await page.getByRole("button", { name: "运行 失败参数测试 节点", exact: true }).click();
     const result = page.locator(".react-flow__node:has(.generated-result-state.failed)");
     await expect(result).toHaveCount(1);
-    await expect(result.getByLabel("失败诊断")).toContainText("隔离测试：");
+    await expect(result.locator(".node-error-summary > span")).toContainText("隔离测试：");
+    // Result cards keep a compact summary; the complete diagnosis is owned by
+    // the existing source-details modal rather than mounted inside the node.
+    await result.getByRole("button", { name: /^查看原因：/u }).click();
+    const failureDetails = page.getByRole("dialog", { name: "结果来源与参数", exact: true });
+    await expect(failureDetails.getByLabel("失败诊断")).toContainText("隔离测试：");
+    await failureDetails.getByRole("button", { name: "关闭来源详情", exact: true }).click();
+    await expect(failureDetails).toBeHidden();
     await expect.poll(() => submissions).toBe(1);
 
     await expect(panel).toBeVisible();
     const multiple = failure === "multi-selection" || failure === "marquee-selection";
+    if (failure === "multi-selection") {
+      // Closing the result-owned diagnosis can leave that result selected.
+      // Establish the single source selection before testing Ctrl-add: a
+      // Ctrl-click on an already selected result correctly removes it.
+      await source.locator(".node-head").click();
+      await expect(source).toHaveClass(/selected/);
+      await expect(result).not.toHaveClass(/selected/);
+      await expect(page.locator(".react-flow__node.selected")).toHaveCount(1);
+    }
     if (failure === "marquee-selection") {
       const sourceBounds = await source.boundingBox();
       const resultBounds = await result.boundingBox();
       expect(sourceBounds).not.toBeNull();
       expect(resultBounds).not.toBeNull();
+      const upperLeft = {
+        x: Math.min(sourceBounds!.x, resultBounds!.x),
+        y: Math.min(sourceBounds!.y, resultBounds!.y),
+      };
+      const start = await page.evaluate((corner) => {
+        const pane = document.querySelector(".react-flow__pane");
+        const point = { x: corner.x - 15, y: corner.y - 15 };
+        if (document.elementFromPoint(point.x, point.y) !== pane) {
+          // The full-screen canvas extends behind the floating top islands.
+          // Stay outside both nodes while moving below an island only when
+          // it actually blocks the original blank-pane starting point.
+          const coveringIslands = [...document.querySelectorAll("[data-canvas-island]")]
+            .map(element => element.getBoundingClientRect())
+            .filter(bounds => bounds.width > 0 && bounds.height > 0 &&
+              bounds.left <= point.x && point.x < bounds.right &&
+              bounds.top <= point.y && point.y < bounds.bottom);
+          for (const bounds of coveringIslands) point.y = Math.max(point.y, bounds.bottom + 4);
+        }
+        return { ...point, hitsPane: document.elementFromPoint(point.x, point.y) === pane };
+      }, upperLeft);
+      expect(start.x).toBeLessThan(upperLeft.x);
+      expect(start.y).toBeLessThan(upperLeft.y);
+      expect(start.hitsPane).toBe(true);
       await page.keyboard.down("Control");
       try {
-        await page.mouse.move(Math.min(sourceBounds!.x, resultBounds!.x) - 15, Math.min(sourceBounds!.y, resultBounds!.y) - 15);
+        await page.mouse.move(start.x, start.y);
         await page.mouse.down();
         await page.mouse.move(
           Math.max(sourceBounds!.x + sourceBounds!.width, resultBounds!.x + resultBounds!.width) + 15,
@@ -163,7 +207,10 @@ for (const failure of ["submission", "provider", "multi-selection", "marquee-sel
       multiple ? { modifiers: ["Control"] } : {},
     );
     await expect(result).toHaveClass(/selected/);
-    if (multiple) await expect(source).toHaveClass(/selected/);
+    if (multiple) {
+      await expect(source).toHaveClass(/selected/);
+      await expect(page.locator(".react-flow__node.selected")).toHaveCount(2);
+    }
     else await expect(source).not.toHaveClass(/selected/);
     await expect(panel).toBeVisible();
     if (failure === "marquee-selection") await dragSelectedNodesFromGap(page, source, result);

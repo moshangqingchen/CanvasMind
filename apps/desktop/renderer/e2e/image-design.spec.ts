@@ -806,7 +806,7 @@ test("任务中心展示当前项目状态并导出不含提示词的诊断", as
   await page.getByRole("menuitem", {name: "运行历史"}).click();
   const center = page.getByRole("dialog", {name: "运行历史", exact: true});
   await expect(center.getByRole("heading", {name: "任务中心"})).toBeVisible();
-  await center.getByLabel("筛选任务状态").selectOption("succeeded");
+  await center.getByRole("tab", { name: /^已完成/ }).click();
   await expect(center.getByText("已完成", {exact: true}).last()).toBeVisible();
   await center.getByText("查看任务进度", {exact: true}).click();
   const downloaded = page.waitForEvent("download");

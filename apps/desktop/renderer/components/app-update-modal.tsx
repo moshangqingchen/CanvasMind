@@ -119,7 +119,7 @@ export function AppUpdateModal({ open, status, busy = false, onClose, onCheck, o
     <section ref={ref} className={styles.modal} role="dialog" aria-modal="true" aria-labelledby="app-update-title" aria-describedby="app-update-description" tabIndex={-1}>
       <header className={styles.header}>
         <div><p className={styles.eyebrow}>SUPER CANVAS</p><h2 id="app-update-title">超级画布更新</h2></div>
-        <button className={styles.close} onClick={onClose} type="button" aria-label="关闭更新窗口"><X size={18} /></button>
+        <button className={styles.close} onClick={onClose} type="button" aria-label="关闭更新窗口" title="关闭更新窗口（Esc）"><X size={18} /></button>
       </header>
       <div className={styles.body}>
         <div className={styles.hero} data-error={phase === "failed"}>
