@@ -1,13 +1,52 @@
 import { fetchProviderJson, providerFetch, isTk1688ApiUrl, isTk1688CatalogSource, parseTk1688AccountModelIds,
-  parseTk1688Marketplace, normalizeTk1688CnyModel, TK1688_MARKETPLACE_URL, TK1688_STATUS_URL, type ModelDescriptor } from "@super-canvas/providers";
+  parseTk1688Marketplace, normalizeTk1688CnyModel, supplierDirectoryPayloadComplete, TK1688_MARKETPLACE_URL, TK1688_STATUS_URL, type ModelDescriptor } from "@super-canvas/providers";
 import { getSupplierRecord } from "./supplier-service";
 import { openSupplierSiteSession, supplierSiteLoginCacheIdentity } from "./supplier-site-session";
 import { isAgentTextModel } from "./agent-model-capabilities";
 import { catalogScopedMap } from "./catalog-scope-cache";
+import { readCatalogLoaderJson, type CatalogLoaderReadOptions } from "./catalog-loader-http";
 
 type Connection = { provider: string; config: Readonly<Record<string, unknown>> };
 type CatalogRead = { marketplace?: unknown; status?: unknown; accountModelIds?: string[]; checkedAt: string; complete: boolean };
 const cache = catalogScopedMap<string, { until: number; result: Promise<CatalogRead> }>("tk1688-marketplace");
+
+export type Tk1688CatalogReadSource = "marketplace" | "status" | "account-models";
+export const TK1688_CATALOG_READ_URLS = { marketplace: TK1688_MARKETPLACE_URL,
+  status: TK1688_STATUS_URL, "account-models": "https://tk1688.com/api/user/models" } as const;
+const object = (value: unknown): Record<string, unknown> | undefined =>
+  value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+
+/** Site-session transport is supplied only for account-models. Opening that
+ * session is not a prerequisite for the two public reads or the Key read.
+ * These are offers/account visibility, never exact-Key permissions. */
+export async function collectTk1688CatalogRead(source: Tk1688CatalogReadSource, options: CatalogLoaderReadOptions) {
+  const checkedAt = options.checkedAt ?? new Date().toISOString();
+  const sourceUrl = TK1688_CATALOG_READ_URLS[source];
+  const payload = await readCatalogLoaderJson(sourceUrl, options);
+  if (source === "account-models") {
+    const accountVisibleModelIds = parseTk1688AccountModelIds(payload);
+    return { source, sourceUrl, checkedAt, complete: accountVisibleModelIds !== undefined && supplierDirectoryPayloadComplete(payload),
+      accountVisibleModelIds: accountVisibleModelIds ?? [] };
+  }
+  if (source === "status") {
+    const root = object(payload), status = object(root?.data);
+    const positive = (value: unknown) => typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
+    const fx = positive(status?.payment_fx_rate_cny_per_usd);
+    const markup = typeof status?.platform_markup_percent === "number" && Number.isFinite(status.platform_markup_percent) && status.platform_markup_percent >= 0
+      ? status.platform_markup_percent : undefined;
+    return { source, sourceUrl, checkedAt, complete: !!status && root?.success !== false && !root?.error,
+      ...(fx !== undefined ? { paymentFxRateCnyPerUsd: fx } : {}), ...(markup !== undefined ? { platformMarkupPercent: markup } : {}) };
+  }
+  const parsed = parseTk1688Marketplace(payload, undefined, { checkedAt });
+  const data = object(object(payload)?.data), items = Array.isArray(data?.items) ? data.items : [];
+  const offers = items.flatMap(value => {
+    const row = object(value);
+    return row && typeof row.alias === "string" && row.alias.trim() && typeof row.base_model === "string" && row.base_model.trim()
+      ? [{ modelId: row.alias, baseModelId: row.base_model, active: row.status === "active" && row.channel_alive !== false }] : [];
+  });
+  return { source, sourceUrl, checkedAt, complete: parsed.complete && offers.length === items.length && supplierDirectoryPayloadComplete(payload),
+    catalogOffers: offers, models: parsed.models, excludedModelIds: parsed.excludedModelIds };
+}
 
 /** Text models deliberately have canvasRunnable=false. Refreshing a mixed
  * directory must validate the selection against this connection's consumer. */

@@ -30,6 +30,18 @@ import type {
 import { CanvasRevisionConflictError } from "./types.js";
 import { applyImageDesignReview } from "./image-design-review.js";
 import {
+  catalogObservationModeSetting,
+  catalogPipelineSettingKey,
+  prepareCatalogObservation,
+  prepareCatalogReservation,
+  type CatalogObservationCommit,
+  type CatalogObservationPrepared,
+  type CatalogObservationReservation,
+  type CatalogObservationReserve,
+  type CatalogObservationView,
+  type CatalogPipelineState,
+} from "./catalog-observation.js";
+import {
   assertSnapshotCredentials,
   assertRunConnections,
   assertSupplierCommit,
@@ -221,6 +233,40 @@ export class MemoryRepository implements Repository {
     const rows = input.connections.map(row => clone(row));
     if (supplier) this.suppliers.set(supplier.id, supplier);
     for (const row of rows) this.connections.set(row.id, row);
+  }
+
+  protected catalogObservationView(supplierId: string): CatalogObservationView {
+    return { supplier: this.suppliers.get(supplierId), connections: this.connections,
+      pipeline: this.applicationSettings.get(catalogPipelineSettingKey(supplierId)),
+      mode: this.applicationSettings.get(catalogObservationModeSetting) };
+  }
+
+  protected publishCatalogObservation(prepared: CatalogObservationPrepared): void {
+    if (prepared.supplier) this.suppliers.set(prepared.supplier.id, prepared.supplier);
+    for (const row of prepared.connections) this.connections.set(row.id, row);
+    this.applicationSettings.set(catalogPipelineSettingKey(prepared.pipeline.supplierId), prepared.pipeline);
+  }
+
+  async reserveCatalogObservation(input: CatalogObservationReserve): Promise<CatalogObservationReservation> {
+    const prepared = prepareCatalogReservation(this.catalogObservationView(input.identity.supplierId), input);
+    const reservation = clone(prepared.reservation);
+    this.publishCatalogObservation({ connections: [], pipeline: prepared.pipeline });
+    return reservation;
+  }
+
+  protected prepareCatalogObservation(input: CatalogObservationCommit): CatalogObservationPrepared {
+    const prepared = prepareCatalogObservation(this.catalogObservationView(input.reservation.identity.supplierId), input);
+    const timestamp = now();
+    if (prepared.supplier) prepared.supplier.updatedAt = timestamp;
+    for (const row of prepared.connections) row.updatedAt = timestamp;
+    return prepared;
+  }
+
+  async commitCatalogObservation(input: CatalogObservationCommit): Promise<CatalogPipelineState> {
+    const prepared = this.prepareCatalogObservation(input);
+    const result = clone(prepared.pipeline);
+    this.publishCatalogObservation(prepared);
+    return result;
   }
 
   private canvasNodeKey(record: NodeRunRecord): string | undefined {

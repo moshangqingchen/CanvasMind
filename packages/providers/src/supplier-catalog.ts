@@ -1156,3 +1156,4 @@ export async function discoverSupplierCatalog(
     "未读取到分组或模型目录，可以手动添加分组并配置 Key 后扫描模型",
   );
 }
+export { supplierDirectoryPayloadComplete } from "./supplier-directory-completeness.js";

@@ -1,4 +1,5 @@
 import type { SupplierVerificationRecord } from "./supplier-verification.js";
+import type { CatalogObservationCommit, CatalogObservationReservation, CatalogObservationReserve, CatalogPipelineState } from "./catalog-observation.js";
 export type JsonObject = Record<string, unknown>;
 
 export interface CanvasRecord {
@@ -410,6 +411,10 @@ export interface Repository {
   setApplicationSetting(key: string, value: unknown): Promise<void>;
   /** Compare the complete source records, then publish one catalog snapshot. */
   commitCatalogSnapshot(input: CatalogSnapshotCommit): Promise<void>;
+  /** Reserve an ordered read before dispatch; never performs upstream I/O. */
+  reserveCatalogObservation(input: CatalogObservationReserve): Promise<CatalogObservationReservation>;
+  /** Atomically apply owned catalog fields and the same observation's state. */
+  commitCatalogObservation(input: CatalogObservationCommit): Promise<CatalogPipelineState>;
   /** Confirm all current changes are durable before acknowledging a retried save. */
   flush?(): Promise<void>;
   listSupplierVerifications(): Promise<SupplierVerificationRecord[]>;

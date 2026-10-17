@@ -7,6 +7,9 @@ import { outsideCatalogRepository, withCatalogRepository } from "../../../../lib
 import { CATALOG_MODE_SETTING } from "../../../../lib/supplier-catalog-policy";
 import { isDeepStrictEqual } from "node:util";
 import type { SupplierRecord } from "@super-canvas/db";
+import { decryptSecret, providerFetch } from "@super-canvas/providers";
+import { requireServerMasterKey } from "../../../../lib/master-key";
+import { previewCatalogUpgradeReads } from "../../../../lib/catalog-upgrade-preview";
 
 export const dynamic = "force-dynamic";
 const scope = globalThis as typeof globalThis & { __supplierCatalogUpgrade?: SupplierCatalogUpgrade };
@@ -47,8 +50,21 @@ function service() {
     canContinue: () => globalThis.__superCanvasDesktopLifecycle?.draining !== true });
 }
 // The desktop session proxy authorizes browser requests before this route.
-export async function POST(): Promise<Response> {
+export async function POST(request?: Request): Promise<Response> {
   if (process.env.SUPERCANVAS_DESKTOP !== "true") return new Response(null, { status: 404 });
+  if (request && new URL(request.url).searchParams.has("readPreview")) {
+    const body = await request.json().catch(() => null) as { connectionId?: unknown } | null;
+    if (typeof body?.connectionId !== "string" || body.connectionId.length > 256)
+      return Response.json({ error: "请选择连接" }, { status: 400 });
+    return previewCatalogUpgradeReads(body.connectionId, { environment: process.env, repository,
+      readers: async connection => {
+        let apiKey = "";
+        try { if (connection.encryptedSecret) apiKey = decryptSecret(connection.encryptedSecret, requireServerMasterKey()); }
+        catch { /* Public sources are still independent; missing credentials are not an empty Key list. */ }
+        return { apiKey, fetchFor: spec => spec.authScope.kind === "site-account" ? undefined
+          : spec.authScope.kind === "connection-key" && !apiKey ? undefined : providerFetch };
+      } });
+  }
   service().start();
   return Response.json(await service().status(true), { status: 202, headers: { "Cache-Control": "no-store" } });
 }

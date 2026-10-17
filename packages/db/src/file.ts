@@ -2,6 +2,7 @@ import { mkdir, rename, unlink, writeFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { catalogPipelineSettingKey, prepareCatalogReservation, type CatalogObservationPrepared, type CatalogObservationReservation } from "./catalog-observation.js";
 import { setTimeout as delay } from "node:timers/promises";
 import type {
   AssetRecord,
@@ -552,6 +553,33 @@ export class FileRepository extends MemoryRepository {
       return { ...snapshot, suppliers: snapshot.suppliers?.map(row => commit.supplier && row.id === commit.supplier.id ? commit.supplier : row),
         connections: snapshot.connections.map(row => connections.get(row.id) ?? row) };
     }, () => super.commitCatalogSnapshot(commit));
+  }
+
+  override async reserveCatalogObservation(input: Parameters<MemoryRepository["reserveCatalogObservation"]>[0]): Promise<CatalogObservationReservation> {
+    const request = structuredClone(input);
+    let reservation!: CatalogObservationReservation, prepared!: CatalogObservationPrepared;
+    await this.catalogTransaction(snapshot => {
+      const result = prepareCatalogReservation(this.catalogObservationView(request.identity.supplierId), request);
+      reservation = structuredClone(result.reservation);
+      prepared = { connections: [], pipeline: result.pipeline };
+      return { ...snapshot, applicationSettings: { ...snapshot.applicationSettings,
+        [catalogPipelineSettingKey(result.pipeline.supplierId)]: result.pipeline } };
+    }, async () => { this.publishCatalogObservation(prepared); });
+    return reservation;
+  }
+
+  override async commitCatalogObservation(input: Parameters<MemoryRepository["commitCatalogObservation"]>[0]): ReturnType<MemoryRepository["commitCatalogObservation"]> {
+    const request = structuredClone(input);
+    let prepared!: CatalogObservationPrepared;
+    await this.catalogTransaction(snapshot => {
+      prepared = this.prepareCatalogObservation(request);
+      const rows = new Map(prepared.connections.map(row => [row.id, row]));
+      return { ...snapshot, applicationSettings: { ...snapshot.applicationSettings,
+        [catalogPipelineSettingKey(prepared.pipeline.supplierId)]: prepared.pipeline },
+        suppliers: snapshot.suppliers?.map(row => row.id === prepared.supplier?.id ? prepared.supplier : row),
+        connections: snapshot.connections.map(row => rows.get(row.id) ?? row) };
+    }, async () => { this.publishCatalogObservation(prepared); });
+    return structuredClone(prepared.pipeline);
   }
 
   override async saveSupplier(

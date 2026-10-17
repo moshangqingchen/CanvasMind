@@ -1,5 +1,6 @@
-import { supplierDirectoryBase, weAIFetch } from "@super-canvas/providers";
+import { supplierDirectoryBase, supplierDirectoryPayloadComplete, weAIFetch } from "@super-canvas/providers";
 import { catalogScopedMap } from "./catalog-scope-cache";
+import { readCatalogLoaderJson, readCatalogLoaderText, type CatalogLoaderReadOptions } from "./catalog-loader-http";
 import {
   WEAI_ADOBE_PER_REQUEST_GROUP,
   WEAI_ADOBE_PER_REQUEST_URL_GROUP,
@@ -341,6 +342,45 @@ function originFromBaseUrl(baseUrl: unknown): string {
     typeof baseUrl === "string" ? baseUrl : "https://asian-acc.we-token.cc",
   );
 }
+
+export type WeAiPricingReadSource = "model-plaza" | "official-docs";
+
+/** Unlike the legacy price helper, a scheduled read never silently sends a
+ * second request to the docs or substitutes another site's quotes. Site
+ * catalog names and price-parser aliases stay separate from Key membership. */
+export async function collectWeAiPricingRead(source: WeAiPricingReadSource,
+  options: CatalogLoaderReadOptions & { baseUrl: string }) {
+  const checkedAt = options.checkedAt ?? new Date().toISOString();
+  const origin = originFromBaseUrl(options.baseUrl);
+  if (source === "official-docs") {
+    if (origin !== "https://asian-acc.we-token.cc")
+      throw new Error("当前地址不使用其他站点的官方价格");
+    const sourceUrl = OFFICIAL_IMAGE_DOC_URL;
+    const groups = parseWeAiOfficialDocsPricing(await readCatalogLoaderText(sourceUrl, options, MAX_RESPONSE_BYTES), checkedAt, sourceUrl);
+    // The guide is explicitly a partial quote source, never a model inventory.
+    return { source, sourceUrl, checkedAt, complete: groups.size > 0, coverage: "partial" as const,
+      groups: [...groups.values()], catalogOffers: [] as { groupId: string; modelId: string }[] };
+  }
+  const sourceUrl = `${origin}${MODEL_PLAZA_PATH}`;
+  const payload = await readCatalogLoaderJson(sourceUrl, options, MAX_RESPONSE_BYTES);
+  const envelope = isRecord(payload) && isRecord(payload.data) ? payload.data : payload;
+  const rows = isRecord(envelope) && Array.isArray(envelope.groups) ? envelope.groups : undefined;
+  let validRows = !!rows;
+  const catalogOffers = (rows ?? []).flatMap(value => {
+    if (!isRecord(value) || !Array.isArray(value.models)) { validRows = false; return []; }
+    const groupId = stringValue(value.name) ?? stringValue(value.id);
+    if (!groupId) { validRows = false; return []; }
+    return value.models.flatMap(model => {
+      const modelId = isRecord(model) ? stringValue(model.name) ?? stringValue(model.id) : undefined;
+      if (!modelId) { validRows = false; return []; }
+      return [{ groupId, modelId }];
+    });
+  });
+  const complete = validRows && supplierDirectoryPayloadComplete(payload);
+  const groups = [...parseWeAiModelPlazaPricing(payload, checkedAt, sourceUrl).values()].map(group => ({ ...group, complete }));
+  return { source, sourceUrl, checkedAt, complete, coverage: "complete-list" as const, groups, catalogOffers };
+}
+
 async function fetchPricing(baseUrl: unknown): Promise<PricingCacheEntry> {
   const checkedAt = new Date().toISOString();
   const origin = originFromBaseUrl(baseUrl);

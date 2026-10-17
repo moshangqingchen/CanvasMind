@@ -1,5 +1,6 @@
 import { matchesSupplierTemplate } from "./supplier-template-source";
 import { catalogScopedValue } from "./catalog-scope-cache";
+import { readCatalogLoaderJson, readCatalogLoaderText, type CatalogLoaderReadOptions } from "./catalog-loader-http";
 import {
   providerFetch,
   mediaExpressionPricing,
@@ -12,6 +13,7 @@ import {
   cangyuanVideoTransport,
   isCangyuanNativeSeedanceRequest,
   isCangyuanMusicModel,
+  supplierDirectoryPayloadComplete,
   type ModelDescriptor,
   type ModelParameterDescriptor,
   type ModelParameterOption,
@@ -956,8 +958,8 @@ function imageDescriptorForRecord(
 
 export function cangyuanCatalogFromPricing(
   payload: PricingPayload,
+  checkedAt = new Date().toISOString(),
 ): CangyuanCatalogSnapshot {
-  const checkedAt = new Date().toISOString();
   if (!Array.isArray(payload.data)) throw new Error("沧元模型广场数据格式无效");
   const pricingRecords = payload.data.filter(isRecord) as PricingRecord[];
   const knownModels = new Map<string, ModelDescriptor>();
@@ -1455,6 +1457,33 @@ async function checkedFetch(
   });
   if (!response.ok) throw new Error(`沧元目录检查失败 (${response.status})`);
   return response;
+}
+
+export type CangyuanCatalogReadSource = "homepage" | "documentation" | "pricing";
+export const CANGYUAN_CATALOG_READ_PATHS = {
+  homepage: "/", documentation: "/docs/api", pricing: "/api/pricing",
+} as const;
+
+/** One fresh source read, without the legacy homepage/docs/pricing barrier.
+ * Public offers never become Key membership; the dispatcher records each read
+ * separately and performs the exact-Key inventory read independently. */
+export async function collectCangyuanCatalogRead(source: CangyuanCatalogReadSource,
+  options: CatalogLoaderReadOptions) {
+  const checkedAt = options.checkedAt ?? new Date().toISOString();
+  const sourceUrl = `${CANGYUAN_IMAGE_BASE_URL}${CANGYUAN_CATALOG_READ_PATHS[source]}`;
+  if (source !== "pricing") {
+    const text = await readCatalogLoaderText(sourceUrl, options);
+    return { source, sourceUrl, checkedAt, complete: text.trim().length > 0 };
+  }
+  const payload = await readCatalogLoaderJson(sourceUrl, options);
+  const root = isRecord(payload) ? payload : {};
+  const rows = Array.isArray(root.data) ? root.data : [];
+  const validRows = rows.every(row => isRecord(row) && typeof row.model_name === "string" && row.model_name.trim() &&
+    Array.isArray(row.enable_groups) && row.enable_groups.every(group => typeof group === "string" && group.trim()));
+  const snapshot = cangyuanCatalogFromPricing(root, checkedAt);
+  return { source, sourceUrl, checkedAt, complete: validRows && supplierDirectoryPayloadComplete(payload),
+    catalogOffers: snapshot.marketplaceGroups.flatMap(group => group.models.map(model => ({ groupId: group.id, modelId: model.id }))),
+    snapshot };
 }
 
 export async function loadCangyuanCatalog(options?: {

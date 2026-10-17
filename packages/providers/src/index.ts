@@ -61,3 +61,5 @@ export { hangImageBaseUrl, applyHangImageCapabilities } from "./hang-image-contr
 export * from "./c-open-image-contract.js";
 export * from "./provider-request-evidence.js";
 export * from "./cangyuan-audio-catalog.js";
+export { parseJiasuVideoApiExampleTemplate, type JiasuVideoApiExampleTemplate } from "./jiasu-api-examples.js";
+export { parseHangChatPrices, HANG_PRICE_URL } from "./hang-catalog-pricing.js";
