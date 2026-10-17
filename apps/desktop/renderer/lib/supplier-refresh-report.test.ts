@@ -154,7 +154,7 @@ describe("supplier refresh evidence", () => {
     const report = buildSupplierRefreshResult(supplier(), supplier({ scannedAt: "after" }), [connection([old])], [connection([failed], { modelScanCheckedAt: "after" })]);
     expect(report.connections![0]!.status).toBe("updated");
     expect(report.connections![0]!.priceChanges).toEqual([]);
-    expect(report.connections![0]!.priceIssues).toMatchObject([{ failed: true, message: "本次价格读取失败：$0.2/张（上次价格）" }]);
+    expect(report.connections![0]!.priceIssues).toMatchObject([{ failed: true, message: "本次价格读取失败：上次价格 · 采样时间 — · $0.2/张" }]);
     expect(report.status).toBe("partial");
     expect(report.message).toContain("价格读取异常 1 个模型");
   });

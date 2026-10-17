@@ -5,7 +5,8 @@ import { setTimeout as yieldBackground } from "node:timers/promises";
 import { MemoryRepository, type Repository, type ProviderConnectionRecord, type SupplierRecord } from "@super-canvas/db";
 import type { CatalogChangeRecord, CatalogCheckMode, CatalogConnectionStatus, CatalogFailureReason, CatalogUpgradeStatus } from "./supplier-catalog-contracts";
 import { CATALOG_CHECK_INTERVAL_MS, CATALOG_HISTORY_RETENTION_MS, CATALOG_MODE_SETTING, catalogChanges,
-  catalogMode, catalogPricesComplete, classifyCatalogFailure, clearCatalogManualMarker } from "./supplier-catalog-policy";
+  catalogMode, classifyCatalogFailure, clearCatalogManualMarker } from "./supplier-catalog-policy";
+import { mergeCatalogSnapshotPrices } from "./supplier-catalog-price-merge";
 export type { CatalogUpgradeStatus } from "./supplier-catalog-contracts";
 
 export const SUPPLIER_CATALOG_REVISION = "2026-10-10-jijiu-native-tier-parameters-v12";
@@ -65,7 +66,7 @@ export class SupplierCatalogUpgrade {
   private pending?: Promise<void>;
   private manualStateChanged = false;
   private state: CatalogUpgradeStatus = { revision: SUPPLIER_CATALOG_REVISION, mode: "daily", phase: "idle", total: 0,
-    refreshed: 0, unavailable: 0, failed: 0, updatedConnectionIds: [], manualConnectionIds: [], changedConnectionIds: [],
+    refreshed: 0, unavailable: 0, failed: 0, retainedPriceModelCount: 0, updatedConnectionIds: [], manualConnectionIds: [], changedConnectionIds: [],
     priceChangedSupplierIds: [], nextCheckAt: null, connections: [], history: [], noticeId: null };
   constructor(private readonly dependencies: Dependencies) {}
   private now(): number { return (this.dependencies.now ?? Date.now)(); }
@@ -81,7 +82,10 @@ export class SupplierCatalogUpgrade {
       return { connectionId: row.id, name: row.name, ...(supplier ? { supplierId: supplier.id, supplierName: supplier.name } : {}),
         manualRequired: row.config.catalogCheckManualRequired === true || mode === "off" && !revisionAttempted(row), paused: row.config.catalogCheckPaused === true,
         ...(typeof row.config.catalogCheckFailureReason === "string" ? { pauseReason: row.config.catalogCheckFailureReason as CatalogFailureReason } : {}),
-        ...(lastAttempt(row) ? { lastAttemptAt: lastAttempt(row) } : {}), nextCheckAt: next === null ? null : new Date(Math.max(now, next)).toISOString() };
+        ...(lastAttempt(row) ? { lastAttemptAt: lastAttempt(row) } : {}),
+        ...(Number.isInteger(row.config.catalogCheckRetainedPriceModelCount) && Number(row.config.catalogCheckRetainedPriceModelCount) > 0
+          ? { retainedPriceModelCount: Number(row.config.catalogCheckRetainedPriceModelCount) } : {}),
+        nextCheckAt: next === null ? null : new Date(Math.max(now, next)).toISOString() };
     });
     const upcoming = connections.map(row => row.nextCheckAt).filter((at): at is string => Boolean(at)).sort();
     const history = summary ? [] : rows.flatMap(row => historyOf(row, now)).sort((a, b) => b.checkedAt.localeCompare(a.checkedAt));
@@ -91,7 +95,7 @@ export class SupplierCatalogUpgrade {
   start(): void {
     if (this.pending) return;
     this.manualStateChanged = false;
-    this.state = { ...this.state, phase: "running", total: 0, refreshed: 0, unavailable: 0, failed: 0,
+    this.state = { ...this.state, phase: "running", total: 0, refreshed: 0, unavailable: 0, failed: 0, retainedPriceModelCount: 0,
       updatedConnectionIds: [], changedConnectionIds: [], priceChangedSupplierIds: [], noticeId: null };
     const work = () => this.run();
     this.pending = (this.dependencies.trackWrite ? this.dependencies.trackWrite(work) : work())
@@ -149,20 +153,23 @@ export class SupplierCatalogUpgrade {
       try {
         const result = await this.dependencies.refreshCatalog(reserved, supplier, staging, refreshId);
         if (this.dependencies.canContinue?.() === false || catalogMode(await repository.getApplicationSetting(CATALOG_MODE_SETTING)) === "off") break;
-        const staged = await staging.getConnection(reserved.id), stagedSupplier = supplier ? await staging.getSupplier(supplier.id) ?? undefined : undefined;
+        let staged = await staging.getConnection(reserved.id), stagedSupplier = supplier ? await staging.getSupplier(supplier.id) ?? undefined : undefined;
         if (!result.complete || !staged || supplier && (!stagedSupplier || stagedSupplier.scanComplete !== true || !["live", "empty"].includes(stagedSupplier.scanStatus))) {
           await this.failure(reserved, classifyCatalogFailure(result.status, result.code)); continue;
         }
-        if (!catalogPricesComplete(stagedSupplier, staged) || !await catalogScopeReadsComplete(staging)) { await this.failure(reserved, "incomplete"); continue; }
+        if (!Array.isArray(staged.config.modelCatalogModels) || !await catalogScopeReadsComplete(staging)) { await this.failure(reserved, "incomplete"); continue; }
         const stagedRows = await staging.listConnections();
         if (stagedRows.length !== affectedBefore.length || stagedRows.some(row => {
           const expected = affectedBefore.find(before => before.id === row.id);
           return !expected || fingerprint(row) !== fingerprint(expected);
         })) { await this.failure(reserved, "conflict"); continue; }
+        const merged = mergeCatalogSnapshotPrices(reserved, staged, supplier, stagedSupplier, attemptedAt);
+        staged = merged.connection; stagedSupplier = merged.supplier;
         const changes = catalogChanges(reserved, staged, supplier, stagedSupplier);
         const record: CatalogChangeRecord | undefined = changes.length ? { id: randomUUID(), checkedAt: attemptedAt, connectionId: reserved.id,
           connectionName: reserved.name, ...(supplier ? { supplierId: supplier.id, supplierName: supplier.name } : {}), changes } : undefined;
         const config: ProviderConnectionRecord["config"] = { ...clearCatalogManualMarker(staged.config), catalogCheckLastResult: "success", catalogUpgradeRevision: SUPPLIER_CATALOG_REVISION,
+          catalogCheckRetainedPriceModelCount: merged.retainedPriceModelCount,
           catalogCheckHistory: [...historyOf(reserved, this.now()), ...(record ? [record] : [])] };
         if (Object.hasOwn(reserved.config, "defaultModel")) config.defaultModel = reserved.config.defaultModel;
         else delete config.defaultModel;
@@ -178,7 +185,8 @@ export class SupplierCatalogUpgrade {
         await repository.commitCatalogSnapshot({ expectedApplicationSettings: { [CATALOG_MODE_SETTING]: commitMode },
           ...(supplier ? { expectedSupplier: supplier, supplier: publishSupplier } : {}),
           expectedConnections: affectedBefore, connections: [{ ...staged, config }] });
-        this.state.refreshed++; this.state.updatedConnectionIds.push(reserved.id);
+        this.state.refreshed++; this.state.retainedPriceModelCount = (this.state.retainedPriceModelCount ?? 0) + merged.retainedPriceModelCount;
+        this.state.updatedConnectionIds.push(reserved.id);
         if (reserved.config.catalogCheckManualRequired === true || reserved.config.catalogCheckPaused === true) this.manualStateChanged = true;
         if (record) {
           this.state.changedConnectionIds.push(reserved.id);
@@ -192,7 +200,7 @@ export class SupplierCatalogUpgrade {
       }
       await yieldBackground(0);
     }
-    if (this.state.changedConnectionIds.length || this.manualStateChanged)
+    if (this.state.changedConnectionIds.length || this.manualStateChanged || this.state.retainedPriceModelCount)
       this.state.noticeId = `${SUPPLIER_CATALOG_REVISION}:${this.now()}:${randomUUID()}`;
   }
 }

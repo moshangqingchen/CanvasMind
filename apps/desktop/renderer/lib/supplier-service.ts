@@ -791,6 +791,12 @@ export async function scanSupplierRecord(
       },
       session?.fetch,
     );
+    // Selectable account groups may be absent from the model feed. Their empty
+    // option placeholders are not evidence for removing previously saved IDs.
+    // Preserve the manual scan's existing partial-display behavior; automatic
+    // whole-supplier publication must wait for complete membership evidence.
+    if (options.catalogOnly && result.modelListsComplete === false) result = { ...result, complete: false,
+      error: "部分分组的型号列表未完整读取，保留历史目录，请稍后刷新" };
     const missingLegacyGroup = options.catalogOnly && session?.kind === "sub2api" &&
       !["failed", "unauthorized"].includes(result.status) && initialConnections.some(connection =>
         connection.encryptedSecret && connection.config.usage !== "disabled" &&

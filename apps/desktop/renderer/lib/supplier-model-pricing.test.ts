@@ -1,4 +1,33 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ProviderConnectionRecord, SupplierRecord } from "@super-canvas/db";
+import { mergeCatalogSnapshotPrices } from "./supplier-catalog-price-merge";
+import { modelPickerPriceData } from "./model-picker-data";
+
+it("automatic retained label-only quotes keep their sample through cached rebind and never price a new model from an old group quote", () => {
+  const oldAt = "2026-10-11T02:03:04Z", checkedAt = "2026-10-17T04:00:00Z";
+  const model: ModelDescriptor = { id: "cached/full-id", name: "Cached", operations: ["image.generate"], outputKinds: ["image"], metadata: {
+    priceLabel: "¥0.10/张", priceCheckedAt: oldAt, priceSource: "supplier-catalog", supplierPriceGroup: "Group", supplierPriceGroupId: "7" } };
+  const connection: ProviderConnectionRecord = { id: "cache-key", name: "Cache", provider: "openai", createdAt: oldAt, updatedAt: oldAt,
+    config: { accountKeyGroup: "Group", accountKeyGroupId: "7", modelCatalogModels: [model] } as unknown as ProviderConnectionRecord["config"] };
+  const supplier: SupplierRecord = { id: "cache-supplier", name: "Cache", supplierKey: "fixture", kind: "newapi", siteUrl: "https://cache.invalid", apiUrl: "https://cache.invalid/v1",
+    createdAt: oldAt, updatedAt: oldAt, scanStatus: "live", scanComplete: true, scannedAt: oldAt,
+    catalog: { groups: [{ id: "Group", supplierGroupId: "7", label: "Group", source: "catalog", details: { source: "key-groups", referencePrice: "¥0.10/张" },
+      models: [{ id: model.id, capability: "image", priceLabel: "¥0.10/张", metadata: model.metadata }] }] } };
+  const nextSupplier = structuredClone(supplier); nextSupplier.scannedAt = checkedAt;
+  nextSupplier.catalog.groups[0]!.details = { source: "key-groups" };
+  nextSupplier.catalog.groups[0]!.models = [{ id: model.id, capability: "image" }, { id: "new/no-price", capability: "image" }];
+  const unpriced = [{ ...model, metadata: {} }, { id: "new/no-price", name: "New", operations: ["image.generate"], outputKinds: ["image"] }];
+  const merged = mergeCatalogSnapshotPrices(connection, { ...connection, config: { ...connection.config, modelCatalogModels: unpriced as unknown as ProviderConnectionRecord["config"][string] } }, supplier, nextSupplier, checkedAt);
+  const catalog = { ...merged.supplier!.catalog, kind: "newapi", status: "live", complete: true, checkedAt } as SupplierCatalogDiscovery;
+  const rebound = applySupplierCatalogPrices(merged.connection.config.modelCatalogModels as unknown as ModelDescriptor[], "Group", catalog, supplier.siteUrl,
+    { savedCatalog: true, supplierGroupId: "7" });
+  expect(rebound[0]?.metadata).toMatchObject({ priceStatus: "partial", priceCheckedAt: oldAt });
+  // A prose quote stays prose; the cache read must not invent a numeric tariff.
+  expect(rebound[0]?.pricing).toBeUndefined();
+  expect(modelPickerPriceData(rebound[0])).toContain(`上次价格 · 采样时间 ${oldAt}`);
+  expect(modelPickerPriceData(rebound[1])).toBe("—");
+  expect(rebound[1]?.pricing).toBeUndefined();
+});
 const isolatedPricingNetwork = vi.hoisted(() => ({ fetch: vi.fn(), lookup: vi.fn(async () => [{ address: "203.0.113.10", family: 4 }]) }));
 vi.mock("node:dns/promises", () => ({ lookup: isolatedPricingNetwork.lookup }));
 beforeEach(() => {

@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { getRepository, MemoryRepository, type ProviderConnectionRecord, type SupplierRecord } from "@super-canvas/db";
 import { SupplierCatalogUpgrade, SUPPLIER_CATALOG_REVISION, supportedCatalogConnection } from "./supplier-catalog-upgrade";
-import { CATALOG_CHECK_INTERVAL_MS, CATALOG_MODE_SETTING, catalogChanges, catalogPricesComplete, clearCatalogManualMarker } from "./supplier-catalog-policy";
+import { CATALOG_CHECK_INTERVAL_MS, CATALOG_MODE_SETTING, catalogChanges, clearCatalogManualMarker } from "./supplier-catalog-policy";
+import { catalogHasPrice } from "./supplier-catalog-price-merge";
 import { scopedCatalogRepository, withCatalogRepository } from "./catalog-repository-scope";
 
 const model = (id = "full-model-id", priceLabel = "¥0.10/张 · 4K / high") => ({ id, operations: ["image.generate"], metadata: { priceLabel } });
@@ -84,12 +85,12 @@ describe("supplier automatic catalog policy", () => {
     expect(f.refreshCatalog).toHaveBeenCalledTimes(1);
     expect((await f.repository.getConnection("active"))?.config.modelCatalogModels).toEqual(original.config.modelCatalogModels);
   });
-  it.each(["missing-price", "partial", "throw"])("%s preserves old directory, parameters, price and supplier state", async failure => {
+  it.each(["partial", "throw"])("%s preserves old directory, parameters, price and supplier state", async failure => {
     const f = await fixture(); const original = await f.save();
     f.refreshCatalog.mockImplementation(async (row, _supplier, staging) => {
       await staging.saveConnection({ ...row, config: { ...row.config, modelCatalogModels: [{ id: "new", operations: [] }], connector: { changed: true } } });
       if (failure === "throw") throw new Error("network");
-      return { complete: failure === "missing-price", code: "incomplete" };
+      return { complete: false, code: "incomplete" };
     });
     f.service.start(); await f.service.settle();
     const actual = (await f.repository.getConnection("active"))!;
@@ -97,6 +98,37 @@ describe("supplier automatic catalog policy", () => {
     expect(actual.config.connector).toBeUndefined();
     expect(actual.encryptedSecret).toBe(original.encryptedSecret);
     expect(actual.config.catalogCheckManualRequired).toBe(true);
+  });
+  it("complete lists publish new models and parameters while retaining missing exact-model prices", async () => {
+    const f = await fixture();
+    const previous = { ...model(), metadata: { ...model().metadata, priceCheckedAt: "2026-10-10T00:00:00Z" } };
+    await f.save("active", { modelCatalogModels: [previous, model("delisted")], connector: { models: [previous] }, modelProtocolTemplate: { models: [previous] } });
+    f.refreshCatalog.mockImplementation(async (row, _supplier, staging) => {
+      const current = { id: "full-model-id", operations: ["image.generate"], parameters: [{ key: "quality", default: "max" }] };
+      await staging.saveConnection({ ...row, config: { ...row.config, modelCatalogModels: [current, { id: "new/without-price", operations: [] }],
+        connector: { models: [current] }, modelProtocolTemplate: { models: [current] }, modelScanComplete: true, modelScanStatus: "live" } });
+      return { complete: true };
+    });
+    f.service.start(); await f.service.settle();
+    const actual = (await f.repository.getConnection("active"))!;
+    expect(actual.config.modelCatalogModels).toMatchObject([{ id: "full-model-id", parameters: [{ key: "quality", default: "max" }],
+      metadata: { priceStatus: "partial", priceCheckedAt: "2026-10-10T00:00:00Z", priceLabel: "¥0.10/张 · 4K / high（上次价格）" } }, { id: "new/without-price" }]);
+    expect(actual.config.catalogCheckRetainedPriceModelCount).toBe(1);
+    const status = await f.service.status();
+    expect(status).toMatchObject({ refreshed: 1, failed: 0, retainedPriceModelCount: 1, manualConnectionIds: [],
+      connections: [expect.objectContaining({ retainedPriceModelCount: 1 })] });
+    expect(status.history[0]?.changes.map(change => change.kind)).toEqual(["model-changed", "model-added", "model-removed"]);
+    expect(status.history[0]?.changes.some(change => change.kind === "price")).toBe(false);
+    expect(status.noticeId).toBeTruthy();
+  });
+  it("retained prices alone are reported without manufacturing a price history change", async () => {
+    const f = await fixture(); await f.save();
+    f.refreshCatalog.mockImplementation(async (row, _supplier, staging) => {
+      await staging.saveConnection({ ...row, config: { ...row.config, modelCatalogModels: [{ id: "full-model-id", operations: ["image.generate"] }] } });
+      return { complete: true };
+    });
+    f.service.start(); await f.service.settle();
+    expect(await f.service.status()).toMatchObject({ refreshed: 1, retainedPriceModelCount: 1, changedConnectionIds: [], history: [], noticeId: expect.any(String) });
   });
   it("concurrent user changes reject the complete staged snapshot", async () => {
     const f = await fixture(); await f.save();
@@ -171,10 +203,11 @@ describe("catalog snapshot and diff invariants", () => {
     await expect(f.repository.commitCatalogSnapshot({ expectedConnections: [first, second], connections: [{ ...first, name: "must-not-write" }] })).rejects.toThrow();
     expect((await f.repository.getConnection("first"))?.name).toBe("first");
   });
-  it("zero price is valid; missing price and stale groups are incomplete", async () => {
+  it("zero price is valid and an unpublished price stays absent", async () => {
     const f = await fixture(), row = await f.save();
-    expect(catalogPricesComplete(undefined, { ...row, config: { modelCatalogModels: [{ id: "zero", pricing: { unitAmount: 0, unit: "image", currency: "CNY" } }] } })).toBe(true);
-    expect(catalogPricesComplete(undefined, { ...row, config: { modelCatalogModels: [{ id: "missing" }] } })).toBe(false);
+    expect(catalogHasPrice({ id: "zero", pricing: { unitAmount: 0, unit: "image", currency: "CNY" } })).toBe(true);
+    expect(catalogHasPrice({ id: "missing" })).toBe(false);
+    expect(catalogHasPrice((row.config.modelCatalogModels as unknown[])[0])).toBe(true);
   });
   it("identifies added/removed full IDs without changes from timestamps/key order", async () => {
     const f = await fixture(), row = await f.save();

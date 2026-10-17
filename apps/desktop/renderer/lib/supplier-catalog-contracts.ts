@@ -26,6 +26,7 @@ export interface CatalogConnectionStatus {
   paused: boolean;
   lastAttemptAt?: string;
   nextCheckAt: string | null;
+  retainedPriceModelCount?: number;
 }
 export interface CatalogUpgradeStatus {
   revision: string;
@@ -35,6 +36,7 @@ export interface CatalogUpgradeStatus {
   refreshed: number;
   unavailable: number;
   failed: number;
+  retainedPriceModelCount?: number;
   updatedConnectionIds: string[];
   manualConnectionIds: string[];
   changedConnectionIds: string[];

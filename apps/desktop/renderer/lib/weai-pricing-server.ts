@@ -23,8 +23,8 @@ interface PricingCacheEntry {
   readonly groups: ReadonlyMap<string, WeAiLiveGroupPricing>;
 }
 
-const cachedPricing = catalogScopedMap<string, PricingCacheEntry>("weai-pricing");
-const pendingPricing = catalogScopedMap<string, Promise<PricingCacheEntry>>("weai-pricing-pending");
+const cachedPricing = catalogScopedMap<string, PricingCacheEntry>("weai-pricing", "auxiliary");
+const pendingPricing = catalogScopedMap<string, Promise<PricingCacheEntry>>("weai-pricing-pending", "auxiliary");
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);

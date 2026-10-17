@@ -28,11 +28,13 @@ type Connection = { config: Readonly<Record<string, unknown>> };
 const unknownPrice =
   /价格以(?:平台|模型广场)为准|价格未公布|价格查询失败|价格需登录查询|价格未查询|价格目录未完整读取|暂未取得报价|价格未知|价格未确定|价格条件待确认/u;
 type CatalogCacheEntry = { until: number; result: Promise<SupplierCatalogDiscovery> };
+// These lookups enrich an existing inventory without adding/removing model IDs.
+// Automatic publication separately requires complete supplier and Key lists.
 const cache = catalogScopedMap<
   string,
   CatalogCacheEntry
->("supplier-pricing");
-const refreshCache = catalogScopedMap<string, CatalogCacheEntry>("supplier-pricing-refresh");
+>("supplier-pricing", "auxiliary");
+const refreshCache = catalogScopedMap<string, CatalogCacheEntry>("supplier-pricing-refresh", "auxiliary");
 export interface JiasuSupplierExampleContext {
   supplierId: string;
   sourceId: string;
@@ -677,9 +679,10 @@ export function applySupplierCatalogPrices(
         priceUnavailableReason: catalogModel?.metadata?.jiasuCatalogPricingIncomplete === true || jijiuIncomplete ? String(catalogModel?.metadata?.priceUnavailableReason ?? "官方价格条件待确认") : "官方价格条件待确认",
         priceCheckedAt: catalog.checkedAt, priceLastAttemptAt: catalog.checkedAt, supplierPriceGroup: group } };
     }
-    if (catalogModel?.metadata?.supplierCatalogModelStale === true && !hasOwnPrice(model)) {
+    const historicalCatalogPrice = catalogModel?.metadata?.priceStatus === "partial" || /（上次价格）$/u.test(catalogModel?.priceLabel ?? "");
+    if (catalogModel && (catalogModel.metadata?.supplierCatalogModelStale === true || historicalCatalogPrice) && !hasOwnPrice(model)) {
       const retainedPricing = structuredCatalogPrice(catalogModel.metadata);
-      const retainedCheckedAt = retainedPricing?.checkedAt ?? catalogModel.metadata.supplierCatalogPriceCheckedAt;
+      const retainedCheckedAt = catalogModel.metadata?.priceCheckedAt ?? retainedPricing?.checkedAt ?? catalogModel.metadata?.supplierCatalogPriceCheckedAt;
       const retainedAt = Date.parse(String(retainedCheckedAt ?? ""));
       const sameGroupPrice = priceGroup === group && typeof model.metadata?.priceLabel === "string" && !unknownPrice.test(model.metadata.priceLabel) &&
         (!Number.isFinite(retainedAt) || Number.isFinite(priceAt) && priceAt >= retainedAt);
@@ -689,7 +692,7 @@ export function applySupplierCatalogPrices(
         retainedCheckedAt;
       const priced = typeof label === "string" && !unknownPrice.test(label);
       return { ...model, pricing: priced ? previousPricing ?? pricingFromSupplierEvidence(label, undefined, String(checkedAt ?? ""), sourceUrl) : undefined,
-        metadata: { ...catalogInterfaceMetadata(model, catalogModel, catalog, true),
+        metadata: { ...catalogInterfaceMetadata(model, catalogModel, catalog, catalogModel?.metadata?.supplierCatalogModelStale === true),
           priceLabel: priced ? `${label.replace(/（上次价格）$/u, "")}（上次价格）` : reason,
           priceSource: "supplier-catalog", supplierPriceGroup: group, ...groupIdentityMetadata, priceStatus: "partial",
           priceCheckedAt: checkedAt ?? "", priceLastAttemptAt: catalog.checkedAt } };

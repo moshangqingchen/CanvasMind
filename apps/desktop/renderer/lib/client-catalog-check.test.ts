@@ -28,6 +28,7 @@ describe("catalog check client scheduling", () => {
 describe("catalog check notices", () => {
   it("does not notify for a timestamp-only update", () => {
     expect(catalogCheckNotice({ noticeId: null, priceChangedSupplierIds: [], changedConnectionIds: [], manualConnectionIds: [] })).toBe("");
+    expect(catalogCheckNotice({ noticeId: null, priceChangedSupplierIds: [], changedConnectionIds: [], manualConnectionIds: [], retainedPriceModelCount: 32 })).toBe("");
   });
   it("counts suppliers once and keeps manual attention visible", () => {
     expect(catalogCheckNotice({ noticeId: "change", priceChangedSupplierIds: ["a", "b", "a"], changedConnectionIds: ["c"], manualConnectionIds: ["d"] })).toBe("2 个供应商价格有变动 · 1 个连接需要手动刷新");
@@ -35,8 +36,14 @@ describe("catalog check notices", () => {
   it("reports added or removed models without asserting a price change", () => {
     expect(catalogCheckNotice({ noticeId: "change", priceChangedSupplierIds: [], changedConnectionIds: ["c", "c"], manualConnectionIds: [] })).toBe("已更新 1 个连接的型号目录");
   });
+  it("attaches a retained-price count without describing it as a price change", () => {
+    const status = { noticeId: "change", priceChangedSupplierIds: [], changedConnectionIds: ["c"], manualConnectionIds: [], retainedPriceModelCount: 32 };
+    expect(catalogCheckNotice(status)).toBe("已更新 1 个连接的型号目录 · 部分型号沿用上次价格（32 个）");
+    expect(catalogCheckNotice({ ...status, retainedPriceModelCount: 0 })).toBe("已更新 1 个连接的型号目录");
+    expect(catalogCheckNotice({ ...status, priceChangedSupplierIds: ["s"] })).toBe("1 个供应商价格有变动 · 部分型号沿用上次价格（32 个）");
+  });
   it("uses short reason classifications", () => {
     expect(catalogFailureLabel("authentication")).toBe("鉴权");
-    expect(catalogFailureLabel("incomplete")).toBe("目录或价格未完整读取");
+    expect(catalogFailureLabel("incomplete")).toBe("型号列表未完整读取");
   });
 });

@@ -1,7 +1,7 @@
 import type { ProviderConnectionRecord, SupplierRecord } from "@super-canvas/db";
-import type { ModelDescriptor } from "@super-canvas/providers";
 import { supplierGroupPriceLabel, supplierGroupResolutionLabel } from "@super-canvas/providers/supplier-group-details";
-import { modelPickerPriceData, modelPickerPriceLabelData } from "./model-picker-data";
+import { modelPickerPriceData } from "./model-picker-data";
+import { catalogGroupIdentity, catalogPriceDescriptor } from "./supplier-catalog-price-merge";
 import type { CatalogChange, CatalogCheckMode, CatalogFailureReason } from "./supplier-catalog-contracts";
 
 export const CATALOG_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -18,7 +18,8 @@ function canonical(value: unknown): unknown {
 }
 function priceValue(value: unknown): unknown {
   const row = object(value), metadata = object(row.metadata);
-  return canonical({ pricing: structuredPrice(row), priceLabel: row.priceLabel ?? metadata.priceLabel,
+  const label = row.priceLabel ?? metadata.priceLabel;
+  return canonical({ pricing: structuredPrice(row), priceLabel: typeof label === "string" ? label.replace(/（上次价格）$/u, "") : label,
     ...Object.fromEntries(Object.entries(metadata).filter(([key]) =>
       ["billingIncludesInputDuration", "billingExpression", "priceExpression", "priceConditions", "measuredPrice"].includes(key))) });
 }
@@ -27,28 +28,8 @@ function structuredPrice(row: Record<string, unknown>): unknown {
   return row.pricing ?? metadata.secureSkillCatalogPricing ?? metadata.chuangxiangCatalogPricing ?? metadata.tk1688Pricing ??
     metadata.weaiLegacyPricing ?? metadata.sub2apiPlazaPricing ?? metadata.miaowuCatalogPricing ?? metadata.hangCatalogPricing ?? metadata.officialCatalogPricing;
 }
-function priceDescriptor(value: unknown): ModelDescriptor {
-  const row = object(value), metadata = object(row.metadata);
-  return { ...row, id: String(row.id ?? ""), name: String(row.name ?? row.id ?? ""),
-    operations: Array.isArray(row.operations) ? row.operations : [],
-    metadata: { ...metadata, ...(typeof row.priceLabel === "string" ? { priceLabel: row.priceLabel } : {}) },
-    pricing: structuredPrice(row) } as ModelDescriptor;
-}
-function hasPrice(value: unknown): boolean {
-  const metadata = object(object(value).metadata);
-  if (["partial", "failed", "unknown", "unavailable"].includes(String(metadata.priceStatus ?? "")) ||
-    ["partial", "failed", "unauthorized"].includes(String(metadata.priceLastAttemptStatus ?? ""))) return false;
-  return modelPickerPriceData(priceDescriptor(value)) !== "—";
-}
-export function catalogPricesComplete(supplier: SupplierRecord | undefined, connection: ProviderConnectionRecord): boolean {
-  const models = connection.config.modelCatalogModels;
-  if (!Array.isArray(models) || !models.every(hasPrice)) return false;
-  if (!supplier) return true;
-  return supplier.catalog.groups.every(group => group.details?.stale !== true && group.models.every(model =>
-    hasPrice(model) || modelPickerPriceLabelData(group.details?.referencePrice) !== "—"));
-}
 function priceText(value: unknown): string {
-  return modelPickerPriceData(priceDescriptor(value));
+  return modelPickerPriceData(catalogPriceDescriptor(value));
 }
 const parameterFields = ["key", "label", "control", "valueType", "default", "min", "max", "step", "options", "allowCustomValue", "operations", "required", "visibleWhen", "constraints"];
 const modelFieldLabels: Record<string, string> = { name: "名称", provider: "提供方", capability: "目录分类", protocol: "接口协议", operations: "操作", capabilities: "能力", inputKinds: "输入素材类型", outputKinds: "输出类型", parameters: "参数", limits: "素材与输入限制", isDefault: "目录默认型号", canvasRunnable: "可用于画布", agentCapabilities: "已记录的助手能力", reasoningOptions: "已记录的思考档位" };
@@ -122,16 +103,23 @@ export function catalogChanges(before: ProviderConnectionRecord, after: Provider
       [`${group.label}（${group.id}）`, groupPriceText(group),
         group.details?.concurrencyLimit !== undefined ? `并发上限：${group.details.concurrencyLimit}` : "",
         group.details?.rpmLimit !== undefined ? `每分钟请求上限：${group.details.rpmLimit}` : ""].filter(Boolean).join(" · ");
-    const old = new Map(oldSupplier.catalog.groups.map(group => [group.supplierGroupId ?? group.id, group]));
-    const next = new Map(newSupplier.catalog.groups.map(group => [group.supplierGroupId ?? group.id, group]));
+    const old = new Map(oldSupplier.catalog.groups.map(group => [catalogGroupIdentity(group), group]));
+    const next = new Map(newSupplier.catalog.groups.map(group => [catalogGroupIdentity(group), group]));
     for (const [key, group] of next) {
       const previous = old.get(key);
       if (!previous) changes.push({ kind: "group-added", groupId: group.id, after: group.label });
       else {
-        if (JSON.stringify(groupPrice(previous)) !== JSON.stringify(groupPrice(group)))
-          changes.push({ kind: "price", groupId: group.id, before: groupPriceText(previous), after: groupPriceText(group) });
-        if (JSON.stringify(groupValue(previous)) !== JSON.stringify(groupValue(group)))
-          changes.push({ kind: "group-changed", groupId: group.id, before: groupText(previous), after: groupText(group) });
+        // An absent supplementary group quote is not evidence that its price
+        // became zero/unknown. This comparison-only view never enters saved
+        // groups, where it could accidentally price a newly discovered model.
+        const compared: typeof group = { ...group, details: group.details ? { ...group.details } : previous.details ? { source: previous.details.source } : undefined };
+        if (compared.details && previous.details) for (const field of ["referencePrice", "imagePrices", "rateMultiplier", "imageRateMultiplier"] as const)
+          if (compared.details[field] === undefined && previous.details[field] !== undefined)
+            Object.assign(compared.details, { [field]: previous.details[field] });
+        if (JSON.stringify(groupPrice(previous)) !== JSON.stringify(groupPrice(compared)))
+          changes.push({ kind: "price", groupId: group.id, before: groupPriceText(previous), after: groupPriceText(compared) });
+        if (JSON.stringify(groupValue(previous)) !== JSON.stringify(groupValue(compared)))
+          changes.push({ kind: "group-changed", groupId: group.id, before: groupText(previous), after: groupText(compared) });
         compareModels(previous.models, group.models, group.id);
       }
     }
@@ -145,7 +133,7 @@ export function classifyCatalogFailure(status?: number, code?: unknown): Catalog
   if (status === 401 || status === 403 || /credential|unauthor|permission|authentication|token/u.test(text)) return "authentication";
   if (/unsupported|not.support|不支持/u.test(text) || status === 404 || status === 405) return "unsupported";
   if (/network|timeout|abort|fetch|网络/u.test(text)) return "network";
-  if (/incomplete|missing.price|invalid.response/u.test(text)) return "incomplete";
+  if (/incomplete|invalid.response/u.test(text)) return "incomplete";
   return "upstream";
 }
 export function catalogMode(value: unknown): CatalogCheckMode {

@@ -72,7 +72,7 @@ export function CatalogCheckSettings({ review = false, ready, selectedSupplierId
   const attention = status?.mode === "off" ? status.connections : manual;
   const history = status?.history.filter(record => all || record.supplierId === selectedSupplierId && Boolean(selectedSupplierId) || selectedConnectionIds.includes(record.connectionId)) ?? [];
   return <section className={styles.settings} aria-label="供应商目录自动检查设置">
-    <div className={styles.heading}><div><strong>自动检查供应商目录与价格</strong><p>完整读取后才更新；失败时保留已有目录和价格。</p></div>
+    <div className={styles.heading}><div><strong>自动检查供应商目录与价格</strong><p>型号列表读全后更新目录；缺失的价格沿用上次记录。</p></div>
       <select aria-label="自动检查供应商目录与价格" value={status?.mode ?? "daily"} disabled={!status || busy} onChange={event => void save(event.target.value as CatalogCheckMode)}>
         <option value="off">关闭</option><option value="upgrade">仅软件升级后</option><option value="daily">每天一次（默认）</option>
       </select>
@@ -80,6 +80,7 @@ export function CatalogCheckSettings({ review = false, ready, selectedSupplierId
     {status?.mode === "off" && <p className={styles.caption}>自动检查已关闭；已有连接可手动刷新。</p>}
     {status?.mode === "upgrade" && <p className={styles.caption}>目录版本变化后每个连接尝试一次，失败后可手动刷新。</p>}
     {status?.mode === "daily" && <p className={styles.caption}>每 24 小时最多尝试一次；连续 3 次鉴权、余额或不支持失败后暂停。</p>}
+    {!!status?.retainedPriceModelCount && status.retainedPriceModelCount > 0 && <p className={styles.caption} role="status">{status.retainedPriceModelCount} 个型号沿用上次价格；采样时间见对应型号报价。</p>}
     {error && <p role="status" className={styles.error}>{error} <button className="sm-button" type="button" onClick={() => void load()}>重试读取设置</button></p>}
     <button type="button" className={styles.disclosure} aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>目录变更与待处理连接{manual.length ? "（" + manual.length + "）" : ""}</button>
     {expanded && <div className={styles.review}>

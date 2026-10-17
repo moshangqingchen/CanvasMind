@@ -31,11 +31,30 @@ describe("automatic catalog process cache isolation", () => {
     await withCatalogRepository(other, async () => { catalogScopedValue("unit-catalog", () => ({ snapshot: { source: "live" } })); });
     expect(await catalogScopeReadsComplete(other)).toBe(true);
   });
-  it("rejected and missing documentation results remain incomplete without leaking into other scopes", async () => {
-    const stage = new MemoryRepository(), docs = catalogScopedMap<string, { text: Promise<string | undefined> }>("unit-docs");
+  it("missing auxiliary documentation does not invalidate membership or leak into other scopes", async () => {
+    const stage = new MemoryRepository(), docs = catalogScopedMap<string, { text: Promise<string | undefined> }>("unit-docs", "auxiliary");
     docs.set("url", { text: Promise.resolve("foreground-valid") });
     await withCatalogRepository(stage, async () => { docs.set("url", { text: Promise.resolve(undefined) }); });
-    expect(await catalogScopeReadsComplete(stage)).toBe(false);
+    expect(await catalogScopeReadsComplete(stage)).toBe(true);
     expect(await docs.get("url")!.text).toBe("foreground-valid");
+  });
+  it("failed auxiliary prices cannot mask an incomplete inventory read", async () => {
+    const stage = new MemoryRepository();
+    await withCatalogRepository(stage, async () => {
+      catalogScopedValue("quotes", () => ({ result: Promise.resolve({ status: "failed", complete: false }) }), "auxiliary");
+      catalogScopedValue("inventory", () => ({ result: Promise.resolve({ status: "live", complete: false }) }));
+    });
+    expect(await catalogScopeReadsComplete(stage)).toBe(false);
+  });
+  it("supplementary quote failures allow a complete inventory and preserve process isolation", async () => {
+    const stage = new MemoryRepository();
+    const quotes = catalogScopedMap<string, unknown>("prices", "auxiliary");
+    quotes.set("current", { amount: 12 });
+    await withCatalogRepository(stage, async () => {
+      quotes.set("current", { status: "failed", complete: false });
+      catalogScopedValue("inventory", () => ({ result: Promise.resolve({ status: "live", complete: true }) }));
+    });
+    expect(await catalogScopeReadsComplete(stage)).toBe(true);
+    expect(quotes.get("current")).toEqual({ amount: 12 });
   });
 });

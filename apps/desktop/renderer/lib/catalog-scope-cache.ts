@@ -9,19 +9,20 @@ const scopedCaches = runtime.__superCanvasCatalogScopeCaches ??= new WeakMap<Rep
 
 /** Automatic reads have disposable process caches. They never restore over, or
  * publish partial data into, a concurrent foreground price/document cache. */
-export function catalogScopedValue<T>(key: string, create: () => T): T | undefined {
+export function catalogScopedValue<T>(key: string, create: () => T, purpose: "inventory" | "auxiliary" = "inventory"): T | undefined {
   const repository = runtime.__superCanvasCatalogRepositoryScope?.getStore();
   if (!repository) return undefined;
   let cache = scopedCaches.get(repository);
   if (!cache) { cache = new Map(); scopedCaches.set(repository, cache); }
-  if (!cache.has(key)) cache.set(key, create());
-  return cache.get(key) as T;
+  const scopedKey = `${purpose}:${key}`;
+  if (!cache.has(scopedKey)) cache.set(scopedKey, create());
+  return cache.get(scopedKey) as T;
 }
-export function catalogScopedMap<K, V>(key: string): Map<K, V> {
+export function catalogScopedMap<K, V>(key: string, purpose: "inventory" | "auxiliary" = "inventory"): Map<K, V> {
   const foreground = new Map<K, V>();
   return new Proxy(foreground, {
     get(_target, property) {
-      const target = catalogScopedValue(key, () => new Map<K, V>()) ?? foreground;
+      const target = catalogScopedValue(key, () => new Map<K, V>(), purpose) ?? foreground;
       const value = Reflect.get(target, property, target);
       return typeof value === "function" ? value.bind(target) : value;
     },
@@ -43,7 +44,11 @@ export async function catalogScopeReadsComplete(repository: Repository): Promise
     return true;
   };
   try {
-    for (const value of scopedCaches.get(repository)?.values() ?? []) if (!await inspect(value)) return false;
+    // Documentation and supplementary quotes never establish membership. Their
+    // failure cannot invalidate an independently complete model inventory.
+    // Inventory/price feeds that also provide model IDs stay fail-closed.
+    for (const [key, value] of scopedCaches.get(repository)?.entries() ?? [])
+      if (!key.startsWith("auxiliary:") && !await inspect(value)) return false;
     return true;
   } catch { return false; }
 }

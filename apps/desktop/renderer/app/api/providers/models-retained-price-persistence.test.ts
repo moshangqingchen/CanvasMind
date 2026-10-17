@@ -118,7 +118,7 @@ describe("normal local GET persists existing same-source official prices without
       }
       expect(persisted[i]?.pricing).toMatchObject({ checkedAt: quoteAt, sourceUrl: kind.startsWith("chuang") ? "https://vapi.chuangxiangai.asia/model-plaza" : "https://genimage.pro" });
       expect(persisted[i]?.metadata).toMatchObject({ priceStatus: "partial", priceCheckedAt: quoteAt, priceLastAttemptAt: failedAt, priceLastAttemptStatus: "failed" });
-      expect(modelPickerPriceData(persisted[i])).toContain("上次记录");
+      expect(modelPickerPriceData(persisted[i])).toContain(`上次价格 · 采样时间 ${quoteAt}`);
       expect(modelPriceSummary(persisted[i], { quality: "max" })).toContain(kind === "chuang-chat" ? "输入" : kind === "chuang" ? "0.2" : "0.16");
     }
     expect(apiModels.map(row => row.pricing)).toEqual(persisted.map(row => row.pricing));

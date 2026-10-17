@@ -23,6 +23,7 @@ import { normalizeCangyuanAudioCatalogModel } from "./cangyuan-audio-catalog.js"
 import { cangyuanCatalogVideoPricing } from "./cangyuan-catalog-video-pricing.js";
 import { isChuangxiangVideoModel } from "./chuangxiang-video-contract.js";
 import { readMonsterChannelPlaza, type SupplierChannelPlazaEvidence } from "./supplier-channel-plaza.js";
+import { supplierDirectoryPayloadComplete } from "./supplier-directory-completeness.js";
 export { isCyberAfeiUnpricedCatalogVideo } from "./cyberafei-catalog-evidence.js";
 
 export type SupplierSiteKind =
@@ -61,6 +62,9 @@ export interface SupplierCatalogDiscovery {
   checkedAt: string;
   /** A partial directory must not hide groups found by previous scans. */
   complete?: boolean;
+  /** Account group options alone do not establish that their model lists are
+   * empty. Automatic whole-supplier publication requires this extra evidence. */
+  modelListsComplete?: boolean;
   error?: string;
 }
 
@@ -155,6 +159,16 @@ function accountGroupNames(groups: DiscoveredSupplierGroup[], available: Discove
       } as SupplierGroupDetails } : {}) });
   }
   return distinctGroupNames([...merged.values()]);
+}
+
+function accountModelListsComplete(groups: DiscoveredSupplierGroup[], available: DiscoveredSupplierGroup[]): boolean {
+  if (groups.length > 500 || available.length > 500) return false;
+  return available.every(account => {
+    if (account.supplierGroupId && groups.some(group => group.supplierGroupId === account.supplierGroupId)) return true;
+    const named = groups.filter(group => !group.supplierGroupId && group.id === account.id);
+    // Two numeric account groups sharing one public name cannot share proof.
+    return named.length === 1 && available.filter(group => group.id === account.id).length === 1;
+  });
 }
 
 /** Credentials and query strings are never retained in supplier URLs. */
@@ -309,14 +323,17 @@ export function parseSupplierCatalog(
   groups: DiscoveredSupplierGroup[];
   kind: SupplierSiteKind;
   recognized: boolean;
+  /** Parser safety bounds must never establish a complete directory. */
+  complete?: false;
 } {
   const root = record(payload);
   const data = record(root?.data);
   const nestedGroups = root?.groups ?? data?.groups;
   const byGroup = new Map<string, DiscoveredSupplierGroup>();
+  let complete = true;
   const add = (id: string, label: string, model?: DiscoveredSupplierModel, officialId?: string) => {
     const key = officialId ? `site-id:${officialId}` : `name:${id}`;
-    if (!id || (byGroup.size >= 500 && !byGroup.has(key))) return;
+    if (!id || (byGroup.size >= 500 && !byGroup.has(key))) { complete = false; return; }
     const group = byGroup.get(key) ?? {
       id,
       label: label || id,
@@ -324,18 +341,16 @@ export function parseSupplierCatalog(
       models: [],
       ...(officialId ? { supplierGroupId: officialId } : {}),
     };
-    if (
-      model &&
-      group.models.length < 3000 &&
-      !group.models.some((item) => item.id === model.id)
-    )
-      group.models.push(normalizeCangyuanAudioCatalogModel(model, priceDisplay.supplierSiteUrl, id));
+    if (model && !group.models.some((item) => item.id === model.id)) {
+      if (group.models.length >= 3000) complete = false;
+      else group.models.push(normalizeCangyuanAudioCatalogModel(model, priceDisplay.supplierSiteUrl, id));
+    }
     byGroup.set(key, group);
   };
   if (Array.isArray(nestedGroups)) {
     for (const raw of nestedGroups) {
       const group = record(raw);
-      if (!group) continue;
+      if (!group) { complete = false; continue; }
       const id = text(group.name ?? group.id);
       const label = text(group.label ?? group.description ?? group.name) || id;
       const officialId = supplierGroupId(group.id);
@@ -346,7 +361,7 @@ export function parseSupplierCatalog(
       if (saved && details) saved.details = details;
       for (const rawModel of Array.isArray(group.models) ? group.models : []) {
         let model = modelFrom(rawModel);
-        if (!model) continue;
+        if (!model) { complete = false; continue; }
         const videoBilling = record(record(rawModel)?.video_pricing)?.billing_mode;
         if (isChuangxiangCatalogSource(priceDisplay.supplierSiteUrl) && officialId === "27" &&
             isChuangxiangVideoModel(model.id) && ["per_request", "per_second"].includes(String(videoBilling))) {
@@ -369,7 +384,7 @@ export function parseSupplierCatalog(
               priceLabel: "价格条件待确认", metadata: { ...model.metadata, chuangxiangCatalogPricingIncomplete: true, priceUnavailableReason: "官方价格条件待确认" } } : model, officialId);
       }
     }
-    return { groups: distinctGroupNames([...byGroup.values()]), kind: "sub2api", recognized: true };
+    return { groups: distinctGroupNames([...byGroup.values()]), kind: "sub2api", recognized: true, ...(!complete ? { complete: false as const } : {}) };
   }
   const ratios = record(root?.group_ratio ?? data?.group_ratio);
   const usable = record(root?.usable_group ?? data?.usable_group);
@@ -499,7 +514,7 @@ export function parseSupplierCatalog(
   for (const raw of entries) {
     const item = record(raw);
     const model = modelFrom(raw);
-    if (!model) continue;
+    if (!model) { complete = false; continue; }
     const enabled = values(item?.enable_groups);
     const memberships = enabled.length
       ? enabled
@@ -527,6 +542,7 @@ export function parseSupplierCatalog(
     groups: [...byGroup.values()],
     kind: isNewApi ? "newapi" : "openai-compatible",
     recognized: Array.isArray(rawItems) || isNewApi,
+    ...(!complete ? { complete: false as const } : {}),
   };
 }
 
@@ -674,6 +690,7 @@ export async function discoverSupplierCatalog(
     kind: detected,
     status: parsed.groups.length ? "live" : "empty",
     checkedAt,
+    ...(parsed.complete === false ? { complete: false } : {}),
   });
   const unavailable = (
     message: string,
@@ -711,15 +728,20 @@ export async function discoverSupplierCatalog(
         : "/api/user/self/groups";
     const result = await probe(`${siteUrl}${path}`, siteHeaders(platform));
     const groups =
-      result.status === 200
+      result.status === 200 && supplierDirectoryPayloadComplete(result.payload)
         ? parseSupplierKeyGroups(result.payload, platform, { supplierSiteUrl: siteUrl })
         : null;
+    const groupData = record(result.payload)?.data;
+    const nestedGroupData = record(groupData)?.groups;
+    const rawGroupCount = platform === "newapi" ? Object.keys(record(groupData) ?? {}).length
+      : Array.isArray(groupData) ? groupData.length : Array.isArray(nestedGroupData) ? nestedGroupData.length : 0;
     if (groups)
       return {
         groups,
         kind: platform,
         status: groups.length ? "live" : "empty",
         checkedAt,
+        ...(rawGroupCount > 500 ? { modelListsComplete: false } : {}),
       };
     if ([401, 403].includes(result.status))
       return {
@@ -789,13 +811,13 @@ export async function discoverSupplierCatalog(
     const channelPageComplete = (response: { status: number; payload?: unknown }) => {
       const payload = record(response.payload);
       const channels = Array.isArray(payload?.data) ? payload.data : record(payload?.data)?.channels;
-      return response.status === 200 && !!payload && payload.success !== false && !payload.error &&
-        !(typeof payload.code === "number" && ![0, 200].includes(payload.code)) && Array.isArray(channels) &&
+      return response.status === 200 && supplierDirectoryPayloadComplete(response.payload) && !!payload && payload.success !== false && !payload.error &&
+        !(typeof payload.code === "number" && ![0, 200].includes(payload.code)) && Array.isArray(channels) && channels.length <= 500 &&
         channels.every(value => {
           const channel = record(value);
           return !!channel && Array.isArray(channel.platforms) && channel.platforms.every(value => {
             const platform = record(value);
-            return !!platform && Array.isArray(platform.groups) && Array.isArray(platform.supported_models);
+            return !!platform && Array.isArray(platform.groups) && Array.isArray(platform.supported_models) && platform.supported_models.length <= 3000;
           });
         });
     };
@@ -938,7 +960,8 @@ export async function discoverSupplierCatalog(
         // factors when /api/pricing omits group_ratio. Join only exact groups.
         parsed = parseSupplierCatalog({ ...payload, group_ratio: ratios }, currentPrice.options);
       }
-      return success({ ...parsed, groups: await channelPlazaGroups(await ledgerGroups(accountGroupNames(parsed.groups, available.groups))) }, platform);
+      return { ...success({ ...parsed, groups: await channelPlazaGroups(await ledgerGroups(accountGroupNames(parsed.groups, available.groups))) }, platform),
+        ...(available.modelListsComplete === false || !accountModelListsComplete(parsed.groups, available.groups) ? { modelListsComplete: false } : {}) };
     }
     return { ...success({ ...parsed, groups: await channelPlazaGroups(await ledgerGroups(parsed.groups)) }, platform), complete: false,
       error: "模型目录已读取；账号分组说明暂不可用，保留历史分组，请稍后重试或检查站点登录" };
@@ -954,7 +977,7 @@ export async function discoverSupplierCatalog(
     const accountIds = parseTk1688AccountModelIds(account.payload);
     const parsed = parseTk1688Marketplace(market.payload, status.payload, { checkedAt,
       ...(accountIds ? { accountModelIds: accountIds } : {}) });
-    if (market.status !== 200 || !parsed.complete)
+    if (market.status !== 200 || !supplierDirectoryPayloadComplete(market.payload) || !parsed.complete)
       return { groups: [], kind: "newapi", status: "failed", checkedAt, complete: false,
         error: "词元模型广场暂不可完整读取，保留历史目录，请稍后刷新" };
     const models: DiscoveredSupplierModel[] = parsed.models.map(model => ({
@@ -969,6 +992,7 @@ export async function discoverSupplierCatalog(
       .map(group => ({ ...group, models }));
     return { groups, kind: "newapi", status: models.length ? "live" : "empty", checkedAt,
       complete: parsed.complete && accountIds !== undefined && available?.complete !== false && available?.status === "live",
+      ...(available?.modelListsComplete === false ? { modelListsComplete: false } : {}),
       ...(accountIds === undefined ? { error: "公开模型广场已读取；账号渠道权限暂不可读，公开商品不代表当前 Key 可用" } : {}) };
   }
 
@@ -981,7 +1005,7 @@ export async function discoverSupplierCatalog(
     const payload = record(pricing.payload);
     const parsed = parseSupplierCatalog(pricing.payload, { supplierSiteUrl: siteUrl, checkedAt });
     if (
-      pricing.status === 200 &&
+      pricing.status === 200 && supplierDirectoryPayloadComplete(pricing.payload) &&
       payload &&
       "data" in payload &&
       payload.success !== false &&
@@ -1042,7 +1066,7 @@ export async function discoverSupplierCatalog(
         authorization: `Bearer ${input.token.trim()}`,
       });
     const data = record(record(plaza.payload)?.data);
-    if (plaza.status === 200 && data && Array.isArray(data.groups)) {
+    if (plaza.status === 200 && supplierDirectoryPayloadComplete(plaza.payload) && data && Array.isArray(data.groups)) {
       const parsed = parseSupplierCatalog(plaza.payload, { supplierSiteUrl: siteUrl, checkedAt });
       if (parsed.groups.length) {
         // Model plaza can publish prices for only a subset of an account's
@@ -1123,7 +1147,7 @@ export async function discoverSupplierCatalog(
     for (const url of supplierModelUrls(input.apiUrl || siteUrl)) {
       const models = await probe(url);
       const parsed = parseSupplierCatalog(models.payload);
-      if (models.status === 200 && parsed.recognized)
+      if (models.status === 200 && supplierDirectoryPayloadComplete(models.payload) && parsed.recognized)
         return success(parsed, kind);
       if (models.status === 401 || models.status === 403) break;
     }

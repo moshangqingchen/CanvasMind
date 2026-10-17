@@ -26,6 +26,20 @@ function priceUnit(pricing: StructuredModelPricing): string {
     : pricing.billingUnit === "request" || pricing.kind === "per-request" ? "次" : "张";
 }
 
+/** The price sample is independent of the latest directory attempt. */
+export function modelPickerPriceSampleAt(model: Pick<ModelDescriptor, "metadata" | "pricing"> | null | undefined): string | undefined {
+  for (const value of [model?.metadata?.priceCheckedAt, model?.pricing?.checkedAt, model?.metadata?.supplierCatalogPriceCheckedAt])
+    if (typeof value === "string" && value.trim() && Number.isFinite(Date.parse(value))) return value.trim();
+}
+
+function historicalPricePrefix(model: ModelDescriptor, label: string): string {
+  if (model.metadata?.priceStatus !== "partial" && !/（上次价格）$/u.test(label)) return "";
+  // A measured charge remains a separate source, even if an older record is displayed.
+  const name = model.metadata?.priceSource === "generated-result" ? "上次记录" : "上次价格";
+  const checkedAt = modelPickerPriceSampleAt(model);
+  return `${name}${checkedAt ? ` · 采样时间 ${checkedAt}` : name === "上次价格" ? " · 采样时间 —" : ""} · `;
+}
+
 /** All recorded prices keep their exact billing conditions and sample scope.
  * This is a directory display. Request validation and cost estimation remain separate.
  */
@@ -34,8 +48,9 @@ export function modelPickerPriceData(model: ModelDescriptor | null | undefined):
   model = applyUserImageSizePresets(normalizeTk1688CnyModel(model));
   const metadata = model.metadata;
   const measured = metadata?.priceSource === "generated-result" ? record(metadata.measuredPrice) : undefined;
-  const label = typeof metadata?.priceLabel === "string" ? metadata.priceLabel.trim() : "";
-  const historical = metadata?.priceStatus === "partial" || /（上次价格）$/u.test(label);
+  const rawLabel = typeof metadata?.priceLabel === "string" ? metadata.priceLabel.trim() : "";
+  const historical = historicalPricePrefix(model, rawLabel);
+  const label = historical ? rawLabel.replace(/（上次价格）$/u, "") : rawLabel;
   if (measured && label) {
     const sample = record(measured.parameters);
     const scope = Object.entries(sample ?? {}).filter(([key, value]) => key !== "prompt" && scalar(value) !== undefined &&
@@ -43,7 +58,7 @@ export function modelPickerPriceData(model: ModelDescriptor | null | undefined):
       .map(([key, value]) => `${parameterNames[key] ?? key}=${String(value)}`);
     // Counts and durations are shown; reference URLs and raw prompts are not.
     for (const [key, value] of Object.entries(sample ?? {})) if (Array.isArray(value)) scope.push(`${parameterNames[key] ?? key}数量=${value.length}`);
-    return `${historical ? "上次记录 · " : ""}${label}${scope.length ? ` · 实测参数：${scope.join("，")}` : ` · 实测请求参数：${sample && Object.keys(sample).length === 0 ? "省略" : "—"}`}`;
+    return `${historical}${label}${scope.length ? ` · 实测参数：${scope.join("，")}` : ` · 实测请求参数：${sample && Object.keys(sample).length === 0 ? "省略" : "—"}`}`;
   }
   const pricing = model.pricing;
   if (pricing) {
@@ -55,11 +70,12 @@ export function modelPickerPriceData(model: ModelDescriptor | null | undefined):
       if (finite(amount) && amount >= 0) rates.push(`${name} ${amount} ${currency} / ${unit}`);
     for (const tier of pricing.tiers ?? []) if (finite(tier.price) && tier.price >= 0) rates.push(`${priceCondition(tier)} · ${tier.price} ${currency} / ${unit}`);
     const times = pricing.timeMultipliers?.map(window => `上海 ${window.weekdaysOnly ? "周一至周五 " : ""}${window.startHour}:00–${window.endHour}:00 ×${window.multiplier}`).join("；");
-    if (rates.length) return `${historical ? "上次记录 · " : ""}${rates.join("；")}${pricing.confidence === "estimate" ? "（参考）" : pricing.confidence === "snapshot" ? "（目录快照）" : ""}${times ? `；时段倍率：${times}` : ""}${metadata?.billingIncludesInputDuration === true ? "；计费时长：输入 + 输出视频" : ""}`;
+    if (rates.length) return `${historical}${rates.join("；")}${pricing.confidence === "estimate" ? "（参考）" : pricing.confidence === "snapshot" ? "（目录快照）" : ""}${times ? `；时段倍率：${times}` : ""}${metadata?.billingIncludesInputDuration === true ? "；计费时长：输入 + 输出视频" : ""}`;
   }
   // Some suppliers publish prose group prices without a structured tariff.
   // Preserve those facts, but never turn absence/status messages into a quote.
-  return modelPickerPriceLabelData(label);
+  const prose = modelPickerPriceLabelData(label);
+  return prose === "—" ? prose : historical + prose;
 }
 
 export function modelPickerPriceCompact(model: ModelDescriptor | null | undefined): string {
@@ -71,7 +87,7 @@ export function modelPickerPriceCompact(model: ModelDescriptor | null | undefine
     return detail.replace(/\s*·\s*实测(?:请求)?参数：[\s\S]*$/u, "");
   const pricing = model.pricing;
   if (!pricing) return detail;
-  const historical = detail.startsWith("上次记录 · ") ? "上次记录 · " : "";
+  const historical = historicalPricePrefix(model, typeof model.metadata?.priceLabel === "string" ? model.metadata.priceLabel.trim() : "");
   const confidence = pricing.confidence === "estimate" ? "（参考）" : pricing.confidence === "snapshot" ? "（目录快照）" : "";
   const times = pricing.timeMultipliers?.length ? " · 时段倍率" : "";
   if (pricing.kind === "token") return `${historical}Token 计价${confidence}${times}`;

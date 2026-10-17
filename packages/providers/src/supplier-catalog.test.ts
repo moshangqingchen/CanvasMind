@@ -37,6 +37,77 @@ it("keeps the exact official Afei declared video pending without borrowing its t
 });
 
 describe("supplier discovery", () => {
+  it("keeps a complete model plaza publishable when only the supplementary price read fails", async () => {
+    const result = await discoverSupplierCatalog({ siteUrl: "https://complete-list.example", apiUrl: "", kind: "sub2api" }, async url => {
+      const path = new URL(String(url)).pathname;
+      if (path === "/api/v1/model-plaza") return Response.json({ code: 0, data: { groups: [
+        { id: 7, name: "images", models: [{ name: "full/kept" }, { name: "full/new" }] },
+      ] } });
+      if (path === "/api/v1/groups/available") return Response.json({ code: 0, data: [{ id: 7, name: "images" }] });
+      if (path === "/api/v1/pricing/channels") return Response.json({}, { status: 503 });
+      throw new Error("Unexpected synthetic catalog read");
+    });
+    expect(result.status).toBe("live");
+    expect(result.complete).not.toBe(false);
+    expect(result.groups[0]?.models.map(model => model.id)).toEqual(["full/kept", "full/new"]);
+    expect(result.groups[0]?.models.every(model => !model.priceLabel)).toBe(true);
+  });
+  it.each([{ has_more: true }, { pagination: { total: 2 } }, { complete: false }, { truncated: true }])(
+    "does not turn an unfinished NewAPI model list into a complete account directory: %j", async pagination => {
+      const result = await discoverSupplierCatalog({ siteUrl: "https://unfinished.example", apiUrl: "", kind: "newapi" }, async url => {
+        const path = new URL(String(url)).pathname;
+        if (path === "/api/pricing") return Response.json({ success: true,
+          data: [{ model_name: "full/one", enable_groups: ["images"] }], ...pagination });
+        if (path === "/api/user/self/groups") return Response.json({ success: true, data: { images: { ratio: 1 } } });
+        throw new Error("Unexpected synthetic catalog read");
+      });
+      expect(result).toMatchObject({ status: "live", complete: false });
+      expect(result.groups[0]?.models).toEqual([]);
+    },
+  );
+  it("requires the independent account group list to finish its pagination", async () => {
+    const result = await discoverSupplierCatalog({ siteUrl: "https://unfinished-groups.example", apiUrl: "", kind: "sub2api" }, async url => {
+      const path = new URL(String(url)).pathname;
+      if (path === "/api/v1/model-plaza") return Response.json({ data: { groups: [{ id: 7, name: "images", models: ["full/a"] }] } });
+      if (path === "/api/v1/groups/available") return Response.json({ code: 0, data: [{ id: 7, name: "images" }], has_more: true });
+      return Response.json({}, { status: 503 });
+    });
+    expect(result).toMatchObject({ status: "live", complete: false });
+  });
+  it("keeps account-only options visible without claiming their model lists were read", async () => {
+    const result = await discoverSupplierCatalog({ siteUrl: "https://unknown-membership.example", apiUrl: "", kind: "sub2api" }, async url => {
+      const path = new URL(String(url)).pathname;
+      if (path === "/api/v1/model-plaza") return Response.json({ data: { groups: [{ id: 7, name: "read", models: ["full/a"] }] } });
+      if (path === "/api/v1/groups/available") return Response.json({ code: 0, data: [{ id: 7, name: "read" }, { id: 8, name: "account-only" }] });
+      return Response.json({}, { status: 503 });
+    });
+    expect(result).toMatchObject({ status: "live", modelListsComplete: false });
+    expect(result.complete).not.toBe(false); // Existing manual display contract.
+    expect(result.groups).toContainEqual(expect.objectContaining({ id: "account-only", models: [] }));
+  });
+  it("does not publish supplier model/group lists truncated by parser safety bounds", () => {
+    const largeGroup = parseSupplierCatalog({ data: { groups: [{ name: "large", models:
+      Array.from({ length: 3001 }, (_, i) => ({ name: `full/${i}` })) }] } });
+    expect(largeGroup.complete).toBe(false);
+    expect(largeGroup.groups[0]?.models).toHaveLength(3000);
+    const manyGroups = parseSupplierCatalog({ data: { groups:
+      Array.from({ length: 501 }, (_, i) => ({ name: `group-${i}`, models: [] })) } });
+    expect(manyGroups.complete).toBe(false);
+    expect(manyGroups.groups).toHaveLength(500);
+  });
+  it.each(["data-array", "direct-array"])("does not interpret %s entries as nested supplier groups", shape => {
+    const groupLike = [{ id: 1, name: "g", models: [{ id: "nested/model" }], has_more: true }];
+    const payload = shape === "data-array" ? { data: groupLike } : groupLike;
+    const parsed = parseSupplierCatalog(payload);
+    expect(parsed.complete).toBe(false); // Numeric id is not a valid flat model ID.
+    expect(parsed.groups).toEqual([]);
+    // A string ID is interpreted solely as a flat model, not a group. Its
+    // unrelated models field never supplies nested inventory membership.
+    const flat = [{ ...groupLike[0], id: "flat/model" }];
+    const flatParsed = parseSupplierCatalog(shape === "data-array" ? { data: flat } : flat);
+    expect(flatParsed.groups[0]?.models.map(model => model.id)).toEqual(["flat/model"]);
+    expect(flatParsed.groups.some(group => group.models.some(model => model.id === "nested/model"))).toBe(false);
+  });
   it("reads all monster channel plaza windows and saves observations by stable group without changing full IDs or prices", async () => {
     const base = "https://api.eaheng.com", calls: string[] = [];
     const fetcher: typeof fetch = async url => {

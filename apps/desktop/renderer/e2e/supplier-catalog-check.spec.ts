@@ -253,3 +253,48 @@ test("仅采样时间变化不弹提示，提示关闭后本次会话不重复�
   await expect(notice).toHaveCount(0);
   data.assertSafe();
 });
+
+test("启动发布完整目录时提示部分价格沿用，历史只列真实变化", async ({ page }, info) => {
+  await freezeAtStart(page);
+  const published: CatalogUpgradeStatus = { ...unchanged(), refreshed: 1,
+    retainedPriceModelCount: 32,
+    updatedConnectionIds: ["connection-neural-supplier-0"],
+    changedConnectionIds: ["connection-neural-supplier-0"],
+    priceChangedSupplierIds: ["neural-supplier-0"], noticeId: "catalog-retained-price-fixture",
+    history: [{ id: "retained-price-real-changes", checkedAt: now,
+      supplierId: "neural-supplier-0", supplierName: "晨星创作",
+      connectionId: "connection-neural-supplier-0", connectionName: "晨星创作连接",
+      changes: [
+        { kind: "model-added", modelId: "new-unpriced-model-full-id", groupId: "studio" },
+        { kind: "model-removed", modelId: "retired-model-full-id", groupId: "studio" },
+        { kind: "price", modelId: "freshly-priced-model-full-id", groupId: "studio",
+          before: "¥0.40 / 张 · 4K · high", after: "¥0.50 / 张 · 4K · high" },
+      ] }],
+  };
+  const data = await fixture(page, { ...unchanged(), phase: "idle", nextCheckAt: now });
+  data.onStart(() => data.setStatus(published));
+  await openHome(page);
+  await page.clock.runFor(1_000);
+  await expect.poll(() => data.calls.length).toBeGreaterThan(0);
+  await page.clock.runFor(5_000);
+  await expect.poll(() => data.calls.filter(call => call.method === "POST").length).toBe(1);
+  await page.clock.resume();
+  const notice = page.getByRole("status", { name: "供应商目录自动检查" });
+  await expect(notice).toContainText("部分型号沿用上次价格（32 个）");
+  await expect(notice).not.toContainText("手动刷新");
+  await page.screenshot({ path: info.outputPath("retained-price-startup-notice.png"), animations: "disabled" });
+  await notice.getByRole("button", { name: "查看目录变化", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "供应商与模型设置" });
+  const history = dialog.getByLabel("供应商目录变更记录", { exact: true });
+  const folded = history.locator("details:not([open]) > summary");
+  while (await folded.count()) await folded.first().click();
+  await expect(history).toContainText("new-unpriced-model-full-id");
+  await expect(history).toContainText("retired-model-full-id");
+  await expect(history).toContainText("freshly-priced-model-full-id");
+  await expect(history).toContainText("¥0.40 / 张 · 4K · high");
+  await expect(history).toContainText("¥0.50 / 张 · 4K · high");
+  await expect(history).not.toContainText("retained-unchanged-model-full-id");
+  await expect(history).not.toContainText("上次价格");
+  await page.screenshot({ path: info.outputPath("retained-price-real-history.png"), animations: "disabled" });
+  data.assertSafe();
+});

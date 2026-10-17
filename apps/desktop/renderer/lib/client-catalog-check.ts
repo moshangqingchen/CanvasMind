@@ -27,7 +27,7 @@ export function nextCatalogCheckAction(status: Pick<CatalogUpgradeStatus, "mode"
   return due <= now ? { method: "POST", delay: 5000 } : { method: "GET", delay: Math.min(due - now, 86_400_000) };
 }
 
-export function catalogCheckNotice(status: Pick<CatalogUpgradeStatus, "noticeId" | "priceChangedSupplierIds" | "changedConnectionIds" | "manualConnectionIds">): string {
+export function catalogCheckNotice(status: Pick<CatalogUpgradeStatus, "noticeId" | "priceChangedSupplierIds" | "changedConnectionIds" | "manualConnectionIds" | "retainedPriceModelCount">): string {
   if (!status.noticeId) return "";
   const parts: string[] = [];
   const prices = new Set(status.priceChangedSupplierIds).size;
@@ -36,9 +36,10 @@ export function catalogCheckNotice(status: Pick<CatalogUpgradeStatus, "noticeId"
   if (prices) parts.push(prices + " 个供应商价格有变动");
   else if (changed) parts.push("已更新 " + changed + " 个连接的型号目录");
   if (manual) parts.push(manual + " 个连接需要手动刷新");
+  if (status.retainedPriceModelCount && status.retainedPriceModelCount > 0) parts.push("部分型号沿用上次价格（" + status.retainedPriceModelCount + " 个）");
   return parts.join(" · ");
 }
 
 export function catalogFailureLabel(reason?: CatalogFailureReason): string {
-  return reason ? ({ network: "网络", authentication: "鉴权", balance: "余额", upstream: "上游错误", unsupported: "不支持", incomplete: "目录或价格未完整读取", conflict: "配置已变更" } satisfies Record<CatalogFailureReason, string>)[reason] : "";
+  return reason ? ({ network: "网络", authentication: "鉴权", balance: "余额", upstream: "上游错误", unsupported: "不支持", incomplete: "型号列表未完整读取", conflict: "配置已变更" } satisfies Record<CatalogFailureReason, string>)[reason] : "";
 }

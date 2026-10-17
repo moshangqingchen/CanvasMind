@@ -2,13 +2,13 @@ import type { ModelDescriptor } from "@super-canvas/providers";
 import { normalizeTk1688CnyModel } from "@super-canvas/providers/tk1688-catalog";
 import { applyUserImageSizePresets } from "@super-canvas/providers/image-size-presets";
 import { modelEstimatedCost } from "../lib/model-display";
-import { modelPickerPriceData } from "../lib/model-picker-data";
+import { modelPickerPriceData, modelPickerPriceSampleAt } from "../lib/model-picker-data";
 import styles from "./model-picker.module.css";
 
 export function ModelPriceDetails({ model, parameters }: { model?: ModelDescriptor | null; parameters: Record<string, unknown> }) {
   if (model) model = applyUserImageSizePresets(normalizeTk1688CnyModel(model));
   const estimate = modelEstimatedCost(model, parameters);
-  const priceCheckedAt = model?.pricing?.checkedAt ?? (typeof model?.metadata?.priceCheckedAt === "string" ? model.metadata.priceCheckedAt : undefined);
+  const priceCheckedAt = modelPickerPriceSampleAt(model);
   const priceSourceUrl = model?.pricing?.sourceUrl ?? (typeof model?.metadata?.priceSourceUrl === "string" ? model.metadata.priceSourceUrl : undefined);
   return <div className={`node-config-price-summary ${styles.details}`} aria-label="当前参数价格">
     <span>型号报价 <strong>{modelPickerPriceData(model)}</strong></span>

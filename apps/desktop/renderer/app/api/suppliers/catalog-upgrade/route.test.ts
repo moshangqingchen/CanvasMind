@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRepository, type Repository } from "@super-canvas/db";
 import { scopedCatalogRepository } from "../../../../lib/catalog-repository-scope";
+import { catalogScopedMap } from "../../../../lib/catalog-scope-cache";
 import type { SupplierCatalogUpgrade } from "../../../../lib/supplier-catalog-upgrade";
 
 const mocks = vi.hoisted(() => ({ repository: undefined as unknown as Repository, scan: vi.fn(), models: vi.fn() }));
@@ -24,9 +25,10 @@ const request = (method = "GET", body?: unknown) => new Request("http://localhos
 async function fixture() {
   const supplier = await live.saveSupplier({ id: "supplier", name: "Fixture", supplierKey: "tk1688", siteUrl: "https://tk1688.com",
     apiUrl: "https://api.tk1688.com/v1", kind: "newapi", scanStatus: "live", scanComplete: true,
+    scannedAt: "2026-10-15T00:00:00.000Z",
     catalog: { groups: [{ id: "default", label: "Default", models: [{ id: "full/image-id", capability: "image", priceLabel: "¥0.10/张 · 4K" }] }] } });
   const connection = await live.saveConnection({ id: "connection", name: "Fixture connection", provider: "openai", encryptedSecret: "opaque-fixture-key",
-    config: { supplierId: supplier.id, baseUrl: supplier.apiUrl, modelGroup: "default", modelCatalogModels: [{ id: "full/image-id", operations: ["image.generate"], metadata: { priceLabel: "¥0.10/张 · 4K" } }] } });
+    config: { supplierId: supplier.id, baseUrl: supplier.apiUrl, modelGroup: "default", modelCatalogModels: [{ id: "full/image-id", operations: ["image.generate"], metadata: { priceLabel: "¥0.10/张 · 4K", priceCheckedAt: "2026-10-15T00:00:00.000Z" } }] } });
   return { supplier, connection };
 }
 describe("catalog schedule HTTP boundary", () => {
@@ -76,5 +78,49 @@ describe("catalog schedule HTTP boundary", () => {
     await POST(); await runtime.__supplierCatalogUpgrade!.settle();
     expect(mocks.models).not.toHaveBeenCalled(); expect((await live.getSupplier(supplier.id))?.catalog).toEqual(supplier.catalog);
     expect(await (await GET(request())).json()).toMatchObject({ manualConnectionIds: ["connection"], connections: [expect.objectContaining({ pauseReason: "network" })] });
+  });
+  it("complete membership publishes despite failed supplementary documentation and prices", async () => {
+    const { supplier, connection } = await fixture();
+    const commits = vi.spyOn(live, "commitCatalogSnapshot");
+    mocks.scan.mockImplementation(async () => mocks.repository.saveSupplier({ ...supplier, catalog: { groups: [
+      { id: "default", label: "Default", models: [{ id: "full/image-id", capability: "image" }, { id: "full/new-id", capability: "image" }] },
+    ] } }));
+    mocks.models.mockImplementation(async () => {
+      catalogScopedMap("supplier-document", "auxiliary").set("doc", { text: Promise.resolve(undefined) });
+      catalogScopedMap("weai-pricing", "auxiliary").set("quote", { complete: false, status: "failed" });
+      const row = (await mocks.repository.getConnection(connection.id))!;
+      await mocks.repository.saveConnection({ ...row, config: { ...row.config, modelCatalogModels: [
+        { id: "full/image-id", operations: ["image.generate"] }, { id: "full/new-id", operations: ["image.generate"] },
+      ] } });
+      return Response.json([], { headers: { "X-Model-Scan-Complete": "true", "X-Model-Scan-Status": "live" } });
+    });
+    await POST(); await runtime.__supplierCatalogUpgrade!.settle();
+    expect(commits).toHaveBeenCalledTimes(1);
+    const status = await (await GET(request())).json();
+    expect(status).toMatchObject({ refreshed: 1, retainedPriceModelCount: 1 });
+    expect(status.history[0].changes).toContainEqual(expect.objectContaining({ modelId: "full/new-id", kind: "model-added" }));
+    expect(status.history[0].changes.some((change: { kind: string }) => change.kind === "price")).toBe(false);
+    expect((await live.getConnection(connection.id))?.config.modelCatalogModels).toEqual([
+      expect.objectContaining({ id: "full/image-id", metadata: expect.objectContaining({ priceLabel: "¥0.10/张 · 4K（上次价格）",
+        priceStatus: "partial", priceCheckedAt: "2026-10-15T00:00:00.000Z" }) }),
+      expect.objectContaining({ id: "full/new-id" }),
+    ]);
+    expect((await live.getSupplier(supplier.id))?.catalog.groups[0]?.models.map(model => model.id)).toEqual(["full/image-id", "full/new-id"]);
+  });
+  it("an unfinished Key inventory never publishes staged removals even when price errors are auxiliary", async () => {
+    const { supplier, connection } = await fixture();
+    const commits = vi.spyOn(live, "commitCatalogSnapshot");
+    mocks.scan.mockResolvedValue(supplier);
+    mocks.models.mockImplementation(async () => {
+      catalogScopedMap("weai-pricing", "auxiliary").set("quote", { complete: false });
+      const row = (await mocks.repository.getConnection(connection.id))!;
+      await mocks.repository.saveConnection({ ...row, config: { ...row.config, modelCatalogModels: [] } });
+      return Response.json([], { headers: { "X-Model-Scan-Complete": "false", "X-Model-Scan-Status": "live",
+        "X-Model-Scan-Error-Code": "incomplete_directory" } });
+    });
+    await POST(); await runtime.__supplierCatalogUpgrade!.settle();
+    expect(commits).not.toHaveBeenCalled();
+    expect((await live.getConnection(connection.id))?.config.modelCatalogModels).toEqual(connection.config.modelCatalogModels);
+    expect((await (await GET(request())).json()).history).toEqual([]);
   });
 });

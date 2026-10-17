@@ -111,8 +111,8 @@ describe("model picker directory facts and tariff data", () => {
 
   it("preserves historical quote and time multiplier scope without applying an unreported current multiplier", () => {
     const model: ModelDescriptor = { ...bounded, metadata: { priceStatus: "partial" }, pricing: { kind: "per-request", currency: "CNY", unitAmount: 1,
-      checkedAt: "then", confidence: "snapshot", timeMultipliers: [{ timeZone: "Asia/Shanghai", startHour: 14, endHour: 16, multiplier: 1.4 }] } };
-    expect(modelPickerPriceData(model)).toBe("上次记录 · 1 CNY / 次（目录快照）；时段倍率：上海 14:00–16:00 ×1.4");
+      checkedAt: "2026-10-10T03:04:05.000Z", confidence: "snapshot", timeMultipliers: [{ timeZone: "Asia/Shanghai", startHour: 14, endHour: 16, multiplier: 1.4 }] } };
+    expect(modelPickerPriceData(model)).toBe("上次价格 · 采样时间 2026-10-10T03:04:05.000Z · 1 CNY / 次（目录快照）；时段倍率：上海 14:00–16:00 ×1.4");
   });
 
   it("separates completed Key comparisons from failed or incomplete directory reads", () => {
