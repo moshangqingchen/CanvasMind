@@ -84,7 +84,7 @@ export async function readCatalogItemFacts(spec: CatalogReadItemSpec, connection
     const entry = spec.entryId.split(":")[1] as GenericSupplierSourceEntry;
     const value = await collectGenericSupplierSource({ url: spec.sourceUrl, siteUrl: supplier.siteUrl, entry }, loaderOptions);
     return { status: value.models.length ? "live" : "empty", complete: value.complete, checkedAt: value.checkedAt,
-      facts: { models: value.models, supplierGroups: value.groups, dependencies: value.dependencies,
+      facts: { models: value.models, supplierGroups: value.groups, dependencies: value.dependencies, ...(value.priceStates ? { priceStates: value.priceStates } : {}),
         groups: value.groups.map(group => ({ id: group.id, label: group.label, modelIds: group.models.map(model => model.id) })) } };
   }
   throw new Error("Unsupported catalog source");

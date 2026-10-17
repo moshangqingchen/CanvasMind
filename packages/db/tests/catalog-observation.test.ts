@@ -1,7 +1,7 @@
 import { mkdtemp, mkdir, readFile, rename, rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { join, resolve, sep } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRepository } from "../src/memory.js";
 import { FileRepository } from "../src/file.js";
 import { CATALOG_PIPELINE_MAX_BYTES, catalogObservationIdentity, catalogObservationGroupIdentity, catalogPipelineSettingKey, type CatalogObservationCommit, type CatalogObservationReservation, type CatalogPipelineUpdate } from "../src/catalog-observation.js";
@@ -40,6 +40,65 @@ describe.each(["memory", "file"] as const)("catalog queue-only atomic state: %s"
       expect(await new FileRepository(path)
         .getApplicationSetting(catalogPipelineSettingKey(supplier.id))).toEqual(state);
     }
+  });
+  it("reads a detached catalog header and only selected keys/prefixes", async () => {
+    const { repository, supplier, connections } = await fixture();
+    await repository.updateCatalogPipelineState(update(supplier, connections, [
+      { key: "scheduler:v1", value: { status: "queued" } },
+      { key: "fact:one", value: { models: ["fixture-model"] } },
+      { key: "fact:two", value: { models: ["fixture-second"] } },
+      { key: "unrelated", value: { payload: "x".repeat(10_000) } },
+    ]));
+    const selected = await repository.getCatalogPipelineState(supplier.id, ["scheduler:v1"], ["fact:"]);
+    expect(Object.keys(selected!.entries).sort()).toEqual(["fact:one", "fact:two", "scheduler:v1"]);
+    selected!.entries["fact:one"]!.models = ["caller-edited"];
+    selected!.sources.bad = { lastDispatchedSeq: 1, lastAcceptedSeq: 1 };
+    const empty = await repository.getCatalogPipelineState(supplier.id, []);
+    expect(empty!.entries).toEqual({}); expect(empty!.sources.bad).toBeUndefined();
+    const all = await repository.getCatalogPipelineState(supplier.id);
+    expect(all!.entries["fact:one"]!.models).toEqual(["fixture-model"]); expect(all!.entries.unrelated).toBeDefined();
+    expect((await repository.getCatalogPipelineState(supplier.id, undefined, ["fact:"]))!.entries).toEqual({
+      "fact:one": { models: ["fixture-model"] }, "fact:two": { models: ["fixture-second"] } });
+    expect(await repository.getCatalogPipelineState("missing")).toBeUndefined();
+  });
+  it("can return selected state after a queue update without truncating storage or the atomic commit", async () => {
+    const { repository, supplier, connections } = await fixture();
+    const header = await repository.updateCatalogPipelineState(update(supplier, connections, [
+      { key: "large", value: { payload: "x".repeat(10_000) } }, { key: "queue", value: { status: "queued" } },
+    ], { resultEntryKeys: [] }));
+    expect(header.entries).toEqual({});
+    const selected = await repository.updateCatalogPipelineState(update(supplier, connections,
+      [{ key: "queue", expected: { status: "queued" }, value: { status: "running" } }], { resultEntryKeys: ["queue"] }));
+    expect(selected.entries).toEqual({ queue: { status: "running" } });
+    selected.entries.queue!.status = "caller-edit";
+    const full = await repository.getCatalogPipelineState(supplier.id);
+    expect(full!.entries).toMatchObject({ large: { payload: "x".repeat(10_000) }, queue: { status: "running" } });
+    expect(full!.identityEpoch).toBe(header.identityEpoch);
+    const token = await reserve(repository, supplier, connections[0]!);
+    const committed = await repository.commitCatalogObservation({ reservation: token,
+      state: [{ key: "fact:new", value: { complete: true } }], resultEntryPrefixes: ["fact:"] });
+    expect(committed.entries).toEqual({ "fact:new": { complete: true } });
+    const accepted = await repository.getCatalogPipelineState(supplier.id);
+    expect(accepted!.sources[token.sourceKey]?.lastAcceptedSeq).toBe(token.dispatchSeq);
+    expect(accepted!.entries).toMatchObject({ large: { payload: "x".repeat(10_000) }, queue: { status: "running" }, "fact:new": { complete: true } });
+  });
+  it("validates generic replacement objects again while caching only owned stored references", async () => {
+    const { repository, supplier, connections } = await fixture();
+    const state = await repository.updateCatalogPipelineState(update(supplier, connections, [{ key: "queue", value: { status: "queued" } }]));
+    // A generic setting is cloned on write; it has not been blessed by a typed transaction.
+    await repository.setApplicationSetting(catalogPipelineSettingKey(supplier.id), state);
+    const stringify = vi.spyOn(JSON, "stringify");
+    try {
+      await repository.getCatalogPipelineState(supplier.id, []);
+      const once = stringify.mock.calls.filter(([value]) => value && typeof value === "object" &&
+        (value as { supplierId?: unknown }).supplierId === supplier.id).length;
+      await repository.getCatalogPipelineState(supplier.id, []);
+      expect(stringify.mock.calls.filter(([value]) => value && typeof value === "object" &&
+        (value as { supplierId?: unknown }).supplierId === supplier.id)).toHaveLength(once);
+      expect(once).toBe(1);
+    } finally { stringify.mockRestore(); }
+    await repository.setApplicationSetting(catalogPipelineSettingKey(supplier.id), { ...state, schemaVersion: 999 });
+    await expect(repository.getCatalogPipelineState(supplier.id, [])).rejects.toThrow("格式无效");
   });
   it("queue and lease updates retain dispatch and accepted sequences exactly", async () => {
     const { repository, supplier, connections } = await fixture(), token = await reserve(repository, supplier, connections[0]!);

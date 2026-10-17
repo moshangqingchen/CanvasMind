@@ -132,6 +132,8 @@ export interface GenerationRequirements {
   readonly maximumInputTokens?: number;
   readonly maximumOutputTokens?: number;
   readonly maximumImageOutputTokens?: number;
+  /** Frozen execution inputs for exact conditional quote selection. */
+  readonly pricingParameters?: Readonly<Record<string, unknown>>;
 }
 
 export interface DirectorCallDraft {

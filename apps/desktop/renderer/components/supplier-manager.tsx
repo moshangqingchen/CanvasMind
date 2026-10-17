@@ -1,7 +1,7 @@
 "use client";
 import { cleanModelDisplayName } from "../lib/model-display";
 import { unsupportedAgentModelReason } from "../lib/agent-model-support";
-import { modelPickerInventoryFact, modelPickerPriceData } from "../lib/model-picker-data";
+import { modelPickerInventoryFact, modelPickerPriceCompact, modelPickerPriceData } from "../lib/model-picker-data";
 import { SupplierVerificationPanel } from "./supplier-verification-panel";
 import { useSupplierVerificationRevision } from "../lib/use-supplier-verification-revision";
 import { useSettingsDraft, useSettingsLeaveGuard } from "./settings-draft-guard";
@@ -86,6 +86,8 @@ import { SupplierRefreshDetails, SupplierRefreshIndicator } from "./supplier-ref
 import { supplierCatalogDisplayPrice, supplierModelDirectoryDiff } from "../lib/supplier-model-directory-diff";
 import { settingsSupplierTarget } from "../lib/settings-target";
 import { CatalogCheckSettings } from "./catalog-check-settings";
+import { ModelPriceEvidence } from "./model-price-evidence";
+import { catalogPriceDescriptor } from "../lib/supplier-catalog-price-merge";
 
 const DEFAULT_API_URLS: Record<string, string> = {
   cangyuan: "https://ai.cangyuansuanli.cn",
@@ -2782,9 +2784,9 @@ function supplierModelCount(models: readonly Tk1688DisplayModel[], grouped = fal
 
 function SupplierModelRow({ model, route = false }: { model: SupplierModelListItem; route?: boolean }) {
   const routeSummary = route ? tk1688RouteSummary(model) : undefined;
-  const priceModel = model.descriptor ?? { id: model.id, name: model.name ?? model.id, operations: [],
+  const priceModel = model.descriptor ?? catalogPriceDescriptor({ ...model, id: model.id, name: model.name ?? model.id, operations: [],
     metadata: { ...model.metadata, priceLabel: supplierCatalogDisplayPrice(model),
-      ...(model.metadata?.supplierCatalogModelStale === true ? { priceStatus: "partial" } : {}) } };
+      ...(model.metadata?.supplierCatalogModelStale === true ? { priceStatus: "partial" } : {}) } });
   return (
     <div className={`sm-model-item${route ? " sm-model-route" : ""}`}>
       <div className="sm-model-name">
@@ -2802,7 +2804,8 @@ function SupplierModelRow({ model, route = false }: { model: SupplierModelListIt
         {model.interfaceLabel && <small>{model.interfaceLabel}{model.interfaceSource && <> · <a href={model.interfaceSource} target="_blank" rel="noreferrer">接口说明</a></>}</small>}
         {model.availability && <details className="sm-model-evidence"><summary>查看依据</summary><p>{model.availability.detail}</p></details>}
       </div>
-      <div className="sm-model-price">{modelPickerPriceData(priceModel)}</div>
+      <div className="sm-model-price">{priceModel.pricing?.kind === "token" ? modelPickerPriceData(priceModel) : modelPickerPriceCompact(priceModel)}</div>
+      <div className="sm-model-price-evidence"><ModelPriceEvidence model={priceModel} /></div>
       {routeSummary && <p className="sm-model-route-summary">{routeSummary}</p>}
     </div>
   );

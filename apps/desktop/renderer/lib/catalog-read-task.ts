@@ -47,11 +47,11 @@ export async function collectCatalogReadTask(task: CatalogReadTask, connection: 
         { ...scopes.apply, ...(entry.groupId !== undefined ? { groupIdentity: `site-id:${entry.groupId}` } : {}) }) });
       value = { ...result, facts: { models: result.models, supplement: result } };
     } else if (spec.entryId.startsWith("schema-document:")) {
-      const result = await collectCatalogInterfaceDocument({ url: spec.sourceUrl, baseUrl: String(connection.config.baseUrl), models },
+      const result = await collectCatalogInterfaceDocument({ url: spec.sourceUrl, baseUrl: String(connection.config.baseUrl), models, groupIdentity: scopes.apply.groupIdentity },
         { fetch: fetcher, checkedAt, signal: deps.signal });
       for (const entry of result.discoveredEntries) discovered.push({ spec: catalogReadItem(`schema-document:${entry.url}`, entry.url, "schema", scopes.anonymous, scopes.apply) });
       value = { status: result.complete ? "live" : "failed", complete: result.complete, checkedAt: result.checkedAt,
-        facts: { models: [], contracts: result.contracts, contractDiagnostics: result.contractDiagnostics }, failure: result.failure };
+        facts: { models: [], interfaceDocuments: result.interfaceDocuments, contracts: result.contracts, contractDiagnostics: result.contractDiagnostics }, failure: result.failure };
     } else if (spec.entryId.startsWith("miaowu-schema:")) {
       const model = models.find(model => model.id === spec.applyScope.modelId);
       const kind = model?.outputKinds?.includes("video") ? "video" : "image";

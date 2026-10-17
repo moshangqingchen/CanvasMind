@@ -17,6 +17,7 @@ beforeEach(() => {
   live = new MemoryRepository(); mocks.repository = scopedCatalogRepository(live);
   mocks.scan.mockReset(); mocks.models.mockReset(); delete runtime.__supplierCatalogUpgrade;
   vi.stubEnv("SUPERCANVAS_DESKTOP", "true");
+  vi.stubEnv("SUPERCANVAS_CATALOG_LEGACY_CHECKER", "1");
   vi.stubGlobal("fetch", vi.fn(() => { throw new Error("No upstream transport allowed in catalog route unit"); }));
 });
 afterEach(() => { delete runtime.__supplierCatalogUpgrade; vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
@@ -31,7 +32,7 @@ async function fixture() {
     config: { supplierId: supplier.id, baseUrl: supplier.apiUrl, modelGroup: "default", modelCatalogModels: [{ id: "full/image-id", operations: ["image.generate"], metadata: { priceLabel: "¥0.10/张 · 4K", priceCheckedAt: "2026-10-15T00:00:00.000Z" } }] } });
   return { supplier, connection };
 }
-describe("catalog schedule HTTP boundary", () => {
+describe("legacy rollback catalog schedule HTTP boundary", () => {
   it("GET and PATCH off remain read-only upstream; POST off does not scan", async () => {
     await fixture();
     expect(await (await GET(request())).json()).toMatchObject({ mode: "daily", nextCheckAt: expect.any(String) });

@@ -6,6 +6,7 @@ import type { CatalogReadItemSpec } from "./catalog-read-contracts";
 import type { CatalogInventoryState } from "./catalog-inventory-policy";
 import { CATALOG_JOB_LEASE_MS, claimCatalogReadJob, enqueueCatalogReadJobs, type CatalogSchedulerState } from "./catalog-read-scheduler";
 import type { CatalogSchedulerClock } from "./catalog-scheduler-store";
+import { chentuFallbackImageDescriptor } from "./chentu-catalog";
 
 vi.mock("./catalog-source-plan", async importOriginal => {
   const original = await importOriginal<typeof import("./catalog-source-plan")>();
@@ -71,7 +72,7 @@ async function fixture(native = false, privateSchema = false, publicSchema = fal
   const service = () => createCatalogPipelineService({ environment, repository, clock: timer.clock, sessionStartedAt: timer.clock.now() - 60_000,
     random: () => 0.5, readers });
   const state = async () => await repository.getApplicationSetting(catalogPipelineSettingKey(supplier.id)) as {
-    nextDispatchSeq: number; sources: Record<string, { lastAcceptedSeq: number }>; entries: Record<string, unknown>;
+    identityEpoch: string; nextDispatchSeq: number; sources: Record<string, { lastAcceptedSeq: number }>; entries: Record<string, unknown>;
   };
   return { repository, timer, supplier, connection, fetcher, readers, service, state,
     setData(value: ModelDescriptor[]) { data = value; }, setNativeData(value: ModelDescriptor[]) { nativeData = value; },
@@ -80,6 +81,104 @@ async function fixture(native = false, privateSchema = false, publicSchema = fal
 const runOptions = { observationCycleId: "cycle-0", revision: "fixture-revision" };
 
 describe("catalog slice-2 fixture service orchestration", () => {
+  it("does not reuse an active automatic check as an explicit candidate confirmation", async () => {
+    const value = await fixture(), service = value.service();
+    let entered!: () => void, release!: () => void;
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    const held = new Promise<void>(resolve => { release = resolve; });
+    value.fetcher.mockImplementation(async () => { entered(); await held; return Response.json({ models: rows(3) }); });
+    const automatic = service.run(value.connection.id, runOptions);
+    try {
+      await started;
+      expect(await service.run(value.connection.id, { ...runOptions, mode: "manual", observationCycleId: "explicit-confirm",
+        manualConfirmation: { sourceKey: "fixture-source", candidateVersion: "fixture-candidate" } }))
+        .toMatchObject({ published: 0, superseded: 1 });
+      expect(value.fetcher).toHaveBeenCalledTimes(1);
+    } finally { release(); }
+    expect(await automatic).toMatchObject({ published: 1 });
+    service.close();
+  });
+  it("adopts non-source preference changes without resetting the existing daily qualification", async () => {
+    const value = await fixture(), service = value.service();
+    await service.run(value.connection.id, runOptions);
+    const calls = value.fetcher.mock.calls.length;
+    const current = (await value.repository.getConnection(value.connection.id))!;
+    await value.repository.saveConnection({ ...current, config: { ...current.config, defaultModel: "fixture-2" } });
+    expect((await service.run(value.connection.id, runOptions)).superseded).toBe(0);
+    expect(value.fetcher).toHaveBeenCalledTimes(calls);
+    expect((await value.repository.getConnection(value.connection.id))?.config.defaultModel).toBe("fixture-2");
+    service.close();
+  });
+  it("restores a paused source only after explicit successful manual refresh, retaining the next daily due", async () => {
+    const value = await fixture(), service = value.service(); value.setStatus(401);
+    for (let index = 0; index < 3; index++) {
+      await service.run(value.connection.id, { ...runOptions, observationCycleId: `failed-${index}` });
+      if (index < 2) value.timer.advance(86_400_000);
+    }
+    const queue = (await value.state()).entries[CATALOG_SCHEDULER_ENTRY] as CatalogSchedulerState;
+    expect(Object.values(queue.sources)[0]?.paused).toBe(true);
+    const current = (await value.repository.getConnection(value.connection.id))!;
+    const stamp = new Date(value.timer.clock.now()).toISOString();
+    await value.repository.saveConnection({ ...current, config: { ...current.config, modelScanCheckedAt: stamp,
+      modelScanStatus: "live", modelScanComplete: true, catalogCheckManualRequired: false, catalogCheckPaused: false } });
+    const count = value.fetcher.mock.calls.length; value.setStatus(200);
+    await service.run(value.connection.id, { ...runOptions, observationCycleId: "after-manual" });
+    expect(value.fetcher).toHaveBeenCalledTimes(count);
+    const resumed = (await value.state()).entries[CATALOG_SCHEDULER_ENTRY] as CatalogSchedulerState;
+    expect(Object.values(resumed.sources)[0]).toMatchObject({ paused: false, failureStreak: 0, nextEligibleAt: value.timer.clock.now() + 86_400_000 });
+    value.timer.advance(86_400_000);
+    await service.run(value.connection.id, { ...runOptions, observationCycleId: "next-daily" });
+    expect(value.fetcher).toHaveBeenCalledTimes(count + 1); service.close();
+  });
+  it("restores an exact native adapter after a fresh Key success while preserving a current explicit denial", async () => {
+    const value = await fixture(), model = chentuFallbackImageDescriptor("gpt-image-2-4k", "default")!;
+    await value.repository.saveConnection({ ...value.connection, config: { ...value.connection.config, baseUrl: "https://tu.988236.xyz/v1",
+      preset: "chentu-openai-images", supplierKey: "chentu", modelGroup: "default", accountKeyGroup: "default", accountKeyGroupId: "7", modelCatalogModels: [model] } });
+    value.setData([model]); const service = value.service();
+    const current = async () => ((await value.repository.getConnection(value.connection.id))?.config.modelCatalogModels as ModelDescriptor[])[0]!;
+    await service.run(value.connection.id, runOptions);
+    expect((await current()).metadata?.canvasRunnable).toBe(true);
+    value.timer.advance(86_400_000); value.setStatus(401);
+    await service.run(value.connection.id, { ...runOptions, observationCycleId: "native-auth-failed" });
+    expect((await current()).metadata?.canvasRunnable).toBe(false);
+    value.timer.advance(86_400_000); value.setStatus(200);
+    await service.run(value.connection.id, { ...runOptions, observationCycleId: "native-key-restored" });
+    expect((await current()).metadata).toMatchObject({ canvasRunnable: true, catalogContractStatus: "native" });
+    value.timer.advance(86_400_000);
+    value.setData([{ ...model, metadata: { ...model.metadata, canvasRunnable: false, canvasUnavailableReason: "HTTP 403 当前 Key 权限拒绝" } }]);
+    await service.run(value.connection.id, { ...runOptions, observationCycleId: "native-current-refused" });
+    expect((await current()).metadata).toMatchObject({ canvasRunnable: false, canvasUnavailableReason: "HTTP 403 当前 Key 权限拒绝" });
+    service.close();
+  });
+  it("keeps a successful manual scan separate from an older cohort until fresh Key membership completes", async () => {
+    const value = await fixture(false, false, true), service = value.service();
+    await service.run(value.connection.id, { ...runOptions, budget: 1 });
+    const oldState = await value.state(), oldInventory = oldState.entries["membership:connection"] as CatalogInventoryState;
+    expect(Object.values(oldInventory.sources)[0]?.baseline?.modelIds).toEqual(rows(3).map(model => model.id));
+    const current = (await value.repository.getConnection(value.connection.id))!;
+    const manualModels: ModelDescriptor[] = [{ ...rows(1, "manual-")[0]!, parameters: [{ key: "quality", label: "Quality", control: "text", default: "max" }],
+      pricing: { kind: "per-image", currency: "CNY", unitAmount: .777, checkedAt: new Date(value.timer.clock.now()).toISOString(), confidence: "exact" } }];
+    await value.repository.saveConnection({ ...current, config: { ...current.config, modelCatalogModels: manualModels,
+      scannedModelIds: manualModels.map(model => model.id), modelScanCheckedAt: new Date(value.timer.clock.now()).toISOString(),
+      modelScanStatus: "live", modelScanComplete: true, catalogCheckManualRequired: false, catalogCheckPaused: false } });
+    value.timer.advance(2_000);
+    const requests = value.fetcher.mock.calls.length;
+    await service.run(value.connection.id, { ...runOptions, observationCycleId: "manual-followup" });
+    expect(value.fetcher).toHaveBeenCalledTimes(requests + 1);
+    expect(String(value.fetcher.mock.calls.at(-1)?.[0])).toContain("/public-schema");
+    expect((await value.repository.getConnection(value.connection.id))?.config.modelCatalogModels).toEqual(manualModels);
+    const held = await value.state(), inventory = held.entries["membership:connection"] as CatalogInventoryState;
+    expect(inventory.visibleModels).toEqual(manualModels);
+    expect(Object.values(inventory.sources)[0]?.baseline?.modelIds).toEqual(rows(3).map(model => model.id));
+    expect(Object.values(inventory.sources)[0]?.acceptedModels.map(model => model.id)).not.toContain("manual-0");
+    expect(held.identityEpoch).toBe(oldState.identityEpoch);
+    expect(held.entries["manual-fence:connection"]).toBeTruthy();
+    value.timer.advance(86_400_000); value.setData(rows(2, "next-"));
+    await service.run(value.connection.id, { ...runOptions, observationCycleId: "fresh-after-manual", budget: 1 });
+    expect((await value.repository.getConnection(value.connection.id))?.config.scannedModelIds).toEqual(["next-0", "next-1"]);
+    expect((await value.state()).entries["manual-fence:connection"]).toBeUndefined();
+    service.close();
+  });
   it("keeps legacy models view-only when the Key read fails even if a public contract is complete", async () => {
     const value = await fixture(false, false, true), service = value.service();
     const original = value.fetcher.getMockImplementation()!;
@@ -104,9 +203,9 @@ describe("catalog slice-2 fixture service orchestration", () => {
     expect(state.entries["legacy:connection:connection"]).toMatchObject({ legacy: { catalogCheckFailureStreak: 2 } });
     service.close();
   });
-  it("is fully inert outside the internal ephemeral gate", async () => {
+  it("is fully inert with the emergency legacy-checker switch", async () => {
     const value = await fixture();
-    const service = createCatalogPipelineService({ environment: {}, repository: value.repository, readers: value.readers, clock: value.timer.clock });
+    const service = createCatalogPipelineService({ environment: { SUPERCANVAS_CATALOG_LEGACY_CHECKER: "1" }, repository: value.repository, readers: value.readers, clock: value.timer.clock });
     expect(await service.run(value.connection.id, runOptions)).toMatchObject({ enabled: false, published: 0 });
     expect(value.readers).not.toHaveBeenCalled(); expect(value.fetcher).not.toHaveBeenCalled();
     expect(await value.state()).toBeUndefined(); service.close();

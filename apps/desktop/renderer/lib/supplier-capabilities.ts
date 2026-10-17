@@ -14,7 +14,7 @@ import { applyJiasuImageCapabilities } from "@super-canvas/providers/jiasu-image
 import { applyJijiuImageCapabilities } from "@super-canvas/providers/jijiu-image-contract";
 import { applyChuangxiangCurrentImageCapabilities } from "@super-canvas/providers/chuangxiang-image-contract";
 import { applyChuangxiangMidjourneyCapabilities } from "@super-canvas/providers/chuangxiang-midjourney-contract";
-import { modelPriceAmount } from "@super-canvas/providers/media-billing";
+import { selectModelQuote } from "@super-canvas/providers/media-billing";
 import { parseSupplierGroupDetails } from "@super-canvas/providers/supplier-group-details";
 import { withHighestQualityDefault } from "./model-quality";
 import { imageQualityPresetsForHighest } from "@super-canvas/providers/image-quality-presets";
@@ -808,7 +808,7 @@ export function declaredImageCharge(
     pricing.confidence !== "exact"
   )
     return undefined;
-  const amount = modelPriceAmount(pricing, { ...parameters, resolution: tier, quality });
+  const amount = selectModelQuote(model, { ...parameters, resolution: tier, quality }, { operation: "image.generate" }).amount;
   return amount === undefined
     ? undefined
     : {

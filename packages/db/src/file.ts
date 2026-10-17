@@ -2,6 +2,7 @@ import { mkdir, rename, unlink, writeFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { OwnedJsonMemo } from "./owned-json-memo.js";
 import { catalogPipelineSettingKey, prepareCatalogReservation, prepareCatalogPipelineUpdate, type CatalogObservationPrepared, type CatalogObservationReservation } from "./catalog-observation.js";
 import { setTimeout as delay } from "node:timers/promises";
 import type {
@@ -282,6 +283,7 @@ export class FileRepository extends MemoryRepository {
   private needsSnapshotWrite: boolean;
   private readonly path: string;
   private readonly replaceFile: typeof rename;
+  private readonly ownedJson = new OwnedJsonMemo();
   private readonly preservedDirectorFields = new Map<
     string,
     { originalJson: string; loadedJson: string }
@@ -351,7 +353,17 @@ export class FileRepository extends MemoryRepository {
   private serializeSnapshot(snapshot: MemoryRepositorySnapshot): string {
     const properties: string[] = [];
     for (const [key, value] of Object.entries(snapshot)) {
-      const serialized = JSON.stringify(value);
+      // These two stores use copy-on-write owned rows. Reuse their JSON without
+      // cloning/stringifying all other suppliers on every scheduler checkpoint.
+      // The final snapshot, barrier, CAS and single atomic rename stay intact.
+      const serialized = key === "applicationSettings"
+        ? `{${Object.entries(snapshot.applicationSettings ?? {}).flatMap(([setting, row]) => {
+          const json = this.ownedJson.stringify(`setting:${setting}`, row);
+          return json === undefined ? [] : [`${JSON.stringify(setting)}:${json}`];
+        }).join(",")}}`
+        : key === "connections"
+          ? `[${snapshot.connections.map(row => this.ownedJson.stringify(`connection:${row.id}`, row)).join(",")}]`
+          : JSON.stringify(value);
       if (serialized === undefined) continue;
       const preserved = this.preservedDirectorFields.get(key);
       // Current agent sessions share these tables. Preserve untouched historical
@@ -559,7 +571,8 @@ export class FileRepository extends MemoryRepository {
     const request = structuredClone(input);
     let reservation!: CatalogObservationReservation, prepared!: CatalogObservationPrepared;
     await this.catalogTransaction(snapshot => {
-      const result = prepareCatalogReservation(this.catalogObservationView(request.identity.supplierId), request);
+      const result = prepareCatalogReservation(this.catalogObservationView(request.identity.supplierId), request,
+        (value, supplierId) => this.assertStoredCatalogPipelineState(value, supplierId));
       reservation = structuredClone(result.reservation);
       prepared = { connections: [], pipeline: result.pipeline };
       return { ...snapshot, applicationSettings: { ...snapshot.applicationSettings,
@@ -579,18 +592,19 @@ export class FileRepository extends MemoryRepository {
         suppliers: snapshot.suppliers?.map(row => row.id === prepared.supplier?.id ? prepared.supplier : row),
         connections: snapshot.connections.map(row => rows.get(row.id) ?? row) };
     }, async () => { this.publishCatalogObservation(prepared); });
-    return structuredClone(prepared.pipeline);
+    return this.catalogPipelineResult(prepared.pipeline, request.resultEntryKeys, request.resultEntryPrefixes);
   }
 
   override async updateCatalogPipelineState(input: Parameters<MemoryRepository["updateCatalogPipelineState"]>[0]): ReturnType<MemoryRepository["updateCatalogPipelineState"]> {
     const request = structuredClone(input);
     let prepared!: CatalogObservationPrepared;
     await this.catalogTransaction(snapshot => {
-      const pipeline = prepareCatalogPipelineUpdate(this.catalogObservationView(request.identity.supplierId), request);
+      const pipeline = prepareCatalogPipelineUpdate(this.catalogObservationView(request.identity.supplierId), request,
+        (value, supplierId) => this.assertStoredCatalogPipelineState(value, supplierId));
       prepared = { connections: [], pipeline };
       return { ...snapshot, applicationSettings: { ...snapshot.applicationSettings, [catalogPipelineSettingKey(pipeline.supplierId)]: pipeline } };
     }, async () => { this.publishCatalogObservation(prepared); });
-    return structuredClone(prepared.pipeline);
+    return this.catalogPipelineResult(prepared.pipeline, request.resultEntryKeys, request.resultEntryPrefixes);
   }
 
   override async saveSupplier(

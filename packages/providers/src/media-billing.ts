@@ -1,4 +1,66 @@
-import type { StructuredModelPricing, StructuredPriceTier } from "./contracts.js";
+import type { ModelDescriptor, ProviderOperation, StructuredModelPricing, StructuredPriceTier } from "./contracts.js";
+
+/** Select the actual matching branch without reordering an ordered tariff. */
+export function selectedModelPriceTier(pricing: StructuredModelPricing, parameters: Readonly<Record<string, unknown>>): StructuredPriceTier | undefined {
+  if (pricing.tiers?.some(tier => tier.conditions || tier.otherwise)) return pricing.tiers.find(tier => {
+    if (tier.otherwise) return true;
+    const matches = (condition: NonNullable<StructuredPriceTier["conditions"]>[number]) => {
+      const value = String(parameters[condition.parameter] ?? "");
+      return condition.operator === "equals" ? value === condition.value : value.includes(condition.value);
+    };
+    const matched = tier.conditionMode === "all" ? tier.conditions?.every(matches) : tier.conditions?.some(matches);
+    return !!tier.conditions && (tier.conditionMode === "none" ? !matched : !!matched);
+  });
+  const matches = pricing.tiers?.filter(tier => tier.dimension === "fixed" ||
+    (tier.dimension && parameters[tier.dimension] !== undefined && String(tier.value).toLowerCase() === String(parameters[tier.dimension]).toLowerCase()));
+  return matches?.length === 1 ? matches[0] : undefined;
+}
+
+export interface SelectedModelQuote {
+  /** Current display may contain accurately labelled historical branches. */
+  pricing?: StructuredModelPricing;
+  /** Only this shape may enter arithmetic or a fee confirmation. */
+  estimatePricing?: StructuredModelPricing;
+  amount?: number;
+  tier?: StructuredPriceTier;
+  historical: boolean;
+  measured: readonly Record<string, unknown>[];
+}
+
+/** Output capacity is a capability limit, never evidence of included billing units. */
+export function catalogRequestBillingCount(model: Pick<ModelDescriptor, "metadata">,
+  parameters: Readonly<Record<string, unknown>>, requestedOutputs = 1): number | undefined {
+  const value = parameters.n ?? model.metadata?.fixedRequestCount;
+  if (value === undefined) return requestedOutputs === 1 ? 1 : undefined;
+  const count = Number(value);
+  return Number.isInteger(count) && count > 0 ? count : undefined;
+}
+
+/** Shared by menus, request previews, batch totals and director preflight.
+ * A billed sample is evidence about its original request, not a new fixed quote.
+ */
+export function selectModelQuote(model: Pick<ModelDescriptor, "pricing" | "metadata"> & Partial<Pick<ModelDescriptor, "operations">>,
+  parameters: Readonly<Record<string, unknown>> = {}, options: { operation?: ProviderOperation; at?: Date } = {}): SelectedModelQuote {
+  const metadata = model.metadata ?? {}, pricing = model.pricing;
+  const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
+  const measured = [metadata.measuredPrice, ...(Array.isArray(metadata.catalogMeasuredPrices) ? metadata.catalogMeasuredPrices : [])].filter(object);
+  const tier = pricing && selectedModelPriceTier(pricing, parameters);
+  const provenance = tier?.evidence ?? pricing?.evidence;
+  const operation = options.operation ?? (model.operations?.length === 1 ? model.operations[0] : undefined);
+  const managed = object(metadata.catalogPriceEvidence) && metadata.catalogPriceEvidence.schemaVersion === 1;
+  const protectedPrice = metadata.priceSource === "manual" || !managed && metadata.source === "manual" || metadata.customBilling === true;
+  const historical = provenance ? provenance.status === "retained" : metadata.priceStatus === "partial" ||
+    typeof metadata.priceLabel === "string" && /（上次价格）$/u.test(metadata.priceLabel);
+  const blocked = !pricing || !!provenance?.operations?.length && (!operation || !provenance.operations.includes(operation)) ||
+    !protectedPrice && (historical || metadata.priceSource === "generated-result" ||
+    ["conflict", "unconfirmed", "failed", "unavailable"].includes(String(metadata.priceStatus)) ||
+    metadata.supplierPriceConflict === true ||
+    !!operation && Array.isArray(metadata.catalogUnavailablePriceOperations) && metadata.catalogUnavailablePriceOperations.includes(operation) ||
+    pricing.kind === "token" && !!pricing.tiers?.some(item => item.evidence?.status === "retained"));
+  const amount = !blocked ? modelPriceAmount(pricing!, parameters, options.at) : undefined;
+  return { ...(pricing ? { pricing } : {}), ...(!blocked && pricing ? { estimatePricing: pricing } : {}),
+    ...(amount !== undefined ? { amount } : {}), ...(tier ? { tier } : {}), historical, measured };
+}
 
 /** Rates are already in the supplier's accounting currency per million tokens.
  * A cache quote requires measured usage by component; it must not become a

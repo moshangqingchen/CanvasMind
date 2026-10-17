@@ -298,13 +298,14 @@ export function createCatalogHttpDispatcher(options: CatalogHttpDispatcherOption
       unsubscribe();
       for (const item of [...queue]) rejectQueued(item, new CatalogDispatchDeferredError(reason));
       for (const [item, controller] of [...running]) { controller.abort(); item.reject(new CatalogDispatchDeferredError(reason)); release(item); }
-      await options.store.mutate(state => {
-        for (const job of Object.values(state.jobs)) if (job.status === "running" && job.lease?.owner === owner) {
-          job.status = job.attemptConsumedAt === undefined ? "deferred" : "unknown"; job.reason = reason; delete job.lease;
-        }
-        return { state, result: undefined };
-      });
-      if (owners.get(options.store) === token) owners.delete(options.store);
+      try {
+        await options.store.mutate(state => {
+          for (const job of Object.values(state.jobs)) if (job.status === "running" && job.lease?.owner === owner) {
+            job.status = job.attemptConsumedAt === undefined ? "deferred" : "unknown"; job.reason = reason; delete job.lease;
+          }
+          return { state, result: undefined };
+        });
+      } finally { if (owners.get(options.store) === token) owners.delete(options.store); }
     },
     /** Event-driven wake, not a polling loop. */
     wake() { void pump(); },

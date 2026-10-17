@@ -21,6 +21,16 @@ interface Dependencies {
   now?: () => number;
   trackWrite?: (work: () => Promise<void>) => Promise<void>;
   canContinue?: () => boolean;
+  /** Emergency rollback may consult newer source eligibility without rewriting
+   * connections. Absence preserves the original legacy policy exactly. */
+  eligibility?: (row: ProviderConnectionRecord, mode: CatalogCheckMode, now: number) => Promise<CatalogUpgradeEligibility | undefined>;
+}
+export interface CatalogUpgradeEligibility {
+  nextCheckAt: number | null;
+  paused?: boolean;
+  manualRequired?: boolean;
+  pauseReason?: CatalogFailureReason;
+  lastAttemptAt?: string;
 }
 function fingerprint(row: ProviderConnectionRecord): string {
   return createHash("sha256").update(JSON.stringify([row.provider, row.encryptedSecret, row.config.baseUrl, row.config.modelGroup,
@@ -70,6 +80,9 @@ export class SupplierCatalogUpgrade {
     priceChangedSupplierIds: [], nextCheckAt: null, connections: [], history: [], noticeId: null };
   constructor(private readonly dependencies: Dependencies) {}
   private now(): number { return (this.dependencies.now ?? Date.now)(); }
+  private async eligibility(row: ProviderConnectionRecord, mode: CatalogCheckMode, now: number): Promise<CatalogUpgradeEligibility> {
+    return await this.dependencies.eligibility?.(row, mode, now) ?? { nextCheckAt: nextCatalogCheckAt(row, mode, now) };
+  }
   async setMode(mode: CatalogCheckMode): Promise<void> { await this.dependencies.repository.setApplicationSetting(CATALOG_MODE_SETTING, mode); }
   /** Status and settings hydration never dispatch upstream requests. */
   async status(summary = false): Promise<CatalogUpgradeStatus> {
@@ -77,16 +90,18 @@ export class SupplierCatalogUpgrade {
     const mode = catalogMode(await repository.getApplicationSetting(CATALOG_MODE_SETTING));
     const suppliers = new Map((await repository.listSuppliers()).map(row => [row.id, row]));
     const rows = (await repository.listConnections()).filter(row => supportedCatalogConnection(row) && currentSource(row, suppliers));
-    const connections: CatalogConnectionStatus[] = rows.map(row => {
-      const next = nextCatalogCheckAt(row, mode, now), supplier = suppliers.get(String(row.config.supplierId ?? ""));
+    const connections: CatalogConnectionStatus[] = await Promise.all(rows.map(async row => {
+      const eligibility = await this.eligibility(row, mode, now), next = mode === "off" ? null : eligibility.nextCheckAt,
+        supplier = suppliers.get(String(row.config.supplierId ?? ""));
       return { connectionId: row.id, name: row.name, ...(supplier ? { supplierId: supplier.id, supplierName: supplier.name } : {}),
-        manualRequired: row.config.catalogCheckManualRequired === true || mode === "off" && !revisionAttempted(row), paused: row.config.catalogCheckPaused === true,
-        ...(typeof row.config.catalogCheckFailureReason === "string" ? { pauseReason: row.config.catalogCheckFailureReason as CatalogFailureReason } : {}),
-        ...(lastAttempt(row) ? { lastAttemptAt: lastAttempt(row) } : {}),
+        manualRequired: eligibility.manualRequired ?? (row.config.catalogCheckManualRequired === true || mode === "off" && !revisionAttempted(row)),
+        paused: eligibility.paused ?? row.config.catalogCheckPaused === true,
+        ...(eligibility.pauseReason ? { pauseReason: eligibility.pauseReason } : typeof row.config.catalogCheckFailureReason === "string" ? { pauseReason: row.config.catalogCheckFailureReason as CatalogFailureReason } : {}),
+        ...(eligibility.lastAttemptAt ?? lastAttempt(row) ? { lastAttemptAt: eligibility.lastAttemptAt ?? lastAttempt(row) } : {}),
         ...(Number.isInteger(row.config.catalogCheckRetainedPriceModelCount) && Number(row.config.catalogCheckRetainedPriceModelCount) > 0
           ? { retainedPriceModelCount: Number(row.config.catalogCheckRetainedPriceModelCount) } : {}),
         nextCheckAt: next === null ? null : new Date(Math.max(now, next)).toISOString() };
-    });
+    }));
     const upcoming = connections.map(row => row.nextCheckAt).filter((at): at is string => Boolean(at)).sort();
     const history = summary ? [] : rows.flatMap(row => historyOf(row, now)).sort((a, b) => b.checkedAt.localeCompare(a.checkedAt));
     return structuredClone({ ...this.state, mode, connections, history,
@@ -124,15 +139,18 @@ export class SupplierCatalogUpgrade {
     if (mode === "off") return;
     const suppliers = new Map((await repository.listSuppliers()).map(row => [row.id, row]));
     const allConnections = await repository.listConnections();
-    const due = allConnections.filter(row => supportedCatalogConnection(row) && currentSource(row, suppliers) &&
-      nextCatalogCheckAt(row, mode, this.now()) !== null && nextCatalogCheckAt(row, mode, this.now())! <= this.now());
+    const candidates = allConnections.filter(row => supportedCatalogConnection(row) && currentSource(row, suppliers));
+    const scheduled = await Promise.all(candidates.map(async row => ({ row, eligibility: await this.eligibility(row, mode, this.now()) })));
+    const due = scheduled.filter(({ eligibility }) => eligibility.nextCheckAt !== null && eligibility.nextCheckAt <= this.now()).map(({ row }) => row);
     this.state.total = due.length;
     const refreshId = `catalog-check-${randomUUID()}`;
     for (const candidate of due) {
       if (this.dependencies.canContinue?.() === false || catalogMode(await repository.getApplicationSetting(CATALOG_MODE_SETTING)) === "off") break;
       const original = await repository.getConnection(candidate.id);
       if (!original || fingerprint(original) !== fingerprint(candidate)) continue;
-      const next = nextCatalogCheckAt(original, catalogMode(await repository.getApplicationSetting(CATALOG_MODE_SETTING)), this.now());
+      const currentMode = catalogMode(await repository.getApplicationSetting(CATALOG_MODE_SETTING));
+      if (currentMode === "off") break;
+      const next = (await this.eligibility(original, currentMode, this.now())).nextCheckAt;
       if (next === null || next > this.now()) continue;
       const attemptedAt = new Date(this.now()).toISOString();
       // Reserve before dispatch: even an interrupted process cannot repeat this

@@ -11,6 +11,11 @@ export function catalogReadPreviewEnabled(environment: Record<string, string | u
   return environment.SUPERCANVAS_CATALOG_READ_PREVIEW === "1" && environment.USE_MEMORY_STORE === "ephemeral";
 }
 
+/** Emergency rollback keeps the previous checker available without a migration. */
+export function catalogReadPipelineEnabled(environment: Record<string, string | undefined>): boolean {
+  return environment.SUPERCANVAS_CATALOG_LEGACY_CHECKER !== "1";
+}
+
 export function catalogReadSourceKey(input: Omit<CatalogReadItemSpec, "sourceKey" | "applyScope">): string {
   return digest([input.entryId, input.sourceUrl, input.parserVersion, input.authScope, input.role, input.requiredForMembership]);
 }

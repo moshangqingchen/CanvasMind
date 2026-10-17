@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { X } from "lucide-react";
-import { CATALOG_CHECK_ENDPOINT, CATALOG_POLICY_EVENT, catalogCheckNotice, nextCatalogCheckAction, readCatalogCheckStatus } from "../lib/client-catalog-check";
+import { CATALOG_CHECK_ENDPOINT, CATALOG_POLICY_EVENT, acknowledgeCatalogCheckNotice, catalogCheckNotice, nextCatalogCheckAction, readCatalogCheckStatus } from "../lib/client-catalog-check";
 import { invalidateConnections, invalidateModelCache } from "../lib/client-api";
 import type { CatalogUpgradeStatus } from "../lib/supplier-catalog-contracts";
 import styles from "./catalog-check.module.css";
@@ -53,6 +53,9 @@ export function CatalogCheckBridge() {
           noticed.current = status.noticeId;
           try { localStorage.setItem(NOTICE_STORAGE, status.noticeId); } catch { /* No provider data is stored here. */ }
           setNotice({ id: status.noticeId, message });
+          if (status.pipeline && Object.keys(status.pipeline.noticeCursors).length) {
+            void acknowledgeCatalogCheckNotice(status.pipeline.noticeCursors, signal).catch(() => undefined);
+          }
         }
         const action = nextCatalogCheckAction(status, Date.now());
         if (action) timer = setTimeout(() => { void read(action.method); }, action.delay);

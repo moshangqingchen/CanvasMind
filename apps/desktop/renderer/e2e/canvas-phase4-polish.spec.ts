@@ -188,7 +188,8 @@ async function assertImageControls(panel: Locator) {
   const price = panel.getByLabel("当前参数价格", { exact: true });
   await expect(price).toBeAttached(); await price.scrollIntoViewIfNeeded({ timeout: 10_000 }); await expect(price).toBeVisible();
   await expect(price).toContainText("型号报价"); await expect(price).toContainText("本次预计费用");
-  await expect(price.locator("strong")).toHaveText(["0.1 USD / 次", "0.1 USD"]);
+  // The evidence disclosure has its own heading; assert the two price rows.
+  await expect(price.locator(":scope > span > strong")).toHaveText(["0.1 USD / 次", "0.1 USD"]);
 }
 
 test("根参数卡首次打开不强制写滚动位置，切换真实型号仍重置已滚动内容", async ({ page, request }) => {

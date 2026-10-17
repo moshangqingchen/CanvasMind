@@ -1,6 +1,7 @@
 import type { ModelDescriptor, StructuredModelPricing, StructuredPriceTier } from "@super-canvas/providers";
 import { normalizeTk1688CnyModel } from "@super-canvas/providers/tk1688-catalog";
 import { applyUserImageSizePresets } from "@super-canvas/providers/image-size-presets";
+import { selectModelQuote } from "@super-canvas/providers/media-billing";
 
 const parameterNames: Record<string, string> = {
   duration: "时长", seconds: "时长", duration_seconds: "时长", resolution: "分辨率", size_tier: "档位", image_size: "档位",
@@ -25,6 +26,11 @@ function priceUnit(pricing: StructuredModelPricing): string {
   return pricing.kind === "token" ? "1M tokens" : pricing.billingUnit === "second" || pricing.kind === "per-second" ? "秒"
     : pricing.billingUnit === "request" || pricing.kind === "per-request" ? "次" : "张";
 }
+function operationScope(pricing: StructuredModelPricing): string {
+  const names = { "image.generate": "图片生成", "image.edit": "图片编辑", "video.generate": "视频生成", "video.image-to-video": "图生视频", "music.generate": "音乐生成" };
+  const operations = pricing.evidence?.operations;
+  return operations?.length ? `${operations.map(operation => names[operation]).join(" / ")} · ` : "";
+}
 
 /** The price sample is independent of the latest directory attempt. */
 export function modelPickerPriceSampleAt(model: Pick<ModelDescriptor, "metadata" | "pricing"> | null | undefined): string | undefined {
@@ -33,6 +39,8 @@ export function modelPickerPriceSampleAt(model: Pick<ModelDescriptor, "metadata"
 }
 
 function historicalPricePrefix(model: ModelDescriptor, label: string): string {
+  if (model.pricing?.tiers?.some(tier => tier.evidence?.status === "published") && model.pricing.tiers.some(tier => tier.evidence?.status === "retained"))
+    return "部分上次价格 · ";
   if (model.metadata?.priceStatus !== "partial" && !/（上次价格）$/u.test(label)) return "";
   // A measured charge remains a separate source, even if an older record is displayed.
   const name = model.metadata?.priceSource === "generated-result" ? "上次记录" : "上次价格";
@@ -60,7 +68,7 @@ export function modelPickerPriceData(model: ModelDescriptor | null | undefined):
     for (const [key, value] of Object.entries(sample ?? {})) if (Array.isArray(value)) scope.push(`${parameterNames[key] ?? key}数量=${value.length}`);
     return `${historical}${label}${scope.length ? ` · 实测参数：${scope.join("，")}` : ` · 实测请求参数：${sample && Object.keys(sample).length === 0 ? "省略" : "—"}`}`;
   }
-  const pricing = model.pricing;
+  const pricing = selectModelQuote(model).pricing;
   if (pricing) {
     const currency = pricing.currency === "credits" ? "额度" : pricing.currency;
     const unit = priceUnit(pricing);
@@ -68,9 +76,9 @@ export function modelPickerPriceData(model: ModelDescriptor | null | undefined):
     if (finite(pricing.unitAmount) && pricing.unitAmount >= 0) rates.push(`${pricing.unitAmount} ${currency} / ${unit}`);
     if (pricing.kind === "token") for (const [name, amount] of [["输入", pricing.inputPerMillion], ["输出", pricing.outputPerMillion], ["图片输出", pricing.imageOutputPerMillion]] as const)
       if (finite(amount) && amount >= 0) rates.push(`${name} ${amount} ${currency} / ${unit}`);
-    for (const tier of pricing.tiers ?? []) if (finite(tier.price) && tier.price >= 0) rates.push(`${priceCondition(tier)} · ${tier.price} ${currency} / ${unit}`);
+    for (const tier of pricing.tiers ?? []) if (finite(tier.price) && tier.price >= 0) rates.push(`${priceCondition(tier)} · ${tier.price} ${currency} / ${unit}${tier.evidence?.status === "retained" ? `（上次价格 · 采样时间 ${tier.evidence.checkedAt}）` : ""}`);
     const times = pricing.timeMultipliers?.map(window => `上海 ${window.weekdaysOnly ? "周一至周五 " : ""}${window.startHour}:00–${window.endHour}:00 ×${window.multiplier}`).join("；");
-    if (rates.length) return `${historical}${rates.join("；")}${pricing.confidence === "estimate" ? "（参考）" : pricing.confidence === "snapshot" ? "（目录快照）" : ""}${times ? `；时段倍率：${times}` : ""}${metadata?.billingIncludesInputDuration === true ? "；计费时长：输入 + 输出视频" : ""}`;
+    if (rates.length) return `${operationScope(pricing)}${historical}${rates.join("；")}${pricing.confidence === "estimate" ? "（参考）" : pricing.confidence === "snapshot" ? "（目录快照）" : ""}${times ? `；时段倍率：${times}` : ""}${metadata?.billingIncludesInputDuration === true ? "；计费时长：输入 + 输出视频" : ""}`;
   }
   // Some suppliers publish prose group prices without a structured tariff.
   // Preserve those facts, but never turn absence/status messages into a quote.
@@ -85,12 +93,12 @@ export function modelPickerPriceCompact(model: ModelDescriptor | null | undefine
   if (model.metadata?.priceSource === "generated-result" && record(model.metadata.measuredPrice) &&
       typeof model.metadata.priceLabel === "string" && model.metadata.priceLabel.trim())
     return detail.replace(/\s*·\s*实测(?:请求)?参数：[\s\S]*$/u, "");
-  const pricing = model.pricing;
+  const pricing = selectModelQuote(model).pricing;
   if (!pricing) return detail;
   const historical = historicalPricePrefix(model, typeof model.metadata?.priceLabel === "string" ? model.metadata.priceLabel.trim() : "");
   const confidence = pricing.confidence === "estimate" ? "（参考）" : pricing.confidence === "snapshot" ? "（目录快照）" : "";
   const times = pricing.timeMultipliers?.length ? " · 时段倍率" : "";
-  if (pricing.kind === "token") return `${historical}Token 计价${confidence}${times}`;
+  if (pricing.kind === "token") return `${operationScope(pricing)}${historical}Token 计价${confidence}${times}`;
   const tiers = (pricing.tiers ?? []).filter(tier => finite(tier.price) && tier.price >= 0);
   const amounts = tiers.map(tier => tier.price);
   if (finite(pricing.unitAmount) && pricing.unitAmount >= 0) amounts.unshift(pricing.unitAmount);
@@ -98,7 +106,7 @@ export function modelPickerPriceCompact(model: ModelDescriptor | null | undefine
   const minimum = Math.min(...amounts), maximum = Math.max(...amounts);
   const currency = pricing.currency === "credits" ? "额度" : pricing.currency;
   const scope = amounts.length > 1 ? ` · ${amounts.length} 档` : tiers[0] ? ` · ${priceCondition(tiers[0])}` : "";
-  return `${historical}${minimum === maximum ? minimum : `${minimum}–${maximum}`} ${currency} / ${priceUnit(pricing)}${confidence}${scope}${times}${model.metadata?.billingIncludesInputDuration === true ? " · 输入+输出时长" : ""}`;
+  return `${operationScope(pricing)}${historical}${minimum === maximum ? minimum : `${minimum}–${maximum}`} ${currency} / ${priceUnit(pricing)}${confidence}${scope}${times}${model.metadata?.billingIncludesInputDuration === true ? " · 输入+输出时长" : ""}`;
 }
 
 export function modelPickerPriceLabelData(label: unknown): string {

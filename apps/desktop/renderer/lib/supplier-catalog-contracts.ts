@@ -6,6 +6,10 @@ export interface CatalogChange {
   groupId?: string;
   before?: string;
   after?: string;
+  reason?: "explicit-unpublished";
+  sourceUrl?: string;
+  checkedAt?: string;
+  condition?: string;
 }
 export interface CatalogChangeRecord {
   id: string;
@@ -45,4 +49,53 @@ export interface CatalogUpgradeStatus {
   connections: CatalogConnectionStatus[];
   history: CatalogChangeRecord[];
   noticeId: string | null;
+  /** Read-only source facts. Viewing this never starts collection. */
+  pipeline?: CatalogPipelineDiagnostics;
+}
+
+export interface CatalogSourceDiagnostic {
+  sourceKey: string;
+  supplierId: string;
+  connectionIds: string[];
+  entryId: string;
+  role: "key-membership" | "catalog-offer" | "price" | "schema" | "health";
+  identity: "anonymous" | "site-account" | "connection-key";
+  groupIdentity?: string;
+  sourceUrl?: string;
+  status: "succeeded" | "partial" | "failed" | "deferred" | "unread" | "running" | "unknown";
+  reason?: string;
+  checkedAt?: string;
+  complete: boolean;
+  modelCount?: number;
+  requiredForMembership: boolean;
+  paused: boolean;
+  nextCheckAt: string | null;
+}
+export interface CatalogMembershipCandidateSummary {
+  connectionId: string;
+  sourceKey: string;
+  candidateVersion: string;
+  baselineCount: number;
+  candidateCount: number;
+  missingCount: number;
+  countedCycles: number;
+  requiredCycles: number;
+  checkedAt: string;
+}
+export interface CatalogHistoricalDescriptor {
+  connectionId: string;
+  modelId: string;
+  unavailableAt: string;
+  sourceKeys: string[];
+  descriptor: import("@super-canvas/providers").ModelDescriptor;
+}
+export interface CatalogPipelineDiagnostics {
+  diagnostics: CatalogSourceDiagnostic[];
+  candidates: CatalogMembershipCandidateSummary[];
+  historyDescriptors: CatalogHistoricalDescriptor[];
+  contracts?: Array<{ connectionId: string; modelId: string; operation: string; status: "accepted" | "protected" | "pending";
+    reason?: "incomplete" | "removed" | "conflicting-source"; checkedAt: string; sourceUrl?: string }>;
+  /** Each supplier entry has its own monotonic cursor; no global sequence is inferred. */
+  noticeCursors: Record<string, number>;
+  acknowledgedCursors: Record<string, number>;
 }

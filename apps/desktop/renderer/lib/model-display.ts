@@ -1,4 +1,4 @@
-import { modelPriceAmount, tokenComponentRate } from "@super-canvas/providers/media-billing";
+import { modelPriceAmount, selectModelQuote, selectedModelPriceTier, tokenComponentRate, catalogRequestBillingCount } from "@super-canvas/providers/media-billing";
 import { normalizeTk1688CnyModel } from "@super-canvas/providers/tk1688-catalog";
 import { applyUserImageSizePresets } from "@super-canvas/providers/image-size-presets";
 import { getModelParameterDescriptor, validateModelParameters } from "@super-canvas/providers/cli-contracts";
@@ -214,9 +214,13 @@ export function modelPriceSummary(model: import("@super-canvas/providers").Model
   }
   if (pricing) {
     const defaults = Object.fromEntries((model.parameters ?? []).filter(p => p.default !== undefined).map(p => [p.key, p.default]));
-    const amount = modelPriceAmount(pricing, image?.pricingParameters ?? { ...defaults, ...parameters, resolution: parameters.resolution ?? (tier || defaults.resolution), quality });
+    const priceParameters = image?.pricingParameters ?? { ...defaults, ...parameters, resolution: parameters.resolution ?? (tier || defaults.resolution), quality };
+    const amount = modelPriceAmount(selectModelQuote(model, priceParameters).pricing!, priceParameters);
+    const evidence = selectedModelPriceTier(pricing, priceParameters)?.evidence ?? pricing.evidence;
+    const historical = evidence ? evidence.status === "retained" : model.metadata?.priceStatus === "partial" ||
+      typeof model.metadata?.priceLabel === "string" && model.metadata.priceLabel.endsWith("（上次价格）");
     const unit = pricing.billingUnit === "second" || pricing.kind === "per-second" ? "秒" : pricing.billingUnit === "request" || pricing.kind === "per-request" ? "次" : "张";
-    if (amount !== undefined && ["per-image", "per-request", "per-second", "tiered"].includes(pricing.kind)) return `${typeof model.metadata?.priceLabel === "string" && model.metadata.priceLabel.endsWith("（上次价格）") ? "上次 " : ""}${model.metadata?.tk1688Catalog === true && pricing.currency === "CNY" ? `¥${amount}` : `${amount} ${pricing.currency === "credits" ? "额度" : pricing.currency}`} / ${unit}${pricing.confidence === "exact" ? "" : "（参考）"}${pricing.timeMultipliers?.length ? "（上海当前时段价，以提交时刻为准）" : ""}`;
+    if (amount !== undefined && ["per-image", "per-request", "per-second", "tiered"].includes(pricing.kind)) return `${historical ? "上次 " : ""}${model.metadata?.tk1688Catalog === true && pricing.currency === "CNY" ? `¥${amount}` : `${amount} ${pricing.currency === "credits" ? "额度" : pricing.currency}`} / ${unit}${pricing.confidence === "exact" ? "" : "（参考）"}${historical && evidence?.checkedAt ? ` · 采样时间 ${evidence.checkedAt}` : ""}${pricing.timeMultipliers?.length ? "（上海当前时段价，以提交时刻为准）" : ""}`;
     if (pricing.kind === "token") {
       if (pricing.sourceUrl === "https://token.secure-skill.com/api/v1/pricing/channels" &&
         pricing.tiers?.some(tier => tier.conditions?.some(condition => ["resolution", "has_reference_video"].includes(condition.parameter)))) {
@@ -265,7 +269,7 @@ export function modelPickerPriceSummary(model: ModelDescriptor | undefined, _par
 
 /** A preview of the selected request, separate from the supplier's unit price. */
 export function modelEstimatedCost(model: ModelDescriptor | null | undefined, parameters: Readonly<Record<string, unknown>>): string | undefined {
-  if (!model || model.metadata?.priceSource === "generated-result" || model.metadata?.priceStatus === "partial") return undefined;
+  if (!model) return undefined;
   if (model.metadata?.mikotoImageContract === true && model.metadata.imageResolutionTierParameter === "size_tier" &&
       mikotoImageRatioIssues(parameters).length) return undefined;
   model = applyUserImageSizePresets(normalizeTk1688CnyModel(model));
@@ -288,10 +292,16 @@ export function modelEstimatedCost(model: ModelDescriptor | null | undefined, pa
   const image = model.operations.some(operation => operation.startsWith("image."))
     ? evaluateImageParameters(model, parameters) : undefined;
   const resolution = values.size_tier ?? values.resolution ?? values.image_size;
-  const amount = modelPriceAmount(pricing, image?.pricingParameters ?? { ...values, ...(resolution ? { resolution } : {}) });
+  const quote = selectModelQuote(model, image?.pricingParameters ?? { ...values, ...(resolution ? { resolution } : {}) },
+    { ...(model.operations.length === 1 ? { operation: model.operations[0] } : {}) });
+  const amount = quote.amount;
   if (amount === undefined || !Number.isFinite(amount) || amount < 0) return undefined;
   const perTask = pricing.billingUnit === "request" || pricing.kind === "per-request" || pricing.billingUnit === "second" || pricing.kind === "per-second";
-  const count = Number(values.n ?? (perTask ? model.metadata?.fixedRequestCount : model.metadata?.fixedOutputCount) ?? 1);
+  const managed = model.metadata?.catalogPriceEvidence && typeof model.metadata.catalogPriceEvidence === "object" &&
+    (model.metadata.catalogPriceEvidence as { schemaVersion?: unknown }).schemaVersion === 1;
+  const count = managed && (pricing.billingUnit === "request" || pricing.kind === "per-request")
+    ? catalogRequestBillingCount(model, values) : Number(values.n ?? (perTask ? model.metadata?.fixedRequestCount : model.metadata?.fixedOutputCount) ?? 1);
+  if (count === undefined) return undefined;
   if (!Number.isInteger(count) || count < 1) return undefined;
   const perSecond = pricing.billingUnit === "second" || pricing.kind === "per-second";
   const duration = Number(values.duration ?? values.duration_seconds ?? values.seconds);

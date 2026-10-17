@@ -78,6 +78,7 @@ export function preparedNodeRequirements(
   if (!Number.isInteger(count) || count < 1 || count > (video ? 1 : 20))
     throw new Error("生成数量无效");
   const requirements: GenerationRequirements = {
+    pricingParameters: params,
     operation: video
       ? counts.image
         ? "video.image-to-video"

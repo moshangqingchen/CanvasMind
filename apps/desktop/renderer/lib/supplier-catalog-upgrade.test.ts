@@ -22,6 +22,18 @@ async function fixture() {
 }
 
 describe("supplier automatic catalog policy", () => {
+  it("uses an optional read-only eligibility hook for status and checks it again before dispatch", async () => {
+    const f = await fixture(); await f.save();
+    const hook = vi.fn(async () => ({ nextCheckAt: f.now() + CATALOG_CHECK_INTERVAL_MS, paused: true, manualRequired: true }));
+    const service = new SupplierCatalogUpgrade({ repository: f.repository, refreshCatalog: f.refreshCatalog, now: f.now, eligibility: hook });
+    expect((await service.status()).connections[0]).toMatchObject({ paused: true, manualRequired: true,
+      nextCheckAt: new Date(f.now() + CATALOG_CHECK_INTERVAL_MS).toISOString() });
+    service.start(); await service.settle(); expect(f.refreshCatalog).not.toHaveBeenCalled();
+    hook.mockResolvedValueOnce({ nextCheckAt: f.now(), paused: false, manualRequired: false });
+    service.start(); await service.settle(); // Second check returns the delayed value again.
+    expect(f.refreshCatalog).not.toHaveBeenCalled();
+    expect((await f.repository.getConnection("active"))?.config.catalogCheckAttemptedAt).toBeUndefined();
+  });
   it("defaults daily, reserves the period before network and never duplicates a cycle", async () => {
     const f = await fixture(); await f.save();
     f.refreshCatalog.mockImplementationOnce(async connection => {

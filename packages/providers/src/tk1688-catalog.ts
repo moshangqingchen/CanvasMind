@@ -25,6 +25,10 @@ const unavailableCnyPrice = "人民币价格暂不可用（汇率未读取）";
 export function normalizeTk1688CnyModel<T extends PricedModel>(model: T): T {
   if (model.metadata?.tk1688Catalog !== true) return model;
   model = normalizeTk1688ImageSizeContract(model);
+  // The observation pipeline has already joined its exact price/FX receipts.
+  // Reusing legacy metadata here would resurrect a withdrawn rate or pair a
+  // new base price with an unrelated historical exchange-rate sample.
+  if (record(model.metadata?.catalogPriceEvidence)?.schemaVersion === 1) return model;
   const metadata = { ...model.metadata };
   const parameters = model.parameters;
   const candidate = model.pricing ?? record(metadata.tk1688Pricing) as unknown as StructuredModelPricing | undefined;

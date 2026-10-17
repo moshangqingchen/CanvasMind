@@ -15,6 +15,21 @@ export async function saveCatalogCheckMode(mode: CatalogCheckMode): Promise<Cata
   return response.json() as Promise<CatalogUpgradeStatus>;
 }
 
+/** Local confirmation of one exact committed candidate; no refresh is requested. */
+export async function confirmCatalogCandidate(input: { connectionId: string; sourceKey: string; candidateVersion: string }): Promise<CatalogUpgradeStatus> {
+  const response = await fetch(CATALOG_CHECK_ENDPOINT, { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "confirm-candidate", connectionId: input.connectionId, sourceKey: input.sourceKey, candidateVersion: input.candidateVersion }) });
+  if (!response.ok) throw new Error(response.status === 409 ? "候选目录已变化，请重新查看后确认。" : "候选目录未确认，请重试。");
+  return response.json() as Promise<CatalogUpgradeStatus>;
+}
+
+/** Per-supplier committed cursors survive restarts without suppressing later changes. */
+export async function acknowledgeCatalogCheckNotice(noticeCursors: Readonly<Record<string, number>>, signal?: AbortSignal): Promise<void> {
+  const response = await fetch(CATALOG_CHECK_ENDPOINT, { method: "PATCH", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ noticeCursors }), signal });
+  if (!response.ok) throw new Error("目录提示读取记录未保存");
+}
+
 /** Local API scheduling only. The server reserves each attempt before upstream I/O. */
 export function nextCatalogCheckAction(status: Pick<CatalogUpgradeStatus, "mode" | "phase" | "nextCheckAt">, now: number): { method: "GET" | "POST"; delay: number } | null {
   if (status.mode === "off") return null;

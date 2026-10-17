@@ -1178,6 +1178,8 @@
 .sm-model-evidence summary { cursor:pointer; width:fit-content; }
 .sm-model-evidence p { margin:8px 0 0; overflow-wrap:anywhere; }
 .sm-model-price { font-size:13px; color:var(--text); line-height:1.7; overflow-wrap:anywhere; text-align:right; font-variant-numeric:tabular-nums; }
+.sm-model-price-evidence { grid-column:1 / -1; min-width:0; text-align:left; }
+.sm-model-price-evidence ul { grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr)); }
 .sm-model-route-guide { margin:0 0 12px; color:var(--muted); font-size:12px; line-height:1.7; }
 .sm-model-families { display:grid; gap:10px; margin-bottom:10px; }
 .sm-model-family { min-width:0; border:1px solid var(--line); border-radius:16px; overflow:clip; background:var(--panel); }

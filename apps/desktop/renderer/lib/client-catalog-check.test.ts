@@ -1,5 +1,29 @@
-import { describe, expect, it } from "vitest";
-import { catalogCheckNotice, catalogFailureLabel, nextCatalogCheckAction } from "./client-catalog-check";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { acknowledgeCatalogCheckNotice, catalogCheckNotice, catalogFailureLabel, confirmCatalogCandidate, nextCatalogCheckAction, readCatalogCheckStatus } from "./client-catalog-check";
+
+afterEach(() => vi.unstubAllGlobals());
+
+describe("catalog diagnostic actions", () => {
+  it("only explicit confirmation sends the exact candidate version, never a refresh or client descriptors", async () => {
+    const fetcher = vi.fn<typeof fetch>(async () => Response.json({ noticeId: null })); vi.stubGlobal("fetch", fetcher);
+    await readCatalogCheckStatus();
+    expect(fetcher.mock.calls[0]).toEqual(["/api/suppliers/catalog-upgrade", { cache: "no-store", signal: undefined }]);
+    const input = { connectionId: "connection-a", sourceKey: "source-a", candidateVersion: "exact-version", models: ["not-client-authority"] };
+    await confirmCatalogCandidate(input);
+    expect(fetcher.mock.calls[1]?.[1]).toMatchObject({ method: "POST", body: JSON.stringify({ action: "confirm-candidate", connectionId: "connection-a", sourceKey: "source-a", candidateVersion: "exact-version" }) });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+  it("returns a stale-candidate message without silently confirming a replacement version", async () => {
+    const fetcher = vi.fn(async () => new Response(null, { status: 409 })); vi.stubGlobal("fetch", fetcher);
+    await expect(confirmCatalogCandidate({ connectionId: "a", sourceKey: "b", candidateVersion: "old" })).rejects.toThrow("候选目录已变化");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+  it("acknowledges scoped cursors with a local PATCH, not a collection POST", async () => {
+    const fetcher = vi.fn(async () => Response.json({})); vi.stubGlobal("fetch", fetcher);
+    await acknowledgeCatalogCheckNotice({ "supplier-a/changes:a": 5, "supplier-b/changes:b": 1 });
+    expect(fetcher).toHaveBeenCalledWith("/api/suppliers/catalog-upgrade", expect.objectContaining({ method: "PATCH", body: JSON.stringify({ noticeCursors: { "supplier-a/changes:a": 5, "supplier-b/changes:b": 1 } }) }));
+  });
+});
 
 describe("catalog check client scheduling", () => {
   const now = Date.parse("2026-10-17T08:00:00Z");

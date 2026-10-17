@@ -101,6 +101,9 @@ export interface CatalogPipelineUpdate {
   expectedIdentityEpoch?: string;
   initialEntries?: Record<string, JsonObject>;
   state: CatalogStateEntryPatch[];
+  /** Response projection only; never limits the atomic transaction's state. */
+  resultEntryKeys?: readonly string[];
+  resultEntryPrefixes?: readonly string[];
 }
 export interface CatalogObservationCommit {
   reservation: CatalogObservationReservation;
@@ -110,6 +113,9 @@ export interface CatalogObservationCommit {
   groups?: CatalogGroupPatch[];
   connections?: CatalogConnectionPatch[];
   state?: CatalogStateEntryPatch[];
+  /** Response projection only; all state is still published atomically. */
+  resultEntryKeys?: readonly string[];
+  resultEntryPrefixes?: readonly string[];
 }
 export interface CatalogObservationView {
   supplier: SupplierRecord | undefined;
@@ -132,6 +138,12 @@ const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(canonical(value))).digest("hex");
 function fail(message: string): never { throw new SupplierConflictError(message); }
 const clone = <T>(value: T): T => structuredClone(value);
+/** Changed maps are copied; untouched JSON values remain repository-owned.
+ * Every entry written by a patch is independently cloned before publication. */
+const copyPipeline = (value: CatalogPipelineState): CatalogPipelineState => ({ ...value, sources: { ...value.sources }, entries: { ...value.entries } });
+type PipelineValidator = (value: unknown, supplierId: string) => asserts value is CatalogPipelineState;
+const copyValidatedPipeline = (value: CatalogPipelineState, validator: PipelineValidator): CatalogPipelineState =>
+  validator === assertCatalogPipelineState ? clone(value) : copyPipeline(value);
 export function catalogSupplierIdentity(supplier: SupplierRecord): string {
   return hash([supplier.id, supplier.supplierKey, supplier.siteUrl, supplier.apiUrl, supplier.kind,
     supplier.state?.sourceId, supplier.state?.fingerprint, supplier.state?.visibility, supplier.state?.siteLogin, supplier.state?.scanId]);
@@ -187,12 +199,13 @@ function applyStateEntries(pipeline: CatalogPipelineState, patches: readonly Cat
     else Object.defineProperty(pipeline.entries, patch.key, { value: clone(patch.value), enumerable: true, configurable: true, writable: true });
   }
 }
-export function prepareCatalogPipelineUpdate(view: CatalogObservationView, input: CatalogPipelineUpdate): CatalogPipelineState {
+export function prepareCatalogPipelineUpdate(view: CatalogObservationView, input: CatalogPipelineUpdate,
+  validateCurrent: PipelineValidator = assertCatalogPipelineState): CatalogPipelineState {
   assertIdentity(view, input.identity, input.expectedMode, true);
-  if (view.pipeline !== undefined) assertCatalogPipelineState(view.pipeline, input.identity.supplierId);
+  if (view.pipeline !== undefined) validateCurrent(view.pipeline, input.identity.supplierId);
   const pipeline: CatalogPipelineState = view.pipeline === undefined
     ? { schemaVersion: 1, supplierId: input.identity.supplierId, identityEpoch: randomUUID(), nextDispatchSeq: 1, sources: {}, entries: clone(input.initialEntries ?? {}) }
-    : clone(view.pipeline as CatalogPipelineState);
+    : copyValidatedPipeline(view.pipeline as CatalogPipelineState, validateCurrent);
   if (input.expectedIdentityEpoch !== undefined && input.expectedIdentityEpoch !== pipeline.identityEpoch) fail("目录观察身份代次已改变");
   applyStateEntries(pipeline, input.state);
   assertCatalogPipelineState(pipeline, input.identity.supplierId);
@@ -212,13 +225,14 @@ export function assertCatalogPipelineState(value: unknown, supplierId: string): 
   }
   if (Buffer.byteLength(JSON.stringify(value), "utf8") > CATALOG_PIPELINE_MAX_BYTES) fail("目录观察状态超过体积保护上限，未发布任何更改");
 }
-export function prepareCatalogReservation(view: CatalogObservationView, input: CatalogObservationReserve): { pipeline: CatalogPipelineState; reservation: CatalogObservationReservation } {
+export function prepareCatalogReservation(view: CatalogObservationView, input: CatalogObservationReserve,
+  validateCurrent: PipelineValidator = assertCatalogPipelineState): { pipeline: CatalogPipelineState; reservation: CatalogObservationReservation } {
   assertIdentity(view, input.identity, input.expectedMode, input.manual === true);
   if (!input.sourceKey || !input.observationCycleId) fail("目录观察来源或周期为空");
-  if (view.pipeline !== undefined) assertCatalogPipelineState(view.pipeline, input.identity.supplierId);
+  if (view.pipeline !== undefined) validateCurrent(view.pipeline, input.identity.supplierId);
   const pipeline: CatalogPipelineState = view.pipeline === undefined
     ? { schemaVersion: 1, supplierId: input.identity.supplierId, identityEpoch: randomUUID(), nextDispatchSeq: 1, sources: {}, entries: clone(input.initialEntries ?? {}) }
-    : clone(view.pipeline as CatalogPipelineState);
+    : copyValidatedPipeline(view.pipeline as CatalogPipelineState, validateCurrent);
   if (input.invalidatePrevious) pipeline.identityEpoch = randomUUID();
   const dispatchSeq = pipeline.nextDispatchSeq++;
   if (!Number.isSafeInteger(pipeline.nextDispatchSeq)) fail("目录观察序号已达到上限");
@@ -240,21 +254,23 @@ function applyFields(current: JsonObject, patch: CatalogFieldPatch<object>, allo
   return next;
 }
 const stableGroupId = catalogObservationGroupIdentity;
-export function prepareCatalogObservation(view: CatalogObservationView, input: CatalogObservationCommit): CatalogObservationPrepared {
+export function prepareCatalogObservation(view: CatalogObservationView, input: CatalogObservationCommit,
+  validateCurrent: PipelineValidator = assertCatalogPipelineState): CatalogObservationPrepared {
   if (input.leaseDeadline !== undefined && (!Number.isFinite(input.leaseDeadline) || Date.now() >= input.leaseDeadline))
     fail("目录任务租约已失效，未发布任何更改");
   const token = input.reservation;
   const current = assertIdentity(view, token.identity, token.expectedMode, token.manual === true);
-  assertCatalogPipelineState(view.pipeline, current.id);
-  const pipeline = clone(view.pipeline);
+  validateCurrent(view.pipeline, current.id);
+  const pipeline = copyValidatedPipeline(view.pipeline, validateCurrent);
   const source = Object.hasOwn(pipeline.sources, token.sourceKey) ? pipeline.sources[token.sourceKey] : undefined;
   if (pipeline.identityEpoch !== token.identityEpoch || !source || source.lastDispatchedSeq !== token.dispatchSeq || source.lastAcceptedSeq >= token.dispatchSeq)
     fail("目录观察已被更新的请求替代");
-  let supplier = clone(current);
+  let supplier = validateCurrent === assertCatalogPipelineState ? clone(current) : current;
   let supplierChanged = false;
   if (!view.supplier && (input.supplierFields || input.groups?.length)) fail("独立连接不能发布供应商补丁");
   if (input.supplierFields) { supplier = applyFields(supplier as unknown as JsonObject, input.supplierFields, supplierFields) as unknown as SupplierRecord; supplierChanged = true; }
   const touchedGroups = new Set<string>();
+  if (input.groups?.length) supplier = { ...supplier, catalog: { ...supplier.catalog, groups: [...supplier.catalog.groups] } };
   for (const patch of input.groups ?? []) {
     const id = patch.kind === "insert" ? stableGroupId(patch.group) : patch.groupId;
     if (!id || touchedGroups.has(id)) fail("目录分组补丁身份重复");
@@ -272,7 +288,7 @@ export function prepareCatalogObservation(view: CatalogObservationView, input: C
       supplier.catalog.groups = supplier.catalog.groups.filter(row => row !== group);
     } else {
       if (!group) fail("目录目标分组已不存在");
-      const nextGroup = patch.fields ? applyFields(group as unknown as JsonObject, patch.fields, groupFields) as unknown as SupplierGroup : group;
+      const nextGroup = patch.fields ? applyFields(group as unknown as JsonObject, patch.fields, groupFields) as unknown as SupplierGroup : { ...group };
       if (patch.details) {
         const details = applyFields(object(group.details), patch.details, groupDetailFields);
         if (details.source !== "model-plaza" && details.source !== "key-groups") fail("目录分组详情缺少来源");
@@ -287,7 +303,7 @@ export function prepareCatalogObservation(view: CatalogObservationView, input: C
     const row = view.connections.get(patch.connectionId);
     if (!row || touchedConnections.has(row.id) || !token.identity.connections.some(guard => guard.connectionId === row.id)) fail("目录补丁缺少连接身份栅栏");
     touchedConnections.add(row.id);
-    const next = clone(row);
+    const next = validateCurrent === assertCatalogPipelineState ? clone(row) : { ...row, config: { ...row.config } };
     if (patch.fields) next.config = applyFields(next.config, patch.fields, connectionFields);
     if (patch.connectorContract) {
       if (!isDeepStrictEqual(row.config.connector, patch.connectorContract.expected)) fail("目录调用契约已改变，旧观察已丢弃");
@@ -303,7 +319,8 @@ export function prepareCatalogObservation(view: CatalogObservationView, input: C
     connections.push(next);
   }
   applyStateEntries(pipeline, input.state ?? []);
-  source.lastAcceptedSeq = token.dispatchSeq;
+  Object.defineProperty(pipeline.sources, token.sourceKey, { value: { ...source, lastAcceptedSeq: token.dispatchSeq },
+    enumerable: true, configurable: true, writable: true });
   assertCatalogPipelineState(pipeline, current.id);
   return { supplier: supplierChanged ? supplier : undefined, connections, pipeline };
 }

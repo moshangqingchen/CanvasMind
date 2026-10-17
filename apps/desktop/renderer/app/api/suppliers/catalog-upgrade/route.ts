@@ -6,33 +6,43 @@ import { scanSupplierRecord } from "../../../../lib/supplier-service";
 import { outsideCatalogRepository, withCatalogRepository } from "../../../../lib/catalog-repository-scope";
 import { CATALOG_MODE_SETTING } from "../../../../lib/supplier-catalog-policy";
 import { isDeepStrictEqual } from "node:util";
-import type { SupplierRecord } from "@super-canvas/db";
+import { SupplierConflictError, type SupplierRecord } from "@super-canvas/db";
 import { decryptSecret, providerFetch } from "@super-canvas/providers";
 import { requireServerMasterKey } from "../../../../lib/master-key";
 import { previewCatalogUpgradeReads } from "../../../../lib/catalog-upgrade-preview";
-import { catalogReadPreviewEnabled } from "../../../../lib/catalog-source-plan";
+import { catalogReadPipelineEnabled, catalogReadPreviewEnabled } from "../../../../lib/catalog-source-plan";
 import { createCatalogPipelineService } from "../../../../lib/catalog-pipeline-service";
 import { createCatalogPipelineWakeLoop } from "../../../../lib/catalog-pipeline-wake";
+import { createCatalogAutomaticCheck } from "../../../../lib/catalog-automatic-check";
+import { catalogPipelineReaders } from "../../../../lib/catalog-pipeline-readers";
+import { acknowledgeCatalogPipelineCursors, CATALOG_PIPELINE_NOTICE_CURSORS } from "../../../../lib/catalog-pipeline-diagnostics";
+import { createCatalogLegacyEligibility } from "../../../../lib/catalog-legacy-eligibility";
 
 export const dynamic = "force-dynamic";
 const scope = globalThis as typeof globalThis & { __supplierCatalogUpgrade?: SupplierCatalogUpgrade;
   __supplierCatalogReadPipeline?: ReturnType<typeof createCatalogPipelineService>;
   __supplierCatalogReadWake?: ReturnType<typeof createCatalogPipelineWakeLoop>;
+  __supplierCatalogAutomaticCheck?: ReturnType<typeof createCatalogAutomaticCheck>;
   __supplierCatalogReadStop?: () => void };
 function stopReadPipeline() {
+  scope.__supplierCatalogAutomaticCheck?.close(); delete scope.__supplierCatalogAutomaticCheck;
   scope.__supplierCatalogReadWake?.close(); scope.__supplierCatalogReadPipeline?.close();
   delete scope.__supplierCatalogReadWake; delete scope.__supplierCatalogReadPipeline; delete scope.__supplierCatalogReadStop;
 }
 function readPipeline() {
+  scope.__supplierCatalogReadStop = stopReadPipeline;
   return scope.__supplierCatalogReadPipeline ??= createCatalogPipelineService({ repository, environment: process.env,
     canContinue: () => globalThis.__superCanvasDesktopLifecycle?.draining !== true,
     trackWrite: async work => { let value!: Awaited<ReturnType<typeof work>>;
       await trackDesktopBackgroundWrite(async () => { value = await work(); }); return value; },
-    readers: async connection => {
-      let apiKey = "";
-      try { if (connection.encryptedSecret) apiKey = decryptSecret(connection.encryptedSecret, requireServerMasterKey()); } catch { /* Remains unread. */ }
-      return { apiKey, fetchFor: spec => spec.authScope.kind === "site-account" || spec.authScope.kind === "connection-key" && !apiKey ? undefined : providerFetch };
-    } });
+    readers: catalogPipelineReaders });
+}
+function automaticCheck() {
+  scope.__supplierCatalogReadStop = stopReadPipeline;
+  return scope.__supplierCatalogAutomaticCheck ??= createCatalogAutomaticCheck({ repository, pipeline: readPipeline(), revision: SUPPLIER_CATALOG_REVISION,
+    clock: { now: Date.now, setTimeout: (callback, delay) => { const timer = setTimeout(callback, delay); timer.unref(); return timer; },
+      clearTimeout: timer => clearTimeout(timer as ReturnType<typeof setTimeout>) },
+    canContinue: () => globalThis.__superCanvasDesktopLifecycle?.draining !== true });
 }
 function service() {
   // Shared only within one scheduled cycle; a foreground supplier edit invalidates
@@ -40,6 +50,7 @@ function service() {
   let batchId: string | undefined;
   const catalogs = new Map<string, { before: SupplierRecord; after: SupplierRecord }>();
   return scope.__supplierCatalogUpgrade ??= new SupplierCatalogUpgrade({ repository,
+    eligibility: createCatalogLegacyEligibility(repository),
     trackWrite: trackDesktopBackgroundWrite,
     refreshCatalog: (connection, supplier, staging, refreshId) => withCatalogRepository(staging, async () => {
       const enabled = () => outsideCatalogRepository(async () => await repository.getApplicationSetting(CATALOG_MODE_SETTING) !== "off");
@@ -105,19 +116,45 @@ export async function POST(request?: Request): Promise<Response> {
           : spec.authScope.kind === "connection-key" && !apiKey ? undefined : providerFetch };
       } });
   }
+  if (catalogReadPipelineEnabled(process.env)) {
+    const body = request ? await request.json().catch(() => null) as Record<string, unknown> | null : null;
+    if (body?.action === "confirm-candidate") {
+      if (![body.connectionId, body.sourceKey, body.candidateVersion].every(value => typeof value === "string" && value.length > 0 && value.length <= 256))
+        return Response.json({ error: "请选择当前版本的目录候选" }, { status: 400 });
+      const result = await readPipeline().run(String(body.connectionId), { observationCycleId: `confirmation:${Date.now()}`,
+        revision: SUPPLIER_CATALOG_REVISION, manualConfirmation: { sourceKey: String(body.sourceKey), candidateVersion: String(body.candidateVersion) } })
+        .catch(error => { if (error instanceof SupplierConflictError) return { published: 0 }; throw error; });
+      if (!result.published) return Response.json({ error: "目录正在更新或候选已变化，请重新查看后确认" }, { status: 409 });
+      return Response.json(await automaticCheck().status(), { headers: { "Cache-Control": "no-store" } });
+    }
+    automaticCheck().start();
+    return Response.json(await automaticCheck().status(true), { status: 202, headers: { "Cache-Control": "no-store" } });
+  }
   service().start();
   return Response.json(await service().status(true), { status: 202, headers: { "Cache-Control": "no-store" } });
 }
 export async function GET(request: Request): Promise<Response> {
   if (process.env.SUPERCANVAS_DESKTOP !== "true") return new Response(null, { status: 404 });
-  return Response.json(await service().status(new URL(request.url).searchParams.get("summary") === "1"), { headers: { "Cache-Control": "no-store" } });
+  return Response.json(await (catalogReadPipelineEnabled(process.env) ? automaticCheck() : service()).status(new URL(request.url).searchParams.get("summary") === "1"), { headers: { "Cache-Control": "no-store" } });
 }
+let acknowledgement = Promise.resolve();
 export async function PATCH(request: Request): Promise<Response> {
   if (process.env.SUPERCANVAS_DESKTOP !== "true") return new Response(null, { status: 404 });
-  const body = await request.json().catch(() => null) as { mode?: unknown } | null;
+  const body = await request.json().catch(() => null) as { mode?: unknown; noticeCursors?: unknown } | null;
+  if (body?.noticeCursors && catalogReadPipelineEnabled(process.env)) {
+    const work = acknowledgement.then(async () => {
+      const status = await automaticCheck().status();
+      const prior = await repository.getApplicationSetting(CATALOG_PIPELINE_NOTICE_CURSORS);
+      const next = acknowledgeCatalogPipelineCursors(prior, body.noticeCursors, status.pipeline?.noticeCursors ?? {});
+      if (!isDeepStrictEqual(prior, next)) await trackDesktopBackgroundWrite(() => repository.setApplicationSetting(CATALOG_PIPELINE_NOTICE_CURSORS, next));
+    });
+    acknowledgement = work.catch(() => undefined); await work;
+    return Response.json(await automaticCheck().status(), { headers: { "Cache-Control": "no-store" } });
+  }
   if (!body || !["off", "upgrade", "daily"].includes(String(body.mode)))
     return Response.json({ error: "请选择关闭、仅软件升级后或每天一次" }, { status: 400 });
-  await service().setMode(body.mode as "off" | "upgrade" | "daily");
+  if (catalogReadPipelineEnabled(process.env)) await trackDesktopBackgroundWrite(() => repository.setApplicationSetting(CATALOG_MODE_SETTING, body.mode as "off" | "upgrade" | "daily"));
+  else await service().setMode(body.mode as "off" | "upgrade" | "daily");
   if (body.mode === "off") stopReadPipeline();
-  return Response.json(await service().status(), { headers: { "Cache-Control": "no-store" } });
+  return Response.json(await (catalogReadPipelineEnabled(process.env) ? automaticCheck() : service()).status(), { headers: { "Cache-Control": "no-store" } });
 }

@@ -4,6 +4,7 @@ import {
   loginSupplierSite,
   supplierDirectoryBase,
   SupplierLoginError,
+  type FetchImplementation,
 } from "@super-canvas/providers";
 import type { SupplierRecord, SupplierState } from "@super-canvas/db";
 import { requireServerMasterKey } from "./master-key";
@@ -37,7 +38,7 @@ export function supplierSiteLoginCacheIdentity(login: SiteLogin | undefined) {
 }
 
 /** Request-local authenticated session; no plaintext is returned to a public DTO. */
-export async function openSupplierSiteSession(site: Site) {
+export async function openSupplierSiteSession(site: Site, fetchImpl?: FetchImplementation) {
   const login = currentSupplierSiteLogin(site);
   if (!login) return undefined;
   try {
@@ -45,7 +46,8 @@ export async function openSupplierSiteSession(site: Site) {
       ? { accessToken: decryptSecret(login.encryptedAccessToken, requireServerMasterKey()),
           ...(login.userId ? { userId: login.userId } : {}) }
       : { username: login.username, password: decryptSecret(login.encryptedPassword, requireServerMasterKey()) };
-    return await loginSupplierSite({ siteUrl: site.siteUrl, kind: site.kind, credentials });
+    const input = { siteUrl: site.siteUrl, kind: site.kind, credentials };
+    return await (fetchImpl ? loginSupplierSite(input, fetchImpl) : loginSupplierSite(input));
   } catch (error) {
     // Preserve classification without trusting an upstream message to omit
     // credentials. Unknown crypto/network errors are also never echoed.

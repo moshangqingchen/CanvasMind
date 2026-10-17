@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { collectGenericSupplierSource, type GenericSupplierSourceEntry } from "./catalog-generic-source-collector";
+import { collectGenericSupplierSource, declaredCatalogPriceStates, type GenericSupplierSourceEntry } from "./catalog-generic-source-collector";
 
 const siteUrl = "https://supplier.test/gateway", checkedAt = "2026-10-17T13:00:00.000Z";
 const input = (entry: GenericSupplierSourceEntry) => ({ url: `${siteUrl}/api/source`, siteUrl, entry });
@@ -7,6 +7,20 @@ beforeEach(() => { vi.stubGlobal("fetch", vi.fn(() => { throw new Error("Unsched
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("one-entry generic supplier collectors", () => {
+  it("requires a complete exact-group declaration for explicit price withdrawal, never missing/null token fields", async () => {
+    const payload = { data: [
+      { model_name: "missing", enable_groups: ["group-a"] },
+      { model_name: "null-token-output", enable_groups: ["group-a"], output_price: null, input_price: 1 },
+      { model_name: "null-unknown", enable_groups: ["group-a"], price: null },
+      { model_name: "withdrawn", enable_groups: ["group-a"], price_published: false },
+      { model_name: "no-group", pricing_status: "unpublished" },
+      { model_name: "free", enable_groups: ["group-a"], model_price: 0, quota_type: 1 },
+    ] };
+    expect(declaredCatalogPriceStates(payload)).toEqual([{ modelId: "withdrawn", groupIdentity: "name:group-a", state: "explicit-unpublished" }]);
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => Response.json({ ...payload, complete: false }));
+    const read = await collectGenericSupplierSource(input("pricing"), { fetch, checkedAt });
+    expect(read.complete).toBe(false); expect(read.priceStates).toBeUndefined();
+  });
   it("keeps complete NewAPI model/group/price facts without rereading status, a site session or another source", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>(async () => Response.json({ data: [
       { model_name: "priced-full-id", enable_groups: ["exact-group"], model_price: .2, quota_type: 1 },

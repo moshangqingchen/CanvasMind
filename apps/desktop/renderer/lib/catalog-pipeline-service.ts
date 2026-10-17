@@ -1,17 +1,26 @@
 import { createHash, randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { assertCatalogPipelineState, catalogConnectionIdentity, catalogSupplierIdentity, catalogLegacyObservationOwner, catalogObservationIdentity,
-  catalogPipelineSettingKey, SupplierConflictError, type CatalogObservationCommit, type CatalogObservationReservation,
+import { catalogConnectionIdentity, catalogSupplierIdentity, catalogLegacyObservationOwner, catalogObservationIdentity,
+  SupplierConflictError, type CatalogObservationCommit, type CatalogObservationReservation,
   type CatalogPipelineState, type JsonObject, type ProviderConnectionRecord, type Repository, type SupplierRecord } from "@super-canvas/db";
 import type { ModelDescriptor } from "@super-canvas/providers";
-import { catalogConnectionScopes, catalogReadPreviewEnabled, catalogSourcePlan } from "./catalog-source-plan";
+import { catalogConnectionScopes, catalogReadPipelineEnabled, catalogSourcePlan } from "./catalog-source-plan";
 import { readCatalogObservationStore, catalogLegacyConnectionEntryKey } from "./catalog-observation-store";
 import { catalogMode, CATALOG_MODE_SETTING } from "./supplier-catalog-policy";
 import { collectCatalogReadTask, discoverCatalogModelTasks, type CatalogReadTask } from "./catalog-read-task";
 import type { CatalogReadObservation } from "./catalog-read-contracts";
 import { reduceCatalogInventory, type CatalogInventoryState } from "./catalog-inventory-policy";
-import { applyCatalogContractDiagnostics, catalogContractFromDocumented, emptyCatalogContractState, reduceCatalogContract, type CatalogContractState } from "./catalog-contract-policy";
+import { applyCatalogContractDiagnostics, catalogContractFromDocumented, emptyCatalogContractState, reduceCatalogContracts,
+  type CatalogContractObservation, type CatalogContractState } from "./catalog-contract-policy";
 import { bindScannedModelProtocols } from "./scanned-model-protocols";
+import { compileCatalogInterfaceDocuments } from "./catalog-interface-document-compile";
+import { applicablePriceObservation, reduceCatalogPrices, type CatalogPriceState } from "./catalog-price-observations";
+import { catalogChanges, CATALOG_HISTORY_RETENTION_MS } from "./supplier-catalog-policy";
+import type { CatalogChangeRecord } from "./supplier-catalog-contracts";
+import type { CatalogPipelineChanges, CatalogPipelineConnectionDiagnostic } from "./catalog-pipeline-diagnostics";
+import { projectCatalogOffers } from "./catalog-offer-projection";
+import { collectCatalogDedicatedContracts, normalizeCatalogDedicatedPriceFacts } from "./catalog-dedicated-contracts";
+import { catalogManualRefreshFenceKey, catalogManualRefreshPatches, catalogManualRefreshReady, readCatalogManualRefreshFence } from "./catalog-manual-refresh-fence";
 import { createCatalogPublisher } from "./catalog-publisher";
 import { createCatalogHttpDispatcher, createCatalogSchedulerStore, createCatalogTransportCoordinator,
   type CatalogSchedulerClock, type CatalogSchedulerPersistence } from "./catalog-scheduler-store";
@@ -26,26 +35,42 @@ const guardKey = (connection: string) => `identity:${connection}`;
 const projectionKey = (connection: string) => `projection:${connection}`;
 const contractKey = (connection: string) => `contracts:${connection}`;
 const contractEpochKey = (connection: string) => `contractEpoch:${connection}`;
+const pricesKey = (connection: string) => `prices:${connection}`;
 const json = (value: unknown): JsonObject => value as JsonObject;
 const modelsOf = (connection: ProviderConnectionRecord): ModelDescriptor[] => Array.isArray(connection.config.modelCatalogModels)
   ? structuredClone(connection.config.modelCatalogModels) as ModelDescriptor[] : [];
 const identityFingerprint = (connection: ProviderConnectionRecord, owner: SupplierRecord) => createHash("sha256")
   .update(JSON.stringify([catalogSupplierIdentity(owner), catalogConnectionIdentity(connection)])).digest("hex");
+const sourceFingerprint = (connection: ProviderConnectionRecord, supplier?: SupplierRecord) => createHash("sha256")
+  .update(JSON.stringify([catalogConnectionScopes(connection, supplier), supplier?.siteUrl, supplier?.apiUrl])).digest("hex");
+const guardValue = (connection: ProviderConnectionRecord, supplier: SupplierRecord | undefined, owner: SupplierRecord) => ({
+  fingerprint: identityFingerprint(connection, owner), sourceFingerprint: sourceFingerprint(connection, supplier),
+  scanCheckedAt: typeof connection.config.modelScanCheckedAt === "string" ? connection.config.modelScanCheckedAt : null,
+});
+function namespaceSourceCursor(pipeline: CatalogPipelineState, accepted?: { sourceKey: string; dispatchSeq: number }): string {
+  return JSON.stringify(Object.entries(pipeline.sources).filter(([key]) => /^[a-f0-9]{64}$/u.test(key)).map(([key, source]) =>
+    [key, accepted?.sourceKey === key ? accepted.dispatchSeq : source.lastAcceptedSeq]).filter(([, seq]) => Number(seq) > 0)
+    .sort(([a], [b]) => String(a).localeCompare(String(b))));
+}
 const systemClock: CatalogSchedulerClock = { now: Date.now, setTimeout: (fn, delay) => setTimeout(fn, delay),
   clearTimeout: id => clearTimeout(id as ReturnType<typeof setTimeout>) };
 
 function applicableFact(row: { receipt: Pick<CatalogReadObservation["receipt"], "spec">;
-  facts: Pick<CatalogReadObservation["facts"], "contracts" | "contractDiagnostics" | "contractOrigin"> }, connection: ProviderConnectionRecord, supplier?: SupplierRecord): boolean {
+  facts: Pick<CatalogReadObservation["facts"], "contracts" | "contractDiagnostics" | "contractOrigin" | "interfaceDocuments"> }, connection: ProviderConnectionRecord, supplier?: SupplierRecord): boolean {
   const spec = row.receipt.spec, scopes = catalogConnectionScopes(connection, supplier);
   const scope = spec.authScope.kind === "anonymous" ? scopes.anonymous : spec.authScope.kind === "site-account" ? scopes.account : scopes.key;
   if ((row.facts.contracts?.length || row.facts.contractDiagnostics?.length) && spec.authScope.kind !== "connection-key" &&
     row.facts.contractOrigin !== new URL(String(connection.config.baseUrl)).origin) return false;
+  const sharedDocument = spec.authScope.kind === "anonymous" && Boolean(row.facts.interfaceDocuments?.some(document =>
+    document.apiOrigin === new URL(String(connection.config.baseUrl)).origin));
   return spec.applyScope.supplierSourceId === scopes.apply.supplierSourceId &&
-    spec.applyScope.groupIdentity === scopes.apply.groupIdentity && isDeepStrictEqual(spec.authScope, scope) &&
+    (spec.applyScope.groupIdentity === scopes.apply.groupIdentity || sharedDocument) && isDeepStrictEqual(spec.authScope, scope) &&
     (spec.authScope.kind !== "connection-key" || spec.authScope.principalRef === connection.id);
 }
 function projectionFingerprint(rows: readonly CatalogReadObservation[], epoch: string, connection: ProviderConnectionRecord, supplier?: SupplierRecord): string {
-  return createHash("sha256").update(JSON.stringify([epoch, rows.filter(row => row.receipt.context.identityEpoch === epoch && applicableFact(row, connection, supplier))
+  const identity = catalogConnectionScopes(connection, supplier).apply.groupIdentity ?? "name:";
+  return createHash("sha256").update(JSON.stringify([epoch, rows.filter(row => row.receipt.context.identityEpoch === epoch &&
+    (applicableFact(row, connection, supplier) || applicablePriceObservation(row, connection, supplier, identity)))
     .map(row => [row.receipt.spec.sourceKey, row.receipt.context.dispatchSeq]).sort(([a], [b]) => String(a).localeCompare(String(b)))])).digest("hex");
 }
 
@@ -53,7 +78,9 @@ export interface CatalogPipelineDependencies {
   environment: Record<string, string | undefined>;
   repository: Repository;
   /** Explicit read transports only; no production/global fetch fallback. */
-  readers(connection: ProviderConnectionRecord, supplier?: SupplierRecord): Promise<{ apiKey: string; fetchFor(scope: CatalogReadTask["spec"]): typeof fetch | undefined }>;
+  readers(connection: ProviderConnectionRecord, supplier?: SupplierRecord): Promise<{ apiKey: string; fetchFor(scope: CatalogReadTask["spec"]): typeof fetch | undefined;
+    /** Authentication itself must use this scheduled transport, never an implicit fetch. */
+    wrapTransport?(scope: CatalogReadTask["spec"], scheduled: typeof fetch): typeof fetch }>;
   clock?: CatalogSchedulerClock;
   random?: () => number;
   sessionStartedAt?: number;
@@ -69,20 +96,37 @@ export interface CatalogPipelineRunOptions {
 }
 export interface CatalogPipelineRunResult { enabled: boolean; published: number; pending: number; superseded: number; nextWakeAt?: number }
 
-/** Internal slice-2 integration. Until P4 exists this cannot run in an installed profile. */
+/** Repository-owned production pipeline; all reads remain explicit and scheduled. */
 export function createCatalogPipelineService(deps: CatalogPipelineDependencies) {
   const repository = deps.repository, clock = deps.clock ?? systemClock, coordinator = createCatalogTransportCoordinator();
   const sessionStartedAt = deps.sessionStartedAt ?? clock.now();
   let closed = false;
   const active = new Map<string, Promise<CatalogPipelineRunResult>>();
   const controllers = new Set<AbortController>();
+  let restoredHosts: Promise<void> | undefined;
   const write = <T>(work: () => Promise<T>) => deps.trackWrite ? deps.trackWrite(work) : work();
-  const enabled = () => !closed && catalogReadPreviewEnabled(deps.environment) && deps.canContinue?.() !== false;
+  const enabled = () => !closed && catalogReadPipelineEnabled(deps.environment) && deps.canContinue?.() !== false;
   const publisher = createCatalogPublisher(repository, () => enabled());
-  async function loadState(owner: SupplierRecord): Promise<CatalogPipelineState | undefined> {
-    const saved = await repository.getApplicationSetting(catalogPipelineSettingKey(owner.id));
-    if (saved === undefined) return undefined;
-    assertCatalogPipelineState(saved, owner.id); return saved;
+  async function loadState(owner: SupplierRecord, entryKeys?: readonly string[], entryPrefixes?: readonly string[]): Promise<CatalogPipelineState | undefined> {
+    return repository.getCatalogPipelineState(owner.id, entryKeys, entryPrefixes);
+  }
+  const targetEntries = (connectionId: string) => [CATALOG_SCHEDULER_ENTRY, inventoryKey(connectionId), guardKey(connectionId),
+    projectionKey(connectionId), contractKey(connectionId), contractEpochKey(connectionId), pricesKey(connectionId),
+    `diagnostics:${connectionId}`, `changes:${connectionId}`, catalogManualRefreshFenceKey(connectionId), catalogLegacyConnectionEntryKey(connectionId)];
+  const loadTargetState = (owner: SupplierRecord, connectionId: string) => loadState(owner, targetEntries(connectionId),
+    ["fact:", "task:", "offers:", "offer-prices:"]);
+  function restoreHosts(): Promise<void> {
+    return restoredHosts ??= (async () => {
+      const suppliers = await repository.listSuppliers();
+      for (const connection of await repository.listConnections()) if (typeof connection.config.supplierId !== "string" && connection.config.supplierArchived !== true) {
+        try { suppliers.push(catalogLegacyObservationOwner(connection)); } catch { /* Invalid legacy sources never dispatch. */ }
+      }
+      for (const owner of suppliers) {
+        const saved = await loadState(owner, [CATALOG_SCHEDULER_ENTRY]);
+        const scheduler = saved?.entries[CATALOG_SCHEDULER_ENTRY] as unknown as CatalogSchedulerState | undefined;
+        if (scheduler) coordinator.absorb(scheduler.hosts);
+      }
+    })();
   }
   async function currentOwner(connectionId: string) {
     const connection = await repository.getConnection(connectionId);
@@ -101,48 +145,83 @@ export function createCatalogPipelineService(deps: CatalogPipelineDependencies) 
     if (mode === "off" && options.mode !== "manual" && !options.manualConfirmation) return result;
     // Manual is an explicit call. It bypasses frequency policy, never host limits.
     const scheduledMode = options.mode ?? (mode === "off" ? "daily" : mode);
-    const migration = await readCatalogObservationStore(repository, snapshot.owner, await repository.listConnections(), clock.now());
-    let state = await loadState(snapshot.owner);
+    const plan = catalogSourcePlan(snapshot.connection, snapshot.supplier);
+    let state = await loadState(snapshot.owner, [CATALOG_SCHEDULER_ENTRY, guardKey(connectionId), projectionKey(connectionId), catalogLegacyConnectionEntryKey(connectionId)]);
+    const initialGuard = state?.entries[guardKey(connectionId)];
+    const existingQueue = state?.entries[CATALOG_SCHEDULER_ENTRY] as unknown as CatalogSchedulerState | undefined;
+    if (state && existingQueue && !options.manualConfirmation && options.mode !== "manual" &&
+      initialGuard?.fingerprint === identityFingerprint(snapshot.connection, snapshot.owner)) {
+      const planKeys = new Set(plan.map(spec => spec.sourceKey)), jobs = Object.values(existingQueue.jobs);
+      const pending = jobs.filter(job => ["queued", "deferred", "running"].includes(job.status) && job.identityEpoch === state!.identityEpoch &&
+        (job.spec.applyScope.connectionIds.includes(connectionId) || planKeys.has(job.sourceKey)));
+      const ready = pending.some(job => job.status === "running" ? (job.lease?.expiresAt ?? 0) <= clock.now() :
+        Math.max(job.nextAttemptEligibleAt, existingQueue.hosts[new URL(job.spec.sourceUrl).host]?.cooldownUntil ?? 0,
+          existingQueue.hosts[new URL(job.spec.sourceUrl).host]?.nextStartAt ?? 0) <= clock.now());
+      const eligible = plan.some(spec => {
+        const source = existingQueue.sources[spec.sourceKey];
+        return !source || !source.paused && source.nextEligibleAt <= clock.now() &&
+          (scheduledMode !== "upgrade" || source.lastAttemptRevision !== options.revision) && !pending.some(job => job.sourceKey === spec.sourceKey);
+      });
+      const cursor = namespaceSourceCursor(state);
+      const unchangedProjection = state.entries[projectionKey(connectionId)]?.sourceCursor === cursor || cursor === "[]" && !state.entries[projectionKey(connectionId)];
+      if (!ready && !eligible && unchangedProjection) {
+        result.pending = pending.filter(job => job.status !== "running").length;
+        const times = pending.map(job => job.status === "running" ? job.lease?.expiresAt ?? clock.now() + 1500 :
+          Math.max(job.nextAttemptEligibleAt, existingQueue.hosts[new URL(job.spec.sourceUrl).host]?.cooldownUntil ?? 0,
+            existingQueue.hosts[new URL(job.spec.sourceUrl).host]?.nextStartAt ?? 0));
+        if (scheduledMode === "daily") times.push(...Object.values(existingQueue.sources).filter(source => !source.paused && source.nextEligibleAt > clock.now()).map(source => source.nextEligibleAt));
+        if (times.length) result.nextWakeAt = Math.min(...times); return result;
+      }
+    }
+    state = await loadTargetState(snapshot.owner, connectionId);
+    const migration = state?.entries[catalogLegacyConnectionEntryKey(connectionId)] ? { initialEntries: {} } :
+      await readCatalogObservationStore(repository, snapshot.owner, state ? [snapshot.connection] : await repository.listConnections(), clock.now());
     const identity = () => catalogObservationIdentity(snapshot.owner, [snapshot.connection]);
     const fingerprint = identityFingerprint(snapshot.connection, snapshot.owner);
-    const oldGuard = state?.entries[guardKey(connectionId)]?.fingerprint;
+    const previousGuard = state?.entries[guardKey(connectionId)];
+    const oldGuard = previousGuard?.fingerprint;
+    const sameSource = previousGuard?.sourceFingerprint === sourceFingerprint(snapshot.connection, snapshot.supplier);
+    const manuallyRefreshed = typeof snapshot.connection.config.modelScanCheckedAt === "string" &&
+      Number.isFinite(Date.parse(snapshot.connection.config.modelScanCheckedAt)) &&
+      snapshot.connection.config.modelScanCheckedAt !== previousGuard?.scanCheckedAt && snapshot.connection.config.modelScanComplete === true &&
+      ["live", "empty"].includes(String(snapshot.connection.config.modelScanStatus)) && snapshot.connection.config.catalogCheckManualRequired === false;
     if (options.manualConfirmation && (!state || oldGuard !== fingerprint)) return { ...result, superseded: 1 };
-    if (state && oldGuard !== undefined && oldGuard !== fingerprint && options.mode !== "manual") return { ...result, superseded: 1 };
+    if (state && oldGuard !== undefined && oldGuard !== fingerprint && options.mode !== "manual" && !manuallyRefreshed && !sameSource)
+      return { ...result, superseded: 1 };
     // Invalidate old reservations on external config/manual refresh changes. The
     // namespace survives; no accepted baseline is fabricated from legacy data.
-    if (state && oldGuard !== undefined && oldGuard !== fingerprint) {
+    if (state && oldGuard !== undefined && oldGuard !== fingerprint && !sameSource) {
       await write(() => repository.reserveCatalogObservation({ identity: identity(), sourceKey: `invalidate:${connectionId}`,
         observationCycleId: options.observationCycleId, expectedMode: mode, manual: options.mode === "manual", invalidatePrevious: true }));
-      state = await loadState(snapshot.owner);
+      state = await loadTargetState(snapshot.owner, connectionId);
     }
-    if (!state || oldGuard !== fingerprint) state = await write(() => repository.updateCatalogPipelineState({ identity: identity(), expectedMode: mode,
-      expectedIdentityEpoch: state?.identityEpoch, initialEntries: migration.initialEntries,
-      state: [{ key: guardKey(connectionId), expected: state?.entries[guardKey(connectionId)], value: { fingerprint } }] }));
+    if (!state || oldGuard !== fingerprint) for (let retry = 0; retry < 4; retry++) {
+      const saved = state;
+      try {
+        state = await write(() => repository.updateCatalogPipelineState({ identity: identity(), expectedMode: mode,
+          expectedIdentityEpoch: saved?.identityEpoch, initialEntries: migration.initialEntries,
+          state: [{ key: guardKey(connectionId), expected: saved?.entries[guardKey(connectionId)],
+            value: guardValue(snapshot.connection, snapshot.supplier, snapshot.owner) },
+            ...(saved && previousGuard && manuallyRefreshed && sameSource
+              ? catalogManualRefreshPatches(saved, snapshot.connection, plan, options.revision, clock.now()) : [])] })); break;
+      } catch (error) { if (!(error instanceof SupplierConflictError) || retry === 3) throw error; state = await loadState(snapshot.owner); }
+    }
+    if (!state) throw new SupplierConflictError("目录状态未初始化");
     const epoch = state.identityEpoch;
     const store: CatalogSchedulerPersistence = createCatalogSchedulerStore({
-      load: async () => (await loadState(snapshot.owner))?.entries[CATALOG_SCHEDULER_ENTRY] as unknown as CatalogSchedulerState | undefined,
+      load: async () => (await loadState(snapshot.owner, [CATALOG_SCHEDULER_ENTRY]))?.entries[CATALOG_SCHEDULER_ENTRY] as unknown as CatalogSchedulerState | undefined,
       compareAndSwap: async (expected, next) => {
         try {
           const fresh = await currentOwner(connectionId);
           if (catalogConnectionIdentity(fresh.connection) !== catalogConnectionIdentity(snapshot.connection)) return false;
           await repository.updateCatalogPipelineState({ identity: identity(), expectedMode: mode, expectedIdentityEpoch: epoch,
-            state: [{ key: CATALOG_SCHEDULER_ENTRY, expected: expected && json(expected), value: json(next) }] }); return true;
+            resultEntryKeys: [], state: [{ key: CATALOG_SCHEDULER_ENTRY, expected: expected && json(expected), value: json(next) }] }); return true;
         } catch (error) { if (error instanceof SupplierConflictError) return false; throw error; }
       }, trackWrite: write,
     });
     // Restore all durable host cooldowns before starting any request, including
     // cooldowns recorded by another supplier in the previous backend session.
-    const settings = await repository.listSuppliers();
-    const legacyOwners: SupplierRecord[] = [];
-    for (const connection of await repository.listConnections()) if (typeof connection.config.supplierId !== "string" && connection.config.supplierArchived !== true) {
-      try { legacyOwners.push(catalogLegacyObservationOwner(connection)); } catch { /* Invalid legacy sources never dispatch. */ }
-    }
-    for (const owner of [snapshot.owner, ...settings, ...legacyOwners]) {
-      const saved = await loadState(owner);
-      const scheduler = saved?.entries[CATALOG_SCHEDULER_ENTRY] as unknown as CatalogSchedulerState | undefined;
-      if (scheduler) coordinator.absorb(scheduler.hosts);
-    }
-    const plan = catalogSourcePlan(snapshot.connection, snapshot.supplier);
+    await restoreHosts();
     const requiredKeys = new Set(plan.filter(spec => spec.requiredForMembership).map(spec => spec.sourceKey));
     const previousQueue = await store.read();
     const requiredJobs = Object.values(previousQueue.jobs).filter(job => requiredKeys.has(job.sourceKey) && job.identityEpoch === epoch)
@@ -154,7 +233,7 @@ export function createCatalogPipelineService(deps: CatalogPipelineDependencies) 
     const cycleId = scheduledMode === "manual" ? options.observationCycleId : pendingCycle ??
       (!allDue && requiredJobs.length ? requiredJobs[0]!.observationCycleId : options.observationCycleId);
     if (options.manualConfirmation) {
-      const latest = await loadState(snapshot.owner), confirmation = options.manualConfirmation;
+      const latest = await loadTargetState(snapshot.owner, connectionId), confirmation = options.manualConfirmation;
       const inventory = latest?.entries[inventoryKey(connectionId)] as unknown as CatalogInventoryState | undefined;
       const source = inventory?.sources[confirmation.sourceKey];
       const candidate = source?.candidate;
@@ -180,14 +259,18 @@ export function createCatalogPipelineService(deps: CatalogPipelineDependencies) 
     const tasks = [...new Map([...persistedTasks, ...staticTasks].map(task => [task.spec.sourceKey, task])).values()];
     const enqueue = async (next: readonly CatalogReadTask[]) => {
       for (let retry = 0; retry < 4; retry++) {
-        const saved = await loadState(snapshot.owner); if (!saved || saved.identityEpoch !== epoch) throw new SupplierConflictError("目录代次已改变");
+        const saved = await loadState(snapshot.owner, [CATALOG_SCHEDULER_ENTRY, inventoryKey(connectionId), catalogLegacyConnectionEntryKey(connectionId),
+          ...next.map(task => taskKey(task.spec.sourceKey))], ["interrupted:"]);
+        if (!saved || saved.identityEpoch !== epoch) throw new SupplierConflictError("目录代次已改变");
         const scheduler = saved.entries[CATALOG_SCHEDULER_ENTRY] as unknown as CatalogSchedulerState | undefined;
         const legacy = saved.entries[catalogLegacyConnectionEntryKey(connectionId)];
         const due = legacy?.nextEligibleAt ? Date.parse(String(legacy.nextEligibleAt)) : 0;
         const legacyValues = legacy?.legacy as JsonObject | undefined;
         const paused = legacyValues?.catalogCheckPaused === true;
         const attemptedAt = Date.parse(String(legacyValues?.catalogCheckAttemptedAt ?? legacyValues?.catalogUpgradeAttemptedAt ?? ""));
-        const initialEligibility = { nextEligibleAt: Number.isFinite(due) ? due : 0, paused,
+        const manualAt = manuallyRefreshed ? Date.parse(String(snapshot.connection.config.modelScanCheckedAt)) : NaN;
+        const initialEligibility = { nextEligibleAt: Number.isFinite(manualAt) ? Math.max(Number.isFinite(due) ? due : 0, manualAt + 24 * 60 * 60_000)
+          : Number.isFinite(due) ? due : 0, paused: manuallyRefreshed ? false : paused,
           // The legacy counter belongs to a whole connection scan, not this
           // newly identified source. Keep it in history, never distribute it.
           failureStreak: 0,
@@ -218,7 +301,7 @@ export function createCatalogPipelineService(deps: CatalogPipelineDependencies) 
         }
         if (!patches.length && isDeepStrictEqual(scheduler ?? emptyCatalogSchedulerState(), queued.state)) return;
         try {
-          await write(() => repository.updateCatalogPipelineState({ identity: identity(), expectedMode: mode, expectedIdentityEpoch: epoch,
+          await write(() => repository.updateCatalogPipelineState({ identity: identity(), expectedMode: mode, expectedIdentityEpoch: epoch, resultEntryKeys: [],
             state: [...patches, { key: CATALOG_SCHEDULER_ENTRY, expected: scheduler && json(scheduler), value: json(queued.state) }] })); return;
         } catch (error) { if (!(error instanceof SupplierConflictError) || retry === 3) throw error; }
       }
@@ -235,7 +318,6 @@ export function createCatalogPipelineService(deps: CatalogPipelineDependencies) 
       while (enabled() && spent < (options.budget ?? 32)) {
         mode = catalogMode(await repository.getApplicationSetting(CATALOG_MODE_SETTING));
         if (mode === "off" && scheduledMode !== "manual") break;
-        const saved = await loadState(snapshot.owner); if (!saved || saved.identityEpoch !== epoch) break;
         const scheduler = await store.read();
         const job = Object.values(scheduler.jobs).filter(job => job.spec.applyScope.connectionIds.includes(connectionId) &&
           ["queued", "deferred"].includes(job.status) && job.identityEpoch === epoch && job.nextAttemptEligibleAt <= clock.now() &&
@@ -243,6 +325,8 @@ export function createCatalogPipelineService(deps: CatalogPipelineDependencies) 
             coordinator.nextEligibleAt(new URL(job.spec.sourceUrl).host)) <= clock.now())
           .sort((a, b) => Number(b.spec.role === "key-membership") - Number(a.spec.role === "key-membership") || a.order - b.order)[0];
         if (!job) break;
+        const saved = await loadState(snapshot.owner, [taskKey(job.sourceKey), inventoryKey(connectionId)]);
+        if (!saved || saved.identityEpoch !== epoch) break;
         const task = saved.entries[taskKey(job.sourceKey)] as unknown as CatalogReadTask | undefined;
         if (!task) throw new Error("目录任务缺少持久化读取输入");
         currentTransport = readers.fetchFor(job.spec);
@@ -257,20 +341,36 @@ export function createCatalogPipelineService(deps: CatalogPipelineDependencies) 
           observationCycleId: job.observationCycleId, expectedMode: mode, manual: scheduledMode === "manual" }));
         const inventory = saved.entries[inventoryKey(connectionId)] as unknown as CatalogInventoryState | undefined;
         const collected = await collectCatalogReadTask(task, snapshot.connection, snapshot.supplier, inventory?.visibleModels ?? modelsOf(snapshot.connection), {
-          enabled: true, apiKey: readers.apiKey, fetchFor: () => dispatcher.fetchFor(job.id), now: () => new Date(clock.now()).toISOString(),
+          enabled: true, apiKey: readers.apiKey, fetchFor: spec => readers.wrapTransport?.(spec, dispatcher.fetchFor(job.id, abort.signal)) ??
+            dispatcher.fetchFor(job.id, abort.signal), now: () => new Date(clock.now()).toISOString(),
           signal: abort.signal, context: { runId: randomUUID(), observationCycleId: job.observationCycleId, identityEpoch: epoch, dispatchSeq: reservation.dispatchSeq } });
         spent++;
+        const returnedJob = (await store.read()).jobs[job.id];
+        if (returnedJob && returnedJob.attemptConsumedAt === undefined) {
+          // Credential decoding, safety rejection or a durable host cooldown
+          // may stop before the first HTTP. Do not label an undispatched read
+          // as a failed/accepted observation or spin on it every wake.
+          if (returnedJob.status === "queued") await store.mutate(queue => {
+            const pending = queue.jobs[job.id];
+            if (pending && pending.attemptConsumedAt === undefined && pending.status === "queued") {
+              pending.status = "deferred"; pending.reason = collected.observation.receipt.reason === "budget" ? "budget" : "authentication";
+              pending.nextAttemptEligibleAt = clock.now() + (pending.reason === "budget" ? 60_000 : 86_400_000);
+            }
+            return { state: queue, result: undefined };
+          });
+          continue;
+        }
         // CAS rebase uses the same immutable facts, never a second upstream request.
         let committed = false;
         for (let rebase = 0; rebase < 4 && !committed; rebase++) {
-          const latest = await loadState(snapshot.owner); if (!latest || latest.identityEpoch !== epoch) break;
+          const latest = await loadTargetState(snapshot.owner, connectionId); if (!latest || latest.identityEpoch !== epoch) break;
           const live = await store.read(), liveJob = live.jobs[job.id];
           if (!liveJob || liveJob.status !== "running" || liveJob.lease?.owner !== dispatcher.owner || liveJob.lease.expiresAt <= clock.now()) break;
           const ownerNow = await currentOwner(connectionId);
           if (catalogConnectionIdentity(ownerNow.connection) !== catalogConnectionIdentity(snapshot.connection)) break;
           const commit = preparePublication(latest, ownerNow.connection, reservation, collected.observation, live, dispatcher.owner,
             clock.now(), scheduledMode, plan.filter(spec => spec.requiredForMembership).map(spec => spec.sourceKey), options.manualConfirmation,
-            { jobId: job.id, discovered: collected.discovered, supplier: snapshot.supplier, sessionStartedAt, revision: options.revision });
+            { jobId: job.id, discovered: collected.discovered, supplier: ownerNow.supplier, sessionStartedAt, revision: options.revision });
           try { await write(() => publisher.publish(commit)); committed = true; result.published++; snapshot = ownerNow;
             snapshot.connection = (await repository.getConnection(connectionId))!;
           } catch (error) {
@@ -287,7 +387,7 @@ export function createCatalogPipelineService(deps: CatalogPipelineDependencies) 
       // A shared public/document read may already have completed for a sibling.
       // Apply saved facts to this target with a fresh local CAS token, without
       // pretending that a cache read is a new HTTP observation or daily cycle.
-      const latest = await loadState(snapshot.owner);
+      const latest = await loadTargetState(snapshot.owner, connectionId);
       const cached = latest && Object.entries(latest.entries).filter(([key]) => key.startsWith("fact:")).map(([, row]) => row as unknown as CatalogReadObservation)
         .filter(row => row.receipt.spec.role === "key-membership" && row.receipt.spec.authScope.principalRef === connectionId && row.receipt.context.identityEpoch === epoch)
         .sort((a, b) => b.receipt.context.dispatchSeq - a.receipt.context.dispatchSeq)[0];
@@ -301,18 +401,39 @@ export function createCatalogPipelineService(deps: CatalogPipelineDependencies) 
           { discovered: [], supplier: snapshot.supplier, sessionStartedAt, revision: options.revision });
         await write(() => publisher.publish(local));
       }
-    } finally { controllers.delete(abort); await dispatcher.close("cancelled"); }
+    } finally {
+      controllers.delete(abort);
+      try { await dispatcher.close("cancelled"); }
+      catch (error) {
+        const latestMode = catalogMode(await repository.getApplicationSetting(CATALOG_MODE_SETTING));
+        const latestState = await loadState(snapshot.owner, []);
+        let changedIdentity = false;
+        try { const fresh = await currentOwner(connectionId); changedIdentity = catalogConnectionIdentity(fresh.connection) !== catalogConnectionIdentity(snapshot.connection)
+          || catalogSupplierIdentity(fresh.owner) !== catalogSupplierIdentity(snapshot.owner); }
+        catch (identityError) { if (!(identityError instanceof SupplierConflictError)) throw identityError; changedIdentity = true; }
+        if (!changedIdentity && latestState?.identityEpoch === epoch && latestMode === mode && enabled()) throw error;
+        // The old owner must not bypass a new identity/mode just to tidy a job.
+        // Its consumed attempt stays durable and recovery treats it as unknown.
+        result.superseded++;
+      }
+    }
     const terminal = await store.read();
     const pending = Object.values(terminal.jobs).filter(job => ["queued", "deferred"].includes(job.status)); result.pending = pending.length;
     if (pending.length) result.nextWakeAt = Math.min(...pending.map(job => Math.max(job.nextAttemptEligibleAt,
       terminal.hosts[new URL(job.spec.sourceUrl).host]?.cooldownUntil ?? 0, terminal.hosts[new URL(job.spec.sourceUrl).host]?.nextStartAt ?? 0,
       coordinator.nextEligibleAt(new URL(job.spec.sourceUrl).host))));
-    else if (scheduledMode === "daily") result.nextWakeAt = Math.max(clock.now() + 1500, ...[...requiredKeys].map(key => terminal.sources[key]?.nextEligibleAt ?? clock.now()));
+    else if (scheduledMode === "daily") {
+      const upcoming = Object.values(terminal.sources).filter(source => !source.paused && source.nextEligibleAt > clock.now());
+      if (upcoming.length) result.nextWakeAt = Math.min(...upcoming.map(source => source.nextEligibleAt));
+    }
     return result;
   }
   return {
     run(connectionId: string, options: CatalogPipelineRunOptions) {
-      const existing = active.get(connectionId); if (existing) return existing;
+      const existing = active.get(connectionId);
+      if (existing && (options.manualConfirmation || options.mode === "manual"))
+        return Promise.resolve({ enabled: enabled(), published: 0, pending: 0, superseded: 1 });
+      if (existing) return existing;
       // Only duplicate calls for this exact target share work. Supplier mutexes
       // belong to the short publisher transaction, never network or cooldown.
       const work = run(connectionId, options); active.set(connectionId, work);
@@ -336,6 +457,13 @@ function preparePublication(pipeline: CatalogPipelineState, connection: Provider
     observationCycleId: observation.receipt.context.observationCycleId, observedAt: new Date(now).toISOString(), mode, requiredSourceKeys, observations,
     initialModels: modelsOf(connection), manualConfirmation, validatedPartialModelIds: Object.fromEntries(observations.filter(row => row.facts.validatedMembershipModelIds)
       .map(row => [row.receipt.spec.sourceKey, row.facts.validatedMembershipModelIds!])) });
+  const manualFence = readCatalogManualRefreshFence(pipeline, connection.id);
+  const holdManualDisplay = !catalogManualRefreshReady(manualFence, reduction.state, requiredSourceKeys, reduction.manifestComplete);
+  if (holdManualDisplay) {
+    // Real source baselines/counters still advance independently. Their old
+    // cohort cannot replace the successful manual scan's visible descriptors.
+    reduction.visibleModels = modelsOf(connection); reduction.state.visibleModels = modelsOf(connection);
+  }
   let contracts = pipeline.entries[contractKey(connection.id)] as unknown as CatalogContractState | undefined ?? emptyCatalogContractState();
   if (pipeline.entries[contractEpochKey(connection.id)]?.identityEpoch !== pipeline.identityEpoch) {
     contracts = structuredClone(contracts);
@@ -347,52 +475,74 @@ function preparePublication(pipeline: CatalogPipelineState, connection: Provider
   const knownFacts = Object.entries(pipeline.entries).filter(([key]) => key.startsWith("fact:")).map(([, value]) => value as unknown as CatalogReadObservation)
     .filter(row => row.receipt.spec.sourceKey !== observation.receipt.spec.sourceKey);
   knownFacts.push(observation);
-  for (const fact of knownFacts) if (fact.receipt.context.identityEpoch === pipeline.identityEpoch && applicableFact(fact, connection, work.supplier))
+  const contractModelIdentity = createHash("sha256").update(JSON.stringify(reduction.visibleModels.map(model => [model.id, model.operations,
+    model.inputKinds, model.outputKinds, model.parameters, model.limits]))).digest("hex");
+  const priorContractProjection = pipeline.entries[contractEpochKey(connection.id)];
+  const contractFingerprints = priorContractProjection?.identityEpoch === pipeline.identityEpoch
+    ? { ...(priorContractProjection.fingerprints as Record<string, string> | undefined) } : {};
+  const contractFacts = knownFacts.filter(fact => applicableFact(fact, connection, work.supplier) &&
+    (fact.facts.interfaceDocuments?.length || fact.facts.contracts?.length || fact.facts.contractDiagnostics?.length)).filter(fact => {
+    const key = fact.receipt.spec.sourceKey, fingerprint = `${fact.receipt.context.identityEpoch}:${fact.receipt.context.dispatchSeq}:${contractModelIdentity}`;
+    if (contractFingerprints[key] === fingerprint) return false;
+    contractFingerprints[key] = fingerprint; return true;
+  }).map(fact => {
+    if (!fact.facts.interfaceDocuments?.length) return fact;
+    const compiled = compileCatalogInterfaceDocuments(fact.facts.interfaceDocuments, reduction.visibleModels,
+      { baseUrl: String(connection.config.baseUrl), groupIdentity: catalogConnectionScopes(connection, work.supplier).apply.groupIdentity ?? "name:" });
+    return { ...fact, facts: { ...fact.facts, contracts: compiled.contracts, contractDiagnostics: compiled.contractDiagnostics,
+      contractOrigin: new URL(String(connection.config.baseUrl)).origin } };
+  });
+  for (const fact of contractFacts) if (fact.receipt.context.identityEpoch === pipeline.identityEpoch)
     contracts = applyCatalogContractDiagnostics(contracts, fact.facts.contractDiagnostics ?? [], { origin: new URL(String(connection.config.baseUrl)).origin,
       sourceId: fact.receipt.spec.applyScope.supplierSourceId, groupIdentity: catalogConnectionScopes(connection).apply.groupIdentity ?? "name:",
       sourceKey: fact.receipt.spec.sourceKey, checkedAt: fact.receipt.checkedAt });
-  for (const fact of knownFacts) if (fact.receipt.status === "succeeded" && fact.receipt.context.identityEpoch === pipeline.identityEpoch && applicableFact(fact, connection, work.supplier))
+  const contractObservations: CatalogContractObservation[] = [];
+  for (const fact of contractFacts) if (fact.receipt.status === "succeeded" && fact.receipt.context.identityEpoch === pipeline.identityEpoch)
   for (const binding of fact.facts.contracts ?? []) for (const operation of binding.model.operations) {
     const scope = catalogConnectionScopes(connection);
     try {
       const contract = catalogContractFromDocumented({ origin: new URL(String(connection.config.baseUrl)).origin,
         sourceId: fact.receipt.spec.applyScope.supplierSourceId, groupIdentity: scope.apply.groupIdentity ?? "name:", modelId: binding.model.id, operation }, "rest", binding);
-      contracts = reduceCatalogContract(contracts, { ...contract, sourceKey: fact.receipt.spec.sourceKey, owner: "automatic", presence: "present",
+      contractObservations.push({ ...contract, sourceKey: fact.receipt.spec.sourceKey, owner: "automatic", presence: "present",
         complete: fact.receipt.complete, checkedAt: fact.receipt.checkedAt });
     } catch { /* Invalid or incomplete contracts never borrow an old transport. */ }
   }
-  // P4 is intentionally absent: retain exact saved prices; newly found IDs carry
-  // no new price projection. Public facts cannot lend prices or permissions.
-  const existing = new Map(modelsOf(connection).map(model => [model.id, model]));
-  const priceField = (key: string) => /pric|billing|tariff|cost|currency|rateMultiplier|quota/iu.test(key);
-  const unpriced = reduction.visibleModels.map(model => {
-    const saved = existing.get(model.id), descriptor = structuredClone(model);
-    delete descriptor.pricing;
-    descriptor.name = saved?.name ?? descriptor.id;
-    descriptor.metadata = Object.fromEntries([...Object.entries(descriptor.metadata ?? {}).filter(([key]) => !priceField(key)),
-      ...Object.entries(saved?.metadata ?? {}).filter(([key]) => priceField(key)).map(([key, value]) => [key, structuredClone(value)])]);
-    if (saved?.pricing) descriptor.pricing = structuredClone(saved.pricing);
-    return descriptor;
-  });
-  const scope = observation.receipt.spec.applyScope;
-  const denied = observations.some(row => row.receipt.spec.role === "key-membership" && row.receipt.spec.authScope.principalRef === connection.id &&
-    row.receipt.reason === "authentication");
-  const modelScanStatus = denied ? "unauthorized" : reduction.manifestComplete ? unpriced.length ? "live" : "empty" : connection.config.modelScanStatus ?? "unscanned";
-  const effective = { ...connection, config: { ...connection.config, modelScanStatus } };
-  const reconciled = unpriced.map(model => {
-    const fresh = observations.filter(row => row.receipt.spec.role === "key-membership" && row.receipt.spec.authScope.principalRef === connection.id &&
-      row.receipt.status === "succeeded" && row.receipt.complete).flatMap(row => row.facts.models).find(row => row.id === model.id);
-    if (modelScanStatus !== "live" || !fresh || fresh.metadata?.canvasRunnable === false) return model;
-    const metadata = { ...model.metadata }; delete metadata.canvasRunnable; delete metadata.canvasUnavailableReason;
-    return { ...model, metadata };
-  });
+  const prices = reduceCatalogPrices(pipeline.entries[pricesKey(connection.id)] as unknown as CatalogPriceState | undefined,
+    { connection, supplier: work.supplier, models: reduction.visibleModels,
+      observations: normalizeCatalogDedicatedPriceFacts(connection, work.supplier, knownFacts).filter(fact =>
+      fact.receipt.context.identityEpoch === pipeline.identityEpoch), identityEpoch: pipeline.identityEpoch, mode,
+      observedAt: new Date(now).toISOString() });
   const activeSources = new Set(requiredSourceKeys);
   const provenMembers = new Set(Object.values(reduction.state.sources).filter(source => activeSources.has(source.sourceKey))
     .flatMap(source => source.acceptedModels.map(model => model.id)));
-  const membership = reconciled.map(model => ({ ...model, metadata: { ...model.metadata, catalogMembershipVerified: provenMembers.has(model.id) } }));
+  const denied = observations.some(row => row.receipt.spec.role === "key-membership" && row.receipt.spec.authScope.principalRef === connection.id &&
+    (!manualFence || row.receipt.context.dispatchSeq > manualFence.dispatchedThrough) &&
+    row.receipt.reason === "authentication");
+  const modelScanStatus = denied ? "unauthorized" : reduction.manifestComplete ? prices.models.length ? "live" : "empty" : connection.config.modelScanStatus ?? "unscanned";
+  const effective = { ...connection, config: { ...connection.config, modelScanStatus } };
+  const freshKeyModels = observations.filter(row => row.receipt.spec.role === "key-membership" && row.receipt.spec.authScope.principalRef === connection.id &&
+    row.receipt.status === "succeeded" && row.receipt.complete && row.receipt.freshness === "live" &&
+    (!manualFence || row.receipt.context.dispatchSeq > manualFence.dispatchedThrough)).flatMap(row => row.facts.models);
+  const reconciled = prices.models.map(model => {
+    const current = freshKeyModels.filter(fresh => fresh.id === model.id), rejection = current.find(fresh => fresh.metadata?.canvasRunnable === false);
+    if (rejection) return { ...model, metadata: { ...model.metadata, canvasRunnable: false,
+      canvasUnavailableReason: rejection.metadata?.canvasUnavailableReason ?? "当前 Key 没有此型号的可用权限" } };
+    if (modelScanStatus !== "live" || !current.length || connection.config.manualProtocol === true ||
+      ["manual", "paid-test"].includes(String(model.metadata?.source)) || model.metadata?.protocolEvidence === "paid-test") return model;
+    const metadata = { ...model.metadata }; delete metadata.canvasRunnable; delete metadata.canvasUnavailableReason;
+    return { ...model, metadata };
+  });
+  // Native predicates consult scan status and exact current refusals. Reconcile
+  // a new successful Key result before selecting an adapter, not afterwards.
+  const dedicated = collectCatalogDedicatedContracts(effective, work.supplier, reconciled, knownFacts,
+    { identityEpoch: pipeline.identityEpoch, observationCycleId: observation.receipt.context.observationCycleId, membershipModelIds: [...provenMembers] });
+  contracts = reduceCatalogContracts(contracts, [...contractObservations, ...dedicated.contracts]);
+  const scope = observation.receipt.spec.applyScope;
+  const membership = dedicated.models.map(model => ({ ...model, metadata: { ...model.metadata, catalogMembershipVerified: provenMembers.has(model.id) } }));
   const projected = bindScannedModelProtocols(effective, membership, effective, { catalogContracts: contracts,
-    sourceId: scope.supplierSourceId, groupIdentity: catalogConnectionScopes(connection).apply.groupIdentity ?? "name:" });
-  reduction.state.visibleModels = structuredClone(projected.models);
+    sourceId: scope.supplierSourceId, groupIdentity: catalogConnectionScopes(connection).apply.groupIdentity ?? "name:",
+    nativeModels: dedicated.nativeModels, nativeBindings: dedicated.nativeBindings });
+  if (!holdManualDisplay) reduction.state.visibleModels = structuredClone(projected.models);
   const complete = observation.receipt.status === "succeeded" && observation.receipt.complete;
   let nextScheduler = work.jobId ? compactCatalogSchedulerState(finishCatalogReadJob(scheduler, work.jobId, owner, now,
     complete ? { status: "completed", resultRef: factKey(reservation.sourceKey) } : { status: "failed",
@@ -402,24 +552,64 @@ function preparePublication(pipeline: CatalogPipelineState, connection: Provider
   if (discovered.length) nextScheduler = enqueueCatalogReadJobs(nextScheduler, discovered.map(task => task.spec), { now, mode,
     identityEpoch: pipeline.identityEpoch, observationCycleId: observation.receipt.context.observationCycleId, revision: work.revision,
     sessionStartedAt: work.sessionStartedAt }).state;
-  const fields = { modelCatalogModels: projected.models, scannedModelIds: projected.models.map(model => model.id), modelScanComplete: reduction.manifestComplete,
-    modelScanStatus };
-  const nextConnection = { ...connection, config: { ...connection.config, ...fields, ...(projected.connector ? { connector: projected.connector } : {}) } };
+  const fields = holdManualDisplay ? (denied ? { modelScanStatus: "unauthorized" } : {}) : {
+    modelCatalogModels: projected.models, scannedModelIds: projected.models.map(model => model.id), modelScanComplete: reduction.manifestComplete, modelScanStatus };
+  const connectionConnector = !holdManualDisplay ? projected.connector : undefined;
+  const nextConnection = { ...connection, config: { ...connection.config, ...fields, ...(connectionConnector ? { connector: connectionConnector } : {}) } };
+  // Sampling markers and provenance are excluded by catalogChanges. Prices
+  // come from the dedicated reducer, including the third explicit withdrawal.
+  const offers = projectCatalogOffers(pipeline, work.supplier, observation, mode, new Date(now).toISOString());
+  const changes = [...catalogChanges(connection, nextConnection).filter(change => change.kind !== "price"), ...(!holdManualDisplay ? prices.changes : []), ...offers.changes];
+  const changesEntry = `changes:${connection.id}`, diagnosticEntry = `diagnostics:${connection.id}`;
+  const priorChanges = pipeline.entries[changesEntry] as unknown as CatalogPipelineChanges | undefined;
+  const records: CatalogChangeRecord[] = (priorChanges?.records ?? []).filter(record => Date.parse(record.checkedAt) >= now - CATALOG_HISTORY_RETENTION_MS);
+  if (changes.length) records.push({ id: `${pipeline.identityEpoch}:${reservation.dispatchSeq}`, checkedAt: new Date(now).toISOString(),
+    connectionId: connection.id, connectionName: connection.name, ...(work.supplier ? { supplierId: work.supplier.id, supplierName: work.supplier.name } : {}), changes });
+  const applicable = knownFacts.filter(fact => fact.receipt.context.identityEpoch === pipeline.identityEpoch && applicableFact(fact, connection, work.supplier));
+  const failures = applicable.filter(fact => (!manualFence || fact.receipt.context.dispatchSeq > manualFence.dispatchedThrough) &&
+    (fact.receipt.status === "failed" || !fact.receipt.complete && fact.receipt.freshness === "live"));
+  const candidate = Object.values(reduction.state.sources).some(source => source.lastOutcome === "candidate");
+  const priorDiagnostic = pipeline.entries[diagnosticEntry] as unknown as CatalogPipelineConnectionDiagnostic | undefined;
+  const nextDiagnostic: CatalogPipelineConnectionDiagnostic = { schemaVersion: 1, cursor: priorDiagnostic?.cursor ?? 0,
+    checkedAt: new Date(now).toISOString(), outcome: candidate ? "pending" : reduction.manifestComplete ? failures.length ? "partial" : "complete"
+      : failures.length ? "failed" : "pending", manualRequired: candidate || failures.length > 0,
+    retainedPriceModelCount: holdManualDisplay ? priorDiagnostic?.retainedPriceModelCount ?? 0 : prices.retainedPriceModelCount,
+    ...(failures[0]?.receipt.reason ? { reason: failures[0].receipt.reason === "credentials-unavailable" ? "authentication"
+      : failures[0].receipt.reason === "invalid-response" ? "incomplete" : failures[0].receipt.reason === "budget" ||
+        failures[0].receipt.reason === "cancelled" ? "network" : failures[0].receipt.reason } : {}) };
+  const attentionChanged = !isDeepStrictEqual(priorDiagnostic && { outcome: priorDiagnostic.outcome, reason: priorDiagnostic.reason,
+    manualRequired: priorDiagnostic.manualRequired, retainedPriceModelCount: priorDiagnostic.retainedPriceModelCount },
+    { outcome: nextDiagnostic.outcome, reason: nextDiagnostic.reason, manualRequired: nextDiagnostic.manualRequired,
+      retainedPriceModelCount: nextDiagnostic.retainedPriceModelCount });
+  // Initial success and an unstarted pending queue are silent. Only committed
+  // changes or changed attention metadata advance a durable notification cursor.
+  if (attentionChanged && (nextDiagnostic.manualRequired || nextDiagnostic.retainedPriceModelCount > 0 || priorDiagnostic?.manualRequired))
+    nextDiagnostic.cursor = reservation.dispatchSeq;
   const patches: CatalogObservationCommit["state"] = [
+    ...offers.state,
     ...(work.jobId ? [{ key: factKey(observation.receipt.spec.sourceKey), expected: pipeline.entries[factKey(observation.receipt.spec.sourceKey)], value: json(observation) }] : []),
     { key: inventoryKey(connection.id), expected: pipeline.entries[inventoryKey(connection.id)], value: json(reduction.state) },
-    { key: contractKey(connection.id), expected: pipeline.entries[contractKey(connection.id)], value: json(contracts) },
-    { key: contractEpochKey(connection.id), expected: pipeline.entries[contractEpochKey(connection.id)], value: { identityEpoch: pipeline.identityEpoch } },
+    ...(!holdManualDisplay ? [{ key: contractKey(connection.id), expected: pipeline.entries[contractKey(connection.id)], value: json(contracts) },
+      { key: contractEpochKey(connection.id), expected: pipeline.entries[contractEpochKey(connection.id)], value: { identityEpoch: pipeline.identityEpoch,
+        fingerprints: contractFingerprints } },
+      { key: pricesKey(connection.id), expected: pipeline.entries[pricesKey(connection.id)], value: json(prices.state) }] : []),
+    ...(manualFence ? [{ key: catalogManualRefreshFenceKey(connection.id), expected: pipeline.entries[catalogManualRefreshFenceKey(connection.id)],
+      ...(holdManualDisplay ? { value: pipeline.entries[catalogManualRefreshFenceKey(connection.id)] } : {}) }] : []),
+    { key: diagnosticEntry, expected: pipeline.entries[diagnosticEntry], value: json(nextDiagnostic) },
+    { key: changesEntry, expected: pipeline.entries[changesEntry], value: json({ schemaVersion: 1,
+      cursor: changes.length ? reservation.dispatchSeq : priorChanges?.cursor ?? 0, records }) },
     { key: CATALOG_SCHEDULER_ENTRY, expected: json(scheduler), value: json(nextScheduler) },
     { key: guardKey(connection.id), expected: pipeline.entries[guardKey(connection.id)], value: {
-      fingerprint: identityFingerprint(nextConnection, work.supplier ?? catalogLegacyObservationOwner(nextConnection)) } },
+      ...guardValue(nextConnection, work.supplier, work.supplier ?? catalogLegacyObservationOwner(nextConnection)) } },
     { key: projectionKey(connection.id), expected: pipeline.entries[projectionKey(connection.id)], value: {
-      fingerprint: projectionFingerprint(knownFacts, pipeline.identityEpoch, connection, work.supplier) } },
+      fingerprint: projectionFingerprint(knownFacts, pipeline.identityEpoch, connection, work.supplier),
+      sourceCursor: namespaceSourceCursor(pipeline, work.jobId ? { sourceKey: observation.receipt.spec.sourceKey, dispatchSeq: reservation.dispatchSeq } : undefined) } },
     ...[...new Map(discovered.filter(task => !pipeline.entries[taskKey(task.spec.sourceKey)]).map(task => [task.spec.sourceKey, task])).values()]
       .map(task => ({ key: taskKey(task.spec.sourceKey), value: json(task) })),
   ];
-  return { reservation, ...(work.jobId ? { leaseDeadline: Date.now() + Math.max(0, (scheduler.jobs[work.jobId]?.lease?.expiresAt ?? now) - now) } : {}),
-    connections: [{ connectionId: connection.id, fields: {
+  return { reservation, resultEntryKeys: [], ...(offers.groups.length ? { groups: offers.groups } : {}),
+    ...(work.jobId ? { leaseDeadline: Date.now() + Math.max(0, (scheduler.jobs[work.jobId]?.lease?.expiresAt ?? now) - now) } : {}),
+    connections: Object.keys(fields).length || connectionConnector ? [{ connectionId: connection.id, fields: {
     expected: Object.fromEntries(Object.keys(fields).map(key => [key, connection.config[key]])), set: fields },
-    ...(projected.connector ? { connectorContract: { expected: connection.config.connector, value: projected.connector } } : {}) }], state: patches };
+    ...(connectionConnector ? { connectorContract: { expected: connection.config.connector, value: connectionConnector } } : {}) }] : [], state: patches };
 }

@@ -1,8 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CATALOG_POLICY_EVENT, catalogFailureLabel, readCatalogCheckStatus, saveCatalogCheckMode } from "../lib/client-catalog-check";
-import type { CatalogChange, CatalogChangeRecord, CatalogCheckMode, CatalogUpgradeStatus } from "../lib/supplier-catalog-contracts";
+import { CATALOG_POLICY_EVENT, catalogFailureLabel, confirmCatalogCandidate, readCatalogCheckStatus, saveCatalogCheckMode } from "../lib/client-catalog-check";
+import { invalidateConnections, invalidateModelCache } from "../lib/client-api";
+import type { CatalogChange, CatalogChangeRecord, CatalogCheckMode, CatalogMembershipCandidateSummary, CatalogUpgradeStatus } from "../lib/supplier-catalog-contracts";
+import { CatalogPipelineDetails } from "./catalog-pipeline-details";
 import styles from "./catalog-check.module.css";
 
 const CHANGE_LABELS: Record<CatalogChange["kind"], string> = { price: "价格变动", "model-added": "新增型号", "model-removed": "下架型号", "model-changed": "型号规格变动", "group-added": "新增分组", "group-removed": "移除分组", "group-changed": "分组变动" };
@@ -12,9 +14,11 @@ function ChangeRecord({ record, initiallyOpen = false }: { record: CatalogChange
   return <details className={styles.record} open={open} onToggle={event => setOpen(event.currentTarget.open)}>
     <summary><time dateTime={record.checkedAt}>{new Date(record.checkedAt).toLocaleString("zh-CN")}</time><strong>{record.supplierName ?? record.connectionName}</strong><span>{record.connectionName} · {record.changes.length} 项变更</span></summary>
     {open && <><ul className={styles.changes}>{record.changes.slice(0, limit).map((change, index) => <li key={index}>
-      <span>{CHANGE_LABELS[change.kind]}</span>
+      <span>{change.reason === "explicit-unpublished" ? "价格不再公布" : CHANGE_LABELS[change.kind]}</span>
       {change.modelId && <code>{change.modelId}</code>}{change.groupId && <small>分组：{change.groupId}</small>}
       {(change.before !== undefined || change.after !== undefined) && <div className={styles.price}><span>{change.before ?? "—"}</span><span aria-label="变为">→</span><span>{change.after ?? "—"}</span></div>}
+      {change.condition && <small>条件：{change.condition}</small>}{change.checkedAt && <small>采样时间 {change.checkedAt}</small>}
+      {change.sourceUrl && /^https?:\/\//u.test(change.sourceUrl) && <a href={change.sourceUrl} target="_blank" rel="noreferrer">查看价格来源</a>}
     </li>)}</ul>{record.changes.length > limit && <button className="sm-button" type="button" onClick={() => setLimit(value => value + 50)}>再显示 50 项</button>}</>}
   </details>;
 }
@@ -68,11 +72,19 @@ export function CatalogCheckSettings({ review = false, ready, selectedSupplierId
     } catch { setError("自动检查设置未保存，请重试"); }
     finally { setBusy(false); }
   };
+  const confirm = async (candidate: CatalogMembershipCandidateSummary) => {
+    readSequence.current++;
+    const next = await confirmCatalogCandidate(candidate);
+    readSequence.current++;
+    setStatus(next);
+    invalidateModelCache(candidate.connectionId); invalidateConnections();
+    window.dispatchEvent(new CustomEvent("supplier-catalog-upgraded", { detail: { updatedConnectionIds: [candidate.connectionId] } }));
+  };
   const manual = status?.connections.filter(connection => connection.manualRequired) ?? [];
   const attention = status?.mode === "off" ? status.connections : manual;
   const history = status?.history.filter(record => all || record.supplierId === selectedSupplierId && Boolean(selectedSupplierId) || selectedConnectionIds.includes(record.connectionId)) ?? [];
   return <section className={styles.settings} aria-label="供应商目录自动检查设置">
-    <div className={styles.heading}><div><strong>自动检查供应商目录与价格</strong><p>型号列表读全后更新目录；缺失的价格沿用上次记录。</p></div>
+    <div className={styles.heading}><div><strong>自动检查供应商目录与价格</strong><p>各来源独立读取；缺价沿用原采样记录，明确不再公布三个有效周期后显示“—”。</p></div>
       <select aria-label="自动检查供应商目录与价格" value={status?.mode ?? "daily"} disabled={!status || busy} onChange={event => void save(event.target.value as CatalogCheckMode)}>
         <option value="off">关闭</option><option value="upgrade">仅软件升级后</option><option value="daily">每天一次（默认）</option>
       </select>
@@ -90,6 +102,8 @@ export function CatalogCheckSettings({ review = false, ready, selectedSupplierId
           <button className="sm-button" type="button" onClick={() => { setExpanded(false); onSelectConnection(connection.connectionId); }}>查看供应商</button>
         </li>)}</ul>}
       </section>
+      {status?.pipeline && <CatalogPipelineDetails pipeline={status.pipeline} connections={status.connections}
+        selectedConnectionIds={selectedConnectionIds} all={all} onConfirm={confirm} onRead={load} />}
       <section aria-label="供应商目录变更记录"><div className={styles.historyHeading}><h4>目录变更记录 <small>最近 30 天</small></h4><button className="sm-button" type="button" aria-pressed={all} onClick={() => setAll(value => !value)}>{all ? "仅看当前供应商" : "查看全部供应商"}</button></div>
         {!history.length ? <p className={styles.caption}>没有已记录的目录或价格变动；仅采样时间变化不会产生记录。</p> : history.slice(0, historyLimit).map((record, index) => <ChangeRecord key={record.id} record={record} initiallyOpen={review && index === 0} />)}
         {history.length > historyLimit && <button className="sm-button" type="button" onClick={() => setHistoryLimit(value => value + 20)}>再显示 20 条记录</button>}

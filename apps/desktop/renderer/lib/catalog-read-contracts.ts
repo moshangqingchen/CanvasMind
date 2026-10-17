@@ -1,4 +1,5 @@
-import type { DocumentedModelInterface, ModelDescriptor, ProviderOperation } from "@super-canvas/providers";
+import type { DocumentedModelInterface, ModelDescriptor, ProviderOperation, StructuredPriceTier } from "@super-canvas/providers";
+import type { CatalogNormalizedInterfaceDocument } from "./catalog-interface-document-compile";
 import type { collectCangyuanCatalogRead } from "./cangyuan-catalog";
 import type { collectWeAiPricingRead } from "./weai-pricing-server";
 import type { collectTk1688CatalogRead } from "./tk1688-catalog";
@@ -39,7 +40,7 @@ export interface CatalogObservationContext {
   identityEpoch: string;
   dispatchSeq: number;
 }
-export type CatalogReadReason = "network" | "authentication" | "balance" | "unsupported" | "incomplete" |
+export type CatalogReadReason = "network" | "upstream" | "authentication" | "balance" | "unsupported" | "incomplete" |
   "invalid-response" | "budget" | "credentials-unavailable" | "cancelled";
 export interface CatalogReadCoverage {
   domain: "key-list" | "offers" | "group-options" | "price-fragment" | "contract" | "health";
@@ -73,6 +74,8 @@ export interface CatalogNormalizedFacts {
   dependencies?: Record<string, number | string>;
   contractDigests?: string[];
   contracts?: DocumentedModelInterface[];
+  interfaceDocuments?: CatalogNormalizedInterfaceDocument[];
+  priceStates?: Array<{ modelId: string; groupIdentity?: string; operation?: ProviderOperation; state: "explicit-unpublished" | "unknown"; conditions?: StructuredPriceTier["conditions"] }>;
   /** API origin used to compile relative invocation paths, not the docs host. */
   contractOrigin?: string;
   /** Only exact model/path declarations; no raw document or free-form error. */
@@ -120,6 +123,8 @@ export function catalogReadReason(code?: string, status?: number): CatalogReadRe
   if (/incomplete|truncat/u.test(code ?? "")) return "incomplete";
   if (/invalid_response|invalid-response/u.test(code ?? "")) return "invalid-response";
   if (/unsupported/u.test(code ?? "")) return "unsupported";
+  if (status === 404 || status === 405 || status === 415) return "unsupported";
+  if (status !== undefined && status >= 500) return "upstream";
   return "network";
 }
 

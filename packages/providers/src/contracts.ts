@@ -10,6 +10,18 @@ export type StructuredPriceKind =
   | "token"
   | "tiered";
 
+/** Provenance belongs to the exact price branch, never to the newest directory read. */
+export interface CatalogPriceProvenance {
+  sourceKey: string;
+  checkedAt: string;
+  sourceUrl?: string;
+  status: "published" | "retained";
+  operations?: readonly ProviderOperation[];
+  /** Exact rule/FX/multiplier dependencies; never borrowed across frameworks. */
+  frameworkKey?: string;
+  dependencies?: Readonly<Record<string, string | number | boolean>>;
+}
+
 export interface StructuredPriceTier {
   id: string;
   label: string;
@@ -19,6 +31,7 @@ export interface StructuredPriceTier {
   conditions?: readonly { parameter: string; operator: "equals" | "contains"; value: string }[];
   conditionMode?: "any" | "all" | "none";
   otherwise?: boolean;
+  evidence?: CatalogPriceProvenance;
 }
 
 /** Machine-readable billing data. Human-readable price labels are not ranked. */
@@ -40,6 +53,7 @@ export interface StructuredModelPricing {
   checkedAt: string;
   validUntil?: string;
   confidence: "exact" | "estimate" | "snapshot";
+  evidence?: CatalogPriceProvenance;
 }
 
 export interface ModelParameterOption {

@@ -594,6 +594,10 @@ export function applySupplierCatalogPrices(
   const incomplete = catalog.complete === false || ["failed", "unauthorized"].includes(catalog.status);
   const groupModelIds = [...models.map(model => model.id), ...((selected ?? generic)?.models.map(model => model.id) ?? [])];
   const priced = models.map((model) => {
+    // Pipeline prices already carry per-condition provenance and withdrawal
+    // counters. A legacy enrichment pass must not replace that accepted view.
+    if (model.metadata?.catalogPriceEvidence && typeof model.metadata.catalogPriceEvidence === "object" &&
+      (model.metadata.catalogPriceEvidence as { schemaVersion?: unknown }).schemaVersion === 1) return model;
     const catalogModel = (selected ?? generic)?.models.find(item => item.id === model.id);
     // Public API evidence refreshes independently of every price early-return.
     if (selected && catalogModel && isJiasuApiUrl(sourceUrl)) model = { ...model,
@@ -894,6 +898,8 @@ export function applySupplierCatalogPrices(
 
 /** Only model-scoped lines can supply a documented price. */
 export function applyDocumentedModelPrice(model: ModelDescriptor, document: string | undefined, sourceUrl: string): ModelDescriptor {
+  if (model.metadata?.catalogPriceEvidence && typeof model.metadata.catalogPriceEvidence === "object" &&
+    (model.metadata.catalogPriceEvidence as { schemaVersion?: unknown }).schemaVersion === 1) return model;
   // A live expression we cannot interpret is not permission to flatten an
   // older prose/example price from the same site into a fixed request rate.
   if (model.metadata?.jijiuCatalogPricingIncomplete === true) return model;

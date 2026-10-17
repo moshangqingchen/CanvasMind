@@ -83,6 +83,28 @@ const imageCall: DirectorCallDraft = {
 };
 
 describe("director routing", () => {
+  it("shares per-condition freshness with request previews and never confirms a retained branch", () => {
+    const entry = candidate("mixed", undefined);
+    const checkedAt = "2026-08-29T00:00:00.000Z";
+    const model = { ...entry.model, pricing: { kind: "tiered" as const, currency: "CNY", billingUnit: "image" as const,
+      checkedAt, confidence: "exact" as const, evidence: { sourceKey: "s", checkedAt, status: "published" as const },
+      tiers: [{ id: "old", label: "old", dimension: "quality" as const, value: "old", price: 2,
+        evidence: { sourceKey: "s", checkedAt, status: "retained" as const } },
+      { id: "new", label: "new", dimension: "quality" as const, value: "new", price: 3,
+        evidence: { sourceKey: "s", checkedAt, status: "published" as const } }] }, metadata: { priceStatus: "partial" } };
+    expect(quoteCandidate({ ...entry, model }, { operation: "image.generate", count: 1, quality: "old" }, undefined, { now: NOW }).pricingStatus).toBe("unknown");
+    expect(quoteCandidate({ ...entry, model }, { operation: "image.generate", count: 1, quality: "new" }, undefined, { now: NOW }).originalMaximum).toBe(3);
+  });
+  it("uses the frozen actual parameters for ordered conditional tariffs", () => {
+    const entry = candidate("conditional", undefined);
+    const model = { ...entry.model, pricing: { kind: "tiered" as const, currency: "CNY", billingUnit: "image" as const,
+      checkedAt: "2026-08-29T00:00:00.000Z", confidence: "exact" as const,
+      tiers: [{ id: "audio", label: "audio", price: 4, conditionMode: "all" as const,
+        conditions: [{ parameter: "generate_audio", operator: "equals" as const, value: "true" }] },
+      { id: "plain", label: "plain", price: 1, otherwise: true }] } };
+    expect(quoteCandidate({ ...entry, model }, { operation: "image.generate", count: 1,
+      pricingParameters: { generate_audio: true } }, undefined, { now: NOW }).originalMaximum).toBe(4);
+  });
   it("filters hard requirements before selecting the lowest comparable price", () => {
     const cheapButIneligible = candidate("cheap", 0.1, {
       model: {

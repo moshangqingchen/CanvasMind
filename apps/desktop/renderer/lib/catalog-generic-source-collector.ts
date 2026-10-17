@@ -2,6 +2,7 @@ import { parseSupplierCatalog, parseSupplierKeyGroups, parseSupplierPricingChann
   type DiscoveredSupplierGroup, type ModelDescriptor } from "@super-canvas/providers";
 import { readCatalogLoaderJson, type CatalogLoaderReadOptions } from "./catalog-loader-http";
 import { ModelInventoryReadError } from "./model-inventory-failure";
+import type { CatalogNormalizedFacts } from "./catalog-read-contracts";
 
 export type GenericSupplierSourceEntry = "pricing" | "plaza" | "newapi-groups" | "sub2api-groups" |
   "pricing-channels" | "available-channels" | "status";
@@ -11,6 +12,38 @@ export interface GenericSupplierSourceRead {
   complete: boolean;
   checkedAt: string;
   dependencies?: Record<string, number | string>;
+  priceStates?: CatalogNormalizedFacts["priceStates"];
+}
+
+/** Absence, labels, zero and partial token prices do not prove withdrawal.
+ * Only an explicit wire declaration in a complete, exact-group row does. */
+export function declaredCatalogPriceStates(payload: unknown): NonNullable<CatalogNormalizedFacts["priceStates"]> {
+  const root = object(payload), data = object(root?.data), result: NonNullable<CatalogNormalizedFacts["priceStates"]> = [];
+  const add = (value: unknown, groupIdentities: string[]) => {
+    const row = object(value); if (!row) return;
+    const modelId = row.model_name ?? row.model ?? row.id ?? row.name;
+    if (!identifier(modelId) || !groupIdentities.length) return;
+    const explicit = row.price_published === false || row.pricing_status === "unpublished" || row.price_status === "explicit-unpublished" ||
+      root?.pricing_complete === true && Object.hasOwn(row, "pricing") && row.pricing === null;
+    if (!explicit) return;
+    for (const groupIdentity of groupIdentities) result.push({ modelId: String(modelId), groupIdentity, state: "explicit-unpublished" });
+  };
+  const groups = root?.groups ?? data?.groups;
+  if (Array.isArray(groups)) for (const value of groups) {
+    const group = object(value); if (!group || !Array.isArray(group.models)) continue;
+    const id = typeof group.id === "number" ? group.id : typeof group.id === "string" && /^\d+$/u.test(group.id) ? Number(group.id) : undefined;
+    const identity = Number.isSafeInteger(id) && Number(id) >= 0 ? `site-id:${id}` : identifier(group.id ?? group.name) ? `name:${String(group.id ?? group.name)}` : undefined;
+    if (identity) for (const row of group.models) add(row, [identity]);
+  }
+  const rows = Array.isArray(payload) ? payload : [root?.data, root?.models, root?.items, data?.data, data?.models].find(Array.isArray);
+  if (Array.isArray(rows)) for (const value of rows) {
+    const row = object(value); if (!row) continue;
+    const identities = Array.isArray(row.enable_groups) ? row.enable_groups.filter(identifier).map(group => `name:${String(group)}`)
+      : typeof row.group_id === "number" || typeof row.group_id === "string" && /^\d+$/u.test(row.group_id) ? [`site-id:${row.group_id}`]
+        : identifier(row.group) ? [`name:${String(row.group)}`] : [];
+    add(row, identities);
+  }
+  return result;
 }
 const object = (value: unknown): Record<string, unknown> | undefined =>
   value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
@@ -130,5 +163,7 @@ export async function collectGenericSupplierSource(input: { url: string; siteUrl
     const parsed = parseSupplierCatalog(payload, { supplierSiteUrl: input.siteUrl, checkedAt });
     groups = parsed.groups; shape = catalogShape(payload); parserComplete = parsed.recognized && parsed.complete !== false;
   }
-  return { models: descriptors(groups), groups, complete: envelopeComplete && shape && parserComplete, checkedAt };
+  const complete = envelopeComplete && shape && parserComplete;
+  const priceStates = complete ? declaredCatalogPriceStates(payload) : [];
+  return { models: descriptors(groups), groups, complete, checkedAt, ...(priceStates.length ? { priceStates } : {}) };
 }

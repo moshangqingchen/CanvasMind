@@ -408,6 +408,9 @@ export interface WebhookEventRecord {
 
 export interface Repository {
   getApplicationSetting(key: string): Promise<unknown>;
+  /** Detached catalog header/sources plus selected entries. Omitted selection
+   * reads all entries; explicit keys/prefixes form a union, [] selects none. */
+  getCatalogPipelineState(supplierId: string, entryKeys?: readonly string[], entryPrefixes?: readonly string[]): Promise<CatalogPipelineState | undefined>;
   setApplicationSetting(key: string, value: unknown): Promise<void>;
   /** Compare the complete source records, then publish one catalog snapshot. */
   commitCatalogSnapshot(input: CatalogSnapshotCommit): Promise<void>;

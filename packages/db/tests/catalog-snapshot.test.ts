@@ -27,6 +27,37 @@ async function seed(repository: MemoryRepository) {
   return { supplier, connection };
 }
 describe("atomic automatic catalog storage", () => {
+  it("owned JSON memo follows replacements and never publishes a rejected candidate", async () => {
+    const path = await testPath(); let fail = false;
+    const repository = new FileRepository(path, async (from, to) => {
+      if (fail) throw Object.assign(new Error("memo-candidate-rejected"), { code: "EIO" });
+      return rename(from, to);
+    });
+    const { supplier, connection } = await seed(repository);
+    const input = { nested: { count: 1 } };
+    await repository.setApplicationSetting("memo-test", input);
+    input.nested.count = 99;
+    const dto = await repository.getApplicationSetting("memo-test") as typeof input;
+    dto.nested.count = 88;
+    await repository.flush();
+    expect(await new FileRepository(path).getApplicationSetting("memo-test")).toEqual({ nested: { count: 1 } });
+    fail = true;
+    await expect(repository.setApplicationSetting("memo-test", { nested: { count: 2 } })).rejects.toThrow("memo-candidate-rejected");
+    await expect(repository.commitCatalogSnapshot({ expectedSupplier: supplier, expectedConnections: [connection],
+      supplier, connections: [{ ...connection, name: "Rejected memo row" }] })).rejects.toThrow("memo-candidate-rejected");
+    fail = false;
+    await repository.flush();
+    let restored = new FileRepository(path);
+    expect(await restored.getApplicationSetting("memo-test")).toEqual({ nested: { count: 1 } });
+    expect((await restored.getConnection(connection.id))?.name).toBe(connection.name);
+    await repository.setApplicationSetting("memo-test", { nested: { count: 3 } });
+    const saved = await repository.saveConnection({ ...connection, name: "Next owned revision" });
+    saved.name = "Mutated returned DTO";
+    await repository.flush();
+    restored = new FileRepository(path);
+    expect(await restored.getApplicationSetting("memo-test")).toEqual({ nested: { count: 3 } });
+    expect((await restored.getConnection(connection.id))?.name).toBe("Next owned revision");
+  });
   it("persists app settings with backward-compatible optional snapshot field", async () => {
     const path = await testPath(), repository = new FileRepository(path);
     await repository.setApplicationSetting("supplierCatalogCheckMode", "off");

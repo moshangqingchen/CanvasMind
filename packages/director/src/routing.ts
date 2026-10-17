@@ -5,6 +5,8 @@ import type {
   StructuredModelPricing,
   StructuredPriceTier,
 } from "@super-canvas/providers";
+import { selectModelQuote, catalogRequestBillingCount } from "@super-canvas/providers/media-billing";
+import { evaluateImageParameters } from "@super-canvas/providers/image-parameter-contract";
 
 import type {
   DirectorCallDraft,
@@ -346,23 +348,39 @@ function tokenCost(
 function maximumCost(
   candidate: DirectorCatalogCandidate,
   requirements: GenerationRequirements,
+  at?: Date,
 ): CostEstimate | undefined {
-  const pricing = candidate.pricing ?? candidate.model.pricing;
+  const originalPricing = candidate.pricing ?? candidate.model.pricing;
+  const parameters = { ...Object.fromEntries((candidate.model.parameters ?? []).filter(parameter => parameter.default !== undefined)
+    .map(parameter => [parameter.key, parameter.default])), ...parametersForRequirements(requirements, candidate.model),
+    ...(requirements.resolution ? { resolution: requirements.resolution } : {}), ...requirements.pricingParameters };
+  const image = requirements.operation.startsWith("image.") ? evaluateImageParameters(candidate.model, parameters) : undefined;
+  const selected = selectModelQuote({ ...candidate.model, ...(originalPricing ? { pricing: originalPricing } : {}) },
+    image?.pricingParameters ?? parameters, { operation: requirements.operation, ...(at ? { at } : {}) });
+  const pricing = selected.estimatePricing;
   if (!pricing) return undefined;
+  if (candidate.model.metadata?.billingIncludesInputDuration === true || candidate.model.metadata?.approximateVideoDurationSeconds) return undefined;
   if (pricing.kind === "token") return tokenCost(pricing, requirements);
 
-  const tier = selectTier(pricing.tiers, requirements);
-  const amount = tier?.price ?? pricing.unitAmount;
+  const strict = pricing.evidence || pricing.tiers?.some(tier => tier.evidence || tier.conditions || tier.otherwise);
+  const tier = strict ? selected.tier : selectTier(pricing.tiers, requirements);
+  const amount = strict ? selected.amount : tier?.price ?? pricing.unitAmount;
   if (amount === undefined || !Number.isFinite(amount) || amount < 0) {
     return undefined;
   }
 
   let units: number;
-  if (pricing.kind === "per-second") {
+  if (pricing.kind === "per-second" || pricing.billingUnit === "second") {
     if (requirements.durationSeconds === undefined) return undefined;
     units = requirements.durationSeconds * requirements.count;
-  } else if (pricing.kind === "per-image") {
+  } else if (pricing.kind === "per-image" || pricing.billingUnit === "image") {
     units = requirements.count;
+  } else if (candidate.model.metadata?.catalogPriceEvidence &&
+    typeof candidate.model.metadata.catalogPriceEvidence === "object" &&
+    (candidate.model.metadata.catalogPriceEvidence as { schemaVersion?: unknown }).schemaVersion === 1) {
+    const count = catalogRequestBillingCount(candidate.model, requirements.pricingParameters ?? {}, requirements.count);
+    if (count === undefined) return undefined;
+    units = count;
   } else {
     const declaredCapacity = candidate.model.limits?.maxOutputImages;
     const countParameter = parameterFor(
@@ -414,7 +432,7 @@ export function quoteCandidate(
   const freshPricing = pricing
     ? isFresh(pricing.checkedAt, pricing.validUntil, nowMs, pricingMaxAgeMs)
     : false;
-  const estimate = maximumCost(candidate, requirements);
+  const estimate = maximumCost(candidate, requirements, now);
   const currency = pricing?.currency.trim().toUpperCase();
   const ratesFresh = isFreshExchangeRateTable(rates, nowMs);
   const configuredRate = currency ? rates?.rates[currency] : undefined;

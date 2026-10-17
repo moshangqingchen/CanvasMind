@@ -4,6 +4,7 @@ import { applyUserImageSizePresets } from "@super-canvas/providers/image-size-pr
 import { modelEstimatedCost } from "../lib/model-display";
 import { modelPickerPriceData, modelPickerPriceSampleAt } from "../lib/model-picker-data";
 import styles from "./model-picker.module.css";
+import { ModelPriceEvidence } from "./model-price-evidence";
 
 export function ModelPriceDetails({ model, parameters }: { model?: ModelDescriptor | null; parameters: Record<string, unknown> }) {
   if (model) model = applyUserImageSizePresets(normalizeTk1688CnyModel(model));
@@ -13,6 +14,7 @@ export function ModelPriceDetails({ model, parameters }: { model?: ModelDescript
   return <div className={`node-config-price-summary ${styles.details}`} aria-label="当前参数价格">
     <span>型号报价 <strong>{modelPickerPriceData(model)}</strong></span>
     {estimate && <span>本次预计费用 <strong>{estimate}</strong></span>}
+    <ModelPriceEvidence model={model} />
     <details><summary>价格与参数依据</summary>
       {estimate && <p>按当前参数与数量估算，最终费用以供应商实际扣费为准。</p>}
       {model?.metadata?.priceSource === "generated-result" && <p>来源：已生成请求的实际扣费与对应参数。</p>}

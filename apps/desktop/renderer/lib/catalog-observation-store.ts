@@ -67,7 +67,9 @@ export async function readCatalogObservationStore(repository: Repository, suppli
   const mode = catalogMode(modeValue);
   if (saved !== undefined) {
     assertCatalogPipelineState(saved, supplier.id);
-    return { mode, state: structuredClone(saved), initialEntries: {} };
+    const entries = legacyCatalogObservationEntries(supplier, connections, mode, now);
+    return { mode, state: structuredClone(saved), initialEntries: Object.fromEntries(Object.entries(entries)
+      .filter(([key]) => !Object.hasOwn(saved.entries, key))) };
   }
   return { mode, initialEntries: legacyCatalogObservationEntries(supplier, connections, mode, now) };
 }

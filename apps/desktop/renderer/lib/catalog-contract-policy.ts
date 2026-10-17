@@ -62,6 +62,10 @@ export interface CatalogContractProjectionOptions {
   catalogContracts: CatalogContractState;
   sourceId: string;
   groupIdentity: string;
+  /** Exact current-Key models supported by an existing native adapter, not a guessed Rest transport. */
+  nativeModels?: readonly ModelDescriptor[];
+  /** Existing exact built-in Rest adapters, kept separate from new supplier observations. */
+  nativeBindings?: readonly CatalogContractObservation[];
 }
 export const CATALOG_CONTRACT_PENDING_REASON = "当前调用契约尚未完整读取；上次契约仅供历史查看";
 const operations = new Set<ProviderOperation>(["image.generate", "image.edit", "video.generate", "video.image-to-video", "music.generate"]);
@@ -153,7 +157,7 @@ export function validateCatalogContractBundle(identity: ContractIdentity, bundle
   const issues: string[] = [];
   const model = bundle.model, connector = bundle.connector;
   if (!operations.has(identity.operation) || model.id !== identity.modelId || !model.operations.includes(identity.operation)) issues.push("model-operation");
-  if (!identity.sourceId || !/^(?:site-id|name):.+/u.test(identity.groupIdentity) || !identity.protocol || !/^[a-f0-9]{64}$/u.test(identity.schemaFingerprint)) issues.push("identity");
+  if (!identity.sourceId || !/^(?:site-id:.+|name:.*)$/u.test(identity.groupIdentity) || !identity.protocol || !/^[a-f0-9]{64}$/u.test(identity.schemaFingerprint)) issues.push("identity");
   issues.push(...requestIssues(connector.submit, identity.origin));
   try {
     if (catalogContractEndpoint(identity.origin, connector.submit.path) !== identity.submit || (connector.submit.method ?? "POST") !== identity.method) issues.push("submit-identity");
@@ -173,7 +177,13 @@ export function validateCatalogContractBundle(identity: ContractIdentity, bundle
     issues.push(...requestIssues(connector.poll, identity.origin));
     if (!connector.submit.response?.taskIdPath || !connector.poll.response?.statusPath || !connector.statusMap || !Object.values(connector.statusMap).includes("succeeded")) issues.push("async-lifecycle");
   } else if (connector.submit.response?.taskIdPath) issues.push("missing-poll");
-  if (!connector.output.path || !connector.output.kind || !connector.output.urlPath && !connector.output.base64Path && !connector.output.format && !connector.output.contentFallback) issues.push("output-mapping");
+  // RestOutputMapping.path can itself select a URL string (for example the
+  // existing Mikoto video $.content_url). Relative urlPath is only needed
+  // when the selected value is an object. Keep an explicit media MIME and
+  // a URL-shaped scalar selector as structural proof for this variant.
+  const scalarUrlOutput = connector.output.defaultMimeType?.startsWith(`${expectedOutput}/`) &&
+    /(?:\.|\[.[^\]]*["']\])(?:[A-Za-z_]*url)(?:["']?\])?$/iu.test(connector.output.path);
+  if (!connector.output.path || !connector.output.kind || !connector.output.urlPath && !connector.output.base64Path && !connector.output.format && !connector.output.contentFallback && !scalarUrlOutput) issues.push("output-mapping");
   const parameters = model.parameters ?? [], keys = new Set(parameters.map(parameter => parameter.key));
   if (keys.size !== parameters.length) issues.push("duplicate-parameter");
   for (const parameter of parameters) {
@@ -189,9 +199,8 @@ export function validateCatalogContractBundle(identity: ContractIdentity, bundle
 export function emptyCatalogContractState(): CatalogContractState { return { schemaVersion: 1, slots: {} }; }
 
 /** Automatic observations only own automatic fields; protected layers stay separate. */
-export function reduceCatalogContract(state: CatalogContractState, observation: CatalogContractObservation): CatalogContractState {
-  if (state.schemaVersion !== 1) throw new Error("Unsupported catalog contract state");
-  const next = structuredClone(state), key = catalogContractSlotKey(observation.identity), previous = next.slots[key];
+function reduceCatalogContractInto(next: CatalogContractState, observation: CatalogContractObservation): CatalogContractState {
+  const key = catalogContractSlotKey(observation.identity), previous = next.slots[key];
   const observedAt = Date.parse(observation.checkedAt), previousAt = previous ? Date.parse(previous.checkedAt) : undefined;
   if (!Number.isFinite(observedAt) || previousAt !== undefined && observedAt < previousAt) return next;
   if (observation.owner === "app-preset") return next; // Presets cannot grant a transport.
@@ -225,13 +234,27 @@ export function reduceCatalogContract(state: CatalogContractState, observation: 
   return next;
 }
 
+/** Copy the slot index once; only observed slots are replaced. Read-only unrelated bundles stay shared. */
+export function reduceCatalogContracts(state: CatalogContractState, observations: readonly CatalogContractObservation[]): CatalogContractState {
+  if (state.schemaVersion !== 1) throw new Error("Unsupported catalog contract state");
+  if (!observations.length) return state;
+  let next: CatalogContractState = { ...state, slots: { ...state.slots } };
+  for (const observation of observations) next = reduceCatalogContractInto(next, observation);
+  return next;
+}
+
+export function reduceCatalogContract(state: CatalogContractState, observation: CatalogContractObservation): CatalogContractState {
+  return reduceCatalogContracts(state, [observation]);
+}
+
 /** A parse failure alone is unknown. Only a comparable exact wire change can retire a binding. */
 export function applyCatalogContractDiagnostics(state: CatalogContractState, diagnostics: readonly CatalogContractDiagnostic[],
   context: { origin: string; sourceId: string; groupIdentity: string; sourceKey: string; checkedAt: string }): CatalogContractState {
-  const next = structuredClone(state);
+  if (!diagnostics.length) return state;
+  const next: CatalogContractState = { ...state, slots: { ...state.slots } };
   for (const diagnostic of diagnostics) {
     const key = catalogContractSlotKey({ ...context, modelId: diagnostic.modelId, operation: diagnostic.operation });
-    const slot = next.slots[key], accepted = slot?.accepted;
+    let slot = next.slots[key]; const accepted = slot?.accepted;
     if (!slot || !accepted || accepted.owner !== "automatic" || accepted.sourceKey !== context.sourceKey) continue;
     const observedAt = Date.parse(context.checkedAt);
     if (!Number.isFinite(observedAt) || observedAt < Date.parse(slot.checkedAt)) continue;
@@ -241,6 +264,7 @@ export function applyCatalogContractDiagnostics(state: CatalogContractState, dia
       diagnostic.parameterFingerprint !== undefined && diagnostic.parameterFingerprint !== catalogContractParameterFingerprint(accepted.bundle.model) ||
       diagnostic.schemaFingerprint !== undefined && diagnostic.schemaFingerprint !== accepted.identity.schemaFingerprint;
     if (!changed) continue;
+    slot = { ...slot, history: [...slot.history] }; next.slots[key] = slot;
     if (!slot.history.some(item => sameIdentity(item.identity, accepted.identity))) slot.history.push(accepted);
     delete slot.accepted;
     slot.blocked = true; slot.presence = "unknown"; slot.reason = "incomplete"; slot.checkedAt = context.checkedAt;
@@ -259,6 +283,7 @@ export function projectCatalogContractModels(connection: { provider: string; con
   let origin: string;
   try { origin = new URL(String(connection.config.baseUrl)).origin; } catch { origin = ""; }
   const overrides: Record<string, RestModelConnectorOverride> = {};
+  const native = new Map((options.nativeModels ?? []).map(model => [model.id, model]));
   const connectors: RestConnectorConfig[] = [];
   const models = scanned.map(model => {
     if (connection.config.manualProtocol === true || model.metadata?.source === "manual" || model.metadata?.source === "paid-test" || model.metadata?.protocolEvidence === "paid-test") {
@@ -282,6 +307,24 @@ export function projectCatalogContractModels(connection: { provider: string; con
     // A contract is not permission evidence. Preserve live denials from the Key inventory.
     const denied = model.metadata?.catalogMembershipVerified === false || model.metadata?.canvasRunnable === false && /401|403|权限|未开通|拒绝|未返回|not.?returned|unauthor|forbidden/iu.test(String(model.metadata.canvasUnavailableReason ?? "")) ||
       ["unauthorized", "empty"].includes(String(connection.config.modelScanStatus));
+    const nativeModel = native.get(model.id);
+    if (!accepted.length && !denied && nativeModel && nativeModel.metadata?.canvasRunnable !== false &&
+      !matches.some(slot => slot.blocked || slot.reason === "conflicting-source")) {
+      const bindings = (options.nativeBindings ?? []).filter(binding => binding.identity.origin === origin && binding.identity.sourceId === options.sourceId &&
+        binding.identity.groupIdentity === options.groupIdentity && binding.identity.modelId === model.id && binding.complete && binding.bundle &&
+        !validateCatalogContractBundle(binding.identity, binding.bundle).length);
+      if (bindings.length) {
+        const first = bindings[0]!;
+        overrides[model.id] = { ...ownedOverride(first.bundle!.connector), operationOverrides: Object.fromEntries(bindings.map(binding =>
+          [binding.identity.operation, ownedOverride(binding.bundle!.connector)])) };
+        connectors.push(first.bundle!.connector);
+      }
+      const metadata: Record<string, unknown> = { ...model.metadata, ...nativeModel.metadata, catalogContractPolicy: 1,
+        catalogContractStatus: "native", canvasRunnable: true };
+      delete metadata.canvasUnavailableReason;
+      return applyUserImageSizePresets({ ...structuredClone(model), operations: nativeModel.operations, inputKinds: nativeModel.inputKinds,
+        outputKinds: nativeModel.outputKinds, parameters: nativeModel.parameters, limits: nativeModel.limits, metadata });
+    }
     if (!accepted.length || denied) return { ...structuredClone(model), metadata: { ...metadata, canvasRunnable: false,
       canvasUnavailableReason: model.metadata?.catalogMembershipVerified === false ? "尚未读取当前 Key 的成员证据；上次型号仅供历史查看"
         : denied ? model.metadata?.canvasUnavailableReason ?? "当前 Key 没有此型号的可用权限" : CATALOG_CONTRACT_PENDING_REASON } };
@@ -301,7 +344,7 @@ export function projectCatalogContractModels(connection: { provider: string; con
   if (!connectors.length) {
     const saved = connection.config.connector;
     if (own(saved) && saved.submit && saved.output) return { models, connector: { ...structuredClone(saved) as unknown as RestConnectorConfig,
-      models: [], restrictModels: true, modelOverrides: {} } };
+      models: models.filter(model => model.operations.length && model.metadata?.canvasRunnable !== false), restrictModels: true, modelOverrides: {} } };
     return { models };
   }
   const connector = structuredClone(connectors[0]!);

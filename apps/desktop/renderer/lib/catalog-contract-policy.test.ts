@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { GenericRestAdapter, StaticConnectionResolver, type DocumentedModelInterface, type ModelDescriptor } from "@super-canvas/providers";
 import { catalogContractEndpoint, catalogContractFromDocumented, catalogContractSchemaFingerprint, catalogContractSlotKey,
-  emptyCatalogContractState, reduceCatalogContract, validateCatalogContractBundle, applyCatalogContractDiagnostics, catalogContractParameterFingerprint,
+  emptyCatalogContractState, reduceCatalogContract, reduceCatalogContracts, validateCatalogContractBundle, applyCatalogContractDiagnostics, catalogContractParameterFingerprint,
   type CatalogContractObservation, type CatalogContractState, type CatalogContractScope } from "./catalog-contract-policy";
 import { bindScannedModelProtocols } from "./scanned-model-protocols";
 import { applySavedModelInterfaces, discoverSupplierModelInterfaces } from "./supplier-interface-discovery";
@@ -31,6 +31,33 @@ const project = (state: CatalogContractState, models = [model]) => bindScannedMo
   catalogContracts: state, sourceId: scope.sourceId, groupIdentity: scope.groupIdentity });
 
 describe("catalog contract evidence and identity", () => {
+  it("accepts the existing direct scalar URL output form and keeps opaque unmapped output blocked", async () => {
+    const value = binding();
+    value.connector.output = { kind: "image", path: "$.content_url", defaultMimeType: "image/png" };
+    expect(() => catalogContractFromDocumented(scope, "rest", value)).not.toThrow();
+    const adapter = new GenericRestAdapter(new StaticConnectionResolver([]), { config: value.connector });
+    expect(await adapter.extractOutputs({ config: value.connector, remote: { content_url: "https://fixture.invalid/output.png" } })).toMatchObject([{ kind: "image", url: "https://fixture.invalid/output.png" }]);
+    value.connector.output.path = "$.data";
+    expect(() => catalogContractFromDocumented(scope, "rest", value)).toThrow("output-mapping");
+  });
+  it("accepts an explicitly ungrouped name sentinel without inventing a group and rejects an empty stable ID", () => {
+    expect(() => catalogContractFromDocumented({ ...scope, groupIdentity: "name:" }, "rest", binding())).not.toThrow();
+    expect(() => catalogContractFromDocumented({ ...scope, groupIdentity: "site-id:" }, "rest", binding())).toThrow();
+  });
+  it("batch reduction matches ordered single observations without cloning unrelated bundles or mutating its input", () => {
+    const first = observation(), original = reduceCatalogContract(emptyCatalogContractState(), first);
+    const value = binding(); value.model = { ...value.model, id: "second-full-id" };
+    const second = { ...catalogContractFromDocumented({ ...scope, modelId: "second-full-id" }, "rest", value), sourceKey: "second-source", owner: "automatic" as const,
+      presence: "present" as const, complete: true, checkedAt: first.checkedAt };
+    const changed = { ...second, checkedAt: "2026-10-18T00:00:00Z" };
+    const batch = reduceCatalogContracts(original, [second, changed]);
+    expect(batch).toEqual(reduceCatalogContract(reduceCatalogContract(original, second), changed));
+    expect(original.slots[catalogContractSlotKey(second.identity)]).toBeUndefined();
+    expect(batch.slots[catalogContractSlotKey(first.identity)]).toBe(original.slots[catalogContractSlotKey(first.identity)]);
+    expect(reduceCatalogContracts(original, [])).toBe(original);
+    expect(applyCatalogContractDiagnostics(original, [], { origin: scope.origin, sourceId: scope.sourceId, groupIdentity: scope.groupIdentity,
+      sourceKey: "source", checkedAt: first.checkedAt })).toBe(original);
+  });
   it("does not let an automatic public contract authorize a legacy display-only model without Key membership evidence", () => {
     const state = reduceCatalogContract(emptyCatalogContractState(), observation());
     const projection = project(state, [{ ...model, metadata: { catalogMembershipVerified: false } }]);

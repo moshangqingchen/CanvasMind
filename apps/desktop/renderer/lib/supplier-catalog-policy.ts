@@ -13,13 +13,14 @@ const sampleField = /(?:checkedAt|observedAt|scannedAt|updatedAt|createdAt|sampl
 function canonical(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonical);
   if (!value || typeof value !== "object") return value;
-  return Object.fromEntries(Object.entries(value).filter(([key]) => !sampleField.test(key) && !["confidence", "source"].includes(key))
+  return Object.fromEntries(Object.entries(value).filter(([key]) => !sampleField.test(key) && !["confidence", "source", "evidence"].includes(key))
     .sort(([a], [b]) => a.localeCompare(b)).map(([key, entry]) => [key, canonical(entry)]));
 }
 function priceValue(value: unknown): unknown {
   const row = object(value), metadata = object(row.metadata);
   const label = row.priceLabel ?? metadata.priceLabel;
-  return canonical({ pricing: structuredPrice(row), priceLabel: typeof label === "string" ? label.replace(/（上次价格）$/u, "") : label,
+  const pricing = structuredPrice(row);
+  return canonical({ pricing, priceLabel: pricing ? undefined : typeof label === "string" ? label.replace(/（上次价格）$/u, "") : label,
     ...Object.fromEntries(Object.entries(metadata).filter(([key]) =>
       ["billingIncludesInputDuration", "billingExpression", "priceExpression", "priceConditions", "measuredPrice"].includes(key))) });
 }

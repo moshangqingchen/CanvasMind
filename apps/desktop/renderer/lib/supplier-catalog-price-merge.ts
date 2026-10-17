@@ -20,10 +20,11 @@ export function catalogGroupIdentity(group: { id: string; supplierGroupId?: stri
  * top-level pricing field. Read those existing shapes without inventing rates. */
 export function catalogPriceDescriptor(value: unknown): ModelDescriptor {
   const row = object(value), metadata = object(row.metadata);
+  const pipelineOwned = object(metadata.catalogPriceEvidence).schemaVersion === 1 && metadata.priceSource !== "manual" && metadata.customBilling !== true;
   return { ...row, id: String(row.id ?? ""), name: String(row.name ?? row.id ?? ""),
     operations: Array.isArray(row.operations) ? row.operations : [],
     metadata: { ...metadata, ...(typeof row.priceLabel === "string" ? { priceLabel: row.priceLabel } : {}) },
-    pricing: row.pricing ?? pricingFields.map(key => metadata[key]).find(value => value !== undefined) } as ModelDescriptor;
+    pricing: pipelineOwned ? row.pricing : row.pricing ?? pricingFields.map(key => metadata[key]).find(value => value !== undefined) } as ModelDescriptor;
 }
 export function catalogHasPrice(value: unknown, fresh = false): boolean {
   const descriptor = catalogPriceDescriptor(value), metadata = object(descriptor.metadata);
@@ -59,6 +60,8 @@ function exactPriceGroup(value: unknown, groupId: string | undefined, groupName:
 interface PriceScope { groupId?: string; groupName?: string; previousSample?: string; attemptedAt: string }
 function mergeModel(previous: unknown, current: unknown, scope: PriceScope): { model: Row; retained: boolean } {
   const next = structuredClone(object(current)), old = object(previous);
+  if (object(object(next.metadata).catalogPriceEvidence).schemaVersion === 1)
+    return { model: next, retained: object(next.metadata).priceStatus === "partial" };
   if (!Object.keys(old).length || !exactPriceGroup(old, scope.groupId, scope.groupName)) return { model: next, retained: false };
   // Observed charges are an independent, parameter-scoped source of evidence.
   // A catalog check never rewrites that evidence, even when an advertised rate
@@ -159,6 +162,7 @@ export function mergeCatalogSnapshotPrices(before: ProviderConnectionRecord, aft
     // its primary cache's advertised rate, nor spread a different observed
     // request/parameter scope into this entry through the shared merge map.
     if (previousEntry && object(previousEntry.metadata).priceSource === "generated-result" &&
+      object(object(model.metadata).catalogPriceEvidence).schemaVersion !== 1 &&
       exactPriceGroup(previousEntry, scope.groupId, scope.groupName)) return copyPrice(previousEntry, structuredClone(model));
     if (object(model.metadata).priceSource === "generated-result") return structuredClone(model);
     const id = String(model.id ?? ""), existing = merged.get(id);

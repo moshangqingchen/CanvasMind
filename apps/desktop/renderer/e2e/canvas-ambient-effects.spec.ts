@@ -126,11 +126,22 @@ test("200 节点画布动效开关的拖拽与缩放帧时 A/B", async ({ page }
     await page.waitForTimeout(350);
     for (const gesture of ["drag", "zoom"] as const) {
       await page.evaluate(() => {
-        const w = window as typeof window & { __ambientFrames?: number[]; __ambientMeasuring?: boolean };
-        w.__ambientFrames = []; w.__ambientMeasuring = true;
+        const w = window as typeof window & { __ambientFrameCapture?: { epoch: number; frameId: number | null; active: boolean; frames: number[] } };
+        const previousCapture = w.__ambientFrameCapture;
+        if (previousCapture) {
+          previousCapture.active = false;
+          if (previousCapture.frameId !== null) cancelAnimationFrame(previousCapture.frameId);
+        }
+        const capture = { epoch: (previousCapture?.epoch ?? 0) + 1, frameId: null as number | null, active: true, frames: [] as number[] };
+        const epoch = capture.epoch; w.__ambientFrameCapture = capture;
         let previous = performance.now();
-        const tick = (time: number) => { if (!w.__ambientMeasuring) return; w.__ambientFrames!.push(time - previous); previous = time; requestAnimationFrame(tick); };
-        requestAnimationFrame(tick);
+        const tick = (time: number) => {
+          capture.frameId = null;
+          if (!capture.active || w.__ambientFrameCapture !== capture || w.__ambientFrameCapture.epoch !== epoch) return;
+          capture.frames.push(time - previous); previous = time;
+          capture.frameId = requestAnimationFrame(tick);
+        };
+        capture.frameId = requestAnimationFrame(tick);
       });
       if (gesture === "drag") {
         const box = await page.locator('.react-flow__node[data-id="ambient-0"] .node-head').boundingBox();
@@ -144,10 +155,13 @@ test("200 节点画布动效开关的拖拽与缩放帧时 A/B", async ({ page }
         for (let index = 0; index < 24; index++) { await page.mouse.wheel(0, index < 12 ? 5 : -5); await page.waitForTimeout(35); }
       }
       const metrics = await page.evaluate(() => {
-        const w = window as typeof window & { __ambientFrames?: number[]; __ambientMeasuring?: boolean };
-        w.__ambientMeasuring = false;
-        const frames = w.__ambientFrames!.slice(2).sort((a, b) => a - b);
-        delete w.__ambientFrames;
+        const w = window as typeof window & { __ambientFrameCapture?: { epoch: number; frameId: number | null; active: boolean; frames: number[] } };
+        const capture = w.__ambientFrameCapture!;
+        capture.active = false;
+        if (capture.frameId !== null) cancelAnimationFrame(capture.frameId);
+        capture.frameId = null;
+        const frames = capture.frames.slice(2).sort((a, b) => a - b);
+        capture.frames = [];
         return { frames: frames.length, p50: frames[Math.floor(frames.length * .5)] ?? 0, p95: frames[Math.floor(frames.length * .95)] ?? 0, max: frames.at(-1) ?? 0 };
       });
       expect(metrics.frames).toBeGreaterThan(15);

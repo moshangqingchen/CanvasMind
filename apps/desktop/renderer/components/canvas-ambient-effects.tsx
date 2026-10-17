@@ -2,7 +2,7 @@
 
 import { memo, useEffect, useRef } from "react";
 import { useStoreApi } from "@xyflow/react";
-import { canvasAmbientDetail, createCanvasEffectScheduler } from "../lib/canvas-effect-scheduler";
+import { canvasAmbientDetail, createCanvasEffectGestureGate, createCanvasEffectScheduler } from "../lib/canvas-effect-scheduler";
 import styles from "./canvas-ambient-effects.module.css";
 
 type TrailPoint = { x: number; y: number; time: number };
@@ -31,7 +31,7 @@ export const CanvasAmbientEffects = memo(function CanvasAmbientEffects({ enabled
     const context = surface.getContext("2d", { alpha: true });
     if (!context) return;
     root.dataset.ambientDetail = "off"; container.dataset.detail = "off";
-    let width = 0, height = 0, dpr = 1, pointerDown = false, paused = false;
+    let width = 0, height = 0, dpr = 1, paused = false;
     let detail = "off", color = "", previousNodes = new Set<string>(), previousEdges = new Set<string>();
     let previousStatuses = new Map<string, unknown>(), previousGraph: unknown, previousEdgeGraph: unknown, previousTransform = "";
     let initialized = false, hideSpot = 0;
@@ -77,6 +77,8 @@ export const CanvasAmbientEffects = memo(function CanvasAmbientEffects({ enabled
       if (!alive) setActive(false);
       return alive;
     }, callback => requestAnimationFrame(callback), handle => cancelAnimationFrame(handle));
+    const gesture = createCanvasEffectGestureGate(() => { container.dataset.gesturePaused = "true"; clear(); }, () => update(),
+      (callback, delay) => window.setTimeout(callback, delay), handle => window.clearTimeout(handle));
     const wake = () => { if (detail === "full" && !document.hidden) { setActive(true); scheduler.wake(); } };
     const resize = () => {
       width = container.clientWidth; height = container.clientHeight;
@@ -101,13 +103,15 @@ export const CanvasAmbientEffects = memo(function CanvasAmbientEffects({ enabled
       deferred.add(timer);
     };
     const update = () => {
+      // A stopped paint loop alone is insufficient: each transform otherwise
+      // scans all nodes, allocates graph/status maps and projects a hidden mask.
+      // Reconcile once with the latest store state when the gesture ends.
+      if (gesture.paused || paused || document.hidden) return;
+      delete container.dataset.gesturePaused;
       const state = flow.getState();
       const [x, y, zoom] = state.transform;
       const transformKey = `${x},${y},${zoom},${state.width},${state.height}`;
       if (previousGraph === state.nodes && previousEdgeGraph === state.edges && transformKey === previousTransform) return;
-      // A downgraded layer is invisible throughout a node drag. Reconcile once
-      // on release rather than rebuilding graph/status maps for every position.
-      if (pointerDown && detail === "off" && transformKey === previousTransform) return;
       previousGraph = state.nodes; previousEdgeGraph = state.edges; previousTransform = transformKey;
       let visible = 0;
       for (const node of state.nodeLookup.values()) {
@@ -151,7 +155,7 @@ export const CanvasAmbientEffects = memo(function CanvasAmbientEffects({ enabled
     };
     const pointer = (event: PointerEvent) => {
       const editing = document.activeElement?.closest("input,textarea,[contenteditable='true'],[contenteditable='plaintext-only']");
-      if (detail === "off" || paused || pointerDown || event.buttons || editing || !(event.target instanceof Element) || !event.target.classList.contains("react-flow__pane")) {
+      if (detail === "off" || paused || gesture.paused || event.buttons || editing || !(event.target instanceof Element) || !event.target.classList.contains("react-flow__pane")) {
         if (container.dataset.pointer === "true") { container.dataset.pointer = "false"; trail = []; }
         return;
       }
@@ -162,32 +166,37 @@ export const CanvasAmbientEffects = memo(function CanvasAmbientEffects({ enabled
       const before = trail.at(-1);
       if (!before || Math.hypot(before.x - x, before.y - y) >= 1.5) { trail.push({ x, y, time: performance.now() }); trail = trail.slice(-20); wake(); }
     };
-    const down = () => { pointerDown = true; clear(); };
-    const up = () => { pointerDown = false; update(); };
-    const suspend = () => { pointerDown = false; clear(); };
+    const down = () => { gesture.beginPointer(); };
+    const up = () => { gesture.endPointer(); };
+    const wheel = () => { gesture.wheel(); };
+    const suspend = () => { gesture.reset(); clear(); };
+    const cancelPointer = () => { suspend(); update(); };
+    const blur = () => { paused = true; suspend(); };
+    const focus = () => { paused = document.hidden; if (!paused) update(); };
     const focusEditing = (event: FocusEvent) => {
       if (event.target instanceof Element && event.target.closest("input,textarea,[contenteditable='true'],[contenteditable='plaintext-only']")) clear();
     };
-    const visibility = () => { paused = document.hidden; if (paused) suspend(); };
+    const visibility = () => { paused = document.hidden; if (paused) suspend(); else update(); };
     resize(); update();
     const observer = new ResizeObserver(() => { resize(); previousTransform = ""; update(); }); observer.observe(root);
     const themeObserver = new MutationObserver(() => { color = getComputedStyle(root).getPropertyValue("--accent").trim(); });
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     const unsubscribe = flow.subscribe(update);
     root.addEventListener("pointermove", pointer, { passive: true });
-    root.addEventListener("pointerdown", down, true); root.addEventListener("pointerleave", suspend);
-    root.addEventListener("wheel", suspend, { passive: true, capture: true });
-    window.addEventListener("pointerup", up); window.addEventListener("pointercancel", suspend); window.addEventListener("blur", suspend);
+    root.addEventListener("pointerdown", down, true); root.addEventListener("pointerleave", clear);
+    root.addEventListener("wheel", wheel, { passive: true, capture: true });
+    window.addEventListener("pointerup", up); window.addEventListener("pointercancel", cancelPointer); window.addEventListener("blur", blur); window.addEventListener("focus", focus);
     document.addEventListener("visibilitychange", visibility);
     document.addEventListener("focusin", focusEditing);
     return () => {
-      unsubscribe(); observer.disconnect(); themeObserver.disconnect(); scheduler.dispose(); window.clearTimeout(hideSpot);
+      unsubscribe(); observer.disconnect(); themeObserver.disconnect(); gesture.dispose(); scheduler.dispose(); window.clearTimeout(hideSpot);
       for (const timer of deferred) window.clearTimeout(timer);
       for (const path of pulsePaths) { path.getAnimations().forEach(animation => animation.cancel()); path.remove(); }
-      root.removeEventListener("pointermove", pointer); root.removeEventListener("pointerdown", down, true); root.removeEventListener("pointerleave", suspend); root.removeEventListener("wheel", suspend, true);
-      window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", suspend); window.removeEventListener("blur", suspend); document.removeEventListener("visibilitychange", visibility);
+      root.removeEventListener("pointermove", pointer); root.removeEventListener("pointerdown", down, true); root.removeEventListener("pointerleave", clear); root.removeEventListener("wheel", wheel, true);
+      window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", cancelPointer); window.removeEventListener("blur", blur); window.removeEventListener("focus", focus); document.removeEventListener("visibilitychange", visibility);
       document.removeEventListener("focusin", focusEditing);
       delete root.dataset.ambientDetail;
+      delete container.dataset.gesturePaused;
       container.style.removeProperty("--cursor-x"); container.style.removeProperty("--cursor-y");
       surface.width = 0; surface.height = 0;
     };

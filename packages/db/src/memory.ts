@@ -31,6 +31,7 @@ import { CanvasRevisionConflictError } from "./types.js";
 import { applyImageDesignReview } from "./image-design-review.js";
 import {
   catalogObservationModeSetting,
+  assertCatalogPipelineState,
   catalogPipelineSettingKey,
   prepareCatalogObservation,
   prepareCatalogReservation,
@@ -105,6 +106,7 @@ export function migrateMemoryRepositorySnapshot(
 
 export class MemoryRepository implements Repository {
   private readonly applicationSettings = new Map<string, unknown>();
+  private readonly validatedCatalogStates = new WeakMap<object, string>();
   private readonly supplierVerifications = new Map<
     string,
     SupplierVerificationRecord
@@ -207,6 +209,28 @@ export class MemoryRepository implements Repository {
     return clone(this.applicationSettings.get(key));
   }
 
+  /** Only owned storage references are memoized. Public assertions and caller
+   * snapshots remain mutable and are always validated by their ordinary path. */
+  protected assertStoredCatalogPipelineState(value: unknown, supplierId: string): asserts value is CatalogPipelineState {
+    if (value && typeof value === "object" && this.validatedCatalogStates.get(value) === supplierId) return;
+    assertCatalogPipelineState(value, supplierId);
+    this.validatedCatalogStates.set(value, supplierId);
+  }
+
+  async getCatalogPipelineState(supplierId: string, entryKeys?: readonly string[], entryPrefixes?: readonly string[]): Promise<CatalogPipelineState | undefined> {
+    const state = this.applicationSettings.get(catalogPipelineSettingKey(supplierId));
+    if (state === undefined) return undefined;
+    this.assertStoredCatalogPipelineState(state, supplierId);
+    return this.catalogPipelineResult(state, entryKeys, entryPrefixes);
+  }
+
+  protected catalogPipelineResult(state: CatalogPipelineState, entryKeys?: readonly string[], entryPrefixes?: readonly string[]): CatalogPipelineState {
+    if (entryKeys === undefined && entryPrefixes === undefined) return clone(state);
+    const keys = new Set(entryKeys ?? []), prefixes = entryPrefixes ?? [];
+    const entries = Object.fromEntries(Object.entries(state.entries).filter(([key]) => keys.has(key) || prefixes.some(prefix => key.startsWith(prefix))));
+    return clone({ ...state, entries });
+  }
+
   async setApplicationSetting(key: string, value: unknown): Promise<void> {
     this.applicationSettings.set(key, clone(value));
   }
@@ -247,17 +271,21 @@ export class MemoryRepository implements Repository {
     if (prepared.supplier) this.suppliers.set(prepared.supplier.id, prepared.supplier);
     for (const row of prepared.connections) this.connections.set(row.id, row);
     this.applicationSettings.set(catalogPipelineSettingKey(prepared.pipeline.supplierId), prepared.pipeline);
+    // All typed prepare paths performed the final full validation and size check.
+    this.validatedCatalogStates.set(prepared.pipeline, prepared.pipeline.supplierId);
   }
 
   async reserveCatalogObservation(input: CatalogObservationReserve): Promise<CatalogObservationReservation> {
-    const prepared = prepareCatalogReservation(this.catalogObservationView(input.identity.supplierId), input);
+    const prepared = prepareCatalogReservation(this.catalogObservationView(input.identity.supplierId), input,
+      (value, supplierId) => this.assertStoredCatalogPipelineState(value, supplierId));
     const reservation = clone(prepared.reservation);
     this.publishCatalogObservation({ connections: [], pipeline: prepared.pipeline });
     return reservation;
   }
 
   protected prepareCatalogObservation(input: CatalogObservationCommit): CatalogObservationPrepared {
-    const prepared = prepareCatalogObservation(this.catalogObservationView(input.reservation.identity.supplierId), input);
+    const prepared = prepareCatalogObservation(this.catalogObservationView(input.reservation.identity.supplierId), input,
+      (value, supplierId) => this.assertStoredCatalogPipelineState(value, supplierId));
     const timestamp = now();
     if (prepared.supplier) prepared.supplier.updatedAt = timestamp;
     for (const row of prepared.connections) row.updatedAt = timestamp;
@@ -266,15 +294,16 @@ export class MemoryRepository implements Repository {
 
   async commitCatalogObservation(input: CatalogObservationCommit): Promise<CatalogPipelineState> {
     const prepared = this.prepareCatalogObservation(input);
-    const result = clone(prepared.pipeline);
+    const result = this.catalogPipelineResult(prepared.pipeline, input.resultEntryKeys, input.resultEntryPrefixes);
     this.publishCatalogObservation(prepared);
     return result;
   }
 
   async updateCatalogPipelineState(input: CatalogPipelineUpdate): Promise<CatalogPipelineState> {
-    const pipeline = prepareCatalogPipelineUpdate(this.catalogObservationView(input.identity.supplierId), input);
+    const pipeline = prepareCatalogPipelineUpdate(this.catalogObservationView(input.identity.supplierId), input,
+      (value, supplierId) => this.assertStoredCatalogPipelineState(value, supplierId));
     this.publishCatalogObservation({ connections: [], pipeline });
-    return clone(pipeline);
+    return this.catalogPipelineResult(pipeline, input.resultEntryKeys, input.resultEntryPrefixes);
   }
 
   private canvasNodeKey(record: NodeRunRecord): string | undefined {
