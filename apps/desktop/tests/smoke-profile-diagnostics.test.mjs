@@ -130,12 +130,14 @@ test("Windows short-path aliases retain the same owned smoke profile scope", { s
   const root = await fixture(t);
   const canonical = await realpath(root);
   const { stdout } = await promisify(execFile)("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
-    "Add-Type -TypeDefinition 'using System; using System.Text; using System.Runtime.InteropServices; public static class SmokeShortPath { [DllImport(\"kernel32.dll\", CharSet=CharSet.Unicode)] public static extern uint GetShortPathName(string path, StringBuilder output, uint length); }'; $diagnosticBuffer = New-Object Text.StringBuilder 32768; $diagnosticLength = [SmokeShortPath]::GetShortPathName($env:SMOKE_DIAGNOSTIC_FIXTURE_PATH, $diagnosticBuffer, 32768); if ($diagnosticLength -eq 0 -or $diagnosticLength -ge 32768) { exit 1 }; [Console]::Write($diagnosticBuffer.ToString())"],
+    "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); Add-Type -TypeDefinition 'using System; using System.Text; using System.Runtime.InteropServices; public static class SmokeShortPath { [DllImport(\"kernel32.dll\", CharSet=CharSet.Unicode)] public static extern uint GetShortPathName(string path, StringBuilder output, uint length); }'; $diagnosticBuffer = New-Object Text.StringBuilder 32768; $diagnosticLength = [SmokeShortPath]::GetShortPathName($env:SMOKE_DIAGNOSTIC_FIXTURE_PATH, $diagnosticBuffer, 32768); if ($diagnosticLength -eq 0 -or $diagnosticLength -ge 32768) { exit 1 }; [Console]::Write($diagnosticBuffer.ToString())"],
   { env: { ...process.env, SMOKE_DIAGNOSTIC_FIXTURE_PATH: canonical }, windowsHide: true, timeout: 15000, maxBuffer: 65536 });
   const alias = stdout.trim();
   if (alias.toLowerCase() === canonical.toLowerCase()) { t.skip("This volume did not provide a distinct 8.3 alias"); return; }
   await writeFile(join(root, "profile/secrets.bin"), protectedBytes);
-  assert.equal((await captureSmokeProfileDiagnostics(alias)).secrets.sha256, hash(protectedBytes));
+  const captured = await captureSmokeProfileDiagnostics(alias);
+  assert.equal(captured.scope, "owned-smoke-profile");
+  assert.equal(captured.secrets.sha256, hash(protectedBytes));
   const context = electronContext(alias, { isEncryptionAvailable: () => true, decryptString: () => plaintext });
   assert.deepEqual(diagnoseFailedSmokeProfile(context, canonical), { stage: "schema", status: "valid", available: true });
 });

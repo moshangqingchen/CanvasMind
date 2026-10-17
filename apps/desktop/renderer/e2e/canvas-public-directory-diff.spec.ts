@@ -1,3 +1,4 @@
+import { idleCatalogCheckFixture } from "./helpers/catalog-check-fixture";
 import { expect, test, type APIRequestContext, type Page } from "./helpers/canvas-offline-test";
 import type { ModelDescriptor } from "@super-canvas/providers";
 import type { SupplierCatalogModel } from "../lib/client-suppliers";
@@ -28,7 +29,7 @@ async function fixture(page: Page, request: APIRequestContext, nodeType: "video-
     if (route.request().method() === "POST") { submissions++; await route.abort(); }
     else await route.continue();
   });
-  await page.route("**/api/suppliers/catalog-upgrade", route => route.fulfill({ json: { revision: "isolated-directory-test", phase: "complete", total: 0, refreshed: 0, unavailable: 0, failed: 0, updatedConnectionIds: [] } }));
+  await page.route("**/api/suppliers/catalog-upgrade*", route => route.fulfill({ json: idleCatalogCheckFixture({ revision: "isolated-directory-test" }) }));
   const supplierResponse = await request.post("/api/suppliers", { data: { name: "目录差异隔离供应商", siteUrl: "https://directory-diff.invalid", apiUrl: "https://directory-diff.invalid" } });
   expect(supplierResponse.ok()).toBeTruthy();
   const supplier = await supplierResponse.json();

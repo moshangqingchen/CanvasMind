@@ -1,3 +1,4 @@
+import { idleCatalogCheckFixture } from "./helpers/catalog-check-fixture";
 import { expectCompactPromptLine } from "./helpers/lod-expectations";
 import { expect, test, type Locator, type Page } from "./helpers/canvas-offline-test";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -106,10 +107,10 @@ test("恢复画布配色：同一隔离素材与六场景双尺寸截图及回�
     new URL(route.request().url()).pathname.endsWith("/events") ? route.fulfill({ contentType: "text/event-stream", body: ": isolated\n\n" }) :
       route.fulfill({ json: new URL(route.request().url()).pathname === "/api/runs" ? [fixture.snapshot] : fixture.snapshot }));
   await page.route(/\/api\/suppliers(?:\?.*)?$/u, route => route.fulfill({ json: [] }));
-  await page.route("**/api/suppliers/catalog-upgrade", route => route.fulfill({ json: { phase: "complete", updatedConnectionIds: [] } }));
+  await page.route("**/api/suppliers/catalog-upgrade*", route => route.fulfill({ json: idleCatalogCheckFixture() }));
   await page.route(/\/api\/providers(?:\?.*)?$/u, route => route.fulfill({ json: [fixture.connection, fixture.fake] }));
   await page.route("**/api/providers/*/models*", route => route.fulfill({ json: fixture.models, headers: { "X-Model-Scan-Status": "live", "X-Model-Scan-Complete": "true" } }));
-  await page.route("**/api/agent/models", route => route.fulfill({ json: [] }));
+  await page.route("**/api/agent/models**", route => route.fulfill({ json: [] }));
   await page.route("**/api/agent/sessions", route => route.fulfill({ json: [] }));
   if (output) await mkdir(join(output, arm), { recursive: true });
   const capture = async (size: string, scene: string) => {

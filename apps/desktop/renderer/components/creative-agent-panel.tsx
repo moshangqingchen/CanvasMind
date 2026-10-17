@@ -35,6 +35,7 @@ import {
   type AgentTurnInput,
 } from "../lib/agent-contracts";
 import type { AgentModelOption } from "../lib/agent-models";
+import { agentCatalogSnapshot, type AgentCatalogConnection, type AgentCatalogSnapshot } from "../lib/agent-catalog-status";
 import {
   uploadAsset,
   fetchProjectChat,
@@ -70,7 +71,7 @@ type Props = {
   nodes?: readonly CanvasNode[];
   selectedPrompt: string;
   draftRequest: { id: string; text: string; assetId?: string } | null;
-  onManageApi: (group?: string) => void;
+  onManageApi: (group?: string, connectionId?: string) => void;
   onClose?: () => void;
   placement?: "left" | "right";
 };
@@ -158,6 +159,7 @@ export const AgentPanel = memo(function AgentPanel(props: Props) {
     Array<{ id: string; title: string; updatedAt?: string }>
   >([]);
   const [models, setModels] = useState<AgentModelOption[]>([]);
+  const [catalogConnections, setCatalogConnections] = useState<AgentCatalogConnection[]>([]);
   const [modelChoiceLoaded, setModelChoiceLoaded] = useState(false);
   const [selection, setSelection] = useState<{ key: string; snapshot?: AgentModelOption }>({ key: "" });
   const choice = selection.key;
@@ -191,6 +193,7 @@ export const AgentPanel = memo(function AgentPanel(props: Props) {
   // Compare before dispatch: an equal-state functional updater can remain in
   // React's pending queue and retain every freshly parsed polling response.
   const publishedModelsJson = useRef("[]");
+  const publishedCatalogConnectionsJson = useRef("[]");
   const operation = useRef(0);
   const activity = useRef(0);
   const working = useRef(false);
@@ -241,12 +244,18 @@ export const AgentPanel = memo(function AgentPanel(props: Props) {
   };
   const modelLoad = useCallback(async () => {
     const version = ++modelReadVersion.current;
-    const items = await agentRequest<AgentModelOption[]>(
-      "/models",
+    const snapshot = agentCatalogSnapshot(await agentRequest<AgentModelOption[] | AgentCatalogSnapshot<AgentModelOption>>(
+      "/models?cached=1&includeConnections=1",
       undefined,
       "GET",
-    );
+    ));
+    const items = snapshot.models;
     if (alive.current && version === modelReadVersion.current) {
+      const connectionsJson = JSON.stringify(snapshot.connections);
+      if (connectionsJson !== publishedCatalogConnectionsJson.current) {
+        publishedCatalogConnectionsJson.current = connectionsJson;
+        setCatalogConnections(snapshot.connections);
+      }
       const json = JSON.stringify(items);
       if (json !== publishedModelsJson.current) {
         publishedModelsJson.current = json;
@@ -819,6 +828,8 @@ export const AgentPanel = memo(function AgentPanel(props: Props) {
                 plan={p}
                 nodes={props.nodes}
                 connections={props.connections}
+                catalogConnections={catalogConnections}
+                onManage={connectionId => props.onManageApi(undefined, connectionId)}
                 busy={busy}
                 onAction={(a, accept) => void planAction(p, a, accept)}
                 onSave={(proposal) =>
@@ -973,9 +984,9 @@ export const AgentPanel = memo(function AgentPanel(props: Props) {
         </div>
         <p className={styles.intentHint}>{!selected ? "接入供应商后选择对话模型" : !selected.available ? selected.reason : intentHint}</p>
       </div>
-      {modelSettingsOpen && <AgentModelPopover models={modelInventory} selected={selected} busy={busy} reasoning={reasoning} reasoningNotes={reasoningNotes} tk1688={tk1688Selection}
+      {modelSettingsOpen && <AgentModelPopover models={modelInventory} catalogConnections={catalogConnections} selected={selected} busy={busy} reasoning={reasoning} reasoningNotes={reasoningNotes} tk1688={tk1688Selection}
         onSelect={selectModel} onReasoning={value => setReasoningChoice({ model: modelKey, value })} onRefresh={() => void run(async () => { await modelLoad(); })}
-        onManage={() => { setModelSettingsOpen(false); props.onManageApi(selected?.group); }} onClose={() => setModelSettingsOpen(false)} />}
+        onManage={connectionId => { setModelSettingsOpen(false); props.onManageApi(connectionId ? undefined : selected?.group, connectionId); }} onClose={() => setModelSettingsOpen(false)} />}
       </DeferredPanelContent>
     </section>
   );
@@ -1159,6 +1170,8 @@ function PlanCard({
   plan,
   nodes,
   connections,
+  catalogConnections,
+  onManage,
   busy,
   onAction,
   onSave,
@@ -1167,6 +1180,8 @@ function PlanCard({
   plan: AgentPlan;
   nodes?: readonly CanvasNode[];
   connections: readonly ProviderConnectionView[];
+  catalogConnections: readonly AgentCatalogConnection[];
+  onManage: (connectionId: string) => void;
   busy: boolean;
   onAction: (action: string, accept?: boolean) => void;
   onSave: (p: AgentProposal) => Promise<void>;
@@ -1291,7 +1306,7 @@ function PlanCard({
             {route && !route.selected?.eligible && <p role="status" className={styles.parameterNotice}>
               待选择合法渠道：{unmatchedReasons.length ? unmatchedReasons.join("；") : "当前选择未匹配此步骤的要求，请选择渠道并检查参数。"}。所需规格已保留，尚不能放入画布。
             </p>}
-            <AgentPlanStepEditor call={c} route={route} connections={connections} disabled={!editable || busy} onChange={next => {
+            <AgentPlanStepEditor call={c} route={route} connections={connections} catalogConnections={catalogConnections} onManage={onManage} disabled={!editable || busy} onChange={next => {
               setDirty(true);
               setDraft(value => ({ ...value, calls: value.calls.map((call, index) => index === i ? next : call) }));
             }} />

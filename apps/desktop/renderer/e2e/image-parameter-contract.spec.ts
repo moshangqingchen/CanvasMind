@@ -1,3 +1,4 @@
+import { idleCatalogCheckFixture } from "./helpers/catalog-check-fixture";
 import { expect, test } from "@playwright/test";
 import type { ModelDescriptor } from "@super-canvas/providers";
 import { userImageSizeOptions } from "@super-canvas/providers/image-size-presets";
@@ -43,7 +44,7 @@ test("统一图片合同保留完整面板，4K 16:9 max 保存重载且没有�
     return route.continue();
   });
   await page.route(/\/api\/suppliers(?:\?.*)?$/u, route => route.fulfill({ json: [] }));
-  await page.route("**/api/suppliers/catalog-upgrade", route => route.fulfill({ json: { phase: "complete", updatedConnectionIds: [] } }));
+  await page.route("**/api/suppliers/catalog-upgrade*", route => route.fulfill({ json: idleCatalogCheckFixture() }));
   await page.route(/\/api\/providers(?:\?.*)?$/u, route => route.request().method() === "GET"
     ? route.fulfill({ json: [connection] }) : route.continue());
   await page.route(`**/api/providers/${connection.id}/models*`, route => route.fulfill({ json: [model],
@@ -176,7 +177,7 @@ test("离线手工合同完整控件预览：自动1K2K4K、宽高、max、返�
     return route.continue();
   });
   await page.route(/\/api\/suppliers(?:\?.*)?$/u, route => route.fulfill({ json: [] }));
-  await page.route("**/api/suppliers/catalog-upgrade", route => route.fulfill({ json: { phase: "complete", updatedConnectionIds: [] } }));
+  await page.route("**/api/suppliers/catalog-upgrade*", route => route.fulfill({ json: idleCatalogCheckFixture() }));
   await page.route(/\/api\/providers(?:\?.*)?$/u, route => route.request().method() === "GET"
     ? route.fulfill({ json: [connection] }) : route.continue());
   await page.route(`**/api/providers/${connection.id}/models*`, route => route.fulfill({ json: [model],

@@ -261,7 +261,7 @@ test("客户原话完整进入自定义比例设计，草稿与安全距离保�
   request,
   graphicFixture,
 }) => {
-  await page.route("**/api/agent/models", (route) =>
+  await page.route("**/api/agent/models**", (route) =>
     route.fulfill({ json: [] }),
   );
   let studio = await openStudio(page, graphicFixture);
@@ -325,7 +325,7 @@ test("客户图片提取后必须核对，完整转录存档且不自动变成�
   request,
   graphicFixture,
 }) => {
-  await page.route("**/api/agent/models", (route) =>
+  await page.route("**/api/agent/models**", (route) =>
     route.fulfill({
       json: [
         {
@@ -459,7 +459,7 @@ test("超长客户原文不被截断，提取失败保留手填内容", async ({
   request,
   graphicFixture,
 }) => {
-  await page.route("**/api/agent/models", (route) =>
+  await page.route("**/api/agent/models**", (route) =>
     route.fulfill({
       json: [
         {

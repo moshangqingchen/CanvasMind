@@ -1,3 +1,4 @@
+import { idleCatalogCheckFixture } from "./helpers/catalog-check-fixture";
 import { readFileSync } from "node:fs";
 import { expect, test } from "./helpers/canvas-offline-test";
 import type { ModelDescriptor } from "@super-canvas/providers";
@@ -29,7 +30,7 @@ for (const modelId of ["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"]) {
       return route.continue();
     });
     await page.route(/\/api\/suppliers(?:\?.*)?$/u, route => route.fulfill({ json: [] }));
-    await page.route("**/api/suppliers/catalog-upgrade", route => route.fulfill({ json: { phase: "complete", updatedConnectionIds: [] } }));
+    await page.route("**/api/suppliers/catalog-upgrade*", route => route.fulfill({ json: idleCatalogCheckFixture() }));
     await page.route(/\/api\/providers(?:\?.*)?$/u, route => route.request().method() === "GET"
       ? route.fulfill({ json: [connection] }) : route.continue());
     await page.route(`**/api/providers/${connection.id}/models*`, route => route.fulfill({ json: [model],

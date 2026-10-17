@@ -1,3 +1,4 @@
+import { idleCatalogCheckFixture } from "./helpers/catalog-check-fixture";
 import { expect, test } from "@playwright/test";
 import type { AgentPlan, AgentSession } from "../lib/agent-contracts";
 import type { AssetView, CanvasDocument } from "../components/types";
@@ -98,7 +99,7 @@ test("智能体事务中到达的素材桥事件留在队列，响应应用后�
     if (path === `/api/assets/${asset.id}`) return route.fulfill({ json: { ...asset, actualDimensions: { width: 1, height: 1 } } });
     if (path.startsWith(`/api/assets/${asset.id}/`)) return route.fulfill({ contentType: "image/png", body: png });
     if (path === `/api/projects/${canvasId}/archive`) return route.fulfill({ json: { archivedAssetIds: [asset.id] } });
-    if (path === "/api/suppliers/catalog-upgrade") return route.fulfill({ json: { phase: "complete", updatedConnectionIds: [] } });
+    if (path === "/api/suppliers/catalog-upgrade") return route.fulfill({ json: idleCatalogCheckFixture() });
     if ((path === "/api/runs" && method !== "GET") || path === "/api/agent/turn" || /\/api\/agent\/plans\/[^/]+\/(execute|preflight)$/.test(path)) {
       counts.paid++; return route.abort("blockedbyclient");
     }

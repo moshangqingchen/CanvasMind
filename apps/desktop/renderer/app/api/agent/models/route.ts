@@ -1,9 +1,11 @@
-import { loadAgentModels } from "../../../../lib/agent-models";
+import { loadAgentModels, loadAgentModelCatalogSnapshot } from "../../../../lib/agent-models";
 import { agentError } from "../_shared";
 export const runtime = "nodejs";
-export async function GET() {
+export async function GET(request?: Request) {
   try {
-    return Response.json(await loadAgentModels(), { headers: { "Cache-Control": "no-store" } });
+    const includeConnections = request && new URL(request.url).searchParams.get("includeConnections") === "1";
+    return Response.json(await (includeConnections ? loadAgentModelCatalogSnapshot() : loadAgentModels()),
+      { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
     return agentError(e);
   }

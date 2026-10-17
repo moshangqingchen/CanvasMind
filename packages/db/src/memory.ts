@@ -465,6 +465,11 @@ export class MemoryRepository implements Repository {
     return record ? clone(record) : null;
   }
 
+  /** File persistence can detect a no-op without cloning a large canvas. */
+  protected savedCanvasRevision(id: string): number | undefined {
+    return this.canvases.get(id)?.revision;
+  }
+
   async deleteCanvas(id: string): Promise<void> {
     const sessionIds = new Set(
       [...this.directorSessions.values()]
@@ -513,6 +518,11 @@ export class MemoryRepository implements Repository {
         currentRevision,
       );
     }
+    // Leaving a canvas flushes the full snapshot even when no edit occurred.
+    // Keep that durability/CAS path, without creating an identical autosave.
+    if (previous && input.reason === "autosave" &&
+        (input.title === undefined || input.title === previous.title) &&
+        isDeepStrictEqual(input.graph, previous.graph)) return clone(previous);
     const timestamp = now();
     const record: CanvasRecord = previous
       ? {

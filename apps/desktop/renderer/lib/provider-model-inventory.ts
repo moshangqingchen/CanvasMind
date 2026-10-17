@@ -22,6 +22,7 @@ import {
   providerFetch,
   scanProviderModelCatalog,
   ProviderHttpError,
+  normalizeSupplierSiteBase,
   type ModelDescriptor,
 } from "@super-canvas/providers";
 import { getRunService, type RunService } from "@super-canvas/runtime";
@@ -959,6 +960,53 @@ async function offlineInventoryPrices(
   return priced;
 }
 
+/** Assistant/plan projection: saved facts only, with no migrations or write-back. */
+async function readOnlySavedModelResponse(
+  original: NonNullable<Awaited<ReturnType<typeof repository.getConnection>>>,
+): Promise<Response> {
+  try {
+    if (original.config.supplierArchived === true)
+      return jsonError("此连接已归档，请重新选择当前供应商连接", 409);
+    const supplierId = typeof original.config.supplierId === "string" ? original.config.supplierId : undefined;
+    // getSupplierRecord also migrates legacy suppliers. Read the raw saved record instead.
+    const supplier = supplierId ? await repository.getSupplier(supplierId) : null;
+    if (supplier?.state?.visibility === "deleted" || original.config.supplierSourceId &&
+        (!supplier?.state || supplier.state.sourceId !== original.config.supplierSourceId))
+      return jsonError("连接属于旧地址，请在设置中选择当前供应商连接", 409);
+    if (supplier && (supplier.state && original.config.supplierSourceId !== supplier.state.sourceId ||
+        normalizeSupplierSiteBase(String(original.config.baseUrl ?? "")) !== normalizeSupplierSiteBase(supplier.apiUrl || supplier.siteUrl)))
+      return jsonError("连接属于旧地址，请在设置中选择当前供应商连接", 409);
+    const hasSavedCatalog = Array.isArray(original.config.modelCatalogModels) &&
+      (original.provider === "cli" || Boolean(original.config.modelScanStatus) && original.config.modelScanStatus !== "unscanned");
+    if (!hasSavedCatalog)
+      return withModelInventoryMetadata(Response.json([], { headers: {
+        "Cache-Control": "no-store", "X-Model-Scan-Status": "unscanned", "X-Model-Cache-Status": "unread",
+      } }), original.config, "saved");
+    if (original.config.modelScanStatus === "unauthorized")
+      return withModelInventoryMetadata(deniedModelsResponse({ httpStatus: original.config.modelScanHttpStatus,
+        errorCode: original.config.modelScanErrorCode, upstreamErrorCode: original.config.modelScanUpstreamErrorCode },
+      { "X-Model-Cache-Status": "saved" }), original.config, "saved");
+    const snapshot = original.config.modelScanStatus === "empty" ? []
+      : structuredClone(original.config.modelCatalogModels as unknown as ModelDescriptor[]);
+    // Protocol repairs are useful to the editor, but stay confined to this projection.
+    const projected = reconcileCangyuanNativeGroupConnection(structuredClone(original));
+    const priced = await enrichSupplierModelPrices(projected, snapshot, false, false, { savedSupplier: supplier });
+    const bound = bindScannedModelProtocols(projected, priced);
+    const models = await enrichSupplierModelPrices(projected, mergeManualProviderModels(projected, bound.models),
+      false, false, { savedSupplier: supplier });
+    if (!isDeepStrictEqual(await repository.getConnection(original.id), original) ||
+        supplierId && !isDeepStrictEqual(await repository.getSupplier(supplierId), supplier))
+      return jsonError("读取期间连接已改变，请重新读取缓存", 409);
+    return withModelInventoryMetadata(Response.json(models, { headers: {
+      "Cache-Control": "no-store", "X-Model-Scan-Status": modelInventoryScanStatus(original.config),
+      "X-Model-Cache-Status": "saved",
+      ...(original.config.preset === MIAOWU_PRESET_ID ? { "X-Model-Scan-Complete": String(original.config.modelScanComplete !== false) } : {}),
+    } }), original.config, "saved");
+  } catch {
+    return jsonError("无法读取已保存的模型目录，请先在设置中刷新", 500);
+  }
+}
+
 /** One request identity across every adapter prevents delayed results from restoring old state. */
 async function readModelResponse(
   request: Request,
@@ -969,6 +1017,10 @@ async function readModelResponse(
   const id = parsedId.data;
   let original = await repository.getConnection(id);
   if (!original) return jsonError("供应商连接已删除，请重新选择连接", 404);
+  // This explicit consumer flag precedes native repairs and supplier migrations.
+  // Ordinary canvas reads retain their existing refresh/rebind behavior.
+  if (new URL(request.url).searchParams.get("readonly") === "1")
+    return readOnlySavedModelResponse(original);
   const nativeGroup = reconcileCangyuanNativeGroupConnection(original);
   if (nativeGroup !== original) {
     await assertCurrentSupplierConnection(original);

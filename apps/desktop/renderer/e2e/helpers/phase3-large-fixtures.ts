@@ -6,6 +6,7 @@ import type { AgentSession } from "../../lib/agent-contracts";
 import type { AgentModelOption } from "../../lib/agent-models";
 import type { ProviderConnectionView } from "../../lib/client-api";
 import type { SupplierRecord } from "../../lib/client-suppliers";
+import { idleCatalogCheckFixture } from "./catalog-check-fixture";
 
 /** Fixed UI data only. Optional screenshot thumbnails never run in the default performance fixture. */
 export const PHASE3_COUNTS = { assets: 1050, runs: 500, groups: 304, models: 1900, messages: 240 };
@@ -143,9 +144,9 @@ export async function installPhase3LargeFixture(page: Page, options: { imagePara
   });
   await page.route("**/api/**", async route => {
     const request = route.request(), url = new URL(request.url()), path = url.pathname, method = request.method();
-    if (path === "/api/suppliers/catalog-upgrade") {
+    if (path === "/api/suppliers/catalog-upgrade" && method === "GET") {
       mockedAutomatic.push(`${method} ${path}`);
-      return route.fulfill({ json: { phase: "complete", updatedConnectionIds: [] } });
+      return route.fulfill({ json: idleCatalogCheckFixture() });
     }
     if (method !== "GET" && path !== `/api/canvas/${canvasId}`) {
       prohibited.push(`${method} ${path}`); return route.fulfill({ status: 403, json: { error: "隔离视觉夹具禁止业务写入" } });

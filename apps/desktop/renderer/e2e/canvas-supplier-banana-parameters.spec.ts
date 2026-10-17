@@ -1,3 +1,4 @@
+import { idleCatalogCheckFixture } from "./helpers/catalog-check-fixture";
 import { expect, test, type APIRequestContext, type Page } from "./helpers/canvas-offline-test";
 import { readFileSync } from "node:fs";
 import { cangyuanCurrentModel, type ModelDescriptor } from "@super-canvas/providers";
@@ -61,7 +62,7 @@ async function setup(page: Page, request: APIRequestContext, f: Fixture) {
     return route.continue();
   });
   await page.route(/\/api\/suppliers(?:\?.*)?$/u, route => route.fulfill({ json: [] }));
-  await page.route("**/api/suppliers/catalog-upgrade", route => route.fulfill({ json: { phase: "complete", updatedConnectionIds: [] } }));
+  await page.route("**/api/suppliers/catalog-upgrade*", route => route.fulfill({ json: idleCatalogCheckFixture() }));
   const model = f.model;
   const created = await request.post("/api/providers", { data: { name: `${f.supplier} 香蕉合同隔离验收`, provider: "rest",
     config: { baseUrl: "https://banana-contract-ui.invalid", defaultModel: model.id, usage: "canvas",

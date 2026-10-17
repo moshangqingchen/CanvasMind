@@ -4,6 +4,8 @@ import { normalizeSupplierSiteBase, normalizeTk1688CnyModel, scanProviderModelCa
 import { repository } from "./server";
 import { resolveDirectorConnection } from "./director-connections";
 import { unsupportedAgentModelReason } from "./agent-model-support";
+import type { AgentCatalogConnection, AgentCatalogSnapshot } from "./agent-catalog-status";
+import { AGENT_UNREAD_CATALOG_MESSAGE } from "./agent-catalog-status";
 import {
   agentRecord, declaredAgentFlags, isAgentTextModel, normalizeAgentProtocol, resolveAgentCapabilities,
   type AgentCapabilitySource, type AgentInputStatus, type AgentInputLimits, type AgentReasoningOption,
@@ -84,8 +86,14 @@ function supplementModel(primary: ModelDescriptor, catalog: ModelDescriptor): Mo
 
 /** Reuse saved group credentials; capability, not a legacy usage label, chooses the consumer. */
 export async function loadAgentModels(): Promise<AgentModelOption[]> {
+  return (await loadAgentModelCatalogSnapshot()).models;
+}
+
+/** Cache state includes image/video groups, even when they have no chat models. */
+export async function loadAgentModelCatalogSnapshot(): Promise<AgentCatalogSnapshot<AgentModelOption>> {
   const [connections, suppliers] = await Promise.all([repository.listConnections(), repository.listSuppliers()]);
   const options: AgentModelOption[] = [];
+  const catalogConnections: AgentCatalogConnection[] = [];
   for (const connection of connections) {
     const config = connection.config;
     if (config.usage === "disabled" || config.supplierArchived === true || ["cli", "fake"].includes(connection.provider)) continue;
@@ -99,6 +107,12 @@ export async function loadAgentModels(): Promise<AgentModelOption[]> {
       } catch { continue; }
     }
     const status = String(config.modelScanStatus ?? "");
+    catalogConnections.push({
+      connectionId: connection.id, connectionName: connection.name,
+      ...(typeof config.supplierId === "string" ? { supplierId: config.supplierId } : {}),
+      ...(supplier?.name ? { supplierName: supplier.name } : {}),
+      status: Array.isArray(config.modelCatalogModels) && Boolean(status) && status !== "unscanned" ? "saved" : "unread",
+    });
     const saved = descriptors(config.modelCatalogModels);
     const scanned = status === "empty" ? [] : Array.isArray(config.scannedModelIds)
       ? config.scannedModelIds.filter((value): value is string => typeof value === "string")
@@ -144,7 +158,7 @@ export async function loadAgentModels(): Promise<AgentModelOption[]> {
       if (!isAgentTextModel(entry.model) || unsupportedAgentModelReason(config, entry.model)) continue;
       const reason = !connection.encryptedSecret ? "请在供应商中填写此分组的 Key" : status === "unauthorized" ? "当前 Key 鉴权失败" :
         authoritative && !scanned.includes(modelId) ? "当前 Key 未返回此模型" :
-        !authoritative && (entry.source === "catalog" || status === "unscanned") ? "此模型尚未由当前 Key 返回，请刷新供应商模型" : undefined;
+        !authoritative && (entry.source === "catalog" || status === "unscanned") ? AGENT_UNREAD_CATALOG_MESSAGE : undefined;
       const resolved = resolveAgentCapabilities(connection, modelId, entry.model);
       options.push({
         supplierId: supplier?.id ?? String(config.supplierId ?? `${config.supplierKey ?? connection.provider}:${config.baseUrl ?? connection.id}`),
@@ -159,7 +173,7 @@ export async function loadAgentModels(): Promise<AgentModelOption[]> {
       });
     }
   }
-  return options;
+  return { models: options, connections: catalogConnections };
 }
 
 export async function resolveAgentModel(connectionId: string, modelId: string, reasoningEffort?: string): Promise<ResolvedDirectorConnection> {

@@ -5,7 +5,10 @@ async function mockPersonalAi(page: Page) {
   let connections: ProviderConnectionView[] = [];
   const actions: string[] = [];
   const saves: Record<string, unknown>[] = [];
-  await page.route("**/api/suppliers**", route => route.fulfill({ json: [] }));
+  await page.route("**/api/suppliers**", route => {
+    if (new URL(route.request().url()).pathname === "/api/suppliers/catalog-upgrade") return route.fallback();
+    return route.fulfill({ json: [] });
+  });
   await page.route("**/api/providers**", async route => {
     const url = new URL(route.request().url());
     if (url.pathname === "/api/providers/cli-template") return route.fulfill({ json: { executable: "C:\\Program Files\\nodejs\\node.exe", args: ["D:\\canvas\\mock-adapter.mjs"] } });

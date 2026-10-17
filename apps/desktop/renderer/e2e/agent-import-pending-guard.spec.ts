@@ -1,3 +1,4 @@
+import { idleCatalogCheckFixture } from "./helpers/catalog-check-fixture";
 import { expect, test } from "@playwright/test";
 import type { AgentPlan, AgentSession } from "../lib/agent-contracts";
 import type { AssetView, CanvasDocument } from "../components/types";
@@ -87,7 +88,7 @@ test("素材上传未完成时拒绝智能体放入，导入保存并刷新方�
       canvas.revision++; plan = { ...plan, status: "succeeded" }; session.plans = [plan];
       return route.fulfill({ json: { plan, canvas } });
     }
-    if (path === "/api/suppliers/catalog-upgrade") return route.fulfill({ json: { phase: "complete", updatedConnectionIds: [] } });
+    if (path === "/api/suppliers/catalog-upgrade") return route.fulfill({ json: idleCatalogCheckFixture() });
     if (path === "/api/runs" && method !== "GET" || path === "/api/agent/turn" || /\/api\/agent\/plans\/[^/]+\/(execute|preflight)$/.test(path)) {
       counts.paid++; return route.abort("blockedbyclient");
     }

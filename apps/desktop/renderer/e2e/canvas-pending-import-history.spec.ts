@@ -1,3 +1,4 @@
+import { idleCatalogCheckFixture } from "./helpers/catalog-check-fixture";
 import { expect, test, type Page } from "./helpers/canvas-offline-test";
 import type { AssetView, CanvasDocument } from "../components/types";
 import { clickBlankCanvas } from "./canvas-test-actions";
@@ -72,7 +73,7 @@ async function fixture(page: Page, origin: string) {
     if (path === `/api/assets/${asset.id}`) return route.fulfill({ json: { ...asset, actualDimensions: { width: 1, height: 1 } } });
     if (path.startsWith(`/api/assets/${asset.id}/`)) return route.fulfill({ contentType: "image/png", body: png });
     if (path === `/api/projects/${id}/archive`) { counts.archive++; return route.fulfill({ json: { archivedAssetIds: [asset.id] } }); }
-    if (path === "/api/suppliers/catalog-upgrade") return route.fulfill({ json: { phase: "complete", updatedConnectionIds: [] } });
+    if (path === "/api/suppliers/catalog-upgrade") return route.fulfill({ json: idleCatalogCheckFixture() });
     if (path === "/api/runs" && method !== "GET" || path === "/api/agent/turn") {
       counts.paid++; return route.abort("blockedbyclient");
     }

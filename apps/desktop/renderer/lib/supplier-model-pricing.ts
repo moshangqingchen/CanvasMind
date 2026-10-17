@@ -20,6 +20,7 @@ import { parseSupplierGroupDetails, supplierGroupModelPriceDetails, supplierGrou
 import { getSupplierRecord } from "./supplier-service";
 import { openSupplierSiteSession, supplierSiteLoginCacheIdentity } from "./supplier-site-session";
 import { repository } from "./server";
+import type { SupplierRecord } from "@super-canvas/db";
 import { readSupplierDocument } from "./supplier-document";
 import { applyTk1688CatalogModel } from "./tk1688-catalog";
 
@@ -38,7 +39,12 @@ export interface JiasuSupplierExampleContext {
   refreshId: string;
   catalog: SupplierCatalogDiscovery;
 }
-export interface SupplierPriceReadOptions { refreshId?: string; jiasuApiExampleContext?: JiasuSupplierExampleContext }
+export interface SupplierPriceReadOptions {
+  refreshId?: string;
+  jiasuApiExampleContext?: JiasuSupplierExampleContext;
+  /** Assistant cache reads must not invoke the legacy supplier migration. */
+  savedSupplier?: SupplierRecord | null;
+}
 const hasOwnPrice = (model: ModelDescriptor) =>
   !["supplier-catalog", "supplier-group", "generated-result", "supplier-document"].includes(String(model.metadata?.priceSource)) &&
   (Boolean(model.pricing) ||
@@ -955,7 +961,7 @@ export async function enrichSupplierModelPrices(
   readOptions: SupplierPriceReadOptions = {},
 ): Promise<ModelDescriptor[]> {
   if (!models.length) return [...models];
-  const supplier =
+  const supplier = "savedSupplier" in readOptions ? readOptions.savedSupplier ?? null :
     typeof connection.config.supplierId === "string"
       ? await getSupplierRecord(connection.config.supplierId)
       : null;

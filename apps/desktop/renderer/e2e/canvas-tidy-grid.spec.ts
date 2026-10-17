@@ -1,3 +1,4 @@
+import { idleCatalogCheckFixture } from "./helpers/catalog-check-fixture";
 import { mkdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "./helpers/canvas-offline-test";
@@ -57,7 +58,7 @@ async function fixture(page: Page, origin: string) {
     if (asset) return path === `/api/assets/${asset.id}`
       ? route.fulfill({ json: { ...asset, actualDimensions: { width: 1, height: 1 } } })
       : route.fulfill({ contentType: "image/png", body: png });
-    if (path === "/api/suppliers/catalog-upgrade") return route.fulfill({ json: { phase: "complete", updatedConnectionIds: [] } });
+    if (path === "/api/suppliers/catalog-upgrade") return route.fulfill({ json: idleCatalogCheckFixture() });
     if ((path === "/api/runs" && method !== "GET") || path === "/api/agent/turn") {
       counts.generation++; return route.abort("blockedbyclient");
     }

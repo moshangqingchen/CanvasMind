@@ -1,3 +1,4 @@
+import { idleCatalogCheckFixture } from "./helpers/catalog-check-fixture";
 import { expect, test, type APIRequestContext, type Page } from "./helpers/canvas-offline-test";
 import { readFileSync } from "node:fs";
 import type { ModelDescriptor } from "@super-canvas/providers";
@@ -32,7 +33,7 @@ async function setup(page: Page, request: APIRequestContext, id: string, kind: "
     return route.continue();
   });
   await page.route(/\/api\/suppliers(?:\?.*)?$/u, route => route.fulfill({ json: [] }));
-  await page.route("**/api/suppliers/catalog-upgrade", route => route.fulfill({ json: { phase: "complete", updatedConnectionIds: [] } }));
+  await page.route("**/api/suppliers/catalog-upgrade*", route => route.fulfill({ json: idleCatalogCheckFixture() }));
   const created = await request.post("/api/providers", { data: {
     name: `原生媒体参数隔离验收 ${id}`, provider: "rest",
     config: { baseUrl: "https://native-image-parameters.invalid", defaultModel: id, usage: "canvas",

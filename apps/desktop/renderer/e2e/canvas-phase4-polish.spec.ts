@@ -1,3 +1,4 @@
+import { idleCatalogCheckFixture } from "./helpers/catalog-check-fixture";
 import { expectCompactPromptLine } from "./helpers/lod-expectations";
 import { expect, test, type APIRequestContext, type Locator, type Page } from "./helpers/canvas-offline-test";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -69,14 +70,14 @@ async function installFixture(page: Page, request: APIRequestContext, zoom = .8)
   });
   await page.route("**/api/agent/turn", route => { submissions++; return route.abort(); });
   await page.route(/\/api\/suppliers(?:\?.*)?$/u, route => route.fulfill({ json: [] }));
-  await page.route("**/api/suppliers/catalog-upgrade", route => route.fulfill({ json: { phase: "complete", updatedConnectionIds: [] } }));
+  await page.route("**/api/suppliers/catalog-upgrade*", route => route.fulfill({ json: idleCatalogCheckFixture() }));
   await page.route(/\/api\/providers(?:\?.*)?$/u, route => route.request().method() === "GET"
     ? route.fulfill({ json: [f.connection, f.fake] }) : route.continue());
   await page.route(`**/api/providers/${f.connection.id}/models*`, route => route.fulfill({ json: f.models,
     headers: { "X-Model-Scan-Status": "live", "X-Model-Scan-Complete": "true" } }));
   await page.route(`**/api/providers/${f.fake.id}/models*`, route => route.fulfill({ json: [{ id: "fake-image-v1", name: "Fake",
     operations: ["image.generate"], inputKinds: ["text", "image"], outputKinds: ["image"] }], headers: { "X-Model-Scan-Status": "live" } }));
-  await page.route("**/api/agent/models", route => route.fulfill({ json: [] }));
+  await page.route("**/api/agent/models**", route => route.fulfill({ json: [] }));
   await page.route("**/api/agent/sessions", route => route.fulfill({ json: [] }));
   const check = () => { expect(errors).toEqual([]); expect(warnings).toEqual([]); expect(submissions).toBe(0); expect(outbound).toBe(0); };
   return { ...f, errors, warnings, check, counters: () => ({ submissions, outbound }) };

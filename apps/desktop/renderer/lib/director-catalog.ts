@@ -7,7 +7,7 @@ import {
   providerConnectionSupplierKey,
 } from "./provider-connection-options";
 
-/** Read the same inventory as the canvas; never submit a paid verification. */
+/** Read saved inventory for assistants/plans without upstream reads or write-back. */
 export async function loadDirectorCatalog(signal?: AbortSignal): Promise<DirectorCatalogCandidate[]> {
   signal?.throwIfAborted();
   const connections = (await repository.listConnections()).filter(
@@ -20,8 +20,7 @@ export async function loadDirectorCatalog(signal?: AbortSignal): Promise<Directo
   );
   const results: DirectorCatalogCandidate[][] = new Array(connections.length);
   let cursor = 0;
-  // Legacy inventories can still require a network read. Bound these reads so
-  // opening a large catalog cannot burst every supplier connection at once.
+  // Bound local projection work while retaining stable connection ordering.
   await Promise.all(Array.from({ length: Math.min(4, connections.length) }, async () => {
     while (cursor < connections.length) {
       signal?.throwIfAborted();
@@ -29,7 +28,7 @@ export async function loadDirectorCatalog(signal?: AbortSignal): Promise<Directo
       const connection = connections[index]!;
       try {
         const response = await readProviderModelInventory(
-          new Request(`http://localhost/api/providers/${encodeURIComponent(connection.id)}/models`, { signal }),
+          new Request(`http://localhost/api/providers/${encodeURIComponent(connection.id)}/models?cached=1&readonly=1`, { signal }),
           { params: Promise.resolve({ id: connection.id }) },
         );
         signal?.throwIfAborted();

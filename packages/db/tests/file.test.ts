@@ -22,6 +22,72 @@ afterEach(async () => {
 });
 
 describe("FileRepository", () => {
+  it("keeps the durable file and revisions unchanged on an equivalent autosave", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "super-canvas-db-noop-"));
+    temporaryDirectories.push(directory);
+    const path = join(directory, "state.json");
+    let writes = 0;
+    const repository = new FileRepository(path, async (oldPath, newPath) => { writes++; return rename(oldPath, newPath); });
+    const canvas = await repository.saveCanvas({ id: "view-only", title: "查看画布", graph: { nodes: [], edges: [], viewport: { x: 1, y: 2, zoom: 1 } }, reason: "manual" });
+    const before = await readFile(path);
+    const writeCount = writes;
+    expect(await repository.saveCanvas({ id: canvas.id, title: canvas.title, reason: "autosave", expectedRevision: canvas.revision,
+      graph: { viewport: { zoom: 1, y: 2, x: 1 }, edges: [], nodes: [] } })).toEqual(canvas);
+    expect(writes).toBe(writeCount);
+    expect(await readFile(path)).toEqual(before);
+    expect(await new FileRepository(path).listRevisions(canvas.id)).toHaveLength(1);
+  });
+
+  it("does not acknowledge an equal autosave until a failed earlier write becomes durable", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "super-canvas-db-noop-retry-"));
+    temporaryDirectories.push(directory);
+    const path = join(directory, "state.json");
+    let unavailable = false;
+    const repository = new FileRepository(path, async (oldPath, newPath) => {
+      if (unavailable) throw new Error("disk unavailable");
+      return rename(oldPath, newPath);
+    });
+    const first = await repository.saveCanvas({ id: "retry", graph: { content: "before" }, reason: "manual" });
+    unavailable = true;
+    await expect(repository.saveCanvas({ id: first.id, graph: { content: "after" }, reason: "autosave", expectedRevision: first.revision })).rejects.toThrow("disk unavailable");
+    const pending = (await repository.getCanvas(first.id))!;
+    await expect(repository.saveCanvas({ id: first.id, graph: pending.graph, reason: "autosave", expectedRevision: pending.revision })).rejects.toThrow("disk unavailable");
+    expect((await new FileRepository(path).getCanvas(first.id))!.revision).toBe(first.revision);
+    unavailable = false;
+    expect(await repository.saveCanvas({ id: first.id, graph: pending.graph, reason: "autosave", expectedRevision: pending.revision })).toEqual(pending);
+    const restored = new FileRepository(path);
+    expect(await restored.getCanvas(first.id)).toEqual(pending);
+    expect(await restored.listRevisions(first.id)).toHaveLength(2);
+  });
+
+  it("waits for an in-flight write before acknowledging the same autosave", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "super-canvas-db-noop-pending-"));
+    temporaryDirectories.push(directory);
+    const path = join(directory, "state.json");
+    let hold = false;
+    let entered!: () => void;
+    const writing = new Promise<void>(resolve => { entered = resolve; });
+    let resume!: () => void;
+    const pendingWrite = new Promise<void>(resolve => { resume = resolve; });
+    const repository = new FileRepository(path, async (oldPath, newPath) => {
+      if (hold) { entered(); await pendingWrite; }
+      return rename(oldPath, newPath);
+    });
+    const first = await repository.saveCanvas({ id: "pending", graph: { version: 1 }, reason: "manual" });
+    hold = true;
+    const saving = repository.saveCanvas({ id: first.id, graph: { version: 2 }, reason: "autosave", expectedRevision: first.revision });
+    await writing;
+    let acknowledged = false;
+    const equal = repository.saveCanvas({ id: first.id, graph: { version: 2 }, reason: "autosave", expectedRevision: first.revision + 1 }).then(value => { acknowledged = true; return value; });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    const acknowledgedBeforeWrite = acknowledged;
+    resume();
+    const [saved, same] = await Promise.all([saving, equal]);
+    expect(acknowledgedBeforeWrite).toBe(false);
+    expect(same).toEqual(saved);
+    expect(await new FileRepository(path).listRevisions(first.id)).toHaveLength(2);
+  });
+
   it("waits for the initial snapshot when concurrent callers see the cached default canvas", async () => {
     const directory = await mkdtemp(join(tmpdir(), "super-canvas-db-"));
     temporaryDirectories.push(directory);

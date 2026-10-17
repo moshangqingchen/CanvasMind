@@ -1,3 +1,4 @@
+import { idleCatalogCheckFixture } from "./helpers/catalog-check-fixture";
 import { expect, test } from "@playwright/test";
 import type { ModelDescriptor } from "@super-canvas/providers";
 import type { ProviderConnectionView } from "../lib/client-api";
@@ -78,7 +79,7 @@ test("开放图片尺寸恢复自动、1K/2K/4K 和截图比例，宽高、保�
     return route.continue();
   });
   await page.route(/\/api\/suppliers(?:\?.*)?$/u, route => route.fulfill({ json: [] }));
-  await page.route("**/api/suppliers/catalog-upgrade", route => route.fulfill({ json: { phase: "complete", updatedConnectionIds: [] } }));
+  await page.route("**/api/suppliers/catalog-upgrade*", route => route.fulfill({ json: idleCatalogCheckFixture() }));
   await page.route(/\/api\/providers(?:\?.*)?$/u, route => route.request().method() === "GET"
     ? route.fulfill({ json: [connection] }) : route.continue());
   await page.route(`**/api/providers/${connection.id}/models*`, route => {

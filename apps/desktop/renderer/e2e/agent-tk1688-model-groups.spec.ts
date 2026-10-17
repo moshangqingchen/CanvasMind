@@ -212,7 +212,7 @@ test("词元文本型号去重、保留已保存商家，用户选路后显示�
       ),
     )
     .toBe(`${connectionId}\n${newAlias}`);
-  await page.getByRole("button", { name: "刷新模型列表", exact: true }).click();
+  await page.getByRole("button", { name: "重新读取缓存", exact: true }).click();
   await expect(
     agentModelRow(models, `${connectionId}\n${newAlias}`),
   ).toHaveAttribute("aria-pressed", "true");
@@ -239,7 +239,7 @@ test("词元目录刷新移除当前商家时仍显示精确线路并停止可�
   const route = agentModelRow(models, `${connectionId}\n${savedAlias}`);
   await expect(route).toHaveAttribute("aria-pressed", "true");
   state.models = state.models.filter((model) => model.modelId !== savedAlias);
-  await page.getByRole("button", { name: "刷新模型列表", exact: true }).click();
+  await page.getByRole("button", { name: "重新读取缓存", exact: true }).click();
   await expect(route).toHaveAttribute("aria-pressed", "true");
   await expect(route).toBeDisabled();
   await expect(route).toContainText("本次目录未返回已保存线路");
@@ -281,7 +281,7 @@ test("词元旧保存线路缺失 descriptor 仍可见且不会被目录首项�
   await expect(models.getByLabel("完整模型 ID", { exact: true })).toHaveText(
     oldAlias,
   );
-  await page.getByRole("button", { name: "刷新模型列表", exact: true }).click();
+  await page.getByRole("button", { name: "重新读取缓存", exact: true }).click();
   expect(
     await page.evaluate(
       (canvas) => localStorage.getItem(`agent-model:${canvas}`),

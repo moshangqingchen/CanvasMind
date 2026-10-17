@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
+import { idleCatalogCheckFixture } from "./helpers/catalog-check-fixture";
 
 const project = {
   id: "dialog-interactions-fixture", title: "交互回归画布", nodeCount: 0,
@@ -17,6 +18,8 @@ async function openMockCanvas(page: Page, runs: object[] = []) {
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
+    if (path === "/api/suppliers/catalog-upgrade" && request.method() === "GET")
+      return route.fulfill({ json: idleCatalogCheckFixture() });
     if (path === "/api/projects") return route.fulfill({ json: { projects: [project] } });
     if (path.startsWith("/api/canvas/")) return route.fulfill({ json: {
       id: project.id, title: project.title, revision: 1,

@@ -31,6 +31,7 @@ export const assistantModels: AgentModelOption[] = [
     connectionName: "主创作连接",
     modelId: "fixture.chat.2026-10-full-id",
     modelName: "创作对话 · 完整上下文",
+    description: "由当前供应商 API 实时返回的模型。",
     protocol: "openai-chat-completions",
     available: true,
     source: "manual",
@@ -135,6 +136,7 @@ export async function installAssistantFixture(
     markdownProbe?: boolean;
     chatStreamDurationMs?: number;
     channelParameters?: boolean;
+    unreadCatalog?: boolean;
   } = {},
 ) {
   const parameterCandidates: DirectorCatalogCandidate[] = ["a", "b"].map((key, index) => ({
@@ -156,7 +158,12 @@ export async function installAssistantFixture(
   const base = await installNeuralFixture(page, {
     theme: options.theme,
     motion: options.motion,
-    ...(options.channelParameters ? { connections: [...neuralConnections, ...parameterConnections] } : {}),
+    ...((options.channelParameters || options.unreadCatalog) ? { connections: [
+      ...neuralConnections.map(connection => options.unreadCatalog && connection.id === "connection-neural-supplier-1"
+        ? { ...connection, config: { ...connection.config, modelScanStatus: "unscanned", modelCatalogModels: [], scannedModelIds: undefined } }
+        : connection),
+      ...(options.channelParameters ? parameterConnections : []),
+    ] } : {}),
     projects: neuralProjects.map((project) =>
       project.id === assistantCanvasId ? { ...project, nodeCount: 2 } : project,
     ),
@@ -558,7 +565,13 @@ export async function installAssistantFixture(
       method = request.method();
     if (path === "/api/agent/models" && method === "GET") {
       modelReads++;
-      return route.fulfill({ json: assistantModels });
+      return route.fulfill({ json: options.unreadCatalog ? {
+        models: assistantModels,
+        connections: [
+          { connectionId: "assistant-primary", connectionName: "主创作连接", supplierName: "晨星对话", status: "saved" },
+          { connectionId: "connection-neural-supplier-1", connectionName: "纸月模型连接", supplierId: "neural-supplier-1", supplierName: "纸月模型", status: "unread" },
+        ],
+      } : assistantModels });
     }
     const generationModels = /^\/api\/providers\/(assistant-image-[ab])\/models$/u.exec(path);
     if (options.channelParameters && generationModels && method === "GET") return route.fulfill({ json: parameterCandidates.filter(candidate => candidate.connectionId === generationModels[1]).map(candidate => candidate.model) });

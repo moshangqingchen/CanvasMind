@@ -2292,7 +2292,7 @@ function ProjectSidebar({
   selectedNode: CanvasNode | null;
   selectedPrompt: string;
   draftRequest: AgentDraftRequest | null;
-  onManageApi: (group?: string) => void;
+  onManageApi: (group?: string, connectionId?: string) => void;
   onSelectProject: (projectId: string) => void;
   onCreateProject: (title: string) => Promise<void>;
   onCleanupProject: (projectId: string) => Promise<void>;
@@ -2774,6 +2774,7 @@ function CanvasShell({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsInitialCangyuanGroup, setSettingsInitialCangyuanGroup] =
     useState<string | null>(null);
+  const [settingsTargetSupplierId, setSettingsTargetSupplierId] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [graphicDesignSession, setGraphicDesignSession] = useState<{
     id: string;
@@ -7687,10 +7688,12 @@ function CanvasShell({
   }, [canvasId, saveState, saveNow, checkpoint, applyAgentCanvasResult, applyRunSnapshot, subscribeToRun]);
   const agentCanvasBridge = useMemo<AgentCanvasBridge>(() => ({ perform: performAgentAction }), [performAgentAction]);
   const closeAgentInspector = useCallback(() => setMobileInspectorOpen(false), []);
-  const manageAgentApi = useCallback((group?: string) => {
+  const manageAgentApi = useCallback((group?: string, connectionId?: string) => {
     setSettingsInitialCangyuanGroup(group ?? null);
+    const connection = connections.find(item => item.id === connectionId);
+    setSettingsTargetSupplierId(connection ? String(connection.config.supplierId ?? providerConnectionSupplierKey(connection)) : null);
     setSettingsOpen(true);
-  }, []);
+  }, [connections]);
 
   // Card ownership depends only on live node identities, not their expensive presentation.
   const liveParameterIds = useMemo(() => openParameterIds.filter(id => nodeDefinitions.some(node => node.id === id)), [openParameterIds, nodeDefinitions]);
@@ -10959,9 +10962,12 @@ function CanvasShell({
       <SettingsModal
         open={settingsOpen}
         initialCangyuanGroup={settingsInitialCangyuanGroup}
+        initialTab="suppliers"
+        targetSupplierId={settingsTargetSupplierId}
         onClose={() => {
           setSettingsOpen(false);
           setSettingsInitialCangyuanGroup(null);
+          setSettingsTargetSupplierId(null);
           void fetchConnections()
             .then(setConnections)
             .catch(() => undefined);

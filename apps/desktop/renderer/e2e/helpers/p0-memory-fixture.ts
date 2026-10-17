@@ -107,14 +107,14 @@ export async function installMemoryRoutes(page: Page, baseURL: string, fixture: 
     if (url.origin !== new URL(baseURL).origin && !["data:", "blob:", "about:"].includes(url.protocol)) {
       state.blockedExternal++; return route.abort("blockedbyclient");
     }
-    // The real preload activates DesktopBridge's startup POST. Fulfill this
-    // exact endpoint before the mutation guard; it must never reach the server.
+    // The real preload activates DesktopBridge's saved status read. Fulfill
+    // this endpoint before the mutation guard; polling stays fixture-only.
     if (path === "/api/suppliers/catalog-upgrade" && ["POST", "GET"].includes(req.method())) {
       state.mockedCatalogCalls++;
       if (req.method() === "POST") state.mockedCatalogPostCalls++; else state.mockedCatalogGetCalls++;
       return route.fulfill({ status: req.method() === "POST" ? 202 : 200, headers: { "Cache-Control": "no-store" },
-        json: { revision: "p0-isolated-mock", phase: catalogPolling ? "running" : "complete", total: 0, refreshed: 0,
-          unavailable: 0, failed: 0, updatedConnectionIds: [] } });
+        json: idleCatalogCheckFixture({ revision: "p0-isolated-mock", mode: catalogPolling ? "daily" : "off",
+          phase: catalogPolling ? "running" : "complete" }) });
     }
     if (path.startsWith("/api/") && !["GET", "HEAD"].includes(req.method()) && !(req.method() === "PUT" && path === `/api/canvas/${fixture.canvas.id}`)) {
       state.blockedSubmissions++; return route.abort("blockedbyclient");
@@ -262,3 +262,4 @@ export async function performMemoryOperation(page: Page, scenario: MemoryScenari
   await page.getByRole("button", { name: "Fit View", exact: true }).click();
   const tasks = await openTasks(page); await tasks.getByRole("button", { name: "关闭", exact: true }).click();
 }
+import { idleCatalogCheckFixture } from "./catalog-check-fixture";

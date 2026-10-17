@@ -20,7 +20,7 @@ describe("shared director inventory", () => {
     expect(catalog[0]!.pricing).toBeUndefined();
     expect(mocks.inventory).toHaveBeenCalledTimes(1);
   });
-  it("uses the canvas service for both legacy and supplier-linked connections without requesting refresh", async () => {
+  it("forces saved, read-only inventory for both legacy and supplier-linked connections", async () => {
     mocks.listConnections.mockResolvedValue([connection("legacy", { preset: "cyberafei-api" }), connection("current", { supplierId: "supplier" })]);
     mocks.inventory.mockImplementation(async (_request, context) => {
       const { id } = await context.params;
@@ -30,6 +30,10 @@ describe("shared director inventory", () => {
     expect(catalog.map(c => c.model.id)).toEqual(["legacy-image", "current-image"]);
     expect(catalog.every(c => c.authoritative && c.catalogCheckedAt === "checked")).toBe(true);
     expect(mocks.inventory.mock.calls.every(([request]) => !new URL(request.url).searchParams.has("refresh"))).toBe(true);
+    expect(mocks.inventory.mock.calls.every(([request]) => {
+      const query = new URL(request.url).searchParams;
+      return query.get("cached") === "1" && query.get("readonly") === "1";
+    })).toBe(true);
   });
   it("keeps stale candidates non-authoritative and excludes denied or non-runnable models", async () => {
     mocks.listConnections.mockResolvedValue([connection("stale"), connection("denied", { modelScanStatus: "unauthorized" }), connection("disabled", { usage: "disabled" })]);

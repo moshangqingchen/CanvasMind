@@ -1,3 +1,4 @@
+import { idleCatalogCheckFixture } from "./helpers/catalog-check-fixture";
 import { expect, test, type Locator, type Page } from "./helpers/canvas-offline-test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -72,7 +73,7 @@ test("第二阶段隔离视觉证据与完整控件", async ({ page, request }, 
   });
   await page.route("**/api/agent/turn", route => { submissions++; return route.abort(); });
   await page.route(/\/api\/suppliers(?:\?.*)?$/u, route => route.fulfill({ json: [] }));
-  await page.route("**/api/suppliers/catalog-upgrade", route => route.fulfill({ json: { phase: "complete", updatedConnectionIds: [] } }));
+  await page.route("**/api/suppliers/catalog-upgrade*", route => route.fulfill({ json: idleCatalogCheckFixture() }));
   await page.route(/\/api\/providers(?:\?.*)?$/u, route => route.request().method() === "GET"
     ? route.fulfill({ json: [fixture.connection, fixture.fake] }) : route.continue());
   await page.route(`**/api/providers/${fixture.connection.id}/models*`, route => route.fulfill({ json: fixture.models, headers: { "X-Model-Scan-Status": "live", "X-Model-Scan-Complete": "true" } }));

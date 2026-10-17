@@ -1,3 +1,4 @@
+import { idleCatalogCheckFixture } from "./helpers/catalog-check-fixture";
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import sharp from "sharp";
@@ -70,7 +71,7 @@ async function fixture(page: Page, origin: string, options: { fallbackDimensions
       ? route.fulfill({ json: { ...file.asset, actualDimensions: { width: file.width, height: file.height } } })
       : route.fulfill({ contentType: "image/png", body: file.bytes });
     if (path === `/api/projects/${id}/archive`) return route.fulfill({ json: { archivedAssetIds: [] } });
-    if (path === "/api/suppliers/catalog-upgrade") return route.fulfill({ json: { phase: "complete", updatedConnectionIds: [] } });
+    if (path === "/api/suppliers/catalog-upgrade") return route.fulfill({ json: idleCatalogCheckFixture() });
     if (path === "/api/runs" && method !== "GET" || path === "/api/agent/turn") { counts.paid++; return route.abort("blockedbyclient"); }
     if (method !== "GET" && method !== "HEAD") { counts.unexpectedMutations++; return route.abort("blockedbyclient"); }
     if (["/api/providers", "/api/suppliers", "/api/runs", "/api/agent/models", "/api/agent/sessions"].includes(path)) return route.fulfill({ json: [] });

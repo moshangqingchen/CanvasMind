@@ -479,7 +479,15 @@ export class FileRepository extends MemoryRepository {
   override async saveCanvas(
     input: Parameters<MemoryRepository["saveCanvas"]>[0],
   ): Promise<CanvasRecord> {
+    const previousRevision = this.savedCanvasRevision(input.id);
     const result = await super.saveCanvas(input);
+    if (previousRevision === result.revision) {
+      // A prior failed or still-running write must become durable before a
+      // matching autosave is acknowledged. Clean no-ops do not write or prune.
+      if (this.writeLoop) await this.writeLoop;
+      if (this.needsSnapshotWrite) await this.persist();
+      return result;
+    }
     this.pruneCanvasRevisions(input.id, LOCAL_CANVAS_REVISION_LIMIT);
     await this.persist();
     return result;

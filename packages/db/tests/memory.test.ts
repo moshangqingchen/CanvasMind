@@ -3,6 +3,32 @@ import { MemoryRepository } from "../src/memory.js";
 import { CanvasRevisionConflictError } from "../src/types.js";
 
 describe("MemoryRepository", () => {
+  it("does not create a revision for an equivalent autosave, including reordered object keys", async () => {
+    const repository = new MemoryRepository();
+    const canvas = await repository.saveCanvas({ id: "view-only", title: "查看画布", reason: "manual",
+      graph: { nodes: [{ id: "prompt", data: { label: "构思", parts: [] } }], edges: [], viewport: { x: 1, y: 2, zoom: 1 } } });
+    const saved = await repository.saveCanvas({ id: canvas.id, reason: "autosave", expectedRevision: canvas.revision,
+      graph: { viewport: { zoom: 1, y: 2, x: 1 }, edges: [], nodes: [{ data: { parts: [], label: "构思" }, id: "prompt" }] } });
+    expect(saved).toEqual(canvas);
+    expect(await repository.listRevisions(canvas.id)).toHaveLength(1);
+    saved.graph.nodes = [];
+    expect(await repository.getCanvas(canvas.id)).toEqual(canvas);
+  });
+
+  it("checks conflicts before autosave equality and still saves genuine edits and manual versions", async () => {
+    const repository = new MemoryRepository();
+    const canvas = await repository.saveCanvas({ id: "autosave-edits", title: "原名", graph: { content: "原文" }, reason: "manual" });
+    await expect(repository.saveCanvas({ id: canvas.id, graph: canvas.graph, reason: "autosave", expectedRevision: 0 }))
+      .rejects.toBeInstanceOf(CanvasRevisionConflictError);
+    const renamed = await repository.saveCanvas({ id: canvas.id, title: "新名", graph: canvas.graph, reason: "autosave", expectedRevision: canvas.revision });
+    expect(renamed.revision).toBe(canvas.revision + 1);
+    const edited = await repository.saveCanvas({ id: canvas.id, graph: { content: "新文" }, reason: "autosave", expectedRevision: renamed.revision });
+    expect(edited.revision).toBe(renamed.revision + 1);
+    const manual = await repository.saveCanvas({ id: canvas.id, graph: edited.graph, reason: "manual", expectedRevision: edited.revision });
+    expect(manual.revision).toBe(edited.revision + 1);
+    expect(await repository.listRevisions(canvas.id)).toHaveLength(4);
+  });
+
   it("deletes a canvas and all canvas-scoped records", async () => {
     const repository = new MemoryRepository();
     const canvas = await repository.ensureDefaultCanvas();

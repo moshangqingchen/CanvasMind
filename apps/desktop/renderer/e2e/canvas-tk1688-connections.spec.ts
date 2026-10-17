@@ -63,6 +63,7 @@ async function fixture(page: Page, request: APIRequestContext, selectedUsage: "c
     return route.fulfill({ json: connections });
   });
   await page.route("**/api/suppliers**", async route => {
+    if (new URL(route.request().url()).pathname === "/api/suppliers/catalog-upgrade") return route.fallback();
     if (route.request().method() !== "GET") { state.providerWrites++; return route.abort(); }
     const path = new URL(route.request().url()).pathname;
     return route.fulfill({ json: path.endsWith("/verification") ? null : [supplier] });

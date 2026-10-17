@@ -121,7 +121,7 @@ async function pollingCase(
     routes = await installMemoryRoutes(target.page, baseURL, fixture);
     // Last registered route wins; all traffic not matched here still traverses
     // the common loopback/submission guard and the server-level TCP guard.
-    await target.page.route("**/api/agent/models", async route => {
+    await target.page.route("**/api/agent/models**", async route => {
       if (new URL(route.request().url()).origin !== new URL(baseURL).origin || route.request().method() !== "GET")
         return route.fallback();
       state.agentReads++;
@@ -268,7 +268,7 @@ test("P0 changed agent list publishes and a late older request cannot replace th
       // A manual refresh can overlap the interval request. It must win even
       // when the older response finishes later; no generation is submitted.
       if (await agentModelTrigger(page).count()) await openAgentModels(page);
-      await page.getByRole("button", { name: "刷新模型列表", exact: true }).click();
+      await page.getByRole("button", { name: "重新读取缓存", exact: true }).click();
       await expect.poll(() => state.agentReads).toBe(before + 2);
       await finishResponses(page, parsedBefore + 1);
       await expect(displayedModel).toHaveText("P0 newest model");

@@ -1191,7 +1191,7 @@ test.describe("超级画布完整验收", () => {
   test("智能体读取已保存分组模型，无需另建导演连接", async ({ page }) => {
     const groupId = "LLM-GPT-plus";
     const modelIds = ["gpt-5.4", "gpt-5.4-mini"];
-    await page.route("**/api/agent/models", route => route.fulfill({ json: modelIds.map(modelId => ({
+    await page.route("**/api/agent/models**", route => route.fulfill({ json: modelIds.map(modelId => ({
       supplierId: "saved-supplier", supplierName: "已接入供应商", group: groupId,
       connectionId: "existing-canvas-key", connectionName: "已有分组连接", modelId, modelName: modelId,
       protocol: "openai-chat-completions", available: true, source: "key",

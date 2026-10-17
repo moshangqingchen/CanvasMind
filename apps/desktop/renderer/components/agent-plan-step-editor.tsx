@@ -9,11 +9,15 @@ import { ModelPicker } from "./model-picker";
 import { NodeParameterFields } from "./node-parameter-fields";
 import { ModelResolutionShortcuts } from "./model-resolution-shortcuts";
 import { ModelPriceDetails } from "./model-price-details";
+import { AgentCatalogNotice } from "./agent-catalog-notice";
+import type { AgentCatalogConnection } from "../lib/agent-catalog-status";
 import styles from "./creative-agent-panel.module.css";
 
 type Call = AgentProposal["calls"][number];
-export function AgentPlanStepEditor({ call, route, connections, disabled, onChange }: {
+export function AgentPlanStepEditor({ call, route, connections, catalogConnections, disabled, onManage, onChange }: {
   call: Call; route?: RoutedDirectorCall; connections: readonly ProviderConnectionView[];
+  catalogConnections: readonly AgentCatalogConnection[];
+  onManage: (connectionId: string) => void;
   disabled: boolean; onChange: (call: Call) => void;
 }) {
   const [notice, setNotice] = useState("");
@@ -54,9 +58,10 @@ export function AgentPlanStepEditor({ call, route, connections, disabled, onChan
   };
   return <fieldset className={styles.planParameters} disabled={disabled} aria-label={`${call.label} 渠道与参数`}>
     <legend>渠道与参数 <small>MODEL & PARAMETERS</small></legend>
+    <AgentCatalogNotice connections={catalogConnections} onManage={onManage} />
     <div className={styles.planChannelSelectors}>
       <label>供应商<select aria-label={`${call.label} 供应商`} value={supplierId} onChange={event => choose(candidates.find(candidate => supplier(candidate) === event.target.value))}>
-        {!suppliers.length && <option value="">暂无可用渠道</option>}{suppliers.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+        {!suppliers.length && <option value="">暂无已保存的渠道目录</option>}{suppliers.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
       </select></label>
       <label>分组<select aria-label={`${call.label} 模型群组`} value={group} onChange={event => choose(supplierCandidates.find(candidate => (candidate.group ?? "默认分组") === event.target.value))}>
         {groups.map(group => <option key={group} value={group}>{group}</option>)}

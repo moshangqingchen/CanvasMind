@@ -142,7 +142,7 @@ test("P0 connection snapshot releases 40 identical minute-refresh responses", as
       } });
       state.fulfilled++; state.responseBytes += Buffer.byteLength(body);
     });
-    await target.page.route("**/api/agent/models", route => {
+    await target.page.route("**/api/agent/models**", route => {
       if (!sameOriginGet(route.request().url(), route.request().method())) return route.fallback();
       state.agentReads++;
       return route.fulfill({ json: [] });

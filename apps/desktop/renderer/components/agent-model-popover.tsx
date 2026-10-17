@@ -7,13 +7,16 @@ import { modelPickerPriceCompact } from "../lib/model-picker-data";
 import { groupTk1688Models, tk1688ModelFamily, tk1688RouteLabel, tk1688RouteSummary } from "../lib/tk1688-model-display";
 import { tk1688TextModelPrice } from "./tk1688-text-model-select";
 import { AgentPopover } from "./agent-popover";
+import { AgentCatalogNotice } from "./agent-catalog-notice";
+import { agentSavedCatalogDescription, type AgentCatalogConnection } from "../lib/agent-catalog-status";
 import styles from "./creative-agent-panel.module.css";
 
 const keyOf = (model: AgentModelOption) => `${model.connectionId}\n${model.modelId}`;
 const descriptor = (model: AgentModelOption) => ({ id: model.modelId, name: model.modelName, metadata: model.metadata, pricing: model.pricing });
-export function AgentModelPopover({ models, selected, busy, reasoning, reasoningNotes, tk1688, onSelect, onReasoning, onRefresh, onManage, onClose }: {
+export function AgentModelPopover({ models, catalogConnections, selected, busy, reasoning, reasoningNotes, tk1688, onSelect, onReasoning, onRefresh, onManage, onClose }: {
   models: AgentModelOption[]; selected?: AgentModelOption; busy: boolean; reasoning: string; reasoningNotes: string[]; tk1688: boolean;
-  onSelect: (model: AgentModelOption) => void; onReasoning: (value: string) => void; onRefresh: () => void; onManage: () => void; onClose: () => void;
+  catalogConnections: readonly AgentCatalogConnection[];
+  onSelect: (model: AgentModelOption) => void; onReasoning: (value: string) => void; onRefresh: () => void; onManage: (connectionId?: string) => void; onClose: () => void;
 }) {
   const [query, setQuery] = useState("");
   const matching = models.filter(model => [model.supplierName, model.group, model.connectionName, model.modelId, model.modelName].join(" ").toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
@@ -27,6 +30,7 @@ export function AgentModelPopover({ models, selected, busy, reasoning, reasoning
   return <AgentPopover label="选择对话模型" position="bottom" onClose={onClose}>
     <label className={styles.popoverSearch}><Search size={14} /><input type="search" aria-label="搜索对话模型" placeholder="供应商、分组或完整型号…" value={query} onChange={event => setQuery(event.target.value)} /></label>
     <div className={styles.modelTree} aria-label="供应商与模型目录">
+      <AgentCatalogNotice connections={catalogConnections} query={query} onManage={onManage} />
       {!suppliers.length && <p>没有匹配的已保存型号。</p>}
       {suppliers.map(([id, name]) => <details key={id} open={query || id === selected?.supplierId ? true : undefined} data-supplier-id={id}>
         <summary>{name}<small>供应商 SUPPLIER</small></summary>
@@ -56,7 +60,7 @@ export function AgentModelPopover({ models, selected, busy, reasoning, reasoning
     </div>
     {selected && <div className={styles.modelFacts}>
       <strong>{selected.supplierName} / {selected.group}</strong><code aria-label="完整模型 ID">{selected.modelId}</code>
-      {selected.description && <small>{selected.description}</small>}
+      {selected.description && <small>{agentSavedCatalogDescription(selected.description)}</small>}
       {tk1688 && current && <p aria-label="智能体模型报价">{tk1688TextModelPrice(current)}</p>}
       {!selected.available && <p role="status">{selected.reason}</p>}
       <div role="group" aria-label="思考强度" className={styles.reasoningSegments}><span>思考 <small>REASONING</small></span>{options.map(option => <button type="button" key={option.value} data-choice data-reasoning={option.value} aria-pressed={reasoning === option.value} disabled={busy || !selected.available} onClick={() => onReasoning(option.value)}>{option.label}</button>)}</div>
@@ -75,6 +79,6 @@ export function AgentModelPopover({ models, selected, busy, reasoning, reasoning
         <small>每轮最多 16 个附件，单个 16 MB，总计 24 MB，含所选节点素材。{selected.inputLimits?.maxAssets !== undefined && `供应商每轮最多 ${selected.inputLimits.maxAssets} 个附件。`}</small>
       </details>
     </div>}
-    <div className={styles.popoverFooter}><button type="button" className={styles.ghost} disabled={busy} onClick={onRefresh}><RefreshCw size={13} />刷新模型列表</button><button type="button" className={styles.ghost} onClick={onManage}><Plug size={13} />管理供应商与模型</button></div>
+    <div className={styles.popoverFooter}><button type="button" className={styles.ghost} disabled={busy} title="只重新读取已保存的目录与价格；更新目录请前往供应商设置" onClick={onRefresh}><RefreshCw size={13} />重新读取缓存</button><button type="button" className={styles.ghost} onClick={() => onManage()}><Plug size={13} />管理供应商与模型</button></div>
   </AgentPopover>;
 }

@@ -256,7 +256,7 @@ for (const theme of ["dark", "light"] as const) {
       "true",
     );
     await expect(
-      dialog.getByRole("button", { name: "刷新模型列表", exact: true }),
+      dialog.getByRole("button", { name: "重新读取缓存", exact: true }),
     ).toBeInViewport();
     await expect(
       dialog.getByRole("button", { name: "管理供应商与模型", exact: true }),
@@ -264,7 +264,7 @@ for (const theme of ["dark", "light"] as const) {
     await capture(page, `${theme}-model-popover`);
     const reads = fixture.modelReads();
     await dialog
-      .getByRole("button", { name: "刷新模型列表", exact: true })
+      .getByRole("button", { name: "重新读取缓存", exact: true })
       .click();
     await expect.poll(fixture.modelReads).toBe(reads + 1);
     await dialog

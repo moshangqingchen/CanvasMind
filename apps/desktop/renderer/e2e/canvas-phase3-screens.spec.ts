@@ -226,7 +226,12 @@ test("供应商长列表窗口化保留离屏草稿并支持局部搜索快捷�
   await groups.getByRole("button", { name: "group-001", exact: true }).focus();
   await page.keyboard.press("Control+f");
   await expect(settings.getByLabel("查找分组或模型", { exact: true })).toBeFocused();
-  await groups.getByLabel("group-001 API Key", { exact: true }).fill("");
+  const firstGroupToggle = groups.getByRole("button", { name: "group-001", exact: true });
+  if (await firstGroupToggle.getAttribute("aria-expanded") !== "true") await firstGroupToggle.click();
+  const firstGroupKey = groups.getByLabel("group-001 API Key", { exact: true });
+  await expect(firstGroupKey).toBeVisible();
+  await expect(firstGroupKey).toHaveValue("phase3-unsaved-local-draft");
+  await firstGroupKey.fill("");
   await modelsTab.click();
   const nestedModel = groups.getByRole("list", { name: "Key 实际读取型号列表", exact: true });
   const evidence = nestedModel.locator(".sm-model-evidence summary").first();

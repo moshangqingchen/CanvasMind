@@ -564,7 +564,7 @@ test("统一智能体入口，仅显示模型支持的思考选项，切换后�
   await expect(models.getByText("供应商未注明图片数量。", { exact: true })).toBeVisible();
   s.model.reasoningOptions = [{ value: "auto", label: "自动" }];
   s.model.reasoningSource = "provider-catalog";
-  await page.getByRole("button", { name: "刷新模型列表", exact: true }).click();
+  await page.getByRole("button", { name: "重新读取缓存", exact: true }).click();
   await expect(models.locator("button[data-reasoning]")).toHaveCount(1);
   await expect(models).toContainText("无可选档位");
   await closeAgentModels(page);
@@ -625,7 +625,7 @@ test("供应商声明的图片视频音频数量用于上传校验，并明确�
   };
   s.model.reasoningSource = "official-model";
   const models = await openAgentModels(page);
-  await page.getByRole("button", { name: "刷新模型列表", exact: true }).click();
+  await page.getByRole("button", { name: "重新读取缓存", exact: true }).click();
   const support = models.getByLabel("模型参考素材支持", { exact: true });
   await expect(support).toContainText("图片 ✓ 最多 1 张");
   await expect(support).toContainText("视频 ✓ 最多 1 个");
@@ -640,7 +640,7 @@ test("供应商声明的图片视频音频数量用于上传校验，并明确�
     sourceUrl: "https://example.test/model",
     checkedAt: "2026-09-22",
   };
-  await page.getByRole("button", { name: "刷新模型列表", exact: true }).click();
+  await page.getByRole("button", { name: "重新读取缓存", exact: true }).click();
   await expect(
     page.getByText("渠道实测＋官网默认（未全部实测）", { exact: true }),
   ).toBeVisible();
@@ -1006,7 +1006,7 @@ for (const viewport of [
     });
     // The full hierarchy and capability evidence move into the model popover;
     // the compact composer keeps the same exact saved model choice.
-    await page.route("**/api/agent/models", (route) =>
+    await page.route("**/api/agent/models**", (route) =>
       route.fulfill({
         json: [
           s.model,
@@ -1020,7 +1020,7 @@ for (const viewport of [
     );
     const models = await openAgentModels(page);
     await models
-      .getByRole("button", { name: "刷新模型列表", exact: true })
+      .getByRole("button", { name: "重新读取缓存", exact: true })
       .click();
     const supplier = models.locator('[data-supplier-id="site-a"]');
     await expect(supplier.locator(":scope > summary")).toContainText(
