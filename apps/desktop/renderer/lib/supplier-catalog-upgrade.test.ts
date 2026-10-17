@@ -1,345 +1,271 @@
 import { describe, expect, it, vi } from "vitest";
-import { MemoryRepository } from "@super-canvas/db";
-import { SupplierCatalogUpgrade, SUPPLIER_CATALOG_REVISION } from "./supplier-catalog-upgrade";
+import { getRepository, MemoryRepository, type ProviderConnectionRecord, type SupplierRecord } from "@super-canvas/db";
+import { SupplierCatalogUpgrade, SUPPLIER_CATALOG_REVISION, supportedCatalogConnection } from "./supplier-catalog-upgrade";
+import { CATALOG_CHECK_INTERVAL_MS, CATALOG_MODE_SETTING, catalogChanges, catalogPricesComplete, clearCatalogManualMarker } from "./supplier-catalog-policy";
+import { scopedCatalogRepository, withCatalogRepository } from "./catalog-repository-scope";
 
+const model = (id = "full-model-id", priceLabel = "¥0.10/张 · 4K / high") => ({ id, operations: ["image.generate"], metadata: { priceLabel } });
 async function fixture() {
   const repository = new MemoryRepository();
-  const save = (id: string, config: Record<string, unknown> = {}, provider = "openai") => repository.saveConnection({
-    id, name: id, provider, encryptedSecret: "opaque-test-key", config: {
-      baseUrl: "https://api.tk1688.com/v1", usage: "agent", modelGroup: "default",
-      defaultModel: "gpt-5.5", modelCatalogModels: [{ id: "gpt-5.5", operations: [] }], ...config,
-    },
+  const save = (id = "active", config: Record<string, unknown> = {}, provider = "openai") => repository.saveConnection({ id, name: id, provider,
+    encryptedSecret: "opaque-unit-key", config: { baseUrl: "https://api.tk1688.com/v1", usage: "canvas", modelGroup: "default", defaultModel: "full-model-id",
+      modelCatalogModels: [model()], ...config } });
+  let now = Date.parse("2026-10-16T04:00:00Z");
+  const refreshCatalog = vi.fn(async (connection: ProviderConnectionRecord, _supplier: SupplierRecord | undefined, staging: MemoryRepository) => {
+    const current = (await staging.getConnection(connection.id))!;
+    await staging.saveConnection({ ...current, config: { ...current.config, modelCatalogModels: [model("full-model-id", "¥0.12/张 · 4K / high")], modelScanStatus: "live", modelScanComplete: true } });
+    return { complete: true } as { complete: boolean; status?: number; code?: string };
   });
-  const readModels = vi.fn(async (request: Request, context: { params: Promise<{ id: string }> }) => {
-    expect(new URL(request.url).searchParams.get("refresh")).toBe("1");
-    const { id } = await context.params;
-    const connection = (await repository.getConnection(id))!;
-    await repository.saveConnection({ ...connection, config: { ...connection.config,
-      modelCatalogModels: [{ id: "gpt-5.5", operations: [] }, { id: "gpt-5.4", operations: [] }],
-      modelScanStatus: "live", modelScanComplete: true,
-    } }, { expected: connection });
-    return Response.json([], { headers: { "X-Model-Scan-Status": "live", "X-Model-Scan-Complete": "true" } });
-  });
-  let now = Date.parse("2026-10-07T04:00:00Z");
-  const service = new SupplierCatalogUpgrade({ repository, readModels, now: () => now });
-  return { repository, save, readModels, service, advance: (milliseconds: number) => { now += milliseconds; } };
+  const service = new SupplierCatalogUpgrade({ repository, refreshCatalog, now: () => now });
+  return { repository, save, refreshCatalog, service, advance: (ms: number) => { now += ms; }, now: () => now };
 }
 
-describe("supplier catalog upgrade", () => {
-  const previousRevision = "2026-10-09-full-supplier-recheck-contracts-prices-v11";
-  it("refreshes the official Jiasu vip inventory once and notifies the existing connection", async () => {
-    const f = await fixture();
-    await f.save("jiasu-vip", { baseUrl: "https://ai.jiasuapi.com/v1", usage: "canvas",
-      modelGroup: "vip", accountKeyGroup: "vip", defaultModel: "sd-2.5-J2" });
-    await f.save("jiasu-spoofed", { baseUrl: "https://ai.jiasuapi.com.evil.example/v1" });
-    f.service.start(); await f.service.settle();
-    expect(f.readModels).toHaveBeenCalledTimes(1);
-    expect(await f.readModels.mock.calls[0]![1].params).toEqual({ id: "jiasu-vip" });
-    expect(f.service.status()).toMatchObject({ total: 1, refreshed: 1, updatedConnectionIds: ["jiasu-vip"] });
-    const saved = (await f.repository.getConnection("jiasu-vip"))!;
-    expect(saved.encryptedSecret).toBe("opaque-test-key");
-    expect(saved.config).toMatchObject({ modelGroup: "vip", accountKeyGroup: "vip", defaultModel: "sd-2.5-J2",
-      modelScanStatus: "live", modelScanComplete: true, catalogUpgradeRevision: SUPPLIER_CATALOG_REVISION });
-    f.service.start(); await f.service.settle();
-    expect(f.readModels).toHaveBeenCalledTimes(1);
-  });
-  it.each([previousRevision, SUPPLIER_CATALOG_REVISION])("retains a non-Jijiu %s success for the same identity without rewriting its version", async revision => {
-    const f = await fixture();
-    await f.save("active");
-    f.service.start(); await f.service.settle();
-    const saved = (await f.repository.getConnection("active"))!;
-    await f.repository.saveConnection({ ...saved, config: { ...saved.config,
-      catalogUpgradeRevision: revision, catalogUpgradeAttemptRevision: revision } });
-    f.readModels.mockClear();
-    f.service.start(); await f.service.settle();
-    expect(f.readModels).not.toHaveBeenCalled();
-    expect((await f.repository.getConnection("active"))?.config.catalogUpgradeRevision).toBe(revision);
-  });
-  it.each([previousRevision, SUPPLIER_CATALOG_REVISION])("honors the 24-hour retry interval of a non-Jijiu %s failed attempt", async revision => {
-    const f = await fixture();
-    await f.save("active");
-    f.service.start(); await f.service.settle();
-    const saved = (await f.repository.getConnection("active"))!;
-    const config: typeof saved.config = { ...saved.config, catalogUpgradeAttemptRevision: revision };
-    delete config.catalogUpgradeRevision;
-    await f.repository.saveConnection({ ...saved, config });
-    f.readModels.mockClear();
-    f.advance(24 * 60 * 60 * 1000 - 1);
-    f.service.start(); await f.service.settle();
-    expect(f.readModels).not.toHaveBeenCalled();
-    f.advance(1);
-    f.service.start(); await f.service.settle();
-    expect(f.readModels).toHaveBeenCalledTimes(1);
-    expect((await f.repository.getConnection("active"))?.config.catalogUpgradeRevision).toBe(SUPPLIER_CATALOG_REVISION);
-  });
-  it("retries a changed non-Jijiu identity despite its v11 success and recent attempt", async () => {
-    const f = await fixture();
-    await f.save("active");
-    f.service.start(); await f.service.settle();
-    const saved = (await f.repository.getConnection("active"))!;
-    await f.repository.saveConnection({ ...saved, encryptedSecret: "replacement-test-key", config: { ...saved.config,
-      catalogUpgradeRevision: previousRevision, catalogUpgradeAttemptRevision: previousRevision } });
-    f.readModels.mockClear();
-    f.service.start(); await f.service.settle();
-    expect(f.readModels).toHaveBeenCalledTimes(1);
-    expect((await f.repository.getConnection("active"))?.config.catalogUpgradeRevision).toBe(SUPPLIER_CATALOG_REVISION);
-  });
-  it("still migrates a non-Jijiu revision older than v11 even after a recent attempt", async () => {
-    const f = await fixture();
-    await f.save("active");
-    f.service.start(); await f.service.settle();
-    const saved = (await f.repository.getConnection("active"))!;
-    const older = "2026-10-09-full-supplier-recheck-contracts-prices-v10";
-    await f.repository.saveConnection({ ...saved, config: { ...saved.config,
-      catalogUpgradeRevision: older, catalogUpgradeAttemptRevision: older } });
-    f.readModels.mockClear();
-    f.service.start(); await f.service.settle();
-    expect(f.readModels).toHaveBeenCalledTimes(1);
-    expect((await f.repository.getConnection("active"))?.config.catalogUpgradeRevision).toBe(SUPPLIER_CATALOG_REVISION);
-  });
-  it("upgrades a saved Jijiu catalog once and retains its exact model selection across launches", async () => {
-    const f = await fixture();
-    await f.save("jijiu-high-tier", { baseUrl: "https://newapi.jijiucanvas.com/v1", usage: "canvas",
-      modelGroup: "图片-GPT-image-2-2K/4K", accountKeyGroup: "图片-GPT-image-2-2K/4K",
-      defaultModel: "gpt-image-2-2K/4K", catalogUpgradeRevision: "2026-10-09-full-supplier-recheck-contracts-prices-v11" });
-    f.service.start(); await f.service.settle();
-    const saved = (await f.repository.getConnection("jijiu-high-tier"))!;
-    // A valid same-identity v11 success/recent attempt still needs Jijiu's v12.
-    await f.repository.saveConnection({ ...saved, config: { ...saved.config,
-      catalogUpgradeRevision: previousRevision, catalogUpgradeAttemptRevision: previousRevision } });
-    f.readModels.mockClear();
-    f.service.start(); await f.service.settle();
-    expect(f.readModels).toHaveBeenCalledTimes(1);
-    expect((await f.repository.getConnection("jijiu-high-tier"))?.config).toMatchObject({
-      defaultModel: "gpt-image-2-2K/4K", catalogUpgradeRevision: SUPPLIER_CATALOG_REVISION,
-      modelGroup: "图片-GPT-image-2-2K/4K", accountKeyGroup: "图片-GPT-image-2-2K/4K",
+describe("supplier automatic catalog policy", () => {
+  it("defaults daily, reserves the period before network and never duplicates a cycle", async () => {
+    const f = await fixture(); await f.save();
+    f.refreshCatalog.mockImplementationOnce(async connection => {
+      expect((await f.repository.getConnection(connection.id))?.config.catalogCheckAttemptedAt).toBe(new Date(f.now()).toISOString());
+      return { complete: false, code: "network" };
     });
-    const restarted = new SupplierCatalogUpgrade({ repository: f.repository, readModels: f.readModels });
+    f.service.start(); f.service.start(); await f.service.settle();
+    f.service.start(); await f.service.settle();
+    expect(f.refreshCatalog).toHaveBeenCalledTimes(1);
+    expect(await f.service.status()).toMatchObject({ mode: "daily", manualConnectionIds: ["active"] });
+    f.advance(CATALOG_CHECK_INTERVAL_MS - 1); f.service.start(); await f.service.settle();
+    expect(f.refreshCatalog).toHaveBeenCalledTimes(1);
+    f.advance(1); f.service.start(); await f.service.settle();
+    expect(f.refreshCatalog).toHaveBeenCalledTimes(2);
+  });
+  it.each([true, false])("upgrade tries once even after %s success/failure, restart or Key change", async complete => {
+    const f = await fixture(); await f.save(); await f.service.setMode("upgrade");
+    f.refreshCatalog.mockImplementation(async () => ({ complete, code: "network" }));
+    f.service.start(); await f.service.settle();
+    f.advance(7 * CATALOG_CHECK_INTERVAL_MS);
+    const saved = (await f.repository.getConnection("active"))!;
+    await f.repository.saveConnection({ ...saved, encryptedSecret: "changed-unit-key", config: { ...saved.config, modelGroup: "edited" } });
+    const restarted = new SupplierCatalogUpgrade({ repository: f.repository, refreshCatalog: f.refreshCatalog, now: f.now });
     restarted.start(); await restarted.settle();
-    expect(f.readModels).toHaveBeenCalledTimes(1);
+    expect(f.refreshCatalog).toHaveBeenCalledTimes(1);
   });
-  it("notifies the picker when a verified legacy group migration preserves the Key and model cache", async () => {
-    const f = await fixture();
-    const supplier = await f.repository.saveSupplier({ id: "supplier", name: "Synora", supplierKey: "synora", siteUrl: "https://synoralink.com", apiUrl: "https://synoralink.com/v1", kind: "sub2api", catalog: { groups: [] }, scanStatus: "live",
-      state: { version: 1, revision: 1, visibility: "visible", sourceId: "source", fingerprint: "fp", history: [] } });
-    await f.save("legacy", { baseUrl: supplier.apiUrl, supplierId: supplier.id, supplierSourceId: "source", modelGroup: "old-group", accountKeyGroup: "old-group" });
-    const service = new SupplierCatalogUpgrade({ repository: f.repository, readModels: f.readModels, refreshSupplierCatalog: async () => {
-      const current = (await f.repository.getConnection("legacy"))!;
-      await f.repository.saveConnection({ ...current, config: { ...current.config, modelGroup: "new-group", accountKeyGroup: "new-group", accountKeyGroupId: "115" } }, { expected: current });
-      return false;
-    } });
-    service.start(); await service.settle();
-    expect(f.readModels).not.toHaveBeenCalled();
-    expect(service.status().updatedConnectionIds).toEqual(["legacy"]);
-    expect((await f.repository.getConnection("legacy"))?.config.catalogUpgradeRevision).toBeUndefined();
+  it("new catalog revision creates one upgrade attempt", async () => {
+    const f = await fixture(); await f.save("active", { catalogCheckAttemptRevision: "old-rules", catalogCheckAttemptedAt: new Date(f.now()).toISOString() });
+    await f.service.setMode("upgrade"); f.service.start(); await f.service.settle();
+    expect(f.refreshCatalog).toHaveBeenCalledTimes(1);
+    expect((await f.repository.getConnection("active"))?.config.catalogCheckAttemptRevision).toBe(SUPPLIER_CATALOG_REVISION);
   });
-  it("refreshes each supplier directory once before its connection models and includes both stages in completion", async () => {
-    const f = await fixture();
-    const supplier = await f.repository.saveSupplier({ id: "supplier", name: "test", supplierKey: "tk1688", siteUrl: "https://tk1688.com", apiUrl: "https://api.tk1688.com/v1", kind: "newapi", catalog: { groups: [] }, scanStatus: "unscanned",
-      state: { version: 1, revision: 1, visibility: "visible", sourceId: "source", fingerprint: "fp", history: [] } });
-    await f.save("one", { supplierId: supplier.id, supplierSourceId: "source" });
-    await f.save("two", { supplierId: supplier.id, supplierSourceId: "source", modelGroup: "second" });
-    const order: string[] = [];
-    const refreshSupplierCatalog = vi.fn(async () => { order.push("catalog"); return true; });
-    const service = new SupplierCatalogUpgrade({ repository: f.repository, refreshSupplierCatalog,
-      readModels: async (...args) => { order.push("models"); return f.readModels(...args); } });
-    service.start(); await service.settle();
-    expect(refreshSupplierCatalog).toHaveBeenCalledTimes(1);
-    expect(order).toEqual(["catalog", "models", "models"]);
-    expect(service.status()).toMatchObject({ refreshed: 2, failed: 0 });
-    service.start(); await service.settle();
-    expect(refreshSupplierCatalog).toHaveBeenCalledTimes(1);
+  it.each(["authentication", "insufficient_balance", "unsupported_platform"])("pauses after three consecutive %s failures", async code => {
+    const f = await fixture(); await f.save(); f.refreshCatalog.mockImplementation(async () => ({ complete: false, code }));
+    for (let cycle = 0; cycle < 4; cycle++) { f.service.start(); await f.service.settle(); f.advance(CATALOG_CHECK_INTERVAL_MS); }
+    expect(f.refreshCatalog).toHaveBeenCalledTimes(3);
+    expect(await f.service.status()).toMatchObject({ manualConnectionIds: ["active"], nextCheckAt: null, connections: [expect.objectContaining({ paused: true })] });
   });
-  it("does not mark a model-only success complete when the supplier price directory failed", async () => {
-    const f = await fixture();
-    const supplier = await f.repository.saveSupplier({ id: "supplier", name: "test", supplierKey: "tk1688", siteUrl: "https://tk1688.com", apiUrl: "https://api.tk1688.com/v1", kind: "newapi", catalog: { groups: [] }, scanStatus: "unscanned",
-      state: { version: 1, revision: 1, visibility: "visible", sourceId: "source", fingerprint: "fp", history: [] } });
-    await f.save("one", { supplierId: supplier.id, supplierSourceId: "source" });
-    const service = new SupplierCatalogUpgrade({ repository: f.repository, readModels: f.readModels, refreshSupplierCatalog: async () => false });
-    service.start(); await service.settle();
-    expect(f.readModels).toHaveBeenCalledTimes(1);
-    expect(service.status()).toMatchObject({ refreshed: 0, failed: 1 });
-    expect((await f.repository.getConnection("one"))!.config.catalogUpgradeRevision).toBeUndefined();
+  it.each(["network", "directory_unavailable"])("temporary %s errors keep retrying next day and reset terminal streak", async code => {
+    const f = await fixture(); await f.save("active", { catalogCheckFailureStreak: 2 });
+    f.refreshCatalog.mockImplementation(async () => ({ complete: false, code }));
+    for (let cycle = 0; cycle < 4; cycle++) { f.service.start(); await f.service.settle(); f.advance(CATALOG_CHECK_INTERVAL_MS); }
+    expect(f.refreshCatalog).toHaveBeenCalledTimes(4);
+    expect((await f.repository.getConnection("active"))?.config).toMatchObject({ catalogCheckPaused: false, catalogCheckFailureStreak: 0 });
   });
-  it("rechecks ownership after an in-flight supplier directory refresh before reading a replacement connection", async () => {
-    const f = await fixture();
-    const supplier = await f.repository.saveSupplier({ id: "supplier", name: "test", supplierKey: "tk1688", siteUrl: "https://tk1688.com", apiUrl: "https://api.tk1688.com/v1", kind: "newapi", catalog: { groups: [] }, scanStatus: "unscanned",
-      state: { version: 1, revision: 1, visibility: "visible", sourceId: "source", fingerprint: "fp", history: [] } });
-    await f.save("one", { supplierId: supplier.id, supplierSourceId: "source" });
-    const service = new SupplierCatalogUpgrade({ repository: f.repository, readModels: f.readModels, refreshSupplierCatalog: async () => {
-      const existing = (await f.repository.getConnection("one"))!;
-      await f.repository.saveConnection({ ...existing, encryptedSecret: "replacement-opaque-key" });
-      return true;
-    } });
-    service.start(); await service.settle();
-    expect(f.readModels).not.toHaveBeenCalled();
-    expect((await f.repository.getConnection("one"))!.config.catalogUpgradeIdentity).toBeUndefined();
-  });
-  it("refreshes only documented active API connections and never probes CLI or arbitrary endpoints", async () => {
-    const f = await fixture();
-    await f.save("active");
-    await f.save("disabled", { usage: "disabled" });
-    await f.save("cli", {}, "cli");
-    await f.save("fake", {}, "fake");
-    await f.save("custom", { baseUrl: "https://custom.example/v1" });
-    await f.save("spoofed", { baseUrl: "https://api.tk1688.com.evil.example/v1" });
-    const stored = await f.repository.listConnections();
-    vi.spyOn(f.repository, "listConnections").mockResolvedValue([...stored, {
-      ...stored[0]!, id: "archived", config: { ...stored[0]!.config, supplierArchived: true },
-    }]);
-    f.service.start();
-    await f.service.settle();
-    expect(f.readModels).toHaveBeenCalledTimes(1);
-    expect(f.service.status()).toMatchObject({ phase: "complete", total: 1, refreshed: 1, updatedConnectionIds: ["active"] });
-    const current = (await f.repository.getConnection("active"))!;
-    expect(current.encryptedSecret).toBe("opaque-test-key");
-    expect(current.config.defaultModel).toBe("gpt-5.5");
-    expect(current.config.modelCatalogModels).toEqual([{ id: "gpt-5.5", operations: [] }, { id: "gpt-5.4", operations: [] }]);
-    expect(current.config.catalogUpgradeRevision).toBe(SUPPLIER_CATALOG_REVISION);
-  });
-  it.each(["2026-10-07-media", "2026-10-08-complete-catalog-pricing-v2", "2026-10-08-complete-catalog-pricing-v3", "2026-10-08-complete-catalog-pricing-v5"])("refreshes a recently completed %s catalog once for the current revision", async previousRevision => {
-    const f = await fixture();
-    await f.save("active");
+  it("off and GET status dispatch zero requests; pending connections can refresh manually", async () => {
+    const f = await fixture(); await f.save(); await f.service.setMode("off");
     f.service.start(); await f.service.settle();
+    expect(await f.service.status()).toMatchObject({ mode: "off", nextCheckAt: null, manualConnectionIds: ["active"] });
+    expect(f.refreshCatalog).not.toHaveBeenCalled();
+    expect(f.repository.exportSnapshot().applicationSettings?.[CATALOG_MODE_SETTING]).toBe("off");
+  });
+  it("stops after switching off during an in-flight read without publishing staged prices", async () => {
+    const f = await fixture(); const original = await f.save(); await f.save("second");
+    f.refreshCatalog.mockImplementation(async (_row, _supplier, staging) => {
+      const row = (await staging.getConnection("active"))!;
+      await staging.saveConnection({ ...row, config: { ...row.config, modelCatalogModels: [model("new")] } });
+      await f.service.setMode("off"); return { complete: true };
+    });
+    f.service.start(); await f.service.settle();
+    expect(f.refreshCatalog).toHaveBeenCalledTimes(1);
+    expect((await f.repository.getConnection("active"))?.config.modelCatalogModels).toEqual(original.config.modelCatalogModels);
+  });
+  it.each(["missing-price", "partial", "throw"])("%s preserves old directory, parameters, price and supplier state", async failure => {
+    const f = await fixture(); const original = await f.save();
+    f.refreshCatalog.mockImplementation(async (row, _supplier, staging) => {
+      await staging.saveConnection({ ...row, config: { ...row.config, modelCatalogModels: [{ id: "new", operations: [] }], connector: { changed: true } } });
+      if (failure === "throw") throw new Error("network");
+      return { complete: failure === "missing-price", code: "incomplete" };
+    });
+    f.service.start(); await f.service.settle();
+    const actual = (await f.repository.getConnection("active"))!;
+    expect(actual.config.modelCatalogModels).toEqual(original.config.modelCatalogModels);
+    expect(actual.config.connector).toBeUndefined();
+    expect(actual.encryptedSecret).toBe(original.encryptedSecret);
+    expect(actual.config.catalogCheckManualRequired).toBe(true);
+  });
+  it("concurrent user changes reject the complete staged snapshot", async () => {
+    const f = await fixture(); await f.save();
+    f.refreshCatalog.mockImplementation(async row => {
+      await f.repository.saveConnection({ ...row, config: { ...row.config, userChoice: "newer" } }); return { complete: true };
+    });
+    f.service.start(); await f.service.settle();
+    expect((await f.repository.getConnection("active"))?.config).toMatchObject({ userChoice: "newer" });
+    expect((await f.repository.getConnection("active"))?.config.catalogCheckFailureReason).toBeUndefined();
+  });
+  it("records complete full-ID price changes, no secrets, and retains at least thirty days", async () => {
+    const f = await fixture(); await f.save(); f.service.start(); await f.service.settle();
+    const status = await f.service.status();
+    expect(status.changedConnectionIds).toEqual(["active"]);
+    expect(status.noticeId).toBeTruthy();
+    expect(status.history[0]?.changes).toEqual([{ kind: "price", modelId: "full-model-id", groupId: undefined, before: "¥0.10/张 · 4K / high", after: "¥0.12/张 · 4K / high" }]);
+    expect(JSON.stringify(status)).not.toContain("opaque-unit-key");
+    f.advance(30 * CATALOG_CHECK_INTERVAL_MS); expect((await f.service.status()).history).toHaveLength(1);
+    f.advance(1); expect((await f.service.status()).history).toHaveLength(0);
+    expect((await f.service.status(true)).history).toEqual([]);
+  });
+  it("sample time only is quiet, and manual success clears failure/pause markers", async () => {
+    const f = await fixture(); await f.save("active", { catalogCheckPaused: true, catalogCheckManualRequired: true, catalogCheckFailureStreak: 3 });
     const saved = (await f.repository.getConnection("active"))!;
-    await f.repository.saveConnection({ ...saved, config: { ...saved.config,
-      catalogUpgradeRevision: previousRevision, catalogUpgradeAttemptRevision: previousRevision,
-    } });
-    const upgraded = new SupplierCatalogUpgrade({ repository: f.repository, readModels: f.readModels,
-      now: () => Date.parse("2026-10-07T04:00:00Z") });
-    upgraded.start(); await upgraded.settle();
-    expect(f.readModels).toHaveBeenCalledTimes(2);
-    expect((await f.repository.getConnection("active"))!.config.catalogUpgradeRevision).toBe(SUPPLIER_CATALOG_REVISION);
-    upgraded.start(); await upgraded.settle();
-    expect(f.readModels).toHaveBeenCalledTimes(2);
-  });
-  it("persists completion across launches and scans again after a Key identity change", async () => {
-    const f = await fixture();
-    await f.save("active");
-    f.service.start(); await f.service.settle();
-    const next = new SupplierCatalogUpgrade({ repository: f.repository, readModels: f.readModels });
-    next.start(); await next.settle();
-    expect(f.readModels).toHaveBeenCalledTimes(1);
-    const original = (await f.repository.getConnection("active"))!;
-    await f.repository.saveConnection({ ...original, encryptedSecret: "replacement-opaque-key" });
-    next.start(); await next.settle();
-    expect(f.readModels).toHaveBeenCalledTimes(2);
-  });
-  it("records authentication failure without claiming completion or erasing the saved models", async () => {
-    const f = await fixture();
-    await f.save("active");
-    f.readModels.mockImplementation(async () => Response.json({ error: "denied" }, { status: 401,
-      headers: { "X-Model-Scan-Status": "unauthorized", "X-Model-Scan-Complete": "false" } }));
-    f.service.start(); await f.service.settle();
-    expect(f.service.status()).toMatchObject({ refreshed: 0, unavailable: 1 });
-    const current = (await f.repository.getConnection("active"))!;
-    expect(current.config.catalogUpgradeRevision).toBeUndefined();
-    expect(current.config.modelCatalogModels).toEqual([{ id: "gpt-5.5", operations: [] }]);
-    f.service.start(); await f.service.settle();
-    expect(f.readModels).toHaveBeenCalledTimes(1);
-    f.advance(24 * 60 * 60 * 1000);
-    f.service.start(); await f.service.settle();
-    expect(f.readModels).toHaveBeenCalledTimes(2);
-  });
-  it("does not trust a successful HTTP response containing a stale inventory", async () => {
-    const f = await fixture();
-    await f.save("active");
-    f.readModels.mockImplementation(async () => Response.json([], { headers: {
-      "X-Model-Scan-Status": "stale", "X-Model-Scan-Complete": "false",
-    } }));
-    f.service.start(); await f.service.settle();
-    expect(f.service.status()).toMatchObject({ refreshed: 0, failed: 1 });
-    expect((await f.repository.getConnection("active"))!.config.catalogUpgradeRevision).toBeUndefined();
-  });
-  it("leaves a concurrently replaced Key untouched and retries its new identity", async () => {
-    const f = await fixture();
-    await f.save("active");
-    f.readModels.mockImplementationOnce(async () => {
-      const current = (await f.repository.getConnection("active"))!;
-      await f.repository.saveConnection({ ...current, encryptedSecret: "changed-in-flight" });
-      return Response.json([], { headers: { "X-Model-Scan-Status": "live", "X-Model-Scan-Complete": "true" } });
+    await f.repository.saveConnection({ ...saved, config: clearCatalogManualMarker(saved.config) });
+    f.refreshCatalog.mockImplementation(async (row, _supplier, staging) => {
+      await staging.saveConnection({ ...row, config: { ...row.config, modelCatalogModels: [{ ...model(), metadata: { ...model().metadata, priceCheckedAt: "new-time" } }] } }); return { complete: true };
     });
     f.service.start(); await f.service.settle();
-    expect((await f.repository.getConnection("active"))!.config.catalogUpgradeIdentity).toBeUndefined();
-    expect(f.service.status().updatedConnectionIds).toEqual([]);
-    f.service.start(); await f.service.settle();
-    expect(f.readModels).toHaveBeenCalledTimes(2);
+    expect(await f.service.status()).toMatchObject({ manualConnectionIds: [], changedConnectionIds: [], history: [], noticeId: null });
   });
-  it("shares concurrent startup requests and protects the full background write lifetime", async () => {
-    const f = await fixture();
-    await f.save("active");
-    let release!: () => void;
-    const gate = new Promise<void>(resolve => { release = resolve; });
-    let leases = 0;
-    const service = new SupplierCatalogUpgrade({ repository: f.repository, readModels: f.readModels,
-      trackWrite: async work => { leases++; await gate; try { await work(); } finally { leases--; } } });
-    service.start(); service.start();
-    expect(leases).toBe(1);
-    expect(service.status().phase).toBe("running");
-    release(); await service.settle();
-    expect(leases).toBe(0);
-    expect(f.readModels).toHaveBeenCalledTimes(1);
+  it("same network failure on later days stays quiet; legacy groups count one supplier", async () => {
+    const f = await fixture(); await f.save(); await f.save("other-group", { modelGroup: "other" });
+    f.service.start(); await f.service.settle();
+    expect((await f.service.status()).priceChangedSupplierIds).toHaveLength(1);
+    f.advance(CATALOG_CHECK_INTERVAL_MS); f.refreshCatalog.mockImplementation(async () => ({ complete: false, code: "network" }));
+    f.service.start(); await f.service.settle(); expect((await f.service.status()).noticeId).toBeTruthy();
+    f.advance(CATALOG_CHECK_INTERVAL_MS); f.service.start(); await f.service.settle();
+    expect((await f.service.status()).noticeId).toBeNull();
   });
-  it("stops launching new catalog requests while the desktop is draining", async () => {
-    const f = await fixture();
-    await f.save("active");
-    const service = new SupplierCatalogUpgrade({ repository: f.repository, readModels: f.readModels, canContinue: () => false });
-    service.start(); await service.settle();
-    expect(f.readModels).not.toHaveBeenCalled();
-    expect((await f.repository.getConnection("active"))!.config.catalogUpgradeRevision).toBeUndefined();
-  });
-  it("retries a failed replacement Key rather than inheriting the previous identity's completed revision", async () => {
-    const f = await fixture();
-    await f.save("active");
-    f.service.start(); await f.service.settle();
-    const completed = (await f.repository.getConnection("active"))!;
-    await f.repository.saveConnection({ ...completed, encryptedSecret: "new-key-that-fails" });
-    f.readModels.mockImplementationOnce(async () => new Response(null, { status: 502 }));
-    f.service.start(); await f.service.settle();
-    expect((await f.repository.getConnection("active"))!.config.catalogUpgradeRevision).toBeUndefined();
-    f.service.start(); await f.service.settle();
-    expect(f.readModels).toHaveBeenCalledTimes(2);
-    f.advance(24 * 60 * 60 * 1000);
-    f.service.start(); await f.service.settle();
-    expect(f.readModels).toHaveBeenCalledTimes(3);
-    expect((await f.repository.getConnection("active"))!.config.catalogUpgradeRevision).toBe(SUPPLIER_CATALOG_REVISION);
-  });
-  it("includes canonical account group and usage in the upgraded permission identity", async () => {
-    const f = await fixture();
-    await f.save("active");
-    f.service.start(); await f.service.settle();
-    const original = (await f.repository.getConnection("active"))!;
-    await f.repository.saveConnection({ ...original, config: { ...original.config, accountKeyGroup: "replacement-group" } });
-    f.service.start(); await f.service.settle();
-    expect(f.readModels).toHaveBeenCalledTimes(2);
-    const changed = (await f.repository.getConnection("active"))!;
-    await f.repository.saveConnection({ ...changed, config: { ...changed.config, usage: "canvas" } });
-    f.service.start(); await f.service.settle();
-    expect(f.readModels).toHaveBeenCalledTimes(3);
-  });
-  it("does not mark an old supplier source as upgraded after the owner changes during its read", async () => {
-    const f = await fixture();
-    const supplier = await f.repository.saveSupplier({ id: "supplier", name: "test", supplierKey: "tk1688", siteUrl: "https://tk1688.com", apiUrl: "https://api.tk1688.com/v1", kind: "newapi", catalog: { groups: [] }, scanStatus: "unscanned",
-      state: { version: 1, revision: 1, visibility: "visible", sourceId: "old-source", fingerprint: "old", history: [] } });
-    await f.save("active", { supplierId: supplier.id, supplierSourceId: "old-source" });
-    f.readModels.mockImplementationOnce(async () => {
-      await f.repository.saveSupplier({ ...supplier, state: { ...supplier.state!, revision: 2, sourceId: "replacement-source" } });
-      return Response.json([], { headers: { "X-Model-Scan-Status": "live", "X-Model-Scan-Complete": "true" } });
+  it("staged Key creation or sibling routing migrations are rejected, never published", async () => {
+    const f = await fixture(), original = await f.save();
+    f.refreshCatalog.mockImplementation(async (_row, _supplier, staging) => {
+      await staging.saveConnection({ ...original, id: "extra-key" }); return { complete: true };
     });
     f.service.start(); await f.service.settle();
-    expect((await f.repository.getConnection("active"))!.config.catalogUpgradeIdentity).toBeUndefined();
-    expect(f.service.status().updatedConnectionIds).toEqual([]);
-    f.service.start(); await f.service.settle();
-    expect(f.readModels).toHaveBeenCalledTimes(1);
+    expect(await f.repository.getConnection("extra-key")).toBeNull();
+    expect((await f.repository.getConnection("active"))?.config.modelCatalogModels).toEqual(original.config.modelCatalogModels);
+    expect((await f.repository.getConnection("active"))?.config.catalogCheckFailureReason).toBe("conflict");
   });
-  it("rechecks draining after asynchronous connection reads before launching any new GET", async () => {
-    const f = await fixture();
-    await f.save("active");
-    let draining = false;
-    const originalGet = f.repository.getConnection.bind(f.repository);
-    vi.spyOn(f.repository, "getConnection").mockImplementation(async id => { const value = await originalGet(id); draining = true; return value; });
-    const service = new SupplierCatalogUpgrade({ repository: f.repository, readModels: f.readModels, canContinue: () => !draining });
-    service.start(); await service.settle();
-    expect(f.readModels).not.toHaveBeenCalled();
+  it("only documented active current-source HTTPS connections are supported", async () => {
+    const f = await fixture(); await f.save(); await f.save("cli", {}, "cli"); await f.save("fake", {}, "fake");
+    await f.save("off", { usage: "disabled" });
+    const active = (await f.repository.getConnection("active"))!;
+    expect(supportedCatalogConnection({ ...active, config: { ...active.config, supplierArchived: true } })).toBe(false);
+    await f.save("spoof", { baseUrl: "https://api.tk1688.com.evil.example/v1" }); await f.save("arbitrary", { baseUrl: "https://custom.example/v1" });
+    await f.save("old-source", { supplierId: "deleted", supplierSourceId: "old" });
+    f.service.start(); await f.service.settle(); expect(f.refreshCatalog).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("catalog snapshot and diff invariants", () => {
+  it("AsyncLocalStorage staging is isolated from concurrent foreground callers", async () => {
+    const live = new MemoryRepository(), stage = new MemoryRepository(), proxy = scopedCatalogRepository(live);
+    await Promise.all([withCatalogRepository(stage, async () => { expect(getRepository()).toBe(stage); await proxy.setApplicationSetting("scope", "staged"); expect(await proxy.getApplicationSetting("scope")).toBe("staged"); }),
+      proxy.setApplicationSetting("scope", "foreground")]);
+    expect(await live.getApplicationSetting("scope")).toBe("foreground"); expect(await stage.getApplicationSetting("scope")).toBe("staged");
+  });
+  it("atomic commit validates every source row before changing any record", async () => {
+    const f = await fixture(), first = await f.save("first"), second = await f.save("second");
+    await f.repository.saveConnection({ ...second, name: "edited" });
+    await expect(f.repository.commitCatalogSnapshot({ expectedConnections: [first, second], connections: [{ ...first, name: "must-not-write" }] })).rejects.toThrow();
+    expect((await f.repository.getConnection("first"))?.name).toBe("first");
+  });
+  it("zero price is valid; missing price and stale groups are incomplete", async () => {
+    const f = await fixture(), row = await f.save();
+    expect(catalogPricesComplete(undefined, { ...row, config: { modelCatalogModels: [{ id: "zero", pricing: { unitAmount: 0, unit: "image", currency: "CNY" } }] } })).toBe(true);
+    expect(catalogPricesComplete(undefined, { ...row, config: { modelCatalogModels: [{ id: "missing" }] } })).toBe(false);
+  });
+  it("identifies added/removed full IDs without changes from timestamps/key order", async () => {
+    const f = await fixture(), row = await f.save();
+    const next = { ...row, config: { modelCatalogModels: [model("brand/new-full-id")] } };
+    expect(catalogChanges(row, next).map(change => [change.kind, change.modelId])).toEqual([["model-added", "brand/new-full-id"], ["model-removed", "full-model-id"]]);
+  });
+  it("same-ID declared name, operations, parameters and asset limits produce model-changed without inventing a price change", async () => {
+    const f = await fixture(), row = await f.save();
+    const original = { ...model(), name: "原名称", inputKinds: ["text"], outputKinds: ["image"], limits: { maxInputImages: 1 },
+      parameters: [{ key: "resolution", label: "分辨率", control: "select", default: "2K", options: [{ value: "2K", label: "2K" }] }] };
+    const current = { ...structuredClone(original), name: "供应商新名称", operations: ["image.generate", "image.edit"], inputKinds: ["text", "image"],
+      limits: { maxInputImages: 4 }, parameters: [{ key: "resolution", label: "分辨率", control: "select", default: "4K", options: [{ value: "2K", label: "2K" }, { value: "4K", label: "4K" }] }] };
+    const before = { ...row, config: { modelCatalogModels: [original] } }, after = { ...row, config: { modelCatalogModels: [current] } };
+    const diff = catalogChanges(before, after);
+    expect(diff).toHaveLength(1);
+    expect(diff[0]).toMatchObject({ kind: "model-changed", modelId: "full-model-id" });
+    expect(diff[0]!.before).toContain("原名称"); expect(diff[0]!.after).toContain("供应商新名称");
+    expect(diff[0]!.after).toContain("image.edit"); expect(diff[0]!.after).toContain("4K");
+    expect(diff[0]!.before).toContain("maxInputImages：1"); expect(diff[0]!.after).toContain("maxInputImages：4");
+    expect(diff[0]!.after).not.toContain("价格");
+  });
+  it("same-ID supplier catalog classification and protocol changes are recorded with their exact group", async () => {
+    const f = await fixture(), row = await f.save();
+    const supplier: SupplierRecord = { id: "supplier", name: "Fixture", supplierKey: "fixture", siteUrl: "https://fixture.invalid", apiUrl: "https://fixture.invalid/v1",
+      kind: "newapi", scanStatus: "live", createdAt: "", updatedAt: "", catalog: { groups: [{ id: "exact-group", label: "Group", models: [
+        { id: "same/full-id", capability: "image", protocol: "openai-images", priceLabel: "¥0.1/次" },
+      ] }] } };
+    const next = structuredClone(supplier);
+    next.catalog.groups[0]!.models[0]!.capability = "video";
+    next.catalog.groups[0]!.models[0]!.protocol = "openai-videos";
+    const changes = catalogChanges(row, row, supplier, next);
+    expect(changes).toHaveLength(1); expect(changes[0]).toMatchObject({ kind: "model-changed", modelId: "same/full-id", groupId: "exact-group" });
+    expect(changes[0]!.before).toContain("目录分类：image"); expect(changes[0]!.after).toContain("目录分类：video");
+    expect(changes[0]!.after).toContain("接口协议：openai-videos");
+    expect(changes[0]!.after).not.toContain("video.generate");
+  });
+  it("model specification comparison ignores source sampling, key order and set order", async () => {
+    const f = await fixture(), row = await f.save();
+    const declared = { ...model(), name: "Full model", operations: ["image.edit", "image.generate"], inputKinds: ["text", "image"], limits: { maxInputImages: 2, maxPromptCharacters: 8000 },
+      parameters: [{ key: "seed", label: "种子", control: "number", min: 0, max: 10 }, { key: "quality", label: "质量", control: "select", options: [{ value: "high", label: "high" }] }] };
+    const resampled = { ...declared, operations: [...declared.operations].reverse(), inputKinds: [...declared.inputKinds].reverse(),
+      limits: { maxPromptCharacters: 8000, maxInputImages: 2 }, parameters: [...declared.parameters].reverse(),
+      metadata: { ...declared.metadata, priceCheckedAt: "new", supplierCatalogPriceCheckedAt: "new", sourceUrl: "https://fixture.invalid/new", factsSource: { checkedAt: "new" } } };
+    expect(catalogChanges({ ...row, config: { modelCatalogModels: [declared] } }, { ...row, config: { modelCatalogModels: [resampled] } })).toEqual([]);
+  });
+  it("same-ID conditional parameter rules and explicitly stored eligibility changes are reported", async () => {
+    const f = await fixture(), row = await f.save();
+    const original = { ...model(), metadata: { ...model().metadata, canvasRunnable: true, agentCapabilities: { imageInput: true } },
+      parameters: [{ key: "quality", label: "质量", control: "select", options: [{ value: "high", label: "high" }],
+        constraints: [{ when: [{ parameter: "resolution", values: ["4K"] }], required: true }] }] };
+    const current = structuredClone(original);
+    current.parameters[0]!.constraints[0]!.when[0]!.values = ["2K", "4K"];
+    current.metadata.canvasRunnable = false;
+    const changes = catalogChanges({ ...row, config: { modelCatalogModels: [original] } }, { ...row, config: { modelCatalogModels: [current] } });
+    expect(changes).toHaveLength(1); expect(changes[0]).toMatchObject({ kind: "model-changed" });
+    expect(changes[0]!.after).toContain("条件限制"); expect(changes[0]!.after).toContain("2K");
+    expect(changes[0]!.before).toContain("可用于画布：是"); expect(changes[0]!.after).toContain("可用于画布：否");
+  });
+  it("missing declared capabilities and flags stay unknown in specification history", async () => {
+    const f = await fixture(), row = await f.save();
+    const before = { ...row, config: { modelCatalogModels: [model()] } };
+    const after = { ...row, config: { modelCatalogModels: [{ ...model(), capabilities: ["image.generate"], isDefault: true,
+      metadata: { ...model().metadata, canvasRunnable: false } }] } };
+    const change = catalogChanges(before, after).find(entry => entry.kind === "model-changed")!;
+    expect(change.before).toContain("能力：—");
+    expect(change.before).toContain("目录默认型号：—");
+    expect(change.before).toContain("可用于画布：—");
+    expect(change.after).toContain("能力：image.generate");
+    expect(change.after).toContain("可用于画布：否");
+  });
+  it("nested pricing source/sample timestamps never trigger a price change, conditions do", async () => {
+    const f = await fixture(), row = await f.save();
+    const pricing = { kind: "tiered", currency: "CNY", billingUnit: "image", sourceUrl: "https://fixture.invalid/pricing", checkedAt: "old",
+      tiers: [{ dimension: "resolution", value: "4K", price: 0.1, conditions: [{ parameter: "quality", operator: "eq", value: "high" }] }] };
+    const before = { ...row, config: { modelCatalogModels: [{ ...model(), pricing, metadata: { ...model().metadata, priceSource: { checkedAt: "old", sampledAt: "old" } } }] } };
+    const after = { ...row, config: { modelCatalogModels: [{ ...model(), pricing: { ...structuredClone(pricing), checkedAt: "new", sourceUrl: "https://fixture.invalid/new" }, metadata: { ...model().metadata, priceSource: { checkedAt: "new" } } }] } };
+    expect(catalogChanges(before, after)).toEqual([]);
+    after.config.modelCatalogModels[0]!.pricing.tiers[0]!.conditions[0]!.value = "max";
+    expect(catalogChanges(before, after)[0]).toMatchObject({ kind: "price", modelId: "full-model-id" });
+  });
+  it("group price changes retain existing backend units, resolution conditions and multipliers", async () => {
+    const f = await fixture(), row = await f.save();
+    const supplier: SupplierRecord = { id: "supplier", name: "Fixture", supplierKey: "fixture", siteUrl: "https://fixture.invalid", apiUrl: "https://fixture.invalid/v1",
+      kind: "newapi", scanStatus: "live", createdAt: "", updatedAt: "", catalog: { groups: [{ id: "full-group-id", label: "Fixture group", models: [],
+        details: { source: "key-groups", referencePrice: "4K / high：¥0.10/张", imagePrices: [{ resolution: "4K", amount: 0.1 }], rateMultiplier: 1 } }] } };
+    const next = structuredClone(supplier);
+    next.catalog.groups[0]!.details!.imagePrices![0]!.amount = 0.12;
+    next.catalog.groups[0]!.details!.rateMultiplier = 1.2;
+    const price = catalogChanges(row, row, supplier, next).find(change => change.kind === "price")!;
+    expect(price.before).toContain("4K / high：¥0.10/张"); expect(price.before).toContain("4K 0.1（分组后台额度/张）");
+    expect(price.after).toContain("4K 0.12（分组后台额度/张）"); expect(price.after).toContain("后台倍率：1.2×");
+    expect(price.before).not.toContain("{");
   });
 });

@@ -1,6 +1,7 @@
 import { expect, test } from "./helpers/canvas-offline-test";
 import { readFileSync } from "node:fs";
 import type { ModelDescriptor } from "@super-canvas/providers";
+import type { CatalogUpgradeStatus } from "../lib/supplier-catalog-contracts";
 import { miaowuCatalogFromPricing, miaowuConnectorForModels, miaowuUnparameterizedVideoDescriptor } from "../lib/miaowu-catalog";
 
 const publicPricing = JSON.parse(readFileSync(new URL("../lib/miaowu-catalog-20261008.fixture.json", import.meta.url), "utf8"));
@@ -25,7 +26,7 @@ const legacyPublicModels = publicModels.map(model => /^(?:dola-|jimeng-)/u.test(
 for (const deliverWhileRunning of [false, true]) test(`Miaowu canvas updates the twenty-three-model directory ${deliverWhileRunning ? "during a running batch without duplicate completion" : "after completion"}`, async ({ page, request }, testInfo) => {
   expect(process.env.PLAYWRIGHT_BASE_URL, "Only the isolated test profile is allowed").toBeFalsy();
   await page.setViewportSize({ width: 1440, height: 1080 });
-  let upgraded = false, finished = false, generations = 0, upstreamRequests = 0, modelReads = 0, upgradeEvents = 0, completionResponses = 0;
+  let upgraded = false, finished = false, generations = 0, upstreamRequests = 0, modelReads = 0, upgradeEvents = 0, completionResponses = 0, automaticStarts = 0;
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
   await page.route("https://api.miaowuai.store/**", route => { upstreamRequests++; return route.abort(); });
@@ -65,11 +66,20 @@ for (const deliverWhileRunning of [false, true]) test(`Miaowu canvas updates the
     siteUrl: "https://api.miaowuai.store", apiUrl: "https://api.miaowuai.store", kind: "newapi", state: { sourceId: "miaowu-isolated-source", visibility: "visible" },
     scanStatus: "live", scanComplete: true, catalog: { groups: [{ id: "default", label: "default", source: "catalog", status: "available",
       models: upgraded ? publicModels : legacyPublicModels }] } }] }));
-  await page.route("**/api/suppliers/catalog-upgrade", route => {
-    if (upgraded) upgradeEvents++;
-    const phase = upgraded && (finished || !deliverWhileRunning) ? "complete" : "running";
+  await page.route("**/api/suppliers/catalog-upgrade*", route => {
+    if (route.request().method() === "POST") automaticStarts++;
+    if (automaticStarts && upgraded) upgradeEvents++;
+    const phase = !automaticStarts ? "idle" : upgraded && (finished || !deliverWhileRunning) ? "complete" : "running";
     if (phase === "complete") completionResponses++;
-    return route.fulfill({ json: { phase, updatedConnectionIds: upgraded ? [stored.id] : [] } });
+    const status: CatalogUpgradeStatus = { revision: "miaowu-isolated-upgrade", mode: "daily", phase, total: 1,
+      refreshed: upgraded && automaticStarts ? 1 : 0, unavailable: 0, failed: 0,
+      updatedConnectionIds: upgraded && automaticStarts ? [stored.id] : [],
+      manualConnectionIds: [], changedConnectionIds: [], priceChangedSupplierIds: [],
+      nextCheckAt: phase === "complete" ? new Date(Date.now() + 86_400_000).toISOString() : phase === "idle" ? new Date(Date.now() - 1).toISOString() : null,
+      connections: [{ connectionId: stored.id, name: "Miaowu isolated upgrade", manualRequired: false,
+        paused: false, nextCheckAt: null, lastAttemptAt: "2026-10-17T09:00:00.000Z" }], history: [], noticeId: null,
+    };
+    return route.fulfill({ json: status });
   });
   const response = await request.post("/api/canvas", { data: { title: "Miaowu directory upgrade isolated", graph: {
     schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 1 }, edges: [], nodes: [{ id: "miaowu-video", type: "workflow", position: { x: 80, y: 60 },
@@ -92,6 +102,7 @@ for (const deliverWhileRunning of [false, true]) test(`Miaowu canvas updates the
   await expect(directory).toContainText("官网目录 11");
   await expect(directory).toContainText("Key 16");
   expect(upgradeEvents).toBeGreaterThan(0);
+  expect(automaticStarts).toBe(1);
   expect(modelReads).toBeGreaterThan(firstReads);
   const notifications = () => page.evaluate(() => (window as unknown as { miaowuUpgradeNotifications: number }).miaowuUpgradeNotifications);
   await expect.poll(notifications).toBe(1);

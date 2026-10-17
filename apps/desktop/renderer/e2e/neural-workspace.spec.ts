@@ -26,12 +26,12 @@ async function capture(page: Page, name: string) {
     animations: "allow",
   });
 }
-async function captureRuntimeAvatars(page: Page) {
+async function captureRuntimeAvatars(page: Page, theme: "dark" | "light") {
   await expect(scene(page)).toHaveAttribute("data-renderer", "webgl");
   await expect(scene(page)).toHaveAttribute("data-avatars", "4");
   const viewport = page.viewportSize()!;
   const radius = Math.min(viewport.width, viewport.height) * .0832;
-  const directory = join(output, "avatars");
+  const directory = join(output, "avatars", theme);
   await mkdir(directory, { recursive: true });
   const captures = [];
   for (const moduleId of ["canvases", "suppliers", "accounts", "starts"] as const) {
@@ -51,7 +51,15 @@ async function captureRuntimeAvatars(page: Page) {
     await page.screenshot({ path: join(directory, filename), clip, animations: "allow", scale: "css" });
     captures.push({ module: moduleId, filename, viewport, center, satelliteRadiusCssPx: radius, clip, source: "Live single WebGL2 scene; four validated avatar data files ready; screenshot clip at native CSS resolution", contourLocalBounds: { x: [-.86, .86], y: [-1.2, .52] } });
   }
-  await writeFile(join(directory, "runtime-captures.json"), JSON.stringify({ at: new Date().toISOString(), captures }, null, 2));
+  const webgl = await scene(page).locator("canvas").evaluate(element => {
+    const context = (element as HTMLCanvasElement).getContext("webgl2")!;
+    const error = context.getError();
+    return { error, lost: context.isContextLost(), contexts: window.__superCanvasNeuralMetrics?.activeContexts, currentProgramBound: context.getParameter(context.CURRENT_PROGRAM) !== null };
+  });
+  expect(webgl.error, "角色三角带着色器绘制不能留下 WebGL 错误").toBe(0);
+  expect(webgl.lost).toBe(false);
+  expect(webgl.contexts).toBe(1);
+  await writeFile(join(directory, "runtime-captures.json"), JSON.stringify({ at: new Date().toISOString(), theme, webgl, captures }, null, 2));
 }
 async function openHome(page: Page) {
   await page.goto("/");
@@ -754,7 +762,7 @@ for (const theme of ["dark", "light"] as const) for (const extreme of [false, tr
     expect(data.connections.length).toBe(data.counts.connections);
     await page.waitForTimeout(2600);
     await capture(page, `v2-${theme}-${extreme ? "extreme" : "real"}-hub`);
-    if (theme === "dark" && !extreme) await captureRuntimeAvatars(page);
+    if (!extreme) await captureRuntimeAvatars(page, theme);
     await moduleButton(page, "suppliers").hover();
     await page.waitForTimeout(250);
     await capture(page, `v2-${theme}-${extreme ? "extreme" : "real"}-hover`);

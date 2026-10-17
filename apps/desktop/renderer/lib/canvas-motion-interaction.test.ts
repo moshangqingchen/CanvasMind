@@ -12,6 +12,14 @@ class EventSurface {
     removeProperty: (name: string) => { const old = this.styleValues.get(name) ?? ""; this.styleValues.delete(name); return old; },
   };
   edgeLayer: EventSurface | null = null;
+  miniCores: EventSurface[] = [];
+  coreQueries = 0;
+  closest(selector: string) { return selector === ".canvas-editor" ? this : null; }
+  querySelectorAll(selector: string) {
+    if (selector !== "[data-mini-light-core]") return [];
+    this.coreQueries++;
+    return this.miniCores;
+  }
   querySelector(selector: string) { return selector === ".react-flow__edgelabel-renderer" ? this.edgeLayer : null; }
   readonly registrations: Registration[] = [];
   readonly classes = new Set<string>();
@@ -179,6 +187,27 @@ beforeEach(() => {
 afterEach(() => { unmount(); vi.clearAllTimers(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("CanvasInteractionFeedback wheel lifecycle", () => {
+  it("pauses only local mini cores during compact gestures and restores them without per-frame scans", () => {
+    const core = new EventSurface(); canvas.miniCores = [core];
+    mount(); zoomTo(.4);
+    wheel();
+    expect(core.dataset.canvasGesture).toBe("true");
+    expect(canvas.coreQueries).toBe(1);
+    wheel(); wheel();
+    expect(canvas.coreQueries).toBe(1);
+    expect(interacting()).toBe(false);
+    expect(canvas.dataset.canvasGesture).toBeUndefined();
+    expect(canvas.styleValues.size).toBe(0);
+    vi.advanceTimersByTime(160);
+    expect(core.dataset.canvasGesture).toBeUndefined();
+    flow.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    expect(core.dataset.canvasGesture).toBe("true");
+    testWindow.dispatchEvent(new Event("blur"));
+    expect(core.dataset.canvasGesture).toBeUndefined();
+    flow.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    unmount();
+    expect(core.dataset.canvasGesture).toBeUndefined();
+  });
   it("pauses focused light at compact zoom without promoting canvas-wide styles, and cleans its local state", () => {
     mount();
     const edges = canvas.edgeLayer!;

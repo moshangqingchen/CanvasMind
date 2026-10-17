@@ -55,6 +55,19 @@ export const CanvasInteractionFeedback = memo(function CanvasInteractionFeedback
     let pressed = false, wheeling = false, timer = 0;
     let zoom = flow.getState().transform[2];
     let compact = zoom < .55;
+    let coreGestureActive = false;
+    let gestureCores: HTMLElement[] = [];
+    const pauseCores = (active: boolean) => {
+      if (active === coreGestureActive) return;
+      coreGestureActive = active;
+      if (active) {
+        gestureCores = Array.from(parent.closest(".canvas-editor")?.querySelectorAll<HTMLElement>("[data-mini-light-core]") ?? []);
+        for (const core of gestureCores) core.dataset.canvasGesture = "true";
+      } else {
+        for (const core of gestureCores) delete core.dataset.canvasGesture;
+        gestureCores = [];
+      }
+    };
     // Only focused edge overlays inherit this value. A canvas-root variable
     // would invalidate every node's inherited style on every zoom frame.
     const edgeLayer = parent.querySelector<HTMLElement>(".react-flow__edgelabel-renderer");
@@ -66,6 +79,9 @@ export const CanvasInteractionFeedback = memo(function CanvasInteractionFeedback
       const active = !compact && (pressed || wheeling);
       if (parent.classList.contains("is-interacting") !== active) parent.classList.toggle("is-interacting", active);
       const gesture = String(pressed || wheeling);
+      // Local icon animations otherwise add style ticks while moving hundreds
+      // of nodes. Pause only these small subtrees, including at compact zoom.
+      pauseCores(pressed || wheeling);
       if (edgeLayer && edgeLayer.dataset.gestureActive !== gesture) edgeLayer.dataset.gestureActive = gesture;
     };
     const unsubscribe = flow.subscribe(() => {

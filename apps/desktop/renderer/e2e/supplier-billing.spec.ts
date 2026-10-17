@@ -29,6 +29,7 @@ async function fixture(page: Page, request: APIRequestContext) {
   let failed = false; const refreshes: string[] = [], forbidden: string[] = [];
   await page.route("**/api/suppliers**", async route => {
     const url = new URL(route.request().url());
+    if (url.pathname === "/api/suppliers/catalog-upgrade") return route.fallback();
     if (url.pathname.endsWith("/billing")) {
       const supplier = suppliers.find(item => url.pathname === `/api/suppliers/${item.id}/billing`)!;
       refreshes.push(supplier.id);

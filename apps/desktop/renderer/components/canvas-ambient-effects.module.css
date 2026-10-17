@@ -3,5 +3,6 @@
 .spotlight { position:absolute; inset:0; pointer-events:none; opacity:0; mask-image:radial-gradient(circle 160px at var(--cursor-x,-300px) var(--cursor-y,-300px),var(--mask-solid),transparent); }
 .dots { position:absolute; left:0; top:0; background-image:radial-gradient(circle at var(--canvas-dot-center) var(--canvas-dot-center),color-mix(in srgb,var(--accent) 32%,transparent) 0 var(--canvas-dot-radius),transparent calc(var(--canvas-dot-radius) + .15px)); }
 .layer[data-detail="full"][data-pointer="true"] .spotlight { opacity:.65; }
+.layer[data-detail="off"] { visibility:hidden; }
 :global(html[data-motion="off"]) .layer, :global(html[data-page-hidden="true"]) .layer { visibility:hidden; }
 @media (prefers-reduced-motion:reduce) { .layer { visibility:hidden; } }

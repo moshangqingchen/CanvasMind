@@ -1,4 +1,4 @@
-import { createNeuralAvatarGeometry, isNeuralAvatarData, NEURAL_AVATAR_FILES, type NeuralAvatarData } from "./neural-avatars";
+import { createNeuralAvatarGeometry, isNeuralAvatarData, neuralAvatarStrokeTriangles, NEURAL_AVATAR_FILES, NEURAL_AVATAR_STROKE_STRIDE, type NeuralAvatarData } from "./neural-avatars";
 import { neuralFrameInterval, neuralLayout, neuralParticleDrawRanges, stepNeuralQuality, stepNeuralSpring, type NeuralLayout, type NeuralPoint, type NeuralQualityState, type NeuralSpring } from "./neural-motion";
 import { createNeuralEntityGeometry, createNeuralGeometry, NEURAL_VERTEX_STRIDE, type NeuralEntity, type NeuralGeometry, neuralEntityOrbit, selectNeuralEntities } from "./neural-scene-geometry";
 import { NEURAL_MODULES, readNeuralPalette, type NeuralModule, type NeuralPalette, type NeuralRgb, type NeuralTheme } from "./neural-tokens";
@@ -86,7 +86,7 @@ class WebGlNeuralPainter implements NeuralPainter {
       this.rims = this.program(neuralVertexShader, neuralRimFragment);
       this.blur = this.program(neuralFullscreenVertex, neuralBlurFragment);
       this.composite = this.program(neuralFullscreenVertex, neuralCompositeFragment);
-      this.geometry = Object.fromEntries(Object.entries(createNeuralGeometry()).map(([key, value]) => [key, this.mesh(value)])) as Record<keyof NeuralGeometry, GpuMesh>;
+      this.geometry = Object.fromEntries(Object.entries(createNeuralGeometry()).map(([key, value]) => [key, this.mesh(value, key === "avatarLines" ? NEURAL_AVATAR_STROKE_STRIDE : NEURAL_VERTEX_STRIDE)])) as Record<keyof NeuralGeometry, GpuMesh>;
       this.entityPoints = this.mesh(new Float32Array());
       this.entityLines = this.mesh(new Float32Array());
       this.trailPoints = this.mesh(new Float32Array());
@@ -129,7 +129,7 @@ class WebGlNeuralPainter implements NeuralPainter {
     return cache.get(name) ?? null;
   }
 
-  private mesh(data: Float32Array) {
+  private mesh(data: Float32Array, stride = NEURAL_VERTEX_STRIDE) {
     const gl = this.gl;
     const vao = gl.createVertexArray(), buffer = gl.createBuffer();
     if (!vao || !buffer) {
@@ -142,9 +142,13 @@ class WebGlNeuralPainter implements NeuralPainter {
     gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
     for (const [location, size, offset] of [[0, 3, 0], [1, 1, 3], [2, 1, 4], [3, 1, 5], [4, 1, 6], [5, 1, 7], [6, 3, 8]]) {
       gl.enableVertexAttribArray(location);
-      gl.vertexAttribPointer(location, size, gl.FLOAT, false, NEURAL_VERTEX_STRIDE * 4, offset * 4);
+      gl.vertexAttribPointer(location, size, gl.FLOAT, false, stride * 4, offset * 4);
     }
-    const mesh = { vao, buffer, count: data.length / NEURAL_VERTEX_STRIDE };
+    if (stride === NEURAL_AVATAR_STROKE_STRIDE) for (const [location, size, offset] of [[7, 3, 11], [8, 1, 14]]) {
+      gl.enableVertexAttribArray(location);
+      gl.vertexAttribPointer(location, size, gl.FLOAT, false, stride * 4, offset * 4);
+    }
+    const mesh = { vao, buffer, count: data.length / stride };
     this.meshes.push(mesh);
     return mesh;
   }
@@ -191,14 +195,14 @@ class WebGlNeuralPainter implements NeuralPainter {
 
   avatars(avatars: readonly NeuralAvatarData[]) {
     const data = createNeuralAvatarGeometry(avatars);
-    this.upload(this.geometry.avatarLines, data.lines); this.upload(this.geometry.satellites, data.points);
+    this.upload(this.geometry.avatarLines, neuralAvatarStrokeTriangles(data.lines), NEURAL_AVATAR_STROKE_STRIDE); this.upload(this.geometry.satellites, data.points);
   }
 
-  private upload(mesh: GpuMesh, vertices: Float32Array) {
+  private upload(mesh: GpuMesh, vertices: Float32Array, stride = NEURAL_VERTEX_STRIDE) {
     const gl = this.gl;
     gl.bindBuffer(gl.ARRAY_BUFFER, mesh.buffer);
     gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
-    mesh.count = vertices.length / NEURAL_VERTEX_STRIDE;
+    mesh.count = vertices.length / stride;
   }
 
   private common(program: WebGLProgram, frame: NeuralSceneFrame, kind: number) {
@@ -206,6 +210,7 @@ class WebGlNeuralPainter implements NeuralPainter {
     gl.useProgram(program);
     gl.uniform2f(this.location(program, "uResolution"), frame.width, frame.height);
     gl.uniform2f(this.location(program, "uPointer"), frame.pointer?.x ?? -1000, frame.pointer?.y ?? -1000);
+    gl.uniform1f(this.location(program, "uAvatarWidth"), kind === 4 ? frame.options.theme === "light" ? 1.75 : 2.55 : 0);
     const core = frame.layout.core;
     const nodes = [core, ...NEURAL_MODULES.map(module => frame.layout.modules[module])];
     gl.uniform4fv(this.location(program, "uNodes[0]"), new Float32Array(nodes.flatMap((node, index) => [node.x, node.y, node.radius, index === 0 ? 1 : 1 - frame.departure])));
@@ -262,7 +267,7 @@ class WebGlNeuralPainter implements NeuralPainter {
     for (const [mesh, kind] of [[this.geometry.rays, 3], [this.geometry.bundles, 2], [this.entityLines, 6], [this.geometry.avatarLines, 4], [this.geometry.tendrils, 1], [this.geometry.cage, 0]] as const) {
       this.common(this.lines, frame, kind);
       gl.bindVertexArray(mesh.vao);
-      gl.drawArrays(gl.LINES, 0, mesh.count);
+      gl.drawArrays(mesh === this.geometry.avatarLines ? gl.TRIANGLES : gl.LINES, 0, mesh.count);
     }
     for (const [mesh, kind] of [[this.geometry.embers, 0], [this.geometry.satellites, 5], [this.entityPoints, 6]] as const) {
       this.common(this.points, frame, kind);
@@ -354,7 +359,8 @@ class CanvasNeuralPainter implements NeuralPainter {
       return { x: node.x + (x * cosine - z * sine) * node.radius, y: node.y + y * node.radius };
     };
     const drawLines = (values: Float32Array, alpha: number, skip = 1) => {
-      ctx.lineWidth = .65;
+      const avatar = values === this.geometry.avatarLines;
+      ctx.lineWidth = avatar ? light ? .78 : 1.15 : .65;
       for (let i = 0; i < values.length; i += NEURAL_VERTEX_STRIDE * 2 * skip) {
         const group = values[i + 3], moduleId = NEURAL_MODULES[group - 1], dim = frame.options.hoveredModule && group && moduleId !== frame.options.hoveredModule ? .25 : 1;
         const from = project(values, i), to = project(values, i + NEURAL_VERTEX_STRIDE);
@@ -362,8 +368,15 @@ class CanvasNeuralPainter implements NeuralPainter {
         if (values === this.geometry.rays && Object.values(frame.layout.modules).some(node => [from, to].some(point => Math.abs(point.x - node.x) < 102 && point.y > node.y - 100 && point.y < node.y + 172))) continue;
         if (frame.growth < values[i + 7]) continue;
         let color = group ? p[moduleId] : p.shellLine;
-        if (values === this.geometry.avatarLines) color = light ? mixRgb(color, p.shellLine, .57) : mixRgb(color, [values[i + 8], values[i + 9], values[i + 10]], .25);
-        ctx.strokeStyle = rgb(color, values[i + 4] * alpha * dim * (moduleId === frame.options.hoveredModule ? 1.8 : 1) * (values === this.entityData.lines && frame.pointer ? 1 + Math.max(0, 1 - Math.hypot(from.x - frame.pointer.x, from.y - frame.pointer.y) / 120) * .65 : 1));
+        if (avatar) color = light ? mixRgb(color, p.shellLine, .57) : mixRgb(color, [values[i + 8], values[i + 9], values[i + 10]], .25);
+        const pulse = avatar ? Math.exp(-(((values[i + 5] - (.5 + .5 * Math.sin(frame.time * .7))) * 24) ** 2)) : 0;
+        const opacity = values[i + 4] * alpha * dim * (avatar && !light ? 1.28 + pulse * 1.65 : 1) * (moduleId === frame.options.hoveredModule ? 1.8 : 1) * (values === this.entityData.lines && frame.pointer ? 1 + Math.max(0, 1 - Math.hypot(from.x - frame.pointer.x, from.y - frame.pointer.y) / 120) * .65 : 1);
+        if (avatar && !light) {
+          ctx.strokeStyle = rgb(color, opacity * .065); ctx.lineWidth = 3.6;
+          ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(to.x, to.y); ctx.stroke();
+          ctx.lineWidth = 1.15 * (values[i + 4] > .75 ? 1.1 : .88);
+        }
+        ctx.strokeStyle = rgb(color, opacity);
         ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(to.x, to.y); ctx.stroke();
       }
     };
@@ -371,7 +384,7 @@ class CanvasNeuralPainter implements NeuralPainter {
     ctx.beginPath(); ctx.arc(core.x, core.y, core.radius * .91, 0, Math.PI * 2); ctx.fill();
     drawLines(this.geometry.cage, .7);
     drawLines(this.geometry.rays, .5);
-    drawLines(this.geometry.avatarLines, .85);
+    drawLines(this.geometry.avatarLines, .9);
     drawLines(this.geometry.tendrils, .8, 2);
     drawLines(this.entityData.lines, 1);
     for (const moduleId of NEURAL_MODULES) {

@@ -2,8 +2,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { saveBeforeDesktopExit } from "../lib/desktop-client";
-import { fetchAppUpdate, requestAppUpdate, invalidateConnections, invalidateModelCache, type AppUpdateView } from "../lib/client-api";
+import { fetchAppUpdate, requestAppUpdate, type AppUpdateView } from "../lib/client-api";
 import { AppUpdateModal } from "./app-update-modal";
+import { CatalogCheckBridge } from "./catalog-check-bridge";
 import feedbackStyles from "./blocking-feedback.module.css";
 
 function DesktopErrorToast({ message, visible, onDismiss }: { message: string; visible: boolean; onDismiss: () => void }) {
@@ -30,30 +31,6 @@ export function DesktopBridge() {
   const toastSequence = useRef(0);
   const dismissToast = useCallback(() => setToastError(null), []);
   const noticedVersion = useRef("");
-  useEffect(() => {
-    if (!window.superCanvasDesktop) return;
-    let cancelled = false;
-    const publishedConnections = new Set<string>();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const read = async (method: "GET" | "POST") => {
-      try {
-        const response = await fetch("/api/suppliers/catalog-upgrade", { method, cache: "no-store" });
-        if (!response.ok || cancelled) return;
-        const result = await response.json() as { phase?: string; updatedConnectionIds?: string[] };
-        if (cancelled) return;
-        const updated = (Array.isArray(result.updatedConnectionIds) ? result.updatedConnectionIds : [])
-          .filter((id): id is string => typeof id === "string" && Boolean(id) && !publishedConnections.has(id));
-        if (updated.length) {
-          for (const id of updated) { invalidateModelCache(id); publishedConnections.add(id); }
-          invalidateConnections();
-          window.dispatchEvent(new CustomEvent("supplier-catalog-upgraded", { detail: { updatedConnectionIds: updated } }));
-        }
-        if (result.phase !== "complete") timer = setTimeout(() => { void read("GET"); }, 3000);
-      } catch { /* Existing inventories remain usable; retry on the next launch. */ }
-    };
-    void read("POST");
-    return () => { cancelled = true; if (timer) clearTimeout(timer); };
-  }, []);
   useEffect(() => {
     const api = window.superCanvasDesktop;
     if (!api) return;
@@ -90,6 +67,7 @@ export function DesktopBridge() {
     finally { setBusy(false); }
   };
   return <>
+    <CatalogCheckBridge />
     <AppUpdateModal open={open} status={status} busy={busy} onClose={() => setOpen(false)}
       onCheck={() => void update("check")} onDownload={() => void update("download")}
       onApply={() => void update("apply")} onDefer={() => void update("defer")} />

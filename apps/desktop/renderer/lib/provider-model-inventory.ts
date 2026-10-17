@@ -1,4 +1,5 @@
 import { supplierKeyForConnection } from "./supplier-identity";
+import { clearCatalogManualMarker } from "./supplier-catalog-policy";
 import { reconcileCangyuanNativeGroupConnection } from "./cangyuan-native-group-connection";
 import { applyUserImageSizePresets } from "@super-canvas/providers/image-size-presets";
 import { inventoryChanges } from "./model-availability";
@@ -961,7 +962,7 @@ async function offlineInventoryPrices(
 /** One request identity across every adapter prevents delayed results from restoring old state. */
 async function readModelResponse(
   request: Request,
-  context: { params: Promise<{ id: string }>; supplierRefreshId?: string; jiasuApiExampleContext?: JiasuSupplierExampleContext },
+  context: { params: Promise<{ id: string }>; supplierRefreshId?: string; jiasuApiExampleContext?: JiasuSupplierExampleContext; clearCatalogMarker?: boolean },
 ): Promise<Response> {
   const parsedId = parseRouteIdentifier((await context.params).id, "连接 ID");
   if (!parsedId.success) return parsedId.response;
@@ -1180,7 +1181,7 @@ async function readModelResponse(
             models.find((m) => m.metadata?.canvasRunnable !== false && m.operations.length > 0);
         const checkedAt = new Date().toISOString();
         config = {
-          ...config,
+          ...(context.clearCatalogMarker ? clearCatalogManualMarker(config) : config),
           autoModelInterfaces: discovered.bindings as unknown as typeof config.autoModelInterfaces,
           ...(bound.connector
             ? {
@@ -1330,8 +1331,9 @@ async function readModelResponse(
 }
 
 /** Read-only enrichment: resolving capabilities never creates or submits paid tests. */
-export async function readProviderModelInventory(request: Request, context: { params: Promise<{ id: string }>; supplierRefreshId?: string; jiasuApiExampleContext?: JiasuSupplierExampleContext }): Promise<Response> {
-  const response = await readModelResponse(request, context);
+export async function readProviderModelInventory(request: Request, context: { params: Promise<{ id: string }>; supplierRefreshId?: string; jiasuApiExampleContext?: JiasuSupplierExampleContext; clearCatalogMarker?: boolean }): Promise<Response> {
+  const response = await readModelResponse(request, { ...context,
+    clearCatalogMarker: context.clearCatalogMarker ?? new URL(request.url).searchParams.get("refresh") === "1" });
   if (response.headers.get("X-Model-Scan-Source") === "cli-saved") return response;
   if (!response.ok || new URL(request.url).searchParams.get("verificationRaw") === "1") return response;
   const payload: unknown = await response.clone().json().catch(() => null);

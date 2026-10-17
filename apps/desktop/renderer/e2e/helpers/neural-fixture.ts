@@ -213,6 +213,13 @@ export async function installNeuralFixture(
       method = request.method();
     // The UI may only read existing inventories. Never turn an unexpected request
     // into a successful scan, CLI start, verification, generation or balance read.
+    if (path === "/api/suppliers/catalog-upgrade" && method === "GET")
+      return route.fulfill({ json: {
+        revision: "neural-offline-fixture", mode: "off", phase: "complete", total: 0,
+        refreshed: 0, unavailable: 0, failed: 0, updatedConnectionIds: [],
+        manualConnectionIds: [], changedConnectionIds: [], priceChangedSupplierIds: [],
+        nextCheckAt: null, connections: [], history: [], noticeId: null,
+      } });
     if (
       /\/(?:scan|refresh|test|cli|billing)(?:\/|$)/u.test(path) ||
       (path.endsWith("/models") &&

@@ -25,6 +25,7 @@ async function fixture(page: Page, count = 3, options: { metadata?: boolean; gro
   const writes: Record<string, unknown>[] = [];
   await page.route("**/api/suppliers**", async route => {
     const request = route.request(); const url = new URL(request.url());
+    if (url.pathname === "/api/suppliers/catalog-upgrade") return route.fallback();
     calls.push({ method: request.method(), path: url.pathname, cached: false });
     if (request.method() === "PATCH") {
       const patch = request.postDataJSON();

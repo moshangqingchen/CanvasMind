@@ -10,6 +10,28 @@ export const NEURAL_AVATAR_FILES: Record<NeuralModule, string> = Object.fromEntr
   NEURAL_MODULES.map(module => [module, `/neural-avatars/${module}.json`]),
 ) as Record<NeuralModule, string>;
 
+// Screen-space ribbons provide a real, portable line width: WebGL LINES are
+// limited to one physical pixel on several desktop drivers. The extra fields
+// are the opposite endpoint and the signed side of a narrow feathered strip.
+export const NEURAL_AVATAR_STROKE_STRIDE = NEURAL_VERTEX_STRIDE + 4;
+
+export function neuralAvatarStrokeTriangles(lines: Float32Array) {
+  const triangles: number[] = [];
+  const append = (offset: number, opposite: number, side: number) => {
+    const vertex = [...lines.subarray(offset, offset + NEURAL_VERTEX_STRIDE)];
+    // Point size is unused for triangles. Carry the tangent orientation here
+    // so feathering has the same signed coordinate at both segment endpoints.
+    vertex[6] = opposite > offset ? 1 : -1;
+    triangles.push(...vertex, ...lines.subarray(opposite, opposite + 3), side);
+  };
+  for (let offset = 0; offset < lines.length; offset += NEURAL_VERTEX_STRIDE * 2) {
+    const end = offset + NEURAL_VERTEX_STRIDE;
+    // The opposite endpoint reverses the tangent, so its side is reversed too.
+    for (const [at, other, side] of [[offset, end, -1], [end, offset, 1], [offset, end, 1], [offset, end, 1], [end, offset, 1], [end, offset, -1]]) append(at, other, side);
+  }
+  return new Float32Array(triangles);
+}
+
 /** Invalid decorative data is ignored; it never affects the accessible module controls. */
 export function isNeuralAvatarData(input: unknown): input is NeuralAvatarData {
   if (!input || typeof input !== "object") return false;

@@ -16,9 +16,10 @@ import type { RuntimeEvent } from "@super-canvas/runtime";
 import { getObjectStorage } from "@super-canvas/storage";
 import { getRunService } from "@super-canvas/runtime";
 import { requireServerMasterKey, serverMasterKey } from "./master-key";
+import { scopedCatalogRepository } from "./catalog-repository-scope";
 import type { GenerationInputAsset, RunTaskEvidence } from "../components/types";
 
-export const repository = getRepository();
+export const repository = scopedCatalogRepository(getRepository());
 export const storage = getObjectStorage();
 serverMasterKey();
 export const runService = getRunService();

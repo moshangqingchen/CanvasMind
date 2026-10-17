@@ -8,10 +8,18 @@ import { MemoryRepository } from "./memory.js";
 import { FileRepository } from "./file.js";
 import type { Repository } from "./types.js";
 import { join } from "node:path";
+import type { AsyncLocalStorage } from "node:async_hooks";
 
 const globalKey = "__superCanvasRepository";
 
 export function getRepository(): Repository {
+  // Automatic catalog reads use an async-local in-memory staging repository.
+  // Native supplier adapters also call this factory directly; they must never
+  // escape the same scope by reopening the live repository singleton.
+  const staged = (globalThis as typeof globalThis & {
+    __superCanvasCatalogRepositoryScope?: AsyncLocalStorage<Repository>;
+  }).__superCanvasCatalogRepositoryScope?.getStore();
+  if (staged) return staged;
   const globalScope = globalThis as typeof globalThis & {
     [globalKey]?: Repository;
   };

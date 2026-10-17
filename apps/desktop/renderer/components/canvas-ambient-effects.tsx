@@ -30,6 +30,7 @@ export const CanvasAmbientEffects = memo(function CanvasAmbientEffects({ enabled
     }
     const context = surface.getContext("2d", { alpha: true });
     if (!context) return;
+    root.dataset.ambientDetail = "off"; container.dataset.detail = "off";
     let width = 0, height = 0, dpr = 1, pointerDown = false, paused = false;
     let detail = "off", color = "", previousNodes = new Set<string>(), previousEdges = new Set<string>();
     let previousStatuses = new Map<string, unknown>(), previousGraph: unknown, previousEdgeGraph: unknown, previousTransform = "";
@@ -104,6 +105,9 @@ export const CanvasAmbientEffects = memo(function CanvasAmbientEffects({ enabled
       const [x, y, zoom] = state.transform;
       const transformKey = `${x},${y},${zoom},${state.width},${state.height}`;
       if (previousGraph === state.nodes && previousEdgeGraph === state.edges && transformKey === previousTransform) return;
+      // A downgraded layer is invisible throughout a node drag. Reconcile once
+      // on release rather than rebuilding graph/status maps for every position.
+      if (pointerDown && detail === "off" && transformKey === previousTransform) return;
       previousGraph = state.nodes; previousEdgeGraph = state.edges; previousTransform = transformKey;
       let visible = 0;
       for (const node of state.nodeLookup.values()) {
@@ -159,7 +163,7 @@ export const CanvasAmbientEffects = memo(function CanvasAmbientEffects({ enabled
       if (!before || Math.hypot(before.x - x, before.y - y) >= 1.5) { trail.push({ x, y, time: performance.now() }); trail = trail.slice(-20); wake(); }
     };
     const down = () => { pointerDown = true; clear(); };
-    const up = () => { pointerDown = false; };
+    const up = () => { pointerDown = false; update(); };
     const suspend = () => { pointerDown = false; clear(); };
     const focusEditing = (event: FocusEvent) => {
       if (event.target instanceof Element && event.target.closest("input,textarea,[contenteditable='true'],[contenteditable='plaintext-only']")) clear();

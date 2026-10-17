@@ -66,6 +66,23 @@ export function batchOutputSources(nodes: readonly CanvasNode[]): BatchConnectio
   return [...byKind.values()].sort((a, b) => b.length - a.length)[0]?.filter((_, _index, all) => all.length >= 2) ?? [];
 }
 
+/** The batch handle is hidden during a node drag; skip its layout until release. */
+export function batchOutputPresentation(
+  nodes: readonly CanvasNode[],
+  interacting: boolean,
+  dimensions: (node: CanvasNode) => { width: number; height: number },
+) {
+  const bounds = { x: 0, y: 0, width: 0, height: 0 };
+  if (interacting || nodes.length < 2) return { sources: [] as BatchConnectionSource[], bounds };
+  let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+  for (const node of nodes) {
+    const size = dimensions(node);
+    left = Math.min(left, node.position.x); top = Math.min(top, node.position.y);
+    right = Math.max(right, node.position.x + size.width); bottom = Math.max(bottom, node.position.y + size.height);
+  }
+  return { sources: batchOutputSources(nodes), bounds: { x: left, y: top, width: right - left, height: bottom - top } };
+}
+
 export function planBatchConnections(options: {
   sources: readonly BatchConnectionSource[];
   targetId: string;

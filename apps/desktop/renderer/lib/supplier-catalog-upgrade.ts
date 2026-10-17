@@ -1,171 +1,198 @@
-import { createHash } from "node:crypto";
-import type { MemoryRepository, ProviderConnectionRecord, SupplierRecord } from "@super-canvas/db";
+import { createHash, randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
+import { catalogScopeReadsComplete } from "./catalog-scope-cache";
+import { setTimeout as yieldBackground } from "node:timers/promises";
+import { MemoryRepository, type Repository, type ProviderConnectionRecord, type SupplierRecord } from "@super-canvas/db";
+import type { CatalogChangeRecord, CatalogCheckMode, CatalogConnectionStatus, CatalogFailureReason, CatalogUpgradeStatus } from "./supplier-catalog-contracts";
+import { CATALOG_CHECK_INTERVAL_MS, CATALOG_HISTORY_RETENTION_MS, CATALOG_MODE_SETTING, catalogChanges,
+  catalogMode, catalogPricesComplete, classifyCatalogFailure, clearCatalogManualMarker } from "./supplier-catalog-policy";
+export type { CatalogUpgradeStatus } from "./supplier-catalog-contracts";
 
 export const SUPPLIER_CATALOG_REVISION = "2026-10-10-jijiu-native-tier-parameters-v12";
-const PREVIOUS_SUPPLIER_CATALOG_REVISION = "2026-10-09-full-supplier-recheck-contracts-prices-v11";
-const RETRY_INTERVAL_MS = 24 * 60 * 60 * 1000;
-const UPGRADED_HOSTS = new Set([
-  "ai.cangyuansuanli.cn", "tu.988236.xyz", "api.frimodel.com", "api.mikoto.vip",
-  "api.miaowuai.store", "vapi.chuangxiangai.asia", "api.tk1688.com", "tk1688.com", "ai.tk1688.com",
-  "pool.chaozhiyuanai.com", "asian-acc.we-token.cc", "us-la.we-token.cc", "sub2api.we-token.cc", "video.we-token.cc", "api.3365api.cn",
-  "api.eaheng.com", "token.secure-skill.com", "genimage.pro", "api.hangzhale.com", "synoralink.com", "ai.whyshy.cn",
-  "newapi.jijiucanvas.com", "ai.jiasuapi.com",
-]);
-type Repository = Pick<MemoryRepository, "listConnections" | "listSuppliers" | "getConnection" | "saveConnection">;
-export interface CatalogUpgradeStatus {
-  revision: string;
-  phase: "idle" | "running" | "complete";
-  total: number;
-  refreshed: number;
-  unavailable: number;
-  failed: number;
-  updatedConnectionIds: string[];
-}
+const PREVIOUS_REVISION = "2026-10-09-full-supplier-recheck-contracts-prices-v11";
+const HOSTS = new Set(["ai.cangyuansuanli.cn", "tu.988236.xyz", "api.frimodel.com", "api.mikoto.vip", "api.miaowuai.store",
+  "vapi.chuangxiangai.asia", "api.tk1688.com", "tk1688.com", "ai.tk1688.com", "pool.chaozhiyuanai.com", "asian-acc.we-token.cc",
+  "us-la.we-token.cc", "sub2api.we-token.cc", "video.we-token.cc", "api.3365api.cn", "api.eaheng.com", "token.secure-skill.com",
+  "genimage.pro", "api.hangzhale.com", "synoralink.com", "ai.whyshy.cn", "newapi.jijiucanvas.com", "ai.jiasuapi.com"]);
 interface Dependencies {
   repository: Repository;
-  readModels: (request: Request, context: { params: Promise<{ id: string }>; supplierRefreshId: string }) => Promise<Response>;
-  refreshSupplierCatalog?: (supplier: SupplierRecord) => Promise<boolean>;
+  refreshCatalog: (connection: ProviderConnectionRecord, supplier: SupplierRecord | undefined, staging: MemoryRepository, refreshId: string) => Promise<{ complete: boolean; status?: number; code?: string }>;
   now?: () => number;
   trackWrite?: (work: () => Promise<void>) => Promise<void>;
   canContinue?: () => boolean;
 }
-
-function identity(connection: ProviderConnectionRecord): string {
-  return createHash("sha256").update(JSON.stringify([
-    connection.provider, connection.config.baseUrl, connection.config.modelGroup,
-    connection.config.accountKeyGroup, connection.config.accountKeyGroupId, connection.config.usage,
-    connection.config.supplierId, connection.config.supplierSourceId, connection.encryptedSecret,
-  ])).digest("hex");
+function fingerprint(row: ProviderConnectionRecord): string {
+  return createHash("sha256").update(JSON.stringify([row.provider, row.encryptedSecret, row.config.baseUrl, row.config.modelGroup,
+    row.config.accountKeyGroup, row.config.accountKeyGroupId, row.config.usage, row.config.supplierId, row.config.supplierSourceId])).digest("hex");
 }
-function currentSupplierSource(connection: ProviderConnectionRecord, suppliers: ReadonlyMap<string, SupplierRecord>): boolean {
-  const supplierId = connection.config.supplierId;
-  if (typeof supplierId !== "string") return true;
-  const supplier = suppliers.get(supplierId);
-  return Boolean(supplier && supplier.state?.visibility !== "deleted" &&
-    (!supplier.state || connection.config.supplierSourceId === supplier.state.sourceId));
+function supplierIdentity(row: ProviderConnectionRecord, supplier?: SupplierRecord): string {
+  if (supplier) return supplier.id;
+  return `legacy:${String(row.config.supplierKey ?? "")}:${new URL(String(row.config.baseUrl)).origin}`;
 }
-function supported(connection: ProviderConnectionRecord): boolean {
-  if (!connection.encryptedSecret || connection.provider === "cli" || connection.provider === "fake" ||
-    connection.config.usage === "disabled" || connection.config.supplierArchived === true) return false;
-  try {
-    const url = new URL(String(connection.config.baseUrl ?? ""));
-    return url.protocol === "https:" && !url.username && !url.password && UPGRADED_HOSTS.has(url.host);
-  } catch { return false; }
+function currentSource(row: ProviderConnectionRecord, suppliers: Map<string, SupplierRecord>): boolean {
+  if (typeof row.config.supplierId !== "string") return true;
+  const supplier = suppliers.get(row.config.supplierId);
+  return Boolean(supplier && supplier.state?.visibility !== "deleted" && (!supplier.state || row.config.supplierSourceId === supplier.state.sourceId));
 }
-
-function acceptsRevision(connection: ProviderConnectionRecord, revision: unknown): boolean {
-  if (revision === SUPPLIER_CATALOG_REVISION) return true;
-  if (revision !== PREVIOUS_SUPPLIER_CATALOG_REVISION) return false;
-  // v12 changes only Jijiu. Other suppliers retain v11 success and retry timing.
-  try { return new URL(String(connection.config.baseUrl ?? "")).host !== "newapi.jijiucanvas.com"; }
+export function supportedCatalogConnection(row: ProviderConnectionRecord): boolean {
+  if (!row.encryptedSecret || ["cli", "fake"].includes(row.provider) || row.config.usage === "disabled" || row.config.supplierArchived === true) return false;
+  try { const url = new URL(String(row.config.baseUrl ?? "")); return url.protocol === "https:" && !url.username && !url.password && HOSTS.has(url.host); }
   catch { return false; }
 }
+function revisionAttempted(row: ProviderConnectionRecord): boolean {
+  const revision = row.config.catalogCheckAttemptRevision ?? row.config.catalogUpgradeAttemptRevision ?? row.config.catalogUpgradeRevision;
+  if (revision === SUPPLIER_CATALOG_REVISION) return true;
+  try { return revision === PREVIOUS_REVISION && new URL(String(row.config.baseUrl)).host !== "newapi.jijiucanvas.com"; }
+  catch { return false; }
+}
+function lastAttempt(row: ProviderConnectionRecord): string | undefined {
+  const value = row.config.catalogCheckAttemptedAt ?? row.config.catalogUpgradeAttemptedAt;
+  return typeof value === "string" && Number.isFinite(Date.parse(value)) ? value : undefined;
+}
+export function nextCatalogCheckAt(row: ProviderConnectionRecord, mode: CatalogCheckMode, now: number): number | null {
+  if (mode === "off" || row.config.catalogCheckPaused === true) return null;
+  if (mode === "upgrade") return revisionAttempted(row) ? null : now;
+  const last = lastAttempt(row);
+  return last ? Date.parse(last) + CATALOG_CHECK_INTERVAL_MS : now;
+}
+function historyOf(row: ProviderConnectionRecord, now: number): CatalogChangeRecord[] {
+  return (Array.isArray(row.config.catalogCheckHistory) ? row.config.catalogCheckHistory : [])
+    .filter((entry): entry is CatalogChangeRecord => Boolean(entry && typeof entry === "object" && typeof entry.id === "string" &&
+      typeof entry.checkedAt === "string" && Array.isArray(entry.changes) && Date.parse(entry.checkedAt) >= now - CATALOG_HISTORY_RETENTION_MS));
+}
 
-/** One read-only upstream catalog migration per connection identity. It never
- * creates Keys, edits canvases, or schedules capability/generation probes. */
 export class SupplierCatalogUpgrade {
   private pending?: Promise<void>;
-  private state: CatalogUpgradeStatus = { revision: SUPPLIER_CATALOG_REVISION, phase: "idle",
-    total: 0, refreshed: 0, unavailable: 0, failed: 0, updatedConnectionIds: [] };
+  private manualStateChanged = false;
+  private state: CatalogUpgradeStatus = { revision: SUPPLIER_CATALOG_REVISION, mode: "daily", phase: "idle", total: 0,
+    refreshed: 0, unavailable: 0, failed: 0, updatedConnectionIds: [], manualConnectionIds: [], changedConnectionIds: [],
+    priceChangedSupplierIds: [], nextCheckAt: null, connections: [], history: [], noticeId: null };
   constructor(private readonly dependencies: Dependencies) {}
-  status(): CatalogUpgradeStatus { return { ...this.state, updatedConnectionIds: [...this.state.updatedConnectionIds] }; }
+  private now(): number { return (this.dependencies.now ?? Date.now)(); }
+  async setMode(mode: CatalogCheckMode): Promise<void> { await this.dependencies.repository.setApplicationSetting(CATALOG_MODE_SETTING, mode); }
+  /** Status and settings hydration never dispatch upstream requests. */
+  async status(summary = false): Promise<CatalogUpgradeStatus> {
+    const { repository } = this.dependencies, now = this.now();
+    const mode = catalogMode(await repository.getApplicationSetting(CATALOG_MODE_SETTING));
+    const suppliers = new Map((await repository.listSuppliers()).map(row => [row.id, row]));
+    const rows = (await repository.listConnections()).filter(row => supportedCatalogConnection(row) && currentSource(row, suppliers));
+    const connections: CatalogConnectionStatus[] = rows.map(row => {
+      const next = nextCatalogCheckAt(row, mode, now), supplier = suppliers.get(String(row.config.supplierId ?? ""));
+      return { connectionId: row.id, name: row.name, ...(supplier ? { supplierId: supplier.id, supplierName: supplier.name } : {}),
+        manualRequired: row.config.catalogCheckManualRequired === true || mode === "off" && !revisionAttempted(row), paused: row.config.catalogCheckPaused === true,
+        ...(typeof row.config.catalogCheckFailureReason === "string" ? { pauseReason: row.config.catalogCheckFailureReason as CatalogFailureReason } : {}),
+        ...(lastAttempt(row) ? { lastAttemptAt: lastAttempt(row) } : {}), nextCheckAt: next === null ? null : new Date(Math.max(now, next)).toISOString() };
+    });
+    const upcoming = connections.map(row => row.nextCheckAt).filter((at): at is string => Boolean(at)).sort();
+    const history = summary ? [] : rows.flatMap(row => historyOf(row, now)).sort((a, b) => b.checkedAt.localeCompare(a.checkedAt));
+    return structuredClone({ ...this.state, mode, connections, history,
+      manualConnectionIds: connections.filter(row => row.manualRequired).map(row => row.connectionId), nextCheckAt: upcoming[0] ?? null });
+  }
   start(): void {
     if (this.pending) return;
-    this.state = { revision: SUPPLIER_CATALOG_REVISION, phase: "running", total: 0,
-      refreshed: 0, unavailable: 0, failed: 0, updatedConnectionIds: [] };
+    this.manualStateChanged = false;
+    this.state = { ...this.state, phase: "running", total: 0, refreshed: 0, unavailable: 0, failed: 0,
+      updatedConnectionIds: [], changedConnectionIds: [], priceChangedSupplierIds: [], noticeId: null };
     const work = () => this.run();
     this.pending = (this.dependencies.trackWrite ? this.dependencies.trackWrite(work) : work())
       .catch(() => { this.state.failed++; })
       .finally(() => { this.state.phase = "complete"; this.pending = undefined; });
   }
   async settle(): Promise<void> { await this.pending; }
+  private async failure(row: ProviderConnectionRecord, reason: CatalogFailureReason): Promise<void> {
+    const { repository } = this.dependencies, latest = await repository.getConnection(row.id);
+    // A foreground refresh/save that won the race is authoritative, including
+    // its cleared manual marker. Do not relabel that newer successful record.
+    if (!latest || !isDeepStrictEqual(latest, row)) return;
+    const terminal = ["authentication", "balance", "unsupported"].includes(reason);
+    const streak = terminal ? Number(latest.config.catalogCheckFailureStreak ?? 0) + 1 : 0;
+    const changed = latest.config.catalogCheckManualRequired !== true || latest.config.catalogCheckPaused !== (terminal && streak >= 3) || latest.config.catalogCheckFailureReason !== reason;
+    await repository.saveConnection({ ...latest, config: { ...latest.config, catalogCheckLastResult: "failed",
+      catalogCheckFailureStreak: streak, catalogCheckPaused: terminal && streak >= 3,
+      catalogCheckManualRequired: true, catalogCheckFailureReason: reason } }, { expected: latest });
+    if (changed) this.manualStateChanged = true;
+    this.state.updatedConnectionIds.push(row.id);
+    if (terminal) this.state.unavailable++; else this.state.failed++;
+  }
   private async run(): Promise<void> {
     const { repository } = this.dependencies;
-    const now = (this.dependencies.now ?? Date.now)();
-    const suppliers = new Map((await repository.listSuppliers()).map(supplier => [supplier.id, supplier]));
-    const connections = (await repository.listConnections()).filter(connection => {
-      if (!supported(connection)) return false;
-      if (!currentSupplierSource(connection, suppliers)) return false;
-      const fingerprint = identity(connection);
-      if (acceptsRevision(connection, connection.config.catalogUpgradeRevision) &&
-        connection.config.catalogUpgradeIdentity === fingerprint) return false;
-      const attempted = Date.parse(String(connection.config.catalogUpgradeAttemptedAt ?? ""));
-      return !acceptsRevision(connection, connection.config.catalogUpgradeAttemptRevision) ||
-        connection.config.catalogUpgradeIdentity !== fingerprint || !Number.isFinite(attempted) || now - attempted >= RETRY_INTERVAL_MS;
-    });
-    this.state.total = connections.length;
-    // Connections from the same supplier share pricing/document refresh caches.
-    const refreshId = `catalog-upgrade-${SUPPLIER_CATALOG_REVISION}-${now}`;
-    const catalogReads = new Map<string, Promise<boolean>>();
-    const ensureCatalog = (supplier: SupplierRecord | undefined): Promise<boolean> => {
-      if (!supplier || !this.dependencies.refreshSupplierCatalog) return Promise.resolve(true);
-      const key = `${supplier.id}:${supplier.state?.sourceId ?? "legacy"}`;
-      let read = catalogReads.get(key);
-      if (!read) {
-        read = Promise.resolve().then(() => this.dependencies.refreshSupplierCatalog!(supplier)).catch(() => false);
-        catalogReads.set(key, read);
-      }
-      return read;
-    };
-    let index = 0;
-    const worker = async () => {
-      while (index < connections.length) {
-        if (this.dependencies.canContinue?.() === false) return;
-        const connection = connections[index++]!;
-        const fingerprint = identity(connection);
-        const current = await repository.getConnection(connection.id);
-        if (!current || !supported(current) || identity(current) !== fingerprint) continue;
-        const currentSources = new Map((await repository.listSuppliers()).map(supplier => [supplier.id, supplier]));
-        if (!currentSupplierSource(current, currentSources)) continue;
-        if (this.dependencies.canContinue?.() === false) return;
-        // Persist public/account group prices before connection refreshes so
-        // subsequent cached picker reads see the same directory revision.
-        const catalogComplete = await ensureCatalog(currentSources.get(String(current.config.supplierId ?? "")));
-        if (this.dependencies.canContinue?.() === false) return;
-        const afterCatalog = await repository.getConnection(connection.id);
-        const afterCatalogSources = new Map((await repository.listSuppliers()).map(supplier => [supplier.id, supplier]));
-        if (!afterCatalog || !supported(afterCatalog) || !currentSupplierSource(afterCatalog, afterCatalogSources)) continue;
-        if (identity(afterCatalog) !== fingerprint) {
-          // A verified legacy group migration changes routing identity. Let the
-          // picker reread its preserved models under the new group; never scan a
-          // concurrently edited Key or mark that new identity completed here.
-          const beforeMigration = { ...afterCatalog, config: { ...afterCatalog.config,
-            modelGroup: current.config.modelGroup, accountKeyGroup: current.config.accountKeyGroup,
-            accountKeyGroupId: current.config.accountKeyGroupId } };
-          if (!current.config.accountKeyGroupId && /^\d+$/u.test(String(afterCatalog.config.accountKeyGroupId ?? "")) &&
-            identity(beforeMigration) === fingerprint) this.state.updatedConnectionIds.push(connection.id);
-          continue;
+    const mode = catalogMode(await repository.getApplicationSetting(CATALOG_MODE_SETTING));
+    if (mode === "off") return;
+    const suppliers = new Map((await repository.listSuppliers()).map(row => [row.id, row]));
+    const allConnections = await repository.listConnections();
+    const due = allConnections.filter(row => supportedCatalogConnection(row) && currentSource(row, suppliers) &&
+      nextCatalogCheckAt(row, mode, this.now()) !== null && nextCatalogCheckAt(row, mode, this.now())! <= this.now());
+    this.state.total = due.length;
+    const refreshId = `catalog-check-${randomUUID()}`;
+    for (const candidate of due) {
+      if (this.dependencies.canContinue?.() === false || catalogMode(await repository.getApplicationSetting(CATALOG_MODE_SETTING)) === "off") break;
+      const original = await repository.getConnection(candidate.id);
+      if (!original || fingerprint(original) !== fingerprint(candidate)) continue;
+      const next = nextCatalogCheckAt(original, catalogMode(await repository.getApplicationSetting(CATALOG_MODE_SETTING)), this.now());
+      if (next === null || next > this.now()) continue;
+      const attemptedAt = new Date(this.now()).toISOString();
+      // Reserve before dispatch: even an interrupted process cannot repeat this
+      // cycle. Key/config edits do not create another upgrade attempt.
+      const reserved = await repository.saveConnection({ ...original, config: { ...original.config,
+        catalogCheckAttemptRevision: SUPPLIER_CATALOG_REVISION, catalogCheckAttemptedAt: attemptedAt, catalogCheckLastResult: "running" } }, { expected: original });
+      const supplier = typeof reserved.config.supplierId === "string" ? await repository.getSupplier(reserved.config.supplierId) ?? undefined : undefined;
+      if (!isDeepStrictEqual(await repository.getConnection(reserved.id), reserved) ||
+        !currentSource(reserved, new Map(supplier ? [[supplier.id, supplier]] : []))) continue;
+      // Read only this supplier's records, not every model cache on every Key.
+      // A newly added sibling is still detected by commitCatalogSnapshot CAS.
+      const affectedBefore = supplier ? (await Promise.all(allConnections.filter(row => row.config.supplierId === supplier.id)
+        .map(row => repository.getConnection(row.id)))).filter((row): row is ProviderConnectionRecord => row !== null) : [reserved];
+      if (!isDeepStrictEqual(affectedBefore.find(row => row.id === reserved.id), reserved)) continue;
+      const staging = new MemoryRepository({ version: 2, suppliers: supplier ? [supplier] : [], connections: affectedBefore,
+        canvases: [], revisions: [], assets: [], directorProfiles: [], directorSessions: [], directorMessages: [], directorProposals: [], runs: [], nodeRuns: [], webhookKeys: [] });
+      if (catalogMode(await repository.getApplicationSetting(CATALOG_MODE_SETTING)) === "off") break;
+      try {
+        const result = await this.dependencies.refreshCatalog(reserved, supplier, staging, refreshId);
+        if (this.dependencies.canContinue?.() === false || catalogMode(await repository.getApplicationSetting(CATALOG_MODE_SETTING)) === "off") break;
+        const staged = await staging.getConnection(reserved.id), stagedSupplier = supplier ? await staging.getSupplier(supplier.id) ?? undefined : undefined;
+        if (!result.complete || !staged || supplier && (!stagedSupplier || stagedSupplier.scanComplete !== true || !["live", "empty"].includes(stagedSupplier.scanStatus))) {
+          await this.failure(reserved, classifyCatalogFailure(result.status, result.code)); continue;
         }
-        let complete = false;
-        try {
-          const response = await this.dependencies.readModels(new Request(
-            `http://localhost/api/providers/${encodeURIComponent(connection.id)}/models?refresh=1`,
-          ), { params: Promise.resolve({ id: connection.id }), supplierRefreshId: refreshId });
-          const scanStatus = response.headers.get("X-Model-Scan-Status");
-          complete = catalogComplete && response.ok && response.headers.get("X-Model-Scan-Complete") === "true" &&
-            (scanStatus === "live" || scanStatus === "empty");
-          if (complete) this.state.refreshed++;
-          else if (response.status === 401 || response.status === 403 || scanStatus === "unauthorized") this.state.unavailable++;
-          else this.state.failed++;
-        } catch { this.state.failed++; }
-        const latest = await repository.getConnection(connection.id);
-        // A concurrent Key/source edit invalidates both results and retry bookkeeping.
-        if (!latest || !supported(latest) || identity(latest) !== fingerprint) continue;
-        const latestSources = new Map((await repository.listSuppliers()).map(supplier => [supplier.id, supplier]));
-        if (!currentSupplierSource(latest, latestSources)) continue;
-        try {
-          const config: ProviderConnectionRecord["config"] = { ...latest.config,
-            catalogUpgradeIdentity: fingerprint,
-            catalogUpgradeAttemptRevision: SUPPLIER_CATALOG_REVISION,
-            catalogUpgradeAttemptedAt: new Date((this.dependencies.now ?? Date.now)()).toISOString(),
-          };
-          if (complete) config.catalogUpgradeRevision = SUPPLIER_CATALOG_REVISION;
-          else delete config.catalogUpgradeRevision;
-          await repository.saveConnection({ ...latest, config }, { expected: latest });
-          this.state.updatedConnectionIds.push(connection.id);
-        } catch { /* Newer settings are authoritative; a later launch retries. */ }
+        if (!catalogPricesComplete(stagedSupplier, staged) || !await catalogScopeReadsComplete(staging)) { await this.failure(reserved, "incomplete"); continue; }
+        const stagedRows = await staging.listConnections();
+        if (stagedRows.length !== affectedBefore.length || stagedRows.some(row => {
+          const expected = affectedBefore.find(before => before.id === row.id);
+          return !expected || fingerprint(row) !== fingerprint(expected);
+        })) { await this.failure(reserved, "conflict"); continue; }
+        const changes = catalogChanges(reserved, staged, supplier, stagedSupplier);
+        const record: CatalogChangeRecord | undefined = changes.length ? { id: randomUUID(), checkedAt: attemptedAt, connectionId: reserved.id,
+          connectionName: reserved.name, ...(supplier ? { supplierId: supplier.id, supplierName: supplier.name } : {}), changes } : undefined;
+        const config: ProviderConnectionRecord["config"] = { ...clearCatalogManualMarker(staged.config), catalogCheckLastResult: "success", catalogUpgradeRevision: SUPPLIER_CATALOG_REVISION,
+          catalogCheckHistory: [...historyOf(reserved, this.now()), ...(record ? [record] : [])] };
+        if (Object.hasOwn(reserved.config, "defaultModel")) config.defaultModel = reserved.config.defaultModel;
+        else delete config.defaultModel;
+        // A catalog-only scanner may initialize account/key-sync state in its
+        // staging area. Publish directory/scan facts, never those side effects.
+        const publishSupplier = supplier && stagedSupplier ? { ...supplier, catalog: stagedSupplier.catalog,
+          scanStatus: stagedSupplier.scanStatus, scanComplete: stagedSupplier.scanComplete, scannedAt: stagedSupplier.scannedAt,
+          scanLastSuccessAt: stagedSupplier.scanLastSuccessAt, scanError: stagedSupplier.scanError, scanErrorCode: stagedSupplier.scanErrorCode,
+          scanRetryable: stagedSupplier.scanRetryable, updatedAt: stagedSupplier.updatedAt,
+          ...(supplier.state ? { state: { ...supplier.state, revision: supplier.state.revision + 1 } } : {}) } : undefined;
+        const commitMode = await repository.getApplicationSetting(CATALOG_MODE_SETTING);
+        if (catalogMode(commitMode) === "off") break;
+        await repository.commitCatalogSnapshot({ expectedApplicationSettings: { [CATALOG_MODE_SETTING]: commitMode },
+          ...(supplier ? { expectedSupplier: supplier, supplier: publishSupplier } : {}),
+          expectedConnections: affectedBefore, connections: [{ ...staged, config }] });
+        this.state.refreshed++; this.state.updatedConnectionIds.push(reserved.id);
+        if (reserved.config.catalogCheckManualRequired === true || reserved.config.catalogCheckPaused === true) this.manualStateChanged = true;
+        if (record) {
+          this.state.changedConnectionIds.push(reserved.id);
+          const supplierId = supplierIdentity(reserved, supplier);
+          if (record.changes.some(change => change.kind === "price") && !this.state.priceChangedSupplierIds.includes(supplierId))
+            this.state.priceChangedSupplierIds.push(supplierId);
+        }
+      } catch (error) {
+        if (catalogMode(await repository.getApplicationSetting(CATALOG_MODE_SETTING)) === "off") break;
+        await this.failure(reserved, error instanceof Error && /改变|冲突|conflict/iu.test(error.message) ? "conflict" : classifyCatalogFailure(undefined, error instanceof Error ? error.name : "network"));
       }
-    };
-    await Promise.all(Array.from({ length: Math.min(3, connections.length) }, worker));
+      await yieldBackground(0);
+    }
+    if (this.state.changedConnectionIds.length || this.manualStateChanged)
+      this.state.noticeId = `${SUPPLIER_CATALOG_REVISION}:${this.now()}:${randomUUID()}`;
   }
 }

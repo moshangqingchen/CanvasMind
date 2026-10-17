@@ -1,6 +1,7 @@
 import { mkdir, rename, unlink, writeFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { setTimeout as delay } from "node:timers/promises";
 import type {
   AssetRecord,
@@ -264,6 +265,10 @@ function readSnapshot(path: string): {
 }
 
 export class FileRepository extends MemoryRepository {
+  private catalogGate: Promise<void> | null = null;
+  private activeMutations = 0;
+  private readonly mutationScope = new AsyncLocalStorage<boolean>();
+  private readonly mutationIdleWaiters: Array<() => void> = [];
   private completedWriteGeneration = 0;
   private requestedWriteGeneration = 0;
   private writeLoop: Promise<void> | null = null;
@@ -298,6 +303,48 @@ export class FileRepository extends MemoryRepository {
         loadedJson: JSON.stringify(loadedSnapshot[field]),
       });
     }
+    // Keep normal saves concurrent/coalesced, but admit none while a catalog
+    // candidate is being made durable. Reentrant MemoryRepository calls remain
+    // part of their original mutation, avoiding nested-save deadlocks.
+    for (const name of ["flush", "saveSupplierVerification", "ensureDefaultCanvas", "saveCanvas", "deleteCanvas", "saveAsset",
+      "updateImageDesignReview", "deleteAsset", "deleteAssets", "saveConnection", "saveSupplier", "commitSupplier", "deleteConnection",
+      "saveDirectorProfile", "deleteDirectorProfile", "createDirectorSession", "updateDirectorSession", "deleteDirectorSession",
+      "createDirectorMessage", "updateDirectorMessage", "deleteDirectorMessage", "createDirectorProposal", "updateDirectorProposal",
+      "deleteDirectorProposal", "createRun", "updateRun", "transitionRunStatus", "createNodeRun", "updateNodeRun", "saveWebhookEvent"]) {
+      const original = Reflect.get(this, name) as (...args: unknown[]) => Promise<unknown>;
+      Object.defineProperty(this, name, { configurable: true, writable: true,
+        value: (...args: unknown[]) => this.withMutation(() => original.apply(this, args)) });
+    }
+  }
+
+  private withMutation<T>(work: () => Promise<T>): Promise<T> {
+    if (this.mutationScope.getStore()) return work();
+    if (this.catalogGate) return this.catalogGate.then(() => this.withMutation(work));
+    this.activeMutations++;
+    const done = () => { this.activeMutations--; if (!this.activeMutations) for (const resolve of this.mutationIdleWaiters.splice(0)) resolve(); };
+    try { return this.mutationScope.run(true, work).finally(done); }
+    catch (error) { done(); return Promise.reject(error); }
+  }
+
+  private catalogTransaction(candidate: (current: MemoryRepositorySnapshot) => MemoryRepositorySnapshot, publish: () => Promise<void>): Promise<void> {
+    const previous = this.catalogGate;
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    this.catalogGate = gate;
+    const work = async () => {
+      if (previous) await previous;
+      if (this.activeMutations) await new Promise<void>(resolve => { this.mutationIdleWaiters.push(resolve); });
+      if (this.writeLoop) await this.writeLoop;
+      // Reuse untouched records while saves are gated. A catalog check need not
+      // clone the user's canvases, media or conversation history into memory.
+      const contents = this.serializeSnapshot(candidate(this.exportSnapshotView()));
+      await this.replaceSnapshot(`${this.path}.${process.pid}.${++this.writeSequence}.tmp`, contents);
+      // No foreground mutation can have entered since the candidate was built.
+      // Only a successful atomic replacement publishes in-memory records.
+      await publish();
+      this.needsSnapshotWrite = false;
+    };
+    return work().finally(() => { if (this.catalogGate === gate) this.catalogGate = null; release(); });
   }
 
   private serializeSnapshot(snapshot: MemoryRepositorySnapshot): string {
@@ -481,6 +528,22 @@ export class FileRepository extends MemoryRepository {
     const result = await super.saveConnection(input, options);
     await this.persist();
     return result;
+  }
+
+  override async setApplicationSetting(key: string, value: unknown): Promise<void> {
+    const saved = structuredClone(value);
+    await this.catalogTransaction(snapshot => ({ ...snapshot, applicationSettings: { ...snapshot.applicationSettings, [key]: saved } }),
+      () => super.setApplicationSetting(key, saved));
+  }
+
+  override async commitCatalogSnapshot(input: Parameters<MemoryRepository["commitCatalogSnapshot"]>[0]): Promise<void> {
+    const commit = structuredClone(input);
+    await this.catalogTransaction(snapshot => {
+      this.assertCatalogSnapshot(commit);
+      const connections = new Map(commit.connections.map(row => [row.id, row]));
+      return { ...snapshot, suppliers: snapshot.suppliers?.map(row => commit.supplier && row.id === commit.supplier.id ? commit.supplier : row),
+        connections: snapshot.connections.map(row => connections.get(row.id) ?? row) };
+    }, () => super.commitCatalogSnapshot(commit));
   }
 
   override async saveSupplier(

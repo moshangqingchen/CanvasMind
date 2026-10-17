@@ -51,6 +51,7 @@ export interface SettingsModalProps {
   targetConnectionId?: string | null;
   startAddingSupplier?: boolean;
   startAddingAccount?: boolean;
+  catalogReview?: boolean;
 }
 export function SettingsModal(props: SettingsModalProps) {
   if (!props.open) return null;
@@ -71,6 +72,7 @@ function SettingsModalContent({
   targetConnectionId,
   startAddingSupplier,
   startAddingAccount,
+  catalogReview,
 }: SettingsModalProps) {
   const [tab, setTab] = useState<SettingsTab>(() => initialSettingsSection(initialTab, targetConnectionId, startAddingAccount));
 
@@ -193,6 +195,7 @@ function SettingsModalContent({
             initialCangyuanGroup={initialCangyuanGroup}
             targetSupplierId={targetSupplierId}
             startAdding={startAddingSupplier}
+            catalogReview={catalogReview}
           />
         ) : <DeferredPanelContent key={tab}>{tab === "personal-ai" ? (
           <PersonalAiSettings targetConnectionId={targetConnectionId} startAdding={startAddingAccount} />

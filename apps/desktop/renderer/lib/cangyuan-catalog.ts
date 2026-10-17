@@ -1,4 +1,5 @@
 import { matchesSupplierTemplate } from "./supplier-template-source";
+import { catalogScopedValue } from "./catalog-scope-cache";
 import {
   providerFetch,
   mediaExpressionPricing,
@@ -124,6 +125,8 @@ const globalCacheKey = "__superCanvasCangyuanCatalog";
 const globalConnectionSyncKey = "__superCanvasCangyuanConnectionCatalogSync";
 
 function catalogCache(): CatalogCache {
+  const isolated = catalogScopedValue<CatalogCache>(globalCacheKey, () => ({ expiresAt: 0 }));
+  if (isolated) return isolated;
   const scope = globalThis as typeof globalThis & {
     [globalCacheKey]?: CatalogCache;
   };
@@ -131,6 +134,8 @@ function catalogCache(): CatalogCache {
 }
 
 function connectionCatalogSyncCache(): ConnectionCatalogSyncCache {
+  const isolated = catalogScopedValue<ConnectionCatalogSyncCache>(globalConnectionSyncKey, () => ({}));
+  if (isolated) return isolated;
   const scope = globalThis as typeof globalThis & {
     [globalConnectionSyncKey]?: ConnectionCatalogSyncCache;
   };

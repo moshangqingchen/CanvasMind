@@ -653,7 +653,7 @@ export const AgentPanel = memo(function AgentPanel(props: Props) {
               <div className={styles.welcome}>
                 <MiniLightCore size={72} />
                 <h3>有什么想法，聊聊吧。</h3>
-                <p>聊灵感、写文案、完善分镜。准备动手时，再一起制作画布方案。</p>
+                <p>聊灵感、写文案、做分镜；想做作品时直接告诉我，我会给出方案，你确认后再放入画布。</p>
                 <div>
                   {[
                     "一起聊聊这次创作的方向",

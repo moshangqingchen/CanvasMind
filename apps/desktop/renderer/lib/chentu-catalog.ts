@@ -8,6 +8,7 @@ import type {
 import { remainingVideoModel, remainingVideoTransport } from "@super-canvas/providers/remaining-video-contracts";
 import { chentuCatalogVideoPricing } from "@super-canvas/providers/catalog-pricing";
 import { chentuAzImageDescriptor, isChentuAzImageModel } from "@super-canvas/providers/chentu-az";
+import { catalogScopedValue } from "./catalog-scope-cache";
 import {
   CHENTU_BASE_URL,
   CHENTU_DEFAULT_MODEL,
@@ -116,6 +117,8 @@ interface CatalogCache {
 const globalCacheKey = "__superCanvasChentuCatalog";
 
 function catalogCache(): CatalogCache {
+  const isolated = catalogScopedValue<CatalogCache>(globalCacheKey, () => ({ expiresAt: 0 }));
+  if (isolated) return isolated;
   const scope = globalThis as typeof globalThis & {
     [globalCacheKey]?: CatalogCache;
   };

@@ -9,5 +9,6 @@
 .core[data-state="error"] { --neural-ember:var(--neural-danger); --neural-ember-light:var(--neural-danger); --neural-gold:var(--neural-danger); opacity:.8; }
 @keyframes breathe { 50% { transform:scale(1.035); opacity:.8; } }
 @keyframes turn { to { transform:rotate(342deg); } }
+.core[data-canvas-gesture="true"], .core[data-canvas-gesture="true"] .shell { animation-play-state:paused; }
 :global([data-motion="off"]) .core,:global([data-motion="off"]) .shell,:global([data-page-hidden="true"]) .core,:global([data-page-hidden="true"]) .shell { animation:none; }
 @media(prefers-reduced-motion:reduce) { .core,.shell { animation:none !important; } }

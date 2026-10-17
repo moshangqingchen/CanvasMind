@@ -5,6 +5,6 @@ import styles from "./mini-light-core.module.css";
 export const MiniLightCore = memo(function MiniLightCore({ size = 24, state = "idle" }: {
   size?: number; state?: "idle" | "thinking" | "streaming" | "error";
 }) {
-  return <i aria-hidden="true" className={styles.core} data-state={state}
+  return <i aria-hidden="true" className={styles.core} data-state={state} data-mini-light-core=""
     style={{ width: size, height: size }}><i className={styles.shell} /><i className={styles.ember} /></i>;
 });

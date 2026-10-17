@@ -107,6 +107,7 @@ async function mockSuppliers(
   if (options.accountKeySync && connections[0]) connections[0].apiKeySet = false;
   await page.route("**/api/suppliers**", async (route) => {
     const url = new URL(route.request().url());
+    if (url.pathname === "/api/suppliers/catalog-upgrade") return route.fallback();
     const method = route.request().method();
     const body = method === "GET" ? {} : route.request().postDataJSON();
     if (method === "DELETE" && url.pathname.endsWith("/groups")) {

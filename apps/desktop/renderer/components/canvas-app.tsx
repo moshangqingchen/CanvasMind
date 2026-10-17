@@ -35,7 +35,7 @@ import { CanvasPortLabels } from "./canvas-port-labels";
 import { CanvasAmbientEffects } from "./canvas-ambient-effects";
 import { CanvasBatchOutput } from "./canvas-batch-output";
 import batchStyles from "./canvas-batch-output.module.css";
-import { batchOutputSources, batchConnectionSummary, checkCanvasConnection, planBatchConnections, type BatchConnectionSource } from "../lib/batch-connections";
+import { batchOutputPresentation, batchConnectionSummary, checkCanvasConnection, planBatchConnections, type BatchConnectionSource } from "../lib/batch-connections";
 import { orderedIncomingCanvasEdges, readCanvasArrangementOrder, writeCanvasArrangementOrder, type CanvasArrangementOrder } from "../lib/canvas-arrangement";
 import { createNodePresentationCache, useStableNodeContent, useStableNodeDefinitions } from "../lib/stable-node-content";
 import { useStableNodePresentationData } from "../lib/stable-node-presentation";
@@ -7305,13 +7305,11 @@ function CanvasShell({
     () => nodes.filter((node) => node.selected),
     [nodes],
   );
-  const batchSources = useMemo(() => batchOutputSources(selectedCanvasNodes), [selectedCanvasNodes]);
-  const batchBounds = useMemo(() => {
-    const x = Math.min(...selectedCanvasNodes.map(node => node.position.x));
-    const y = Math.min(...selectedCanvasNodes.map(node => node.position.y));
-    return { x, y, width: Math.max(...selectedCanvasNodes.map(node => node.position.x + nodeDimensions(node).width)) - x,
-      height: Math.max(...selectedCanvasNodes.map(node => node.position.y + nodeDimensions(node).height)) - y };
-  }, [selectedCanvasNodes]);
+  const batchInteracting = nodes.some(node => node.dragging);
+  const { sources: batchSources, bounds: batchBounds } = useMemo(
+    () => batchOutputPresentation(selectedCanvasNodes, batchInteracting, nodeDimensions),
+    [selectedCanvasNodes, batchInteracting],
+  );
   const canvasGroups = useMemo(() => {
     const grouped = new Map<string, CanvasNode[]>();
     for (const node of nodes) {

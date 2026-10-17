@@ -1,3 +1,4 @@
+import { catalogScopedValue } from "./catalog-scope-cache";
 import {
   providerFetch,
   MIAOWU_VIDEO_CONTRACT_PENDING_REASON,
@@ -168,6 +169,8 @@ interface CatalogCache {
 const globalCacheKey = "__superCanvasMiaowuCatalog";
 
 function catalogCache(): CatalogCache {
+  const isolated = catalogScopedValue<CatalogCache>(globalCacheKey, () => ({ expiresAt: 0 }));
+  if (isolated) return isolated;
   const scope = globalThis as typeof globalThis & {
     [globalCacheKey]?: CatalogCache;
   };

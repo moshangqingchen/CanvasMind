@@ -85,6 +85,7 @@ import { buildSupplierRefreshResult, recordSupplierRefreshResult, refreshAllSupp
 import { SupplierRefreshDetails, SupplierRefreshIndicator } from "./supplier-refresh-details";
 import { supplierCatalogDisplayPrice, supplierModelDirectoryDiff } from "../lib/supplier-model-directory-diff";
 import { settingsSupplierTarget } from "../lib/settings-target";
+import { CatalogCheckSettings } from "./catalog-check-settings";
 
 const DEFAULT_API_URLS: Record<string, string> = {
   cangyuan: "https://ai.cangyuansuanli.cn",
@@ -196,11 +197,13 @@ export function SupplierManager({
   onConnectionsChanged,
   targetSupplierId,
   startAdding = false,
+  catalogReview = false,
 }: {
   initialCangyuanGroup?: string | null;
   onConnectionsChanged?: (connections: ProviderConnectionView[]) => void;
   targetSupplierId?: string | null;
   startAdding?: boolean;
+  catalogReview?: boolean;
 }) {
   const { requestLeave, confirmDiscard } = useSettingsLeaveGuard();
   const [suppliers, setSuppliers] = useState<SupplierRecord[]>([]);
@@ -707,6 +710,22 @@ export function SupplierManager({
         </div>
       </aside>
       <main className="sm-main">
+        <CatalogCheckSettings
+          ready={!loading}
+          review={catalogReview}
+          selectedSupplierId={selected?.record?.id}
+          selectedConnectionIds={connections.filter(connection => selected && supplierOwnsConnection(selected, connection)).map(connection => connection.id)}
+          refreshVersion={String(refresh.completed) + ":" + String(refresh.running)}
+          onSelectConnection={id => {
+            const connection = connections.find(item => item.id === id);
+            const entry = entries.find(item => connection && supplierOwnsConnection(item, connection));
+            if (entry) requestLeave(() => {
+              setSelectedId(entry.id); setAdding(false); setDetailSession(value => value + 1);
+              const row = Array.from(supplierListRef.current?.querySelectorAll<HTMLElement>("[data-supplier-id]") ?? []).find(item => item.dataset.supplierId === entry.id);
+              row?.scrollIntoView({ block: "nearest", behavior: "instant" });
+            });
+          }}
+        />
         <DeferredPanelContent>
         {(refresh.running || refresh.results.length > 0) && (
           <section className="sm-refresh-report" aria-label="供应商刷新结果">

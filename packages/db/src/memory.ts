@@ -3,6 +3,8 @@ import {
   type SupplierVerificationRecord,
 } from "./supplier-verification.js";
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
+import { SupplierConflictError } from "./types.js";
 import type {
   AssetRecord,
   AssetImageDesignReviewInput,
@@ -22,6 +24,7 @@ import type {
   Repository,
   NodeRunUpdateOptions,
   WebhookEventRecord,
+  CatalogSnapshotCommit,
   WorkflowRunRecord,
 } from "./types.js";
 import { CanvasRevisionConflictError } from "./types.js";
@@ -40,6 +43,7 @@ const clone = <T>(value: T): T => structuredClone(value);
 
 export interface MemoryRepositorySnapshot {
   version: 2;
+  applicationSettings?: Record<string, unknown>;
   verificationSchemaVersion?: 1;
   supplierVerifications?: SupplierVerificationRecord[];
   /** Optional for snapshots created before supplier management existed. */
@@ -86,6 +90,7 @@ export function migrateMemoryRepositorySnapshot(
 }
 
 export class MemoryRepository implements Repository {
+  private readonly applicationSettings = new Map<string, unknown>();
   private readonly supplierVerifications = new Map<
     string,
     SupplierVerificationRecord
@@ -117,6 +122,8 @@ export class MemoryRepository implements Repository {
       ? migrateMemoryRepositorySnapshot(snapshotInput)
       : undefined;
     if (!snapshot) return;
+    for (const [key, value] of Object.entries(snapshot.applicationSettings ?? {}))
+      this.applicationSettings.set(key, clone(value));
     for (const record of snapshot.supplierVerifications ?? [])
       this.supplierVerifications.set(record.id, clone(record));
     for (const record of snapshot.suppliers ?? [])
@@ -153,6 +160,7 @@ export class MemoryRepository implements Repository {
   protected exportSnapshotView(): MemoryRepositorySnapshot {
     return {
       version: 2,
+      applicationSettings: Object.fromEntries(this.applicationSettings),
       verificationSchemaVersion: 1,
       supplierVerifications: [...this.supplierVerifications.values()],
       suppliers: [...this.suppliers.values()],
@@ -179,6 +187,40 @@ export class MemoryRepository implements Repository {
 
   public exportSnapshot(): MemoryRepositorySnapshot {
     return clone(this.exportSnapshotView());
+  }
+
+  async getApplicationSetting(key: string): Promise<unknown> {
+    return clone(this.applicationSettings.get(key));
+  }
+
+  async setApplicationSetting(key: string, value: unknown): Promise<void> {
+    this.applicationSettings.set(key, clone(value));
+  }
+
+  protected assertCatalogSnapshot(input: CatalogSnapshotCommit): void {
+    if (Object.entries(input.expectedApplicationSettings ?? {}).some(([key, value]) => !isDeepStrictEqual(this.applicationSettings.get(key), value)))
+      throw new SupplierConflictError("自动检查设置已改变，旧结果已丢弃");
+    if (Boolean(input.expectedSupplier) !== Boolean(input.supplier) || input.supplier && input.supplier.id !== input.expectedSupplier?.id)
+      throw new SupplierConflictError("目录快照的供应商身份不一致");
+    if (input.expectedSupplier && !isDeepStrictEqual(this.suppliers.get(input.expectedSupplier.id), input.expectedSupplier))
+      throw new SupplierConflictError("目录读取期间供应商已改变，旧结果已丢弃");
+    const expected = new Map(input.expectedConnections.map(row => [row.id, row]));
+    if (input.connections.some(row => !expected.has(row.id)) ||
+      input.expectedConnections.some(row => !isDeepStrictEqual(this.connections.get(row.id), row)))
+      throw new SupplierConflictError("目录读取期间连接已改变，旧结果已丢弃");
+    if (input.expectedSupplier && [...this.connections.values()].some(row =>
+      row.config.supplierId === input.expectedSupplier!.id && !expected.has(row.id)))
+      throw new SupplierConflictError("目录读取期间新增了连接，旧结果已丢弃");
+  }
+
+  async commitCatalogSnapshot(input: CatalogSnapshotCommit): Promise<void> {
+    this.assertCatalogSnapshot(input);
+    // Clone/validate every row before a synchronous publication. No await or
+    // observable partially updated supplier/connection set exists here.
+    const supplier = input.supplier ? clone(input.supplier) : undefined;
+    const rows = input.connections.map(row => clone(row));
+    if (supplier) this.suppliers.set(supplier.id, supplier);
+    for (const row of rows) this.connections.set(row.id, row);
   }
 
   private canvasNodeKey(record: NodeRunRecord): string | undefined {

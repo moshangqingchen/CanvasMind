@@ -1,4 +1,5 @@
 import { supplierDirectoryBase, weAIFetch } from "@super-canvas/providers";
+import { catalogScopedMap } from "./catalog-scope-cache";
 import {
   WEAI_ADOBE_PER_REQUEST_GROUP,
   WEAI_ADOBE_PER_REQUEST_URL_GROUP,
@@ -22,8 +23,8 @@ interface PricingCacheEntry {
   readonly groups: ReadonlyMap<string, WeAiLiveGroupPricing>;
 }
 
-const cachedPricing = new Map<string, PricingCacheEntry>();
-const pendingPricing = new Map<string, Promise<PricingCacheEntry>>();
+const cachedPricing = catalogScopedMap<string, PricingCacheEntry>("weai-pricing");
+const pendingPricing = catalogScopedMap<string, Promise<PricingCacheEntry>>("weai-pricing-pending");
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);

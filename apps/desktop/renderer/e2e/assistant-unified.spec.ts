@@ -12,6 +12,7 @@ for (const theme of ["dark", "light"] as const) test(`${theme} 合一输入与�
   await expectAgentModel(page, assistantModelKey);
   const panel = agentPanel(page);
   await expect(panel.getByRole("group", { name: "对话方式", exact: true })).toHaveCount(0);
+  await expect(panel).toContainText("聊灵感、写文案、做分镜；想做作品时直接告诉我，我会给出方案，你确认后再放入画布。");
   await panel.getByRole("textbox", { name: "创作任务要求", exact: true }).fill("请制作一张秋日活动海报，先给我待确认方案。");
   await panel.getByRole("button", { name: "发送任务", exact: true }).click();
   await expect(panel.getByTestId("agent-stream-output")).toBeVisible();

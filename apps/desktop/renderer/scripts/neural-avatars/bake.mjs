@@ -10,7 +10,7 @@ const repository = path.resolve(renderer, "../../..");
 const sources = path.join(repository, ".codex-logs/2026-10-16-redesign-v2/reference/avatars");
 const assets = path.resolve(renderer, "../assets/neural-avatars");
 const destination = path.join(renderer, "public/neural-avatars");
-const previews = path.join(repository, ".codex-logs/2026-10-16-redesign-v2/out/avatars");
+const previews = path.resolve(repository, process.env.NEURAL_AVATAR_PREVIEW_DIR ?? ".codex-logs/2026-10-16-redesign-v2/out/avatars");
 await Promise.all([assets, destination, previews].map(directory => mkdir(directory, { recursive: true })));
 const size = 224;
 for (const config of avatarConfig) {
@@ -33,14 +33,20 @@ for (const config of avatarConfig) {
     if (foreground[i] && [-1, 1, -size, size].some(o => !foreground[i + o])) edges[i] = 1;
     if (foreground[i] && config.levels?.some(level => luma[i] <= level * 255 && (luma[i + 1] > level * 255 || luma[i + size] > level * 255))) edges[i] = 1;
   }
-  const rawPaths = traceEdges(thinEdges(edges, size, size), size, size);
+  const rawPaths = traceEdges(thinEdges(edges, size, size), size, size).filter(points => {
+    if (!config.minimumStrokeLength) return true;
+    const length = points.slice(1).reduce((total, point, i) => total + Math.hypot(point[0] - points[i][0], point[1] - points[i][1]), 0);
+    // Preserve short eye/mouth features; discard isolated hair and garment flecks.
+    const facialFeature = points.every(([x, y]) => x / size > .24 && x / size < .76 && y / size > .3 && y / size < .68);
+    return facialFeature || length >= config.minimumStrokeLength;
+  });
   const distance = foregroundDistance(foreground, size, size);
   const vertex = ([x, y], intensity = 180) => {
     const i = Math.round(y) * size + Math.round(x), relief = Math.min(1, distance[i] / 42);
     return [Math.round((x / (size - 1) * 2 - 1) * 1000), Math.round((y / (size - 1) * 2 - 1) * 1000), Math.round(relief * 220), intensity, original[i * 4], original[i * 4 + 1], original[i * 4 + 2]];
   };
   let data;
-  for (let tolerance = 1.05; tolerance <= 3.6; tolerance += .2) {
+  for (let tolerance = config.simplification ?? 1.05; tolerance <= 3.6; tolerance += .2) {
     const paths = rawPaths.map(points => simplifyPolyline(points, tolerance)).filter(points => points.length > 2 || Math.hypot(points[0][0] - points[1][0], points[0][1] - points[1][1]) > 4);
     const vertices = [], strokes = [];
     for (const points of paths) {

@@ -179,6 +179,7 @@ for (const theme of ["dark", "light"] as const) {
     await expect(
       panel.getByRole("heading", { name: "有什么想法，聊聊吧。", exact: true }),
     ).toBeVisible();
+    await expect(panel).toContainText("聊灵感、写文案、做分镜；想做作品时直接告诉我，我会给出方案，你确认后再放入画布。");
     const core = panel.locator('[data-state][style*="72px"]');
     await expect(core).toBeVisible();
     const coreBox = (await core.boundingBox())!;

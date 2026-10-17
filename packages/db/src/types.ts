@@ -406,6 +406,10 @@ export interface WebhookEventRecord {
 }
 
 export interface Repository {
+  getApplicationSetting(key: string): Promise<unknown>;
+  setApplicationSetting(key: string, value: unknown): Promise<void>;
+  /** Compare the complete source records, then publish one catalog snapshot. */
+  commitCatalogSnapshot(input: CatalogSnapshotCommit): Promise<void>;
   /** Confirm all current changes are durable before acknowledging a retried save. */
   flush?(): Promise<void>;
   listSupplierVerifications(): Promise<SupplierVerificationRecord[]>;
@@ -537,4 +541,12 @@ export interface Repository {
     nodeId: string,
   ): Promise<NodeRunRecord | null>;
   saveWebhookEvent(input: WebhookEventRecord): Promise<boolean>;
+}
+
+export interface CatalogSnapshotCommit {
+  expectedApplicationSettings?: Record<string, unknown>;
+  expectedSupplier?: SupplierRecord;
+  supplier?: SupplierRecord;
+  expectedConnections: ProviderConnectionRecord[];
+  connections: ProviderConnectionRecord[];
 }

@@ -1,7 +1,8 @@
 import { downloadRemoteArtifact } from "@super-canvas/runtime";
+import { catalogScopedMap } from "./catalog-scope-cache";
 import type { ModelDescriptor } from "@super-canvas/providers";
 
-const cache = new Map<string, { expires: number; text: Promise<string | undefined> }>();
+const cache = catalogScopedMap<string, { expires: number; text: Promise<string | undefined> }>("supplier-document");
 
 /** Supplier documentation is descriptive data; never execute its content. */
 export async function readSupplierDocument(siteUrl: string, model: ModelDescriptor): Promise<string | undefined> {

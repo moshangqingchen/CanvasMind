@@ -52,6 +52,7 @@ async function fixture(page: Page, modelReadStatus: 200 | 401 = 200) {
   const writes: string[] = [];
   const modelReads: number[] = [];
   await page.route("**/api/suppliers**", async route => {
+    if (new URL(route.request().url()).pathname === "/api/suppliers/catalog-upgrade") return route.fallback();
     if (route.request().method() !== "GET") writes.push(new URL(route.request().url()).pathname);
     await route.fulfill({ json: new URL(route.request().url()).pathname.endsWith("/verification") ? null : [supplier] });
   });

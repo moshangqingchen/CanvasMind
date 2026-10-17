@@ -5,10 +5,9 @@ import { describe, expect, it, vi } from "vitest";
 import { StudioEdge } from "../components/studio-edge";
 import { EDGE_FEATHER_ID, EDGE_TERMINAL_ID } from "./canvas-edge-palette";
 
-vi.mock("@xyflow/react", async () => {
-  const actual = await vi.importActual<typeof import("@xyflow/react")>("@xyflow/react");
-  return { ...actual, EdgeLabelRenderer: ({ children }: { children: React.ReactNode }) => children };
-});
+vi.mock("../components/canvas-edge-label-portal", () => ({
+  CanvasEdgeLabelPortal: ({ children }: { children: React.ReactNode }) => children,
+}));
 
 function markup(extra: Partial<EdgeProps> = {}) {
   const props: EdgeProps = {

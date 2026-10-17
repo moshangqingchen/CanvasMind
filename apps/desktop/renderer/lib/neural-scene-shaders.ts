@@ -8,6 +8,8 @@ layout(location=3) in float aPhase;
 layout(location=4) in float aSize;
 layout(location=5) in float aDepth;
 layout(location=6) in vec3 aTint;
+layout(location=7) in vec3 aOpposite;
+layout(location=8) in float aStrokeSide;
 uniform vec2 uResolution;
 uniform vec4 uNodes[5];
 uniform vec3 uColors[5];
@@ -21,16 +23,26 @@ uniform float uDeparture;
 uniform float uIntro;
 uniform float uLightTheme;
 uniform vec2 uPointer;
+uniform float uAvatarWidth;
 out vec2 vPosition;
 out vec3 vColor;
 out float vLight;
 out float vPhase;
 out float vDepth;
 out vec3 vNormal;
+out float vStrokeSide;
 vec3 rotate(vec3 p, float a) {
   float c=cos(a),s=sin(a);
   p.xz=mat2(c,-s,s,c)*p.xz;
   p.yz=mat2(.985,-.1725,.1725,.985)*p.yz;
+  return p;
+}
+vec3 avatarMotion(vec3 p,float group,float phase) {
+  float yaw=sin(uTime*.27+group*.8)*.20944;
+  float c=cos(yaw),s=sin(yaw);
+  p.xz=mat2(c,-s,s,c)*p.xz;
+  float hover=uHovered>.5&&abs(uHovered-group)<.5?1.:0.;
+  p.xy*=1.+sin(uTime*.65+group)*.012+hover*sin(uTime*1.6+phase*6.28)*.012;
   return p;
 }
 void main(){
@@ -45,11 +57,7 @@ void main(){
     else { p.x+=sin(p.y*3.+uTime*.25+float(group))*p.y*.055; }
   }
   if((uKind>3.5&&uKind<5.5)||uKind>0.5&&uKind<1.5) {
-    float yaw=sin(uTime*.27+float(group)*.8)*.20944;
-    float c=cos(yaw),s=sin(yaw);
-    p.xz=mat2(c,-s,s,c)*p.xz;
-    float hover=uHovered>.5&&abs(uHovered-float(group))<.5?1.:0.;
-    p.xy*=1.+sin(uTime*.65+float(group))*.012+hover*sin(uTime*1.6+aPhase*6.28)*.012;
+    p=avatarMotion(p,float(group),aPhase);
   }
   float perspective=1.+p.z*.13;
   vec2 position=node.xy+p.xy*node.z*perspective;
@@ -65,6 +73,14 @@ void main(){
   }
   if(uKind>2.5&&uKind<3.5) position=node.xy+p.xy*node.z*(1.+uDeparture*2.);
   if(uKind>6.5) position=aPosition.xy;
+  vStrokeSide=aStrokeSide*aSize;
+  if(uAvatarWidth>0.) {
+    vec3 other=avatarMotion(aOpposite,float(group),aPhase);
+    vec2 delta=node.xy+other.xy*node.z*(1.+other.z*.13)-position;
+    vec2 normal=vec2(-delta.y,delta.x)/max(.001,length(delta));
+    float feature=mix(.88,1.1,smoothstep(.65,.82,aBrightness));
+    position+=normal*aStrokeSide*uAvatarWidth*feature;
+  }
   vPosition=position;
   float selectedFade=uSelected>0.5&&group!=0&&abs(uSelected-float(group))>.5?.55:1.;
   float hoverFade=uHovered>.5&&group!=0&&abs(uHovered-float(group))>.5?.25:1.;
@@ -85,7 +101,9 @@ export const neuralLineFragment = `#version 300 es
 precision highp float;
 in vec3 vColor; in float vLight; in float vPhase; in float vDepth; in vec3 vNormal;
 in vec2 vPosition;
+in float vStrokeSide;
 uniform float uTime; uniform float uKind; uniform float uLightTheme;
+uniform float uAvatarWidth;
 uniform vec4 uNodes[5]; uniform vec3 uGold;
 uniform vec3 uSilver; uniform vec3 uEmber; uniform vec3 uEmberLight;
 out vec4 outColor;
@@ -102,7 +120,16 @@ void main(){
   float alpha=vLight*front;
   if(uKind<.5) alpha*=uLightTheme>.5?.85:.7;
   if(uKind>1.5&&uKind<2.5) { alpha*=.82+pulse*4.; color=mix(color,uSilver,pulse*.28); }
-  if(uKind>3.5&&uKind<4.5) { alpha*=uLightTheme>.5?1.7+pulse*.25:.85+pulse*.85; color=mix(color,uSilver,pulse*(uLightTheme>.5?.035:.2)); }
+  if(uKind>3.5&&uKind<4.5) {
+    alpha*=uLightTheme>.5?1.7+pulse*.3:1.28+pulse*1.65;
+    color=mix(color,uSilver,pulse*(uLightTheme>.5?.035:.25));
+    if(uAvatarWidth>0.) {
+      float distance=abs(vStrokeSide);
+      float core=exp(-distance*distance*12.);
+      float halo=exp(-distance*distance*3.)*.11;
+      alpha*=uLightTheme>.5?core*1.05:(core+halo)*(1.-smoothstep(.85,1.,distance));
+    }
+  }
   if(uKind>6.5) color=uGold;
   outColor=vec4(color,alpha*(uLightTheme>.5?1.15:1.));
 }`;

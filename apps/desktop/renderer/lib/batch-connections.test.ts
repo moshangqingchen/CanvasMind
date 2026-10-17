@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { CanvasEdge, CanvasNode } from "../components/types";
-import { batchOutputSources, planBatchConnections, readingOrderCanvasNodes, type BatchConnectionSource } from "./batch-connections";
+import { batchOutputPresentation, batchOutputSources, planBatchConnections, readingOrderCanvasNodes, type BatchConnectionSource } from "./batch-connections";
 
 function node(id: string, x = 0, y = 0, kind = "image"): CanvasNode {
   return { id, type: "workflow", position: { x, y }, style: { width: 200, height: 200 }, data: { label: id,
@@ -10,6 +10,24 @@ const source = (nodeId: string, kind: BatchConnectionSource["kind"] = "image"): 
 const edge = (source: string, target: string): CanvasEdge => ({ id: `${source}-${target}`, source, target, sourceHandle: "out", targetHandle: "in" });
 
 describe("batch connections", () => {
+  it("does not sort, inspect positions or measure a hidden batch handle while dragging", () => {
+    const nodes = Array.from({ length: 500 }, (_, i) => {
+      const value = node(String(i));
+      Object.defineProperty(value, "position", { get: () => { throw new Error("drag must skip bounds and reading order"); } });
+      return value;
+    });
+    const dimensions = vi.fn(() => ({ width: 200, height: 200 }));
+    expect(batchOutputPresentation(nodes, true, dimensions)).toEqual({ sources: [], bounds: { x: 0, y: 0, width: 0, height: 0 } });
+    expect(dimensions).not.toHaveBeenCalled();
+  });
+
+  it("recomputes real source order and final bounds after release", () => {
+    const nodes = [node("b", 230, 20), node("a", 0, 50)];
+    const result = batchOutputPresentation(nodes, false, () => ({ width: 200, height: 200 }));
+    expect(result.sources.map(source => source.nodeId)).toEqual(["a", "b"]);
+    expect(result.bounds).toEqual({ x: 0, y: 20, width: 430, height: 230 });
+    expect(batchOutputPresentation([], false, () => { throw new Error("empty selection"); }).bounds).toEqual({ x: 0, y: 0, width: 0, height: 0 });
+  });
   it("reads rows left to right with half-height tolerance and deterministic ties", () => {
     const nodes = [node("d", 230, 300), node("b", 230, 20), node("c", 0, 320), node("a", 0, 50)];
     expect(readingOrderCanvasNodes(nodes).map(node => node.id)).toEqual(["a", "b", "c", "d"]);

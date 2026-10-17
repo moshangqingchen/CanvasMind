@@ -58,6 +58,32 @@ beforeEach(() => {
   vi.stubGlobal("fetch", mocks.unexpectedNetwork);
   process.env.MASTER_KEY = "isolated-test-master";
 });
+describe("automatic catalog manual-refresh marker", () => {
+  it("an explicit complete manual refresh clears the paused marker without changing the Key", async () => {
+    const { connection } = await fixture();
+    await mocks.repository.saveConnection({ ...connection, config: { ...connection.config,
+      catalogCheckManualRequired: true, catalogCheckPaused: true, catalogCheckFailureStreak: 3,
+      catalogCheckFailureReason: "authentication" } });
+    mocks.fetch.mockResolvedValueOnce(Response.json({ data: [] }));
+    const result = await refresh(connection.id);
+    expect(result.headers.get("X-Model-Scan-Complete")).toBe("true");
+    const saved = (await mocks.repository.getConnection(connection.id))!;
+    expect(saved.encryptedSecret).toBe(connection.encryptedSecret);
+    expect(saved.config).toMatchObject({ catalogCheckManualRequired: false, catalogCheckPaused: false,
+      catalogCheckFailureStreak: 0, catalogCheckFailureReason: null });
+  });
+  it("failed manual refresh keeps the pause marker and prior price cache", async () => {
+    const { connection } = await fixture();
+    await mocks.repository.saveConnection({ ...connection, config: { ...connection.config,
+      catalogCheckManualRequired: true, catalogCheckPaused: true, catalogCheckFailureStreak: 3,
+      modelCatalogModels: [{ id: "existing", operations: [], metadata: { priceLabel: "¥0.10/张" } }] } });
+    mocks.fetch.mockResolvedValue(Response.json({ error: "invalid credentials" }, { status: 401 }));
+    await refresh(connection.id);
+    const saved = (await mocks.repository.getConnection(connection.id))!;
+    expect(saved.config).toMatchObject({ catalogCheckManualRequired: true, catalogCheckPaused: true,
+      modelCatalogModels: [{ id: "existing", metadata: { priceLabel: "¥0.10/张" } }] });
+  });
+});
 afterEach(() => {
   try {
     expect(mocks.unexpectedNetwork).not.toHaveBeenCalled();

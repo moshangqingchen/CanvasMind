@@ -1,7 +1,8 @@
 "use client";
 
 import React, { memo, useId, useMemo, type CSSProperties } from "react";
-import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps } from "@xyflow/react";
+import { BaseEdge, getBezierPath, type EdgeProps } from "@xyflow/react";
+import { CanvasEdgeLabelPortal } from "./canvas-edge-label-portal";
 import type { StudioEdgeState } from "../lib/canvas-edge-presentation";
 import { edgeMotionBounds } from "../lib/edge-motion-bounds";
 import { EDGE_FEATHER_ID, EDGE_TERMINAL_ID, edgeLightEnabled } from "../lib/canvas-edge-palette";
@@ -25,7 +26,7 @@ export const StudioEdge = memo(function StudioEdge(props: EdgeProps) {
     <g transform={`translate(${props.sourceX} ${props.sourceY})`}>
       <StudioEdgeContent {...props} sourceX={0} sourceY={0} targetX={targetX} targetY={targetY} path={path} />
     </g>
-    {flowing && <EdgeLabelRenderer>
+    {flowing && <CanvasEdgeLabelPortal>
       <div className={`studio-edge-motion is-flowing ${props.selected || state?.related ? "is-focused" : "is-running"} ${styles.motion}`}
         data-edge-id={props.id} aria-hidden="true" style={{
           width: bounds.width, height: bounds.height,
@@ -50,7 +51,7 @@ export const StudioEdge = memo(function StudioEdge(props: EdgeProps) {
           </g>
         </svg>
       </div>
-    </EdgeLabelRenderer>}
+    </CanvasEdgeLabelPortal>}
   </>;
 });
 

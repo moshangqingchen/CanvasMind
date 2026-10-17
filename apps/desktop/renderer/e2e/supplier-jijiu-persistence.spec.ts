@@ -3,6 +3,7 @@ import { expect, test, type Locator } from "@playwright/test";
 import { parseSupplierCatalog, scanProviderModelCatalog, type StructuredModelPricing } from "@super-canvas/providers";
 import { applyJijiuImageCapabilities } from "@super-canvas/providers/jijiu-image-contract";
 import type { ProviderConnectionView } from "../lib/client-api";
+import type { CatalogUpgradeStatus } from "../lib/supplier-catalog-contracts";
 
 // The real API/database belong to globalSetup's temporary profile. Supplier
 // reads are public sanitized fixtures, and no generation can leave the browser.
@@ -19,7 +20,7 @@ const catalog = parseSupplierCatalog(official, { supplierSiteUrl: origin, checke
 test("极九2K/4K与high经历目录刷新、同型号重选、型号及分组往返和新页面恢复", async ({ page, context, request }, testInfo) => {
   test.setTimeout(120_000);
   expect(process.env.PLAYWRIGHT_BASE_URL, "只允许 globalSetup 创建的隔离 profile").toBeFalsy();
-  let submissions = 0, upstream = 0, scans = 0, automaticCompletions = 0;
+  let submissions = 0, upstream = 0, scans = 0, automaticStarts = 0, automaticCompletions = 0;
   let automaticScanComplete = false;
   const errors: string[] = [];
   const reads = new Map<string, number>();
@@ -76,13 +77,20 @@ test("极九2K/4K与high经历目录刷新、同型号重选、型号及分组�
       completePrepareExit: () => {}, cancelExit: async () => {},
     } });
   });
-  await context.route("**/api/suppliers/catalog-upgrade", route => {
+  await context.route("**/api/suppliers/catalog-upgrade*", route => {
+    if (route.request().method() === "POST") automaticStarts++;
     if (automaticScanComplete) automaticCompletions++;
-    return route.fulfill({ json: {
-      revision: "jijiu-persistence-test", phase: automaticScanComplete ? "complete" : "running", total: 2,
+    const status: CatalogUpgradeStatus = {
+      revision: "jijiu-persistence-test", mode: "daily", phase: automaticScanComplete ? "complete" : automaticStarts ? "running" : "idle", total: 2,
       refreshed: automaticScanComplete ? 2 : 0, unavailable: 0, failed: 0,
       updatedConnectionIds: automaticScanComplete ? connections.map(connection => connection.id) : [],
-    } });
+      manualConnectionIds: [], changedConnectionIds: [], priceChangedSupplierIds: [],
+      nextCheckAt: automaticScanComplete ? new Date(Date.now() + 86_400_000).toISOString() : automaticStarts ? null : new Date(Date.now() - 1).toISOString(),
+      connections: connections.map(connection => ({ connectionId: connection.id, name: connection.name,
+        manualRequired: false, paused: false, nextCheckAt: null, lastAttemptAt: "2026-10-17T09:00:00.000Z" })),
+      history: [], noticeId: null,
+    };
+    return route.fulfill({ json: status });
   });
   await context.route(`**/api/suppliers/${supplier.id}/scan`, route => {
     scans++;
@@ -142,6 +150,7 @@ test("极九2K/4K与high经历目录刷新、同型号重选、型号及分组�
     await quality().selectOption("high");
     await assertSelection("4K", "default");
     const beforeAutomatic = reads.get("default") ?? 0;
+    await expect.poll(() => automaticStarts).toBe(1);
     automaticScanComplete = true;
     await expect.poll(() => automaticCompletions).toBeGreaterThan(0);
     await expect.poll(() => reads.get("default") ?? 0).toBeGreaterThan(beforeAutomatic);

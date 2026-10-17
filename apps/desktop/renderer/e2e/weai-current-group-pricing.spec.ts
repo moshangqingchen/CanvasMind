@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { parseWeAiLegacyGroup, type ModelDescriptor } from "@super-canvas/providers";
 import type { ProviderConnectionView } from "../lib/client-api";
+import type { CatalogUpgradeStatus } from "../lib/supplier-catalog-contracts";
 import {
   applyWeAiLivePricing,
   WEAI_ADOBE_PER_REQUEST_GROUP,
@@ -57,7 +58,7 @@ test("WeAI 后台补全当前精确分组报价，保留完整型号、质量档
   }, metadata: { ...model.metadata, priceSource: "supplier-catalog", priceStatus: "available",
     supplierPriceGroup: WEAI_ADOBE_PER_REQUEST_GROUP, priceCheckedAt: checkedAt } }));
 
-  let currentCatalog = false;
+  let currentCatalog = false, automaticStarts = 0;
   let releasePoll!: () => void;
   const pollGate = new Promise<void>(resolve => { releasePoll = resolve; });
   let generations = 0;
@@ -111,11 +112,19 @@ test("WeAI 后台补全当前精确分组报价，保留完整型号、质量档
     reads.set(id, (reads.get(id) ?? 0) + 1);
     return route.fulfill({ json: connection ? modelsFor(connection) : [], headers: { "X-Model-Scan-Status": "live" } });
   });
-  await page.route("**/api/suppliers/catalog-upgrade", async route => {
+  await page.route("**/api/suppliers/catalog-upgrade*", async route => {
     const starting = route.request().method() === "POST";
-    if (!starting) await pollGate;
-    await route.fulfill({ status: starting ? 202 : 200, json: { phase: starting ? "running" : "complete",
-      updatedConnectionIds: starting ? [] : [connections[0]!.id], total: 1, refreshed: starting ? 0 : 1, failed: 0, unavailable: 0 } });
+    if (starting) automaticStarts++;
+    if (!starting && automaticStarts) await pollGate;
+    const complete = !starting && automaticStarts > 0;
+    const status: CatalogUpgradeStatus = { revision: "weai-isolated-upgrade", mode: "daily", phase: complete ? "complete" : automaticStarts ? "running" : "idle",
+      updatedConnectionIds: complete ? [connections[0]!.id] : [], total: 1, refreshed: complete ? 1 : 0, failed: 0, unavailable: 0,
+      manualConnectionIds: [], changedConnectionIds: [], priceChangedSupplierIds: [],
+      nextCheckAt: complete ? new Date(Date.now() + 86_400_000).toISOString() : automaticStarts ? null : new Date(Date.now() - 1).toISOString(),
+      connections: connections.map(connection => ({ connectionId: connection.id, name: connection.name,
+        manualRequired: false, paused: false, nextCheckAt: null, lastAttemptAt: "2026-10-17T09:00:00.000Z" })), history: [], noticeId: null,
+    };
+    await route.fulfill({ status: starting ? 202 : 200, json: status });
   });
   const label = "WeAI 分组报价";
   const created = await request.post("/api/canvas", { data: { title: label, graph: {
@@ -155,6 +164,7 @@ test("WeAI 后台补全当前精确分组报价，保留完整型号、质量档
     const beforeReads = reads.get(connections[0]!.id) ?? 0;
     currentCatalog = true; releasePoll();
     await expect(quote).toContainText("0.03 USD / 次");
+    expect(automaticStarts).toBe(1);
     await expect(quote).not.toContainText("（参考）");
     await expect(nodeModel).toContainText("GPT Image 2");
     await expect(nodeModel).not.toContainText("$0.04");

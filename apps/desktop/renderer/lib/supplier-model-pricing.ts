@@ -1,4 +1,5 @@
 import { pricingFromSupplierEvidence } from "./supplier-price-evidence";
+import { catalogScopedMap } from "./catalog-scope-cache";
 import {
   discoverSupplierCatalog,
   applySupplierModelAvailability,
@@ -26,11 +27,11 @@ type Connection = { config: Readonly<Record<string, unknown>> };
 const unknownPrice =
   /价格以(?:平台|模型广场)为准|价格未公布|价格查询失败|价格需登录查询|价格未查询|价格目录未完整读取|暂未取得报价|价格未知|价格未确定|价格条件待确认/u;
 type CatalogCacheEntry = { until: number; result: Promise<SupplierCatalogDiscovery> };
-const cache = new Map<
+const cache = catalogScopedMap<
   string,
   CatalogCacheEntry
->();
-const refreshCache = new Map<string, CatalogCacheEntry>();
+>("supplier-pricing");
+const refreshCache = catalogScopedMap<string, CatalogCacheEntry>("supplier-pricing-refresh");
 export interface JiasuSupplierExampleContext {
   supplierId: string;
   sourceId: string;

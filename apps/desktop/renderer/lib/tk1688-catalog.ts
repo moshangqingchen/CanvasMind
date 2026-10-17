@@ -3,10 +3,11 @@ import { fetchProviderJson, providerFetch, isTk1688ApiUrl, isTk1688CatalogSource
 import { getSupplierRecord } from "./supplier-service";
 import { openSupplierSiteSession, supplierSiteLoginCacheIdentity } from "./supplier-site-session";
 import { isAgentTextModel } from "./agent-model-capabilities";
+import { catalogScopedMap } from "./catalog-scope-cache";
 
 type Connection = { provider: string; config: Readonly<Record<string, unknown>> };
 type CatalogRead = { marketplace?: unknown; status?: unknown; accountModelIds?: string[]; checkedAt: string; complete: boolean };
-const cache = new Map<string, { until: number; result: Promise<CatalogRead> }>();
+const cache = catalogScopedMap<string, { until: number; result: Promise<CatalogRead> }>("tk1688-marketplace");
 
 /** Text models deliberately have canvasRunnable=false. Refreshing a mixed
  * directory must validate the selection against this connection's consumer. */
