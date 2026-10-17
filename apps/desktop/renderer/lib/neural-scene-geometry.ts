@@ -1,12 +1,11 @@
 import { NEURAL_MODULES, type NeuralModule } from "./neural-tokens";
-import { neuralEntityOffset } from "./neural-motion";
 import { createNeuralPlates } from "./neural-plates";
 
-export interface NeuralEntity { id: string; module: NeuralModule; match?: boolean; parentId?: string }
-export interface NeuralGeometry { shell: Float32Array; cage: Float32Array; rims: Float32Array; embers: Float32Array; satellites: Float32Array; tendrils: Float32Array; rays: Float32Array; bundles: Float32Array }
+export interface NeuralEntity { id: string; module: NeuralModule; match?: boolean; parentId?: string; aggregateCount?: number }
+export interface NeuralGeometry { shell: Float32Array; cage: Float32Array; rims: Float32Array; embers: Float32Array; satellites: Float32Array; avatarLines: Float32Array; tendrils: Float32Array; rays: Float32Array; bundles: Float32Array }
 
-/** Eight floats per vertex: position, group, brightness, phase, point size, growth depth. */
-export const NEURAL_VERTEX_STRIDE = 8;
+/** Eleven floats: position, group, brightness, phase, point size, growth depth, optional source RGB. */
+export const NEURAL_VERTEX_STRIDE = 11;
 type Vector = [number, number, number];
 const unit = (v: Vector): Vector => { const length = Math.hypot(...v); return v.map(n => n / length) as Vector; };
 const noise = (x: number, y: number, z: number) => Math.sin(x * 5.7 + y * 2.4) * Math.cos(z * 4.1 - x * 1.7) * .065 + Math.sin(y * 14.3 + z * 7.9 + x * 2.1) * .027;
@@ -17,12 +16,12 @@ export function neuralRandom(seed: number): () => number {
 }
 
 function add(output: number[], p: Vector, group: number, light = 1, phase = 0, size = 1, depth = 0) {
-  output.push(...p, group, light, phase, size, depth);
+  output.push(...p, group, light, phase, size, depth, -1, -1, -1);
 }
 
 export function createNeuralGeometry(): NeuralGeometry {
   const random = neuralRandom(734917);
-  const shell: number[] = [], cage: number[] = [], rims: number[] = [], embers: number[] = [], satellites: number[] = [], tendrils: number[] = [], rays: number[] = [], bundles: number[] = [];
+  const shell: number[] = [], cage: number[] = [], rims: number[] = [], embers: number[] = [], satellites: number[] = [], avatarLines: number[] = [], tendrils: number[] = [], rays: number[] = [], bundles: number[] = [];
   for (const plate of createNeuralPlates()) {
     if (plate.open) continue;
     const center = plate.center.map(n => n * plate.relief) as Vector;
@@ -60,66 +59,69 @@ export function createNeuralGeometry(): NeuralGeometry {
     add(embers, [Math.cos(azimuth) * ring * radius, z * radius, Math.sin(azimuth) * ring * radius], 0, spark ? 1.6 : .25 + random() * .75, random(), spark ? 2.7 + random() * 4 : .7 + Math.pow(random(), 5) * 3, .3);
   }
   for (let group = 1; group <= 4; group++) {
-    for (let i = 0; i < 620; i++) {
-      const a = random() * Math.PI * 2, r = Math.sqrt(random()), z = random() * 2 - 1;
-      const lobe = 1 + .09 * Math.sin(a * 5) + .06 * Math.sin(a * 9 + r * 4);
-      let x = Math.cos(a) * r * lobe, y = -Math.sqrt(1 - r * r) * .72 + .13 * Math.cos(a * 2), depth = Math.sin(a) * r * .7 + z * .07;
-      if (group === 1) {
-        const band = Math.sqrt(1 - z * z);
-        x = Math.cos(a) * band * lobe;
-        y = z * .69 + Math.sin(a * 6 + z * 5) * .08;
-        depth = Math.sin(a) * band * .7;
-      } else if (group === 3) {
-        x *= 1.12; y += Math.abs(Math.cos(a)) * .18;
-      } else if (group === 4) {
-        x *= .76; y = y * 1.3 + Math.sin(a * 3) * .11;
-      }
-      add(satellites, [x, y, depth], group, .35 + random() * .65, random(), .9 + random() * 1.5, 1.15);
-    }
-    for (let hair = 0; hair < 27; hair++) {
-      const a = hair / 27 * Math.PI * 2, phase = random(), length = (.42 + random() * 1.1) * (group === 1 ? .53 : group === 4 ? 1.2 : 1);
-      for (let segment = 0; segment < 15; segment++) {
-        for (const step of [segment, segment + 1]) {
-          const t = step / 15;
-          const x = Math.cos(a) * (.65 * (1 - t * .3)) + Math.sin(t * 5.5 + phase * 6) * t * .16;
-          const y = .02 + t * length;
-          const z = Math.sin(a) * .49 + Math.cos(t * 4 + phase * 5) * t * .1;
-          add(tendrils, [x, y, z], group, (1 - t) * .36, phase, 1, 1.2 + t * .5);
-        }
+    // A few evenly spaced light filaments connect the character to its former neural form.
+    for (let hair = 0; hair < 5; hair++) {
+      for (let segment = 0; segment < 12; segment++) for (const step of [segment, segment + 1]) {
+        const t = step / 12, x = (hair - 2) * .16;
+        add(tendrils, [x + Math.sin(t * 2.6 + hair) * t * .045, .35 + t * .42, .04], group, (1 - t) * .22, t, 1, 1.3);
       }
     }
-    for (let branch = 0; branch < 5; branch++) {
-      for (let segment = 0; segment < 40; segment++) {
-        add(bundles, [segment / 40, (branch - 2) * .36, 0], group, branch === 2 ? .94 : .36, segment / 40, 1, 1);
-        add(bundles, [(segment + 1) / 40, (branch - 2) * .36, 0], group, branch === 2 ? .94 : .36, (segment + 1) / 40, 1, 1);
+    for (let segment = 0; segment < 48; segment++) {
+      for (const step of [segment, segment + 1]) {
+        const t = step / 48;
+        add(bundles, [t, .32, 0], group, .48, t, 1, .9);
       }
     }
   }
-  for (let ray = 0; ray < 124; ray++) {
-    const a = random() * Math.PI * 2, z = random() * 1.4 - .7, start = 1.02 + random() * .2, end = start + .16 + random() * .9;
-    const p: Vector = [Math.cos(a), Math.sin(a), z];
-    add(rays, p.map(n => n * start) as Vector, 0, .15 + random() * .2, random(), 1, .5);
-    add(rays, p.map(n => n * end) as Vector, 0, .005, random(), 1, .8);
+  // A short, evenly distributed corona. Each ray fades at both ends and stays in the core plane.
+  for (let ray = 0; ray < 40; ray++) {
+    const a = ray / 40 * Math.PI * 2 + (random() - .5) * Math.PI / 60;
+    const start = 1.035, length = .25 + random() * .2;
+    for (let segment = 0; segment < 4; segment++) for (const step of [segment, segment + 1]) {
+      const t = step / 4, radius = start + t * length;
+      add(rays, [Math.cos(a) * radius, Math.sin(a) * radius, 0], 0, Math.sin(t * Math.PI) * .15, t, 1, .6);
+    }
   }
-  return Object.fromEntries(Object.entries({ shell, cage, rims, embers, satellites, tendrils, rays, bundles }).map(([key, values]) => [key, new Float32Array(values)])) as unknown as NeuralGeometry;
+  return Object.fromEntries(Object.entries({ shell, cage, rims, embers, satellites, avatarLines, tendrils, rays, bundles }).map(([key, values]) => [key, new Float32Array(values)])) as unknown as NeuralGeometry;
+}
+
+/** Search keeps all model IDs; decoration contains only their owning item. */
+export function selectNeuralEntities(entities: readonly NeuralEntity[]): NeuralEntity[] {
+  const items = entities.filter(entity => !entity.parentId && !entity.id.startsWith("model:") && !entity.id.startsWith("account-model:"));
+  const matches = new Set(entities.filter(entity => entity.match && entity.parentId).map(entity => entity.parentId));
+  const result: NeuralEntity[] = [];
+  for (const moduleId of NEURAL_MODULES) {
+    const entries = items.filter(entity => entity.module === moduleId);
+    const visible = moduleId === "canvases" ? entries.slice(0, 24) : entries;
+    result.push(...visible.map(entity => ({ ...entity, match: entity.match || matches.has(entity.id) })));
+    if (moduleId === "canvases" && entries.length > 24) result.push({ id: "aggregate:canvases", module: moduleId, aggregateCount: entries.length - 24, match: entries.slice(24).some(entity => entity.match) });
+  }
+  return result;
+}
+
+/** Equal angular spacing on one or two fixed arcs; all coordinates remain local to the satellite. */
+export function neuralEntityOrbit(index: number, count: number): { x: number; y: number; angle: number; radius: number; ring: number } {
+  const first = count > 12 ? Math.ceil(count / 2) : count;
+  const ring = index < first ? 0 : 1;
+  const ringCount = ring ? count - first : first, slot = ring ? index - first : index;
+  const angle = Math.PI * (.94 + (ringCount <= 1 ? .56 : slot / (ringCount - 1) * 1.12));
+  const radius = ring ? 1.62 : 1.36;
+  return { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius * .78 - .26, angle, radius, ring };
 }
 
 export function createNeuralEntityGeometry(entities: readonly NeuralEntity[]) {
-  const points: number[] = [], lines: number[] = [];
-  const indexes: Record<NeuralModule, number> = { canvases: 0, suppliers: 0, accounts: 0, starts: 0 };
-  const entries = new Map(entities.map(entity => {
-    const point = neuralEntityOffset(entity.id, indexes[entity.module]++);
-    return [entity.id, { entity, p: [point.x / 44, point.y / 44, Math.sin(point.x) * .4] as Vector }];
-  }));
-  for (const { entity, p } of entries.values()) {
-    const group = NEURAL_MODULES.indexOf(entity.module) + 1;
-    const parent = entity.parentId ? entries.get(entity.parentId) : undefined;
-    const origin = parent && parent.entity.module === entity.module ? parent.p : [0, 0, 0] as Vector;
-    const depth = parent ? 2.2 : 1.75;
-    const phase = (Math.sin(p[0] * 9 + p[1] * 5) + 1) / 2;
-    add(points, p, group, entity.match ? 2.4 : .45, phase, entity.match ? 3.7 : 1.9, depth);
-    add(lines, origin, group, entity.match ? .65 : .095, phase, 1, depth - .2);
-    add(lines, p, group, entity.match ? .65 : .095, phase, 1, depth);
+  const points: number[] = [], lines: number[] = [], visible = selectNeuralEntities(entities);
+  for (const moduleId of NEURAL_MODULES) {
+    const entries = visible.filter(entity => entity.module === moduleId), group = NEURAL_MODULES.indexOf(moduleId) + 1;
+    for (const [index, entity] of entries.entries()) {
+      const orbit = neuralEntityOrbit(index, entries.length), depth = 1.75;
+      const p: Vector = [orbit.x, orbit.y, 0];
+      add(points, p, group, entity.match ? 2.2 : .62, index / Math.max(1, entries.length), entity.aggregateCount ? 3.5 : entity.match ? 3.5 : 2, depth);
+      for (let segment = 0; segment < 8; segment++) for (const step of [segment, segment + 1]) {
+        const t = step / 8, angle = orbit.angle + Math.sin(t * Math.PI) * .09, radius = .98 + (orbit.radius - .98) * t;
+        add(lines, [Math.cos(angle) * radius, Math.sin(angle) * radius * .78 - .26, 0], group, (entity.match ? .6 : .14) * Math.sin((t * .8 + .1) * Math.PI), t, 1, depth - .15 + t * .15);
+      }
+    }
   }
-  return { points: new Float32Array(points), lines: new Float32Array(lines) };
+  return { points: new Float32Array(points), lines: new Float32Array(lines), visible };
 }

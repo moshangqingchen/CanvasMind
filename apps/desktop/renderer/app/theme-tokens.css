@@ -92,6 +92,7 @@
 /* Canvas palette only. The ae06355 workbench colors do not replace the
    shared home, settings, media library, or task center theme. */
 .canvas-editor, .canvas-surface {
+  --canvas-effect-failure:#C47D91;
   --accent:#6D50C8; --accent-strong:#6244BC; --on-accent:#FFFFFF; --focus-ring:#7855D7;
   --selection-soft:rgba(109,80,200,.09); --selection-border:#7855D7;
   --primary-fill:linear-gradient(125deg,#7855D7,#6244BC);
@@ -114,6 +115,7 @@
   --result-status-warn-surface:color-mix(in srgb,var(--status-warn) 12%,var(--surface-floating));
 }
 :root[data-theme="dark"] .canvas-editor, :root[data-theme="dark"] .canvas-surface {
+  --canvas-effect-failure:#DB97A6;
   --surface-canvas:#0C0D13; --node-surface:#1B1C28; --surface-floating:#14151E;
   --panel-2:#1B1C28; --panel-3:#242536;
   --line:rgba(172,176,205,.14); --line-strong:rgba(172,176,205,.28);
@@ -346,7 +348,16 @@
 .canvas-editor .node-card[data-node-status="blocked"] .generated-result-status { background:var(--result-status-warn-surface); color:var(--status-warn); }
 
 .canvas-editor .node-card[data-node-status="failed"]:not([data-result-problem]) { background:var(--surface-node); box-shadow:inset 2px 0 var(--status-fail),var(--shadow-e1); }
-.canvas-editor .node-complete-flash { position:absolute; inset:-3px; border:1px solid var(--status-success); border-radius:inherit; box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 12%,transparent); pointer-events:none; opacity:0; }
+.canvas-editor .node-complete-flash { position:absolute; inset:-2px; border:1px solid color-mix(in srgb,var(--accent) 75%,transparent); border-radius:inherit; box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 7%,transparent); pointer-events:none; opacity:0; }
+.canvas-editor .node-complete-flash[data-feedback="failure"] { border-color:var(--canvas-effect-failure); box-shadow:0 0 0 2px color-mix(in srgb,var(--canvas-effect-failure) 6%,transparent); }
+@property --node-light-angle { syntax:"<angle>"; initial-value:0deg; inherits:false; }
+.canvas-editor .node-running-light { position:absolute; z-index:2; inset:-1px; border-radius:inherit; padding:1px; pointer-events:none; background:conic-gradient(from var(--node-light-angle),transparent 0deg 285deg,color-mix(in srgb,var(--accent) 12%,transparent) 310deg,color-mix(in srgb,var(--accent) 65%,transparent) 343deg,transparent 360deg); mask:linear-gradient(var(--mask-solid) 0 0) content-box,linear-gradient(var(--mask-solid) 0 0); mask-composite:exclude; animation:node-border-light 3.8s linear infinite; }
+@keyframes node-border-light { to { --node-light-angle:360deg; } }
+.canvas-editor .canvas-new-edge-pulse { fill:none; stroke:var(--accent); stroke-width:1.25px; stroke-linecap:round; stroke-dasharray:.045 1; pointer-events:none; }
+.canvas-editor :is(.is-interacting,.effects-paused,.canvas-lod-compact,[data-ambient-detail="off"]) :is(.node-running-light,.canvas-new-edge-pulse) { display:none; }
+.canvas-editor [data-ambient-detail="off"] .node-complete-flash { opacity:0 !important; }
+html[data-motion="off"] :is(.node-running-light,.canvas-new-edge-pulse),html[data-page-hidden="true"] :is(.node-running-light,.canvas-new-edge-pulse) { display:none; }
+@media (prefers-reduced-motion:reduce) { .node-running-light,.canvas-new-edge-pulse { display:none; } }
 .canvas-editor .node-progress-track { position:absolute; z-index:2; top:0; left:10px; right:10px; height:2px; overflow:hidden; pointer-events:none; }
 .canvas-editor .node-progress-fill { display:block; width:35%; height:100%; background:linear-gradient(90deg,transparent,var(--info-wash),transparent); transform-origin:left; animation:node-running-progress 1600ms linear infinite; }
 .canvas-editor .node-error-summary { position:relative; display:flex; gap:8px; align-items:center; min-width:0; padding:8px var(--node-inset-right) 8px var(--node-inset-left); border-top:1px solid var(--line); color:var(--status-fail); font-size:12px; }

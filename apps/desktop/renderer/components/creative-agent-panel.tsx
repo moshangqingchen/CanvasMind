@@ -60,6 +60,7 @@ import { VirtualList } from "./virtual-list";
 import { readUiPreference, writeUiPreference } from "../lib/ui-preferences";
 import { agentConversationItems, agentOperationNames, agentPlanRequest, agentRelativeTime, agentReplyContext, agentToolNames, hasAgentTurnReply } from "../lib/agent-presentation";
 import { modelPickerPriceCompact } from "../lib/model-picker-data";
+import { AgentPlanStepEditor } from "./agent-plan-step-editor";
 
 type Props = {
   connections: ProviderConnectionView[];
@@ -171,7 +172,7 @@ export const AgentPanel = memo(function AgentPanel(props: Props) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (value) { focusExternalDraft.current = true; setDraft(current => current || value); }
   }, [props.canvasId]);
-  const [intent, setIntent] = useState<NonNullable<AgentTurnInput["intent"]>>("chat");
+
   const [attachments, setAttachments] = useState<AssetView[]>([]);
   const [busy, setBusy] = useState(false);
   const [stage, setStage] = useState("");
@@ -362,7 +363,6 @@ export const AgentPanel = memo(function AgentPanel(props: Props) {
     receivedDraft.current = props.draftRequest.id;
     // This is a one-time external canvas command, not a value derived on each render.
     /* eslint-disable react-hooks/set-state-in-effect */
-    setIntent("chat");
     setDraft(props.draftRequest.text);
     requestAnimationFrame(() => draftInput.current?.focus());
     const asset = props.assets.find(
@@ -406,7 +406,6 @@ export const AgentPanel = memo(function AgentPanel(props: Props) {
     setAttachments([]);
     setStage("");
     setLegacy(null);
-    setIntent("chat");
     setStreaming({ turnId: "", text: "" });
     setSessionPickerOpen(false);
     requestAnimationFrame(() => draftInput.current?.focus());
@@ -430,7 +429,7 @@ export const AgentPanel = memo(function AgentPanel(props: Props) {
     message = draft,
     helper?: AgentTurnInput["helper"],
     skipVisualAnalysis = false,
-    explicitIntent = intent,
+    explicitIntent: NonNullable<AgentTurnInput["intent"]> = "auto",
     contextAssetIds: string[] = [],
   ) =>
     run(async () => {
@@ -507,7 +506,6 @@ export const AgentPanel = memo(function AgentPanel(props: Props) {
         if (alive.current && current === operation.current) {
           if (succeeded) {
             setAttachments([]);
-            setIntent("chat");
             setStreaming({ turnId: "", text: "" });
           }
           setStage("");
@@ -518,7 +516,6 @@ export const AgentPanel = memo(function AgentPanel(props: Props) {
             setStreaming({ turnId: "", text: "" });
             setStreamInterrupted(false);
             setAttachments([]);
-            setIntent("chat");
             setDraft(value => value === message ? "" : value);
           }
         }
@@ -532,7 +529,6 @@ export const AgentPanel = memo(function AgentPanel(props: Props) {
     operation.current++;
     setStage("分析已停止");
     setBusy(false);
-    setIntent("chat");
     setStreamInterrupted(true);
     if (session)
       void agentRequest(`/sessions/${session.id}`, {}).then(() => refresh(session.id)).catch((e) =>
@@ -593,7 +589,7 @@ export const AgentPanel = memo(function AgentPanel(props: Props) {
       });
       if (value.plan && alive.current) updatePlan(value.plan);
     });
-  const intentHint = intent === "chat" ? "聊想法、问问题" : "先出方案，你确认后再放入画布";
+  const intentHint = "聊想法，也能直接提出制作要求；方案由你确认后放入画布";
   const reasoningNotes = [reasoningOptions.length > 1 ? reasoningSourceLabel : "", selected?.reasoningNotice].filter((note): note is string => Boolean(note));
   const conversationItems = agentConversationItems(session?.messages ?? []);
   const sessionList: Array<{ id: string; title: string; updatedAt?: string }> = [...(session && !sessions.some(item => item.id === session.id) ? [session] : []), ...sessions];
@@ -627,7 +623,7 @@ export const AgentPanel = memo(function AgentPanel(props: Props) {
           {sessionList.filter(item => item.title.toLocaleLowerCase().includes(sessionQuery.trim().toLocaleLowerCase())).map(item => <button type="button" key={item.id} data-session-id={item.id} data-choice aria-pressed={item.id === session?.id} disabled={busy} onClick={() => void run(async () => {
             operation.current++;
             const next = await agentRequest<AgentSession>(`/sessions/${item.id}`, undefined, "GET");
-            if (alive.current) { setSession(next); setLegacy(null); setIntent("chat"); setStreaming({ turnId:"", text:"" }); setSessionPickerOpen(false); }
+            if (alive.current) { setSession(next); setLegacy(null); setStreaming({ turnId:"", text:"" }); setSessionPickerOpen(false); }
           })}><span>{item.id === session?.id ? session.title : item.title}</span><small>{agentRelativeTime(item.id === session?.id ? session.messages.at(-1)?.createdAt ?? item.updatedAt : item.updatedAt)}</small>{item.id === session?.id && <Check size={13} />}</button>)}
           {!sessionList.length && <p>这里会保留你的创作对话。</p>}
         </div>
@@ -664,7 +660,7 @@ export const AgentPanel = memo(function AgentPanel(props: Props) {
                     "帮我梳理参考图里的设计思路",
                     "帮我完善这段提示词",
                   ].map((s) => (
-                    <button type="button" key={s} onClick={() => { setIntent("chat"); setDraft(s); }}>
+                    <button type="button" key={s} onClick={() => { setDraft(s); }}>
                       <Layers3 size={14} aria-hidden="true" />
                       {s}
                     </button>
@@ -691,7 +687,6 @@ export const AgentPanel = memo(function AgentPanel(props: Props) {
                     : m.content} />
                 {m.role === "assistant" && m.metadata.suggestPlan === true && <button type="button" className={styles.convertChip} disabled={busy} onClick={() => {
                   const context = agentReplyContext(session?.messages ?? [], m.id);
-                  setIntent("canvas-plan");
                   void submit(agentPlanRequest(context.message, m.content), undefined, false, "canvas-plan", context.attachmentAssetIds);
                 }}><WandSparkles size={13} />把这个做成画布方案</button>}
                 {(m.metadata.kind === "error" || m.metadata.kind === "status") &&
@@ -808,9 +803,8 @@ export const AgentPanel = memo(function AgentPanel(props: Props) {
                       })
                     }
                     onContinue={(a) => {
-                      setIntent("canvas-plan");
                       setDraft(
-                        `请为这份成果规划图片或视频节点，先给我确认方案：\n${JSON.stringify(a)}`,
+                        `请为这份成果制作图片或视频的待确认画布方案，先规划，不执行：\n${JSON.stringify(a)}`,
                       );
                     }}
                   />
@@ -824,6 +818,7 @@ export const AgentPanel = memo(function AgentPanel(props: Props) {
                 key={`${p.id}:${p.version}`}
                 plan={p}
                 nodes={props.nodes}
+                connections={props.connections}
                 busy={busy}
                 onAction={(a, accept) => void planAction(p, a, accept)}
                 onSave={(proposal) =>
@@ -910,7 +905,7 @@ export const AgentPanel = memo(function AgentPanel(props: Props) {
           ref={draftInput}
           rows={1}
           aria-label="创作任务要求"
-          placeholder={intent === "chat" ? "聊聊想法，或放入参考素材…" : "描述你希望制作的内容与要求…"}
+          placeholder="聊聊想法，或告诉我你想制作什么…"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onPaste={(e) => {
@@ -953,10 +948,6 @@ export const AgentPanel = memo(function AgentPanel(props: Props) {
             <Paperclip size={16} />
           </button>
           {props.selectedNode && <button className={styles.selectionChip} type="button" aria-pressed={useSelected} title={"使用所选节点：" + props.selectedNode.data.label} onClick={() => setUseSelected(value => !value)}><Layers3 size={13} /><span>使用所选节点</span></button>}
-          <div className={styles.intentRow} role="group" aria-label="对话方式">
-            <button type="button" aria-label="聊天" aria-pressed={intent === "chat"} disabled={busy} onClick={() => setIntent("chat")}>对话</button>
-            <button type="button" aria-label="制作画布方案" aria-pressed={intent === "canvas-plan"} disabled={busy} onClick={() => setIntent("canvas-plan")}>制作方案</button>
-          </div>
           <button className={styles.modelChip} type="button" data-agent-popover-trigger aria-haspopup="dialog" aria-label="对话模型" aria-expanded={modelSettingsOpen} data-model-key={modelKey} disabled={busy} title={selected ? selected.modelId + " · " + selected.supplierName + " / " + selected.group : "选择对话模型"} onClick={() => { setSessionPickerOpen(false); setModelSettingsOpen(value => !value); }}>
             <span>{selected?.modelName ?? "选择模型"}</span><small>{reasoningOptions.find(option => option.value === reasoning)?.label ?? "自动"}思考</small><ChevronDown size={12} />
           </button>
@@ -969,14 +960,14 @@ export const AgentPanel = memo(function AgentPanel(props: Props) {
               type="button"
               className={styles.primary}
               aria-label="发送任务"
-              title={intent === "chat" ? "发送消息（输入文字后可按 Enter；Shift+Enter 换行）" : "制作待确认的画布方案（输入文字后可按 Enter；Shift+Enter 换行）"}
+              title="发送消息（Enter 发送；Shift+Enter 换行）。制作方案仍需逐步确认。"
               disabled={
                 !selected?.available || (!draft.trim() && !attachments.length)
               }
               onClick={() => void submit()}
             >
               <Send size={16} />
-              <span>{intent === "chat" ? "发送" : "制作方案"}</span>
+              <span>发送</span>
             </button>
           )}
         </div>
@@ -1167,6 +1158,7 @@ function ArtifactEditor({
 function PlanCard({
   plan,
   nodes,
+  connections,
   busy,
   onAction,
   onSave,
@@ -1174,6 +1166,7 @@ function PlanCard({
 }: {
   plan: AgentPlan;
   nodes?: readonly CanvasNode[];
+  connections: readonly ProviderConnectionView[];
   busy: boolean;
   onAction: (action: string, accept?: boolean) => void;
   onSave: (p: AgentProposal) => Promise<void>;
@@ -1261,6 +1254,7 @@ function PlanCard({
       ))}
       {draft.calls.map((c, i) => {
         const route = plan.calls.find((r) => r.id === c.id);
+        const unmatchedReasons = route && !route.selected?.eligible ? [...new Set(route.alternatives.flatMap(option => option.exclusionReasons))] : [];
         const selected = route?.alternatives.find(option =>
           option.candidate.connectionId === c.preferredConnectionId && option.candidate.model.id === c.preferredModelId,
         )?.candidate ?? route?.selected?.candidate;
@@ -1271,6 +1265,9 @@ function PlanCard({
               <span><strong>{c.label}</strong><small title={c.requirements.operation}>{agentOperationNames[c.requirements.operation] ?? "创作步骤"} · {c.requirements.count} 项</small>
                 <p className={styles.promptPreview}>{c.prompt}</p>
                 <small className={styles.stepMeta}>依赖：{c.dependsOn?.map(id => draft.calls.find(call => call.id === id)?.label ?? id).join("、") || "无"} · 推荐模型：<code>{selected?.model.id ?? c.preferredModelId ?? "—"}</code>{selected?.model && <> · {modelPickerPriceCompact(selected.model)}</>}</small>
+                {route && !route.selected?.eligible && <small className={styles.stepMeta} title={unmatchedReasons.join("；")}>
+                  待选择合法渠道 · {unmatchedReasons[0] ?? "当前选择尚未匹配该步骤"}
+                </small>}
               </span><ChevronDown size={13} />
             </summary>
             <textarea
@@ -1291,118 +1288,14 @@ function PlanCard({
               <span title={c.sourceAssetIds.join("、")}>参考素材 {c.sourceAssetIds.length} 项</span> · 依赖：
               {c.dependsOn?.map(id => draft.calls.find(call => call.id === id)?.label ?? id).join("、") || "无"}
             </small>
-            <select
-              aria-label={`${c.label} 执行模型`}
-              disabled={!editable || busy}
-              value={`${c.preferredConnectionId ?? selected?.connectionId ?? ""}\n${c.preferredModelId ?? selected?.model.id ?? ""}`}
-              onChange={(e) => {
-                const [connectionId, modelId] = e.target.value.split("\n");
-                setDirty(true);
-                setDraft((v) => ({
-                  ...v,
-                  calls: v.calls.map((x, j) =>
-                    i === j
-                      ? {
-                          ...x,
-                          preferredConnectionId: connectionId,
-                          preferredModelId: modelId,
-                        }
-                      : x,
-                  ),
-                }));
-              }}
-            >
-              <option value="\n">请选择可用执行模型</option>
-              {route?.alternatives.map((q) => (
-                <option
-                  key={`${q.candidate.connectionId}:${q.candidate.model.id}`}
-                  disabled={!q.eligible}
-                  value={`${q.candidate.connectionId}\n${q.candidate.model.id}`}
-                >
-                  {q.candidate.connectionName} / {q.candidate.model.name}
-                  {q.eligible
-                    ? q.pricingStatus === "known"
-                      ? ` · ≤¥${q.cnyMaximum}`
-                      : " · 价格未知"
-                    : ` · ${q.exclusionReasons.join("；")}`}
-                </option>
-              ))}
-            </select>
-            <label>
-              数量
-              <input
-                type="number"
-                min={1}
-                max={c.requirements.operation.startsWith("video") ? 1 : 20}
-                disabled={!editable}
-                value={c.requirements.count}
-                onChange={(e) => {
-                  setDirty(true);
-                  setDraft((v) => ({
-                    ...v,
-                    calls: v.calls.map((x, j) =>
-                      i === j
-                        ? {
-                            ...x,
-                            requirements: {
-                              ...x.requirements,
-                              count: Number(e.target.value),
-                            },
-                          }
-                        : x,
-                    ),
-                  }));
-                }}
-              />
-            </label>
+            {route && !route.selected?.eligible && <p role="status" className={styles.parameterNotice}>
+              待选择合法渠道：{unmatchedReasons.length ? unmatchedReasons.join("；") : "当前选择未匹配此步骤的要求，请选择渠道并检查参数。"}。所需规格已保留，尚不能放入画布。
+            </p>}
+            <AgentPlanStepEditor call={c} route={route} connections={connections} disabled={!editable || busy} onChange={next => {
+              setDirty(true);
+              setDraft(value => ({ ...value, calls: value.calls.map((call, index) => index === i ? next : call) }));
+            }} />
             {c.recommendation && <small>{c.recommendation}</small>}
-            {(
-              [
-                ["aspectRatio", "画面比例"],
-                ["resolution", "分辨率"],
-                ["durationSeconds", "时长（秒）"],
-                ["quality", "质量"],
-              ] as const
-            )
-              .filter(
-                ([k]) =>
-                  k !== "durationSeconds" ||
-                  c.requirements.operation.startsWith("video"),
-              )
-              .map(([k, label]) => (
-                <label key={k}>
-                  {label}
-                  <input
-                    aria-label={`${c.label} ${label}`}
-                    type={k === "durationSeconds" ? "number" : "text"}
-                    disabled={!editable || busy}
-                    value={c.requirements[k] ?? ""}
-                    placeholder="模型默认"
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setDirty(true);
-                      setDraft((v) => ({
-                        ...v,
-                        calls: v.calls.map((x, j) =>
-                          i === j
-                            ? {
-                                ...x,
-                                requirements: {
-                                  ...x.requirements,
-                                  [k]: value
-                                    ? k === "durationSeconds"
-                                      ? Number(value)
-                                      : value
-                                    : undefined,
-                                },
-                              }
-                            : x,
-                        ),
-                      }));
-                    }}
-                  />
-                </label>
-              ))}
           </details>
         );
       })}

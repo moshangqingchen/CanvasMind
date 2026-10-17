@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "./helpers/canvas-offline-test";
 import { installPhase5StateFixture } from "./helpers/phase5-state-fixture";
 
 const preferenceKey = "supercanvas:appearance";

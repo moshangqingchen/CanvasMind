@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./helpers/canvas-offline-test";
 import { installPhase5StateFixture } from "./helpers/phase5-state-fixture";
 
 test.use({ viewport: { width: 1366, height: 768 } });

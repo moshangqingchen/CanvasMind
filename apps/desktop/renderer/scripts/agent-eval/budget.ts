@@ -8,7 +8,7 @@ export interface AttemptIdentity {
   caseId: string;
   connectionId: string;
   modelId: string;
-  intent: "chat" | "canvas-plan";
+  intent: "auto" | "chat" | "canvas-plan";
 }
 export interface Reservation extends AttemptIdentity { sequence: number; reservedAt: string }
 export class EvaluationBudgetExhausted extends Error {

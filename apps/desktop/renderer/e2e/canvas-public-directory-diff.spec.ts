@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "./helpers/canvas-offline-test";
 import type { ModelDescriptor } from "@super-canvas/providers";
 import type { SupplierCatalogModel } from "../lib/client-suppliers";
 

@@ -1,3 +1,4 @@
+import { agentProposalAllowed } from "../../lib/agent-intent";
 import { expect, type Page } from "@playwright/test";
 import type {
   AgentMessage,
@@ -7,6 +8,9 @@ import type {
 } from "../../lib/agent-contracts";
 import type { AgentModelOption } from "../../lib/agent-models";
 import { installNeuralFixture, neuralProjects } from "./neural-fixture";
+import type { DirectorCatalogCandidate } from "@super-canvas/director";
+import { neuralConnections } from "./neural-fixture";
+import { agentCallParameters, agentRequirementsForParameters } from "../../lib/agent-plan-parameters";
 
 export type AssistantFixtureMode =
   "reply" | "slow" | "clarify" | "storyboard" | "durable-disconnect";
@@ -130,11 +134,29 @@ export async function installAssistantFixture(
     populated?: boolean;
     markdownProbe?: boolean;
     chatStreamDurationMs?: number;
+    channelParameters?: boolean;
   } = {},
 ) {
+  const parameterCandidates: DirectorCatalogCandidate[] = ["a", "b"].map((key, index) => ({
+    connectionId: `assistant-image-${key}`, connectionName: `测试图片渠道 ${key.toUpperCase()}`, supplier: `fixture-image-${key}`,
+    provider: "rest", group: index ? "标准组" : "高质量组", authoritative: true, connectionActive: true, credentialUsable: true,
+    model: { id: `fixture.image.full-id-${key}`, name: `图片模型 ${key.toUpperCase()}`, operations: ["image.generate", "image.edit"], inputKinds: ["text", "image"], outputKinds: ["image"],
+      parameters: [
+        { key: "aspect_ratio", label: "画面比例", control: "select", valueType: "string", default: "1:1", options: [{ label: "方形 1:1", value: "1:1" }, { label: "竖向 9:16", value: "9:16" }] },
+        { key: "resolution", label: "分辨率", control: "select", valueType: "string", default: index ? "2K" : "4K", options: index ? [{ label: "2K", value: "2K" }] : [{ label: "2K", value: "2K" }, { label: "4K", value: "4K" }] },
+        { key: "quality", label: "质量", control: "select", valueType: "string", default: index ? "standard" : "high", options: [{ label: index ? "标准" : "高", value: index ? "standard" : "high" }] },
+        { key: "seed", label: "种子", control: "number", valueType: "integer", min: 0, max: 999, default: 42 },
+      ],
+    },
+  }));
+  const parameterConnections = parameterCandidates.map(candidate => ({
+    id: candidate.connectionId, name: candidate.connectionName, provider: candidate.provider, apiKey: "", apiKeySet: true, apiKeyUsable: true,
+    config: { usage: "canvas", supplierId: candidate.supplier, supplierName: candidate.connectionName, supplierKey: candidate.supplier, modelGroup: candidate.group, modelScanStatus: "live", scannedModelIds: [candidate.model.id], modelCatalogModels: [candidate.model] },
+  }));
   const base = await installNeuralFixture(page, {
     theme: options.theme,
     motion: options.motion,
+    ...(options.channelParameters ? { connections: [...neuralConnections, ...parameterConnections] } : {}),
     projects: neuralProjects.map((project) =>
       project.id === assistantCanvasId ? { ...project, nodeCount: 2 } : project,
     ),
@@ -254,12 +276,18 @@ export async function installAssistantFixture(
           label: "秋日主视觉",
           prompt: "保持真实产品，以月光银和暖金建立留白。",
           requirements: { operation: "image.generate", count: 1 },
+          ...(options.channelParameters ? { preferredConnectionId: parameterCandidates[0]!.connectionId, preferredModelId: parameterCandidates[0]!.model.id,
+            parameters: { aspect_ratio: "9:16", resolution: "4K", quality: "high", seed: 42 } } : {}),
           sourceAssetIds: [],
           recommendation: "仅供离线界面验收",
         },
       ],
     },
-    calls: [],
+    calls: options.channelParameters ? [{ id: "hero", label: "秋日主视觉", prompt: "保持真实产品，以月光银和暖金建立留白。", requirements: { operation: "image.generate", count: 1 },
+      parameters: { aspect_ratio: "9:16", resolution: "4K", quality: "high", seed: 42 },
+      selected: { candidate: parameterCandidates[0]!, eligible: true, exclusionReasons: [], pricingStatus: "unknown", comparable: false },
+      alternatives: parameterCandidates.map(candidate => ({ candidate, eligible: true, exclusionReasons: [], pricingStatus: "unknown", comparable: false })),
+    }] : [],
     patch: {
       nodes: [],
       edges: [],
@@ -287,7 +315,7 @@ export async function installAssistantFixture(
           attachmentAssetIds: input.attachmentAssetIds,
         },
       });
-      if (input.intent !== "canvas-plan")
+      if (!agentProposalAllowed(input.intent ?? "chat", input.message))
         session.plans = session.plans.map((plan) => ({
           ...plan,
           status: "cancelled",
@@ -314,7 +342,7 @@ export async function installAssistantFixture(
         },
       };
       let plan: AgentPlan | undefined;
-      if (input.intent === "canvas-plan") {
+      if (agentProposalAllowed(input.intent ?? "chat", input.message)) {
         plan = makePlan(input);
         reply.content = "方案已整理，请先检查再决定是否放入画布。";
         reply.metadata = { kind: "proposal", requestId: input.requestId };
@@ -393,7 +421,7 @@ export async function installAssistantFixture(
         interval:
           mode === "slow"
             ? 220
-            : input.intent === "chat" && options.chatStreamDurationMs
+            : input.intent !== "canvas-plan" && options.chatStreamDurationMs
               ? Math.max(
                   150,
                   Math.ceil(options.chatStreamDurationMs / chunks.length),
@@ -532,6 +560,8 @@ export async function installAssistantFixture(
       modelReads++;
       return route.fulfill({ json: assistantModels });
     }
+    const generationModels = /^\/api\/providers\/(assistant-image-[ab])\/models$/u.exec(path);
+    if (options.channelParameters && generationModels && method === "GET") return route.fulfill({ json: parameterCandidates.filter(candidate => candidate.connectionId === generationModels[1]).map(candidate => candidate.model) });
     if (path === "/api/agent/sessions") {
       if (method === "GET")
         return route.fulfill({
@@ -623,6 +653,13 @@ export async function installAssistantFixture(
       }
       if (action === "update") {
         plan!.proposal = body.proposal;
+        if (options.channelParameters) plan!.calls = plan!.proposal.calls.map(call => {
+          const candidate = parameterCandidates.find(candidate => candidate.connectionId === call.preferredConnectionId && candidate.model.id === call.preferredModelId)!;
+          const parameters = agentCallParameters(call.requirements, candidate, call.parameters);
+          return { ...call, requirements: agentRequirementsForParameters(call.requirements, parameters, candidate.model), parameters,
+            selected: { candidate, eligible: true, exclusionReasons: [], pricingStatus: "unknown", comparable: false },
+            alternatives: parameterCandidates.map(candidate => ({ candidate, eligible: true, exclusionReasons: [], pricingStatus: "unknown", comparable: false })) };
+        });
         plan!.version++;
         return route.fulfill({ json: plan });
       }
@@ -641,6 +678,9 @@ export async function installAssistantFixture(
             provider: "fake",
             connectionId: "fake-only",
             model: "fake-image",
+            ...(options.channelParameters ? { provider: plan!.calls[0]!.selected!.candidate.provider,
+              connectionId: plan!.proposal.calls[0]!.preferredConnectionId, model: plan!.proposal.calls[0]!.preferredModelId,
+              parameters: structuredClone(plan!.proposal.calls[0]!.parameters) } : {}),
             parts: [{ type: "text", text: plan!.proposal.calls[0]!.prompt }],
             inputs: [],
             outputs: [{ id: "images", kind: "image", label: "图片" }],

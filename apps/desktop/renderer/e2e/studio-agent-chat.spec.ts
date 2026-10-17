@@ -1,3 +1,4 @@
+import { agentProposalAllowed } from "../lib/agent-intent";
 import { expect, test, type Page } from "@playwright/test";
 import {
   expectAgentModel,
@@ -184,7 +185,7 @@ async function studioFixture(page: Page, startEmpty = false) {
           attachmentAssetIds: input.attachmentAssetIds,
         },
       });
-      if (input.intent === "canvas-plan") {
+      if (agentProposalAllowed(input.intent ?? "chat", input.message)) {
         session.plans = [
           { ...structuredClone(plan), sourceRequestId: input.requestId },
         ];
@@ -201,7 +202,7 @@ async function studioFixture(page: Page, startEmpty = false) {
         createdAt: now,
         metadata: {},
         content:
-          input.intent === "canvas-plan"
+          agentProposalAllowed(input.intent ?? "chat", input.message)
             ? "方案准备好了，请先检查。"
             : "可以，我们先聊想法。",
       });
@@ -311,7 +312,7 @@ test("首页聊天入口只打开对话工作区，不发送任务", async ({ pa
   const panel = page.getByRole("region", { name: "通用创作智能体" });
   await expect(
     panel.getByRole("button", { name: "聊天", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
+  ).toHaveCount(0);
   await expect(page).toHaveURL(/\/canvas\/studio-chat-fixture$/u);
   expect(fixture.createdTitles).toEqual(["创作对话"]);
   expect(fixture.turns).toHaveLength(0);
@@ -323,7 +324,7 @@ test("首页聊天入口只打开对话工作区，不发送任务", async ({ pa
   await page.screenshot({ path: testInfo.outputPath("home-chat-entry.png") });
 });
 
-test("日常聊天包含生成措辞和附件仍仅发送chat，模型设置可收起，窄屏无溢出", async ({
+test("合一对话中引用生成措辞和附件不授权制作，模型设置可收起，窄屏无溢出", async ({
   page,
 }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -349,7 +350,7 @@ test("日常聊天包含生成措辞和附件仍仅发送chat，模型设置可�
   ).toBeVisible();
   expect(fixture.turns).toHaveLength(1);
   expect(fixture.turns[0]).toMatchObject({
-    intent: "chat",
+    intent: "auto",
     attachmentAssetIds: ["studio-reference"],
   });
   expect(fixture.session.plans).toHaveLength(0);
@@ -385,24 +386,22 @@ test("日常聊天包含生成措辞和附件仍仅发送chat，模型设置可�
   await page.screenshot({ path: testInfo.outputPath("chat-narrow.png") });
 });
 
-test("明确制作方案发送canvas-plan，完成回聊天；新聊天撤回历史方案入口", async ({
+test("当前明确制作以auto提出待确认方案；后续聊天撤回历史方案入口", async ({
   page,
 }, testInfo) => {
   const fixture = await studioFixture(page);
   const panel = await openStudio(page);
-  await panel
-    .getByRole("button", { name: "制作画布方案", exact: true })
-    .click();
+
   await panel
     .getByLabel("创作任务要求")
     .fill("请制作一张产品主视觉的画布方案。");
   await panel.getByRole("button", { name: "发送任务", exact: true }).click();
   const confirm = panel.getByRole("button", { name: "放入画布" });
   await expect(confirm).toBeEnabled();
-  expect(fixture.turns[0].intent).toBe("canvas-plan");
+  expect(fixture.turns[0].intent).toBe("auto");
   await expect(
     panel.getByRole("button", { name: "聊天", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
+  ).toHaveCount(0);
   expect(fixture.counts()).toEqual({
     productionRequests: 0,
     externalRequests: 0,
@@ -449,8 +448,8 @@ test("明确制作方案发送canvas-plan，完成回聊天；新聊天撤回历
     0,
   );
   expect(fixture.turns.map((turn) => turn.intent)).toEqual([
-    "canvas-plan",
-    "chat",
+    "auto",
+    "auto",
   ]);
   expect(fixture.canvas.graph.nodes).toHaveLength(0);
   expect(fixture.counts()).toEqual({

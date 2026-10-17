@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./helpers/canvas-offline-test";
 import { readFileSync } from "node:fs";
 import type { ModelDescriptor } from "@super-canvas/providers";
 import { miaowuCatalogFromPricing, miaowuConnectorForModels, miaowuUnparameterizedVideoDescriptor } from "../lib/miaowu-catalog";

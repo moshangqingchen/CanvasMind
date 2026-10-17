@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./helpers/canvas-offline-test";
 import type { ModelDescriptor } from "@super-canvas/providers";
 import type { CanvasResponse, ProviderConnectionView } from "../lib/client-api";
 import { CANGYUAN_IMAGE_CONNECTOR } from "../lib/provider-presets";

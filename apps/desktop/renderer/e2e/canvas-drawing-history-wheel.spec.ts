@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./helpers/canvas-offline-test";
 
 type DrawingProbe = { draftWrites: number; pointerId: number; wheels: Array<{ trusted: boolean; prevented: boolean; ctrl: boolean }> };
 declare global { interface Window { __drawingUiProbe: DrawingProbe } }

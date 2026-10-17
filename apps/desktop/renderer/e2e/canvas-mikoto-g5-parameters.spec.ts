@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./helpers/canvas-offline-test";
 import type { ModelDescriptor } from "@super-canvas/providers";
 
 const fixture = JSON.parse(readFileSync(new URL("../lib/fixtures/mikoto-installed-r4-one-k-safe.json", import.meta.url), "utf8")) as {

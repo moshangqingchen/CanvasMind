@@ -1,5 +1,5 @@
 import { expectCompactPromptLine } from "./helpers/lod-expectations";
-import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Locator, type Page } from "./helpers/canvas-offline-test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createCanvasStateVisualFixture } from "./helpers/canvas-state-visual-fixture";

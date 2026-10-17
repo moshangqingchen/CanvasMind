@@ -329,7 +329,7 @@
   position: absolute;
   left: 50%;
   top: 50%;
-  transform: translate(-50%, 30px);
+  transform: translate(-50%, 48px);
   display: flex;
   flex-direction: column;
   gap: 7px;
@@ -395,7 +395,7 @@
 }
 .workspace[data-level="module"] .satelliteCard,
 .workspace[data-level="item"] .satelliteCard {
-  transform: translate(38px, -50%);
+  transform: translate(70px, -50%);
   min-width: 135px;
   padding: 11px 12px;
 }
@@ -405,7 +405,7 @@
 .workspace[data-level="item"]
   .satellite:not([data-selected="true"])
   .satelliteCard {
-  transform: translate(30px, -50%) scale(0.88);
+  transform: translate(54px, -50%) scale(0.88);
   transform-origin: left center;
 }
 .breadcrumb {

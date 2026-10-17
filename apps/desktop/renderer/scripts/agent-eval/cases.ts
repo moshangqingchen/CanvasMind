@@ -1,7 +1,9 @@
 export interface EvaluationCase {
   id: string;
   label: string;
-  intent: "chat" | "canvas-plan";
+  intent: "auto" | "chat" | "canvas-plan";
+  /** HEAD 1ecc36a predates auto; preserve its explicit mode for fair comparison. */
+  baselineIntent?: "chat" | "canvas-plan";
   message: string;
   selectedText?: string;
   checks: readonly string[];

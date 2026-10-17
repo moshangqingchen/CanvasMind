@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./helpers/canvas-offline-test";
 import { clickBlankCanvas } from "./canvas-test-actions";
 
 test.use({ video: process.env.STUDIO_RECORD_VIDEO === "1" ? { mode: "on", size: { width: 1600, height: 1000 } } : "off" });
@@ -18,12 +18,14 @@ test("studio canvas keeps navigation, view toggles and draft starters usable", a
   await expect(page.getByRole("button", { name: "打开超级导演", exact: true })).toHaveCount(0);
   const assistant = page.getByRole("region", { name: "通用创作智能体" });
   await expect(assistant.getByRole("heading", { name: "有什么想法，聊聊吧。", exact: true })).toBeVisible();
-  await expect(assistant.getByRole("button", { name: "聊天", exact: true })).toHaveAttribute("aria-pressed", "true");
-  // A canvas starter fills a draft; it must not inherit a previously selected production mode.
-  await assistant.getByRole("button", { name: "制作画布方案", exact: true }).click();
+  await expect(assistant.getByRole("button", { name: "聊天", exact: true })).toHaveCount(0);
+  await expect(assistant.getByRole("button", { name: "制作画布方案", exact: true })).toHaveCount(0);
+  // Unified input has no sticky production mode. A starter replaces the draft
+  // without submitting either the existing production request or the new draft.
+  await assistant.getByRole("textbox", { name: "创作任务要求" }).fill("请制作一张活动海报");
   await page.getByRole("button", { name: "创作分镜", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "创作任务要求" })).toHaveValue(/请帮我创作一组分镜/);
-  await expect(assistant.getByRole("button", { name: "聊天", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(assistant.getByRole("button", { name: "聊天", exact: true })).toHaveCount(0);
   expect(agentTurns).toBe(0);
   await page.getByRole("textbox", { name: "创作任务要求" }).fill("");
   await page.screenshot({ path: testInfo.outputPath("studio-empty.png") });

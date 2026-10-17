@@ -276,17 +276,13 @@ export function NeuralWorkspace() {
   const entities = useMemo(
     () =>
       index
-        .filter((e) => e.kind !== "module")
+        .filter((e) => e.kind === "item")
         .map((e) => ({
           id: e.id,
           module: e.module,
-          match: searchOpen && matches.has(e.id),
-          parentId:
-            e.kind === "model"
-              ? `${e.module === "accounts" ? "account" : "supplier"}:${e.itemId}`
-              : undefined,
+          match: searchOpen && (matches.has(e.id) || results.some(result => result.kind === "model" && result.module === e.module && result.itemId === e.itemId)),
         })),
-    [index, matches, searchOpen],
+    [index, matches, searchOpen, results],
   );
   const selectedProject =
     state.module === "canvases"
@@ -465,7 +461,7 @@ export function NeuralWorkspace() {
           .get(active)
           ?.querySelector<HTMLElement>("[data-satellite-card]")
       : null;
-    if (label) curveOffset.current = 38 + label.offsetWidth;
+    if (label) curveOffset.current = 70 + label.offsetWidth;
     ends.current.clear();
     for (const [id, row] of rows.current) {
       const rect = row.getBoundingClientRect();

@@ -4,7 +4,7 @@ import {
   type APIRequestContext,
   type Locator,
   type Page,
-} from "@playwright/test";
+} from "./helpers/canvas-offline-test";
 import type { ModelDescriptor } from "@super-canvas/providers";
 
 const models = ["甲", "乙"].map((suffix, index) => ({

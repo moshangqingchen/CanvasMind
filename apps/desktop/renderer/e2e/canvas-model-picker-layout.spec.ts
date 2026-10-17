@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Locator, type Page } from "./helpers/canvas-offline-test";
 import { parseTk1688Marketplace } from "@super-canvas/providers";
 import { CANGYUAN_IMAGE_CONNECTOR } from "../lib/provider-presets";
 

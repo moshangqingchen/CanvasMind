@@ -9,6 +9,7 @@ const config = {
   ...base,
   testMatch: [
     "assistant-workspace.spec.ts",
+    "assistant-unified.spec.ts",
     "agent.spec.ts",
     "studio-agent-chat.spec.ts",
     "agent-tk1688-model-groups.spec.ts",

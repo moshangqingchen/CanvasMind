@@ -65,6 +65,8 @@ export const AgentCallSchema = DirectorCallDraftSchema.extend({
   sourceAssetIds: z.array(id).max(16).default([]),
   preferredConnectionId: id.optional(),
   preferredModelId: id.optional(),
+  // Frozen, model-declared values edited with the same controls as canvas nodes.
+  parameters: z.record(z.string().max(128), z.union([z.string().max(32000), z.number().finite(), z.boolean()])).optional(),
   recommendation: z.string().max(2000).default(""),
 });
 export const AgentProposalSchema = z
@@ -224,8 +226,9 @@ export const AgentTurnSchema = z
     connectionId: id,
     modelId: id,
     message: text,
-    // Explicit user action; never inferred from message or model output.
-    intent: z.enum(["chat", "canvas-plan"]).optional(),
+    // Legacy clients retain their explicit modes. Auto only permits a proposal
+    // when the current instruction asks for production; it never executes it.
+    intent: z.enum(["auto", "chat", "canvas-plan"]).optional(),
     attachmentAssetIds: z.array(id).max(16).default([]),
     selectedNodeIds: z.array(id).max(100).default([]),
     reasoningEffort: z.string().max(20).optional(),

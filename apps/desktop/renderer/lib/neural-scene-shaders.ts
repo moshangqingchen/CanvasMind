@@ -7,6 +7,7 @@ layout(location=2) in float aBrightness;
 layout(location=3) in float aPhase;
 layout(location=4) in float aSize;
 layout(location=5) in float aDepth;
+layout(location=6) in vec3 aTint;
 uniform vec2 uResolution;
 uniform vec4 uNodes[5];
 uniform vec3 uColors[5];
@@ -19,6 +20,8 @@ uniform float uKind;
 uniform float uDeparture;
 uniform float uIntro;
 uniform float uLightTheme;
+uniform vec2 uPointer;
+out vec2 vPosition;
 out vec3 vColor;
 out float vLight;
 out float vPhase;
@@ -35,30 +38,44 @@ void main(){
   vec4 node=uNodes[group];
   vec3 p=aPosition;
   float clock=uTime*(group==0 ? .05 : .035);
-  if(uKind<1.5) {
+  if(uKind<.5) {
     p=rotate(p,clock+float(group)*.21);
     float distortion=sin(p.x*7.+p.y*5.+uTime*.18)*cos(p.z*6.-uTime*.13)*.018;
     if(group==0) p*=1.+distortion;
     else { p.x+=sin(p.y*3.+uTime*.25+float(group))*p.y*.055; }
   }
+  if((uKind>3.5&&uKind<5.5)||uKind>0.5&&uKind<1.5) {
+    float yaw=sin(uTime*.27+float(group)*.8)*.20944;
+    float c=cos(yaw),s=sin(yaw);
+    p.xz=mat2(c,-s,s,c)*p.xz;
+    float hover=uHovered>.5&&abs(uHovered-float(group))<.5?1.:0.;
+    p.xy*=1.+sin(uTime*.65+float(group))*.012+hover*sin(uTime*1.6+aPhase*6.28)*.012;
+  }
   float perspective=1.+p.z*.13;
   vec2 position=node.xy+p.xy*node.z*perspective;
   if(uKind>1.5&&uKind<2.5) {
     float t=aPosition.x;
-    vec2 start=uNodes[0].xy;
-    vec2 end=node.xy;
+    vec2 direction=normalize(node.xy-uNodes[0].xy);
+    vec2 start=uNodes[0].xy+direction*uNodes[0].z*.99;
+    vec2 end=node.xy-direction*node.z*.58;
     vec2 delta=end-start;
     vec2 normal=normalize(vec2(-delta.y,delta.x));
     position=mix(start,end,t)+normal*(sin(t*3.14159265)*aPosition.y*18.+sin(t*6.283+uTime*.24)*aPosition.y*3.);
     p.z=0.;
   }
-  if(uKind>2.5) position=node.xy+p.xy*node.z*(1.+uDeparture*3.5);
+  if(uKind>2.5&&uKind<3.5) position=node.xy+p.xy*node.z*(1.+uDeparture*2.);
+  if(uKind>6.5) position=aPosition.xy;
+  vPosition=position;
   float selectedFade=uSelected>0.5&&group!=0&&abs(uSelected-float(group))>.5?.55:1.;
   float hoverFade=uHovered>.5&&group!=0&&abs(uHovered-float(group))>.5?.25:1.;
   float hoverBoost=uHovered>.5&&abs(uHovered-float(group))<.5?1.8:1.;
   float grow=smoothstep(aDepth-.28,aDepth+.15,uGrowth);
   vLight=aBrightness*node.w*selectedFade*hoverFade*hoverBoost*grow*uIntro;
-  vColor=uColors[group]; vPhase=aPhase; vDepth=p.z; vNormal=normalize(p);
+  if(uSelected>.5&&abs(uSelected-float(group))<.5&&uKind>3.5&&uKind<5.5) vLight*=1.22;
+  if(uKind>5.5&&uKind<6.5&&uPointer.x>=0.) vLight*=1.+(1.-smoothstep(0.,120.,distance(position,uPointer)))*.65;
+  vColor=uColors[group];
+  if(aTint.r>=0.) vColor=uLightTheme>.5?mix(uColors[group],uColors[0],.57):mix(vColor,aTint,.25);
+  vPhase=aPhase; vDepth=p.z; vNormal=normalize(p);
   gl_Position=vec4(position/uResolution*vec2(2.,-2.)+vec2(-1.,1.),clamp(-p.z*.2,-.9,.9),1.);
   float pointScale=node.z/(min(uResolution.x,uResolution.y)*(group==0?.22:.052));
   gl_PointSize=max(1.,aSize*uDpr*(1.+p.z*.2)*(uKind<.5 ? 1. : 1.1)*(uLightTheme>.5?1.24:1.)*pointScale);
@@ -67,10 +84,16 @@ void main(){
 export const neuralLineFragment = `#version 300 es
 precision highp float;
 in vec3 vColor; in float vLight; in float vPhase; in float vDepth; in vec3 vNormal;
+in vec2 vPosition;
 uniform float uTime; uniform float uKind; uniform float uLightTheme;
+uniform vec4 uNodes[5]; uniform vec3 uGold;
 uniform vec3 uSilver; uniform vec3 uEmber; uniform vec3 uEmberLight;
 out vec4 outColor;
 void main(){
+  if(uKind>2.5&&uKind<3.5) for(int i=1;i<5;i++) {
+    vec2 q=vPosition-uNodes[i].xy;
+    if(abs(q.x)<102.&&q.y> -100.&&q.y<172.) discard;
+  }
   float front=smoothstep(-.8,.7,vDepth)*.7+.3;
   float travel=.5+.5*sin(uTime*.7);
   float pulse=exp(-pow((vPhase-travel)*24.,2.));
@@ -79,21 +102,24 @@ void main(){
   float alpha=vLight*front;
   if(uKind<.5) alpha*=uLightTheme>.5?.85:.7;
   if(uKind>1.5&&uKind<2.5) { alpha*=.82+pulse*4.; color=mix(color,uSilver,pulse*.28); }
+  if(uKind>3.5&&uKind<4.5) { alpha*=uLightTheme>.5?1.7+pulse*.25:.85+pulse*.85; color=mix(color,uSilver,pulse*(uLightTheme>.5?.035:.2)); }
+  if(uKind>6.5) color=uGold;
   outColor=vec4(color,alpha*(uLightTheme>.5?1.15:1.));
 }`;
 
 export const neuralPointFragment = `#version 300 es
 precision highp float;
 in vec3 vColor; in float vLight; in float vPhase; in float vDepth; in vec3 vNormal;
+in vec2 vPosition;
 uniform float uTime; uniform float uKind; uniform float uLightTheme;
-uniform vec3 uSilver; uniform vec3 uEmber; uniform vec3 uEmberLight;
+uniform vec3 uSilver; uniform vec3 uEmber; uniform vec3 uEmberLight; uniform vec3 uGold;
 out vec4 outColor;
 void main(){
   float d=length(gl_PointCoord-.5)*2.;
   if(d>1.) discard;
   float shape=exp(-d*d*4.5)*(1.-smoothstep(.7,1.,d));
   float flicker=.55+.45*sin(uTime*(.55+vPhase)+vPhase*37.);
-  vec3 color=uKind<.5?mix(uEmber,uEmberLight,vPhase*vPhase*.35):vColor;
+  vec3 color=uKind<.5?mix(uEmber,uEmberLight,vPhase*vPhase*.35):uKind>6.5?uGold:vColor;
   float alpha=shape*vLight*(.7+.3*flicker);
   if(uKind<.5) { alpha*=1.15; color*=1.1; }
   outColor=vec4(color,alpha*(uLightTheme>.5?1.2:1.));
@@ -102,6 +128,7 @@ void main(){
 export const neuralShellFragment = `#version 300 es
 precision highp float;
 in vec3 vColor; in float vLight; in float vPhase; in float vDepth; in vec3 vNormal;
+in vec2 vPosition;
 uniform vec3 uShell; uniform vec3 uSilver; uniform vec3 uEmber; uniform float uLightTheme;
 out vec4 outColor;
 void main(){
@@ -118,6 +145,7 @@ void main(){
 export const neuralRimFragment = `#version 300 es
 precision highp float;
 in vec3 vColor; in float vLight; in float vPhase; in float vDepth; in vec3 vNormal;
+in vec2 vPosition;
 uniform vec3 uSilver; uniform vec3 uEmber; uniform vec3 uEmberLight;
 uniform float uTime; uniform float uLightTheme;
 out vec4 outColor;
@@ -142,7 +170,7 @@ precision highp float;
 in vec2 vUv; out vec4 outColor;
 uniform vec2 uResolution; uniform vec4 uCore;
 uniform vec3 uBackground; uniform vec3 uCenter; uniform vec3 uSilver; uniform vec3 uEmber;
-uniform float uLightTheme; uniform float uFlash; uniform float uTime; uniform float uIntro;
+uniform float uLightTheme; uniform float uFlash; uniform float uTime; uniform float uIntro; uniform float uRipple;
 float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123); }
 void main(){
   vec2 uv=vec2(vUv.x,1.-vUv.y);
@@ -154,6 +182,10 @@ void main(){
   float ember=exp(-r*r*10.)*.32;
   if(uLightTheme>.5) { color=mix(color,uSilver,exp(-r*r*.65)*.035*uIntro); color=mix(color,uEmber,exp(-r*r*2.)*.06*uIntro); }
   else { color+=uSilver*halo*uIntro+uEmber*ember*uIntro; }
+  if(uRipple>=0.) {
+    float ring=exp(-pow((r-(.3+uRipple*2.8))*45.,2.))*(1.-uRipple)*.035;
+    color=mix(color,uEmber,ring);
+  }
   color+=(hash(gl_FragCoord.xy)-.5)*.025;
   color=mix(color,uLightTheme>.5?uEmber:uSilver,uFlash*exp(-r*r*.55)*.48);
   outColor=vec4(color,1.);

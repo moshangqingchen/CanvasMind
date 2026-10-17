@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "./helpers/canvas-offline-test";
 
 async function openCanvas(page: Page, request: APIRequestContext) {
   await page.setViewportSize({ width: 1600, height: 1000 });
@@ -90,7 +90,10 @@ test("窗口失焦和指针取消清理交互状态，返回后可继续下一�
     await page.evaluate(() => window.dispatchEvent(new PointerEvent("pointerup", { pointerType: "mouse" })));
     await expect(wrap).not.toHaveClass(/is-interacting/);
   }
-  await expect(page.locator(".canvas-pointer-trail")).toHaveCount(0);
+  // Decoration now has an event-driven surface. Cancelled gestures must leave
+  // it asleep, with no stale trail or spotlight, before the next interaction.
+  await expect(page.getByTestId("canvas-ambient-effects")).toHaveAttribute("data-frame-active", "false");
+  await expect(page.getByTestId("canvas-ambient-effects")).toHaveAttribute("data-pointer", "false");
   assertNoRuns();
 });
 

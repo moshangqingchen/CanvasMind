@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./helpers/canvas-offline-test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { installPhase3LargeFixture } from "./helpers/phase3-large-fixtures";

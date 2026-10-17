@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext } from "@playwright/test";
+import { expect, test, type APIRequestContext } from "./helpers/canvas-offline-test";
 import { cangyuanMusicModel } from "@super-canvas/providers";
 
 type Graph = { nodes: Array<{ id: string; data: Record<string, unknown> }>; edges: Array<Record<string, unknown>> };

@@ -65,17 +65,26 @@ export default async function neuralGlobalSetup(config: FullConfig) {
   const environment = await createTestEnvironment(baseURL, token);
   const guard = join(environment.root, "neural-loopback-only.cjs");
   const networkLog = join(output, "neural-server-external-attempts.jsonl");
+  const requestLog = join(output, "neural-server-request-hosts.jsonl");
   await writeFile(networkLog, "");
+  await writeFile(requestLog, "");
   await writeFile(
     guard,
     `const net = require('node:net');
 const fs = require('node:fs');
+require('node:diagnostics_channel').channel('undici:request:create').subscribe(({request}) => {
+  let url; try { url = new URL(String(request.origin)); } catch { return; }
+  if (['127.0.0.1', 'localhost', '::1', '[::1]'].includes(url.hostname)) return;
+  fs.appendFileSync(${JSON.stringify(requestLog)}, JSON.stringify({at: new Date().toISOString(), hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? '443' : '80'), method: request.method, stack: new Error().stack?.split('\\n').slice(1, 10).map(line => line.replace(/https?:\\/\\/[^\\s)]+/g, '[url]'))}) + '\\n');
+});
 const original = net.Socket.prototype.connect;
 net.Socket.prototype.connect = function (...args) {
   const first = Array.isArray(args[0]) ? args[0][0] : args[0];
   const host = typeof first === 'object' ? first.host : typeof args[1] === 'string' ? args[1] : undefined;
   if (host && !['127.0.0.1', 'localhost', '::1', '[::1]'].includes(host)) {
-    fs.appendFileSync(${JSON.stringify(networkLog)}, JSON.stringify({ at: new Date().toISOString(), blockedBeforeConnect: true }) + '\\n');
+    const port = typeof first === 'object' ? first.port : typeof first === 'number' ? first : undefined;
+    const stack = new Error().stack?.split('\\n').slice(1, 7).map(line => line.replace(/https?:\\/\\/[^\\s)]+/g, '[url]'));
+    fs.appendFileSync(${JSON.stringify(networkLog)}, JSON.stringify({ at: new Date().toISOString(), blockedBeforeConnect: true, hostname: String(host).slice(0, 253), port, stack }) + '\\n');
     throw new Error('Neural isolated runtime blocks non-loopback network');
   }
   return Reflect.apply(original, this, args);

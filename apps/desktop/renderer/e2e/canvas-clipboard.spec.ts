@@ -4,7 +4,7 @@ import {
   test as base,
   type APIRequestContext,
   type Page,
-} from "@playwright/test";
+} from "./helpers/canvas-offline-test";
 
 const PNG_1X1 = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",

@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Locator } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Locator } from "./helpers/canvas-offline-test";
 import { CANGYUAN_IMAGE_CONNECTOR } from "../lib/provider-presets";
 import { floatingPanelGeometry } from "./floating-panel-geometry";
 import { setCanvasZoomWithWheel } from "./canvas-test-actions";

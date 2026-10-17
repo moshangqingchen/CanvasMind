@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { mkdir } from "node:fs/promises";
+import { mkdir, copyFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -120,9 +120,9 @@ for (const theme of ["dark", "light"] as const) {
       expect(await button.evaluate(element => getComputedStyle(element).borderRadius)).toBe("999px");
     }
     await captureRework(page, `${theme}-storyboard`);
-    expect(fixture.calls.map(call => call.action)).toEqual(["turn:chat"]);
+    expect(fixture.calls.map(call => call.action)).toEqual(["turn:auto"]);
 
-    await panel.getByRole("button", { name: "制作画布方案", exact: true }).click();
+
     await draft.fill("请按刚才的方向整理一张活动海报的画布方案");
     await panel.getByRole("button", { name: "发送任务", exact: true }).click();
     await expect(materialize(page)).toBeEnabled();
@@ -137,13 +137,13 @@ for (const theme of ["dark", "light"] as const) {
     expect(await meta.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
     await expect(card.getByRole("button", { name: "检查方案与模型", exact: true })).toHaveClass(/ghost/u);
     await expect(card.getByRole("button", { name: "取消方案", exact: true })).toHaveClass(/dangerText/u);
-    expect(fixture.calls.map(call => call.action)).toEqual(["turn:chat", "turn:canvas-plan"]);
+    expect(fixture.calls.map(call => call.action)).toEqual(["turn:auto", "turn:auto"]);
     await captureRework(page, `${theme}-plan-step-1`);
 
     await materialize(page).click();
     await expect(preflight(page)).toBeEnabled();
     await expect(progress.locator('[aria-current="step"]')).toHaveText("② 放入画布");
-    expect(fixture.calls.map(call => call.action)).toEqual(["turn:chat", "turn:canvas-plan", "materialize"]);
+    expect(fixture.calls.map(call => call.action)).toEqual(["turn:auto", "turn:auto", "materialize"]);
     await captureRework(page, `${theme}-plan-step-2`);
 
     await preflight(page).click();
@@ -151,14 +151,14 @@ for (const theme of ["dark", "light"] as const) {
     await expect(progress.locator('[aria-current="step"]')).toHaveText("③ 估算费用并开始生成");
     await expect(card.getByRole("button", { name: "重新估算费用", exact: true })).toHaveClass(/ghost/u);
     await expect(execute(page)).toHaveClass(/primary/u);
-    expect(fixture.calls.map(call => call.action)).toEqual(["turn:chat", "turn:canvas-plan", "materialize", "preflight"]);
+    expect(fixture.calls.map(call => call.action)).toEqual(["turn:auto", "turn:auto", "materialize", "preflight"]);
     await captureRework(page, `${theme}-plan-step-3`);
     await panel.getByRole("checkbox", { name: "我已了解价格未知，确认生成", exact: true }).check();
     await expect(execute(page)).toBeEnabled();
     await execute(page).click();
-    await expect.poll(() => fixture.calls.map(call => call.action)).toEqual(["turn:chat", "turn:canvas-plan", "materialize", "preflight", "execute"]);
+    await expect.poll(() => fixture.calls.map(call => call.action)).toEqual(["turn:auto", "turn:auto", "materialize", "preflight", "execute"]);
     expect(fixture.turns).toHaveLength(2);
-    expect(fixture.turns[1]!.intent).toBe("canvas-plan");
+    expect(fixture.turns[1]!.intent).toBe("auto");
     fixture.assertSafe();
   });
 
@@ -395,11 +395,11 @@ test("流式正文逐块出现、工具合并思考过程、安全 Markdown 保�
     ),
   ).toBeUndefined();
   expect(fixture.turns).toHaveLength(1);
-  expect(fixture.turns[0]!.intent).toBe("chat");
+  expect(fixture.turns[0]!.intent).toBe("auto");
   expect(
     [...fixture.sessions.values()].flatMap((session) => session.plans),
   ).toEqual([]);
-  expect(fixture.calls.map((call) => call.action)).toEqual(["turn:chat"]);
+  expect(fixture.calls.map((call) => call.action)).toEqual(["turn:auto"]);
   fixture.assertSafe();
 });
 
@@ -425,7 +425,7 @@ test("停止逐块流式回复会中断读取，保留文本且不自动重发",
     panel.getByRole("button", { name: "发送任务", exact: true }),
   ).toBeVisible();
   expect(fixture.turns).toHaveLength(1);
-  expect(fixture.calls.map((call) => call.action)).toEqual(["turn:chat"]);
+  expect(fixture.calls.map((call) => call.action)).toEqual(["turn:auto"]);
   fixture.assertSafe();
 });
 
@@ -453,9 +453,9 @@ test("流式连接提前结束但同请求已持久化时只恢复一条最终�
   await expect(draft).toHaveValue("");
   await expect(
     panel.getByRole("button", { name: "聊天", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
+  ).toHaveCount(0);
   expect(fixture.turns).toHaveLength(1);
-  expect(fixture.calls.map((call) => call.action)).toEqual(["turn:chat"]);
+  expect(fixture.calls.map((call) => call.action)).toEqual(["turn:auto"]);
   fixture.assertSafe();
 });
 
@@ -479,7 +479,7 @@ test("多题澄清选项逐题填入草稿，不自动发送或创建方案", as
   await expect(draft).toHaveValue(/安静克制/u);
   await expect(draft).toHaveValue(/活动海报/u);
   expect(fixture.turns).toHaveLength(1);
-  expect(fixture.calls.map((call) => call.action)).toEqual(["turn:chat"]);
+  expect(fixture.calls.map((call) => call.action)).toEqual(["turn:auto"]);
   fixture.assertSafe();
 });
 
@@ -510,7 +510,7 @@ test("分镜镜头卡保留编辑和选择，继续规划只填草稿", async ({
     panel.getByRole("textbox", { name: "创作任务要求", exact: true }),
   ).toHaveValue(/慢慢拉远并留出字区/u);
   expect(fixture.turns).toHaveLength(1);
-  expect(fixture.calls.map((call) => call.action)).toEqual(["turn:chat"]);
+  expect(fixture.calls.map((call) => call.action)).toEqual(["turn:auto"]);
   fixture.assertSafe();
 });
 
@@ -669,13 +669,13 @@ test("同轮聊天附件清空后转换只携带该轮参考，不混入历史�
   ).toHaveCount(0);
   expect(fixture.turns).toHaveLength(1);
   expect(fixture.turns[0]).toMatchObject({
-    intent: "chat",
+    intent: "auto",
     attachmentAssetIds: [referenceId],
   });
   expect(
     [...fixture.sessions.values()].flatMap((session) => session.plans),
   ).toEqual([]);
-  expect(fixture.calls.map((call) => call.action)).toEqual(["turn:chat"]);
+  expect(fixture.calls.map((call) => call.action)).toEqual(["turn:auto"]);
   await convert.click();
   await expect(materialize(page)).toBeEnabled();
   expect(fixture.turns).toHaveLength(2);
@@ -690,7 +690,7 @@ test("同轮聊天附件清空后转换只携带该轮参考，不混入历史�
   expect(fixture.turns[1]!.message).toContain("只讨论本轮产品原图的视觉方向");
   expect(fixture.turns[1]!.message).not.toContain("上轮无关任务");
   expect(fixture.calls.map((call) => call.action)).toEqual([
-    "turn:chat",
+    "turn:auto",
     "turn:canvas-plan",
   ]);
   fixture.assertSafe();
@@ -726,7 +726,7 @@ test("讨论引用已删除时转换显示错误，不提交新请求或创建�
   await expect(panel.getByRole("alert")).toContainText("部分参考素材已不存在");
   await expect.poll(fixture.assetReads).toBe(readsBeforeClick + 1);
   expect(fixture.turns).toHaveLength(1);
-  expect(fixture.calls.map((call) => call.action)).toEqual(["turn:chat"]);
+  expect(fixture.calls.map((call) => call.action)).toEqual(["turn:auto"]);
   expect(
     [...fixture.sessions.values()].flatMap((session) => session.plans),
   ).toEqual([]);
@@ -734,7 +734,7 @@ test("讨论引用已删除时转换显示错误，不提交新请求或创建�
   fixture.assertSafe();
 });
 
-test("首页草稿→模拟流式回复→手动转换方案→三次明确动作完整录屏", async ({
+test("首页头像与规整网络→合一草稿与模拟流→渠道参数→三次明确动作→画布光效完整录屏", async ({
   browser,
 }, info) => {
   test.setTimeout(120000);
@@ -754,10 +754,22 @@ test("首页草稿→模拟流式回复→手动转换方案→三次明确动�
   const fixture = await installAssistantFixture(page, {
     motion: true,
     chatStreamDurationMs: 3200,
+    channelParameters: true,
   });
   try {
     await page.goto("/");
     await expect(page.getByTestId("neural-workspace")).toBeVisible();
+    await expect(page.getByTestId("neural-scene")).toHaveAttribute("data-avatars", "4");
+    await expect(page.getByTestId("neural-scene")).toHaveAttribute("data-renderer", "webgl");
+    await page.waitForTimeout(2500);
+    await page.getByTestId("neural-module-suppliers").hover();
+    await page.waitForTimeout(850);
+    await page.getByTestId("neural-module-canvases").click();
+    await expect(page.getByTestId("neural-item-neural-autumn")).toBeVisible();
+    await page.waitForTimeout(900);
+    await page.getByRole("navigation", { name: "面包屑", exact: true }).getByRole("button", { name: "工作台", exact: true }).click();
+    await expect(page.getByTestId("graph-search")).toBeVisible();
+    await page.waitForTimeout(600);
     const search = page.getByRole("combobox", {
       name: "搜索创作空间",
       exact: true,
@@ -788,7 +800,7 @@ test("首页草稿→模拟流式回复→手动转换方案→三次明确动�
       exact: true,
     });
     await expect(convert).toBeEnabled();
-    expect(fixture.calls.map((call) => call.action)).toEqual(["turn:chat"]);
+    expect(fixture.calls.map((call) => call.action)).toEqual(["turn:auto"]);
     await page.waitForTimeout(1000);
     await convert.click();
     await expect(materialize(page)).toBeEnabled();
@@ -799,16 +811,28 @@ test("首页草稿→模拟流式回复→手动转换方案→三次明确动�
     });
     expect(fixture.turns[1]!.message).toContain("我们先聊一聊秋日品牌的方向");
     expect(fixture.calls.map((call) => call.action)).toEqual([
-      "turn:chat",
+      "turn:auto",
       "turn:canvas-plan",
     ]);
     await capture(page, "dark-plan-step-1");
+    const card = panel.locator('article[class*="productionCard"]');
+    await card.locator('details[class*="planStep"] > summary').click();
+    const parameters = card.getByRole("group", { name: "秋日主视觉 渠道与参数", exact: true });
+    await parameters.getByLabel("秋日主视觉 供应商", { exact: true }).selectOption("fixture-image-b");
+    await expect(parameters.getByLabel("画面比例", { exact: true })).toHaveValue("9:16");
+    await expect(parameters.getByRole("group", { name: "自动与输出分辨率快捷档位", exact: true }).getByRole("button", { name: "2K", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await parameters.getByLabel("种子", { exact: true }).fill("77");
+    await page.waitForTimeout(1200);
+    await capture(page, "dark-flow-channel-parameters");
+    await card.getByRole("button", { name: "保存方案修改", exact: true }).click();
+    await expect(materialize(page)).toBeEnabled();
     await page.waitForTimeout(2000);
     await materialize(page).click();
     await expect(preflight(page)).toBeEnabled();
     expect(fixture.calls.map((call) => call.action)).toEqual([
-      "turn:chat",
+      "turn:auto",
       "turn:canvas-plan",
+      "update",
       "materialize",
     ]);
     await capture(page, "dark-plan-step-2");
@@ -817,8 +841,9 @@ test("首页草稿→模拟流式回复→手动转换方案→三次明确动�
     await expect(execute(page)).toBeDisabled();
     await capture(page, "dark-plan-step-3");
     expect(fixture.calls.map((call) => call.action)).toEqual([
-      "turn:chat",
+      "turn:auto",
       "turn:canvas-plan",
+      "update",
       "materialize",
       "preflight",
     ]);
@@ -835,8 +860,9 @@ test("首页草稿→模拟流式回复→手动转换方案→三次明确动�
     await expect
       .poll(() => fixture.calls.map((call) => call.action))
       .toEqual([
-        "turn:chat",
+        "turn:auto",
         "turn:canvas-plan",
+        "update",
         "materialize",
         "preflight",
         "execute",
@@ -844,10 +870,26 @@ test("首页草稿→模拟流式回复→手动转换方案→三次明确动�
     await expect(
       panel.getByText("已完成", { exact: true }).first(),
     ).toBeVisible();
+    await panel.getByRole("button", { name: "关闭智能体", exact: true }).click();
+    const blank = await page.evaluate(() => {
+      for (let y = 620; y < innerHeight - 50; y += 25) for (let x = 500; x < innerWidth - 100; x += 25) {
+        if (document.elementFromPoint(x, y)?.classList.contains("react-flow__pane")) return { x, y };
+      }
+      return null;
+    });
+    expect(blank).not.toBeNull();
+    await page.mouse.click(blank!.x, blank!.y);
+    await page.mouse.move(blank!.x + 4, blank!.y + 4);
+    await page.mouse.move(blank!.x + 20, blank!.y + 12, { steps: 8 });
+    await expect(page.getByTestId("canvas-ambient-effects")).toHaveAttribute("data-pointer", "true");
+    await capture(page, "dark-flow-canvas-spotlight");
     await page.waitForTimeout(1000);
     fixture.assertSafe();
   } finally {
     await context.close();
-    if (video) await video.saveAs(join(output, "assistant-flow.webm"));
+    if (video) {
+      await video.saveAs(join(output, "assistant-flow.webm"));
+      await copyFile(join(output, "assistant-flow.webm"), join(output, "flow-v2-dark.webm"));
+    }
   }
 });

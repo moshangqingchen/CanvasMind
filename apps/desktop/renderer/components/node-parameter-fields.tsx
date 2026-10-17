@@ -42,6 +42,8 @@ interface NodeParameterFieldsProps {
   transparentSupported?: boolean;
   transparency?: ImageTransparencyPresentation;
   hasReferenceVideo?: boolean;
+  /** Plan snapshots must change only through explicit controls, not mounting. */
+  normalizeAutomatically?: boolean;
 }
 
 function controlId(nodeId: string, key: string) {
@@ -978,6 +980,7 @@ export function NodeParameterFields({
   transparentSupported = false,
   transparency,
   hasReferenceVideo = false,
+  normalizeAutomatically = true,
 }: NodeParameterFieldsProps) {
   const undeclaredSavedImageFields = nodeType === "image-generation" ? [...new Set([
     ...undeclaredCOpenImageParameterKeys(model ?? undefined, parameters, operation),
@@ -1013,7 +1016,7 @@ export function NodeParameterFields({
   const hasLinkedControls = Boolean(model?.parameters?.some(d => d.visibleWhen?.length || d.constraints?.length));
   const parameterJson = JSON.stringify(parameters, null, 2);
   useEffect(() => {
-    if (!clampNumericInput && !clearUnavailableParameters && !hasLinkedControls) return;
+    if (!normalizeAutomatically || (!clampNumericInput && !clearUnavailableParameters && !hasLinkedControls)) return;
     const normalized = normalizedParametersForModel(
       nodeType,
       provider,
@@ -1028,6 +1031,7 @@ export function NodeParameterFields({
       onChange(normalized);
   }, [
     clampNumericInput,
+    normalizeAutomatically,
     clearUnavailableParameters,
     hasLinkedControls,
     hasReferenceVideo,

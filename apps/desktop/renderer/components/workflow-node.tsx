@@ -1102,7 +1102,13 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
   const previousStatus = useRef(visualStatus);
   useEffect(() => {
     if (visualStatus === "succeeded" && ["running", "queued"].includes(previousStatus.current) && canvasMotionEnabled()) {
-      completionFlash.current?.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 600, easing: "cubic-bezier(.2,.8,.2,1)" });
+      if (completionFlash.current?.closest<HTMLElement>(".react-flow")?.dataset.ambientDetail !== "off") {
+        completionFlash.current?.setAttribute("data-feedback", "success");
+        completionFlash.current?.animate([{ opacity: .85 }, { opacity: 0 }], { duration: 420, easing: "cubic-bezier(.2,.8,.2,1)" });
+      }
+    } else if (visualStatus === "failed" && previousStatus.current !== "failed" && canvasMotionEnabled() && completionFlash.current?.closest<HTMLElement>(".react-flow")?.dataset.ambientDetail !== "off") {
+      completionFlash.current?.setAttribute("data-feedback", "failure");
+      completionFlash.current?.animate([{ opacity: 0 }, { opacity: .55, offset: .35 }, { opacity: 0 }], { duration: 300, easing: "ease-out" });
     }
     previousStatus.current = visualStatus;
   }, [visualStatus]);
@@ -1319,6 +1325,7 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
         }}
       >
         <span ref={completionFlash} className="node-complete-flash" aria-hidden="true" />
+        {visualStatus === "running" && <span className="node-running-light" aria-hidden="true" />}
         {visualStatus === "running" && <span className="node-progress-track" aria-hidden="true"><span className="node-progress-fill" /></span>}
         <PortHandles node={node} direction="input" />
         <PortHandles node={node} direction="output" />

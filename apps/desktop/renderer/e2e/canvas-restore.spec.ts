@@ -1,5 +1,5 @@
 import { expectCompactPromptLine } from "./helpers/lod-expectations";
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "./helpers/canvas-offline-test";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { join, resolve, sep } from "node:path";

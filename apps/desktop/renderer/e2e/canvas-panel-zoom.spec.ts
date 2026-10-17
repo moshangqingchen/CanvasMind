@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./helpers/canvas-offline-test";
 import { bindScannedModelProtocols } from "../lib/scanned-model-protocols";
 import { floatingPanelGeometry } from "./floating-panel-geometry";
 

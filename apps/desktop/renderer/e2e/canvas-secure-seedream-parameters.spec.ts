@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./helpers/canvas-offline-test";
 import { readFile } from "node:fs/promises";
 import { secureSeedreamImageContract } from "../lib/secure-seedream-image-contract";
 

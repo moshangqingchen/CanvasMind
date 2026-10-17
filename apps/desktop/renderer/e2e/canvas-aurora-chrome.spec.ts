@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "./helpers/canvas-offline-test";
 
 type FixtureNode = {
   id: string; type: string; position: { x: number; y: number }; style?: { width: number; height: number };

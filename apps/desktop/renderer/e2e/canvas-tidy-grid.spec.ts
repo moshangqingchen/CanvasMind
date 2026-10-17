@@ -1,6 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./helpers/canvas-offline-test";
 import type { AssetView, CanvasDocument, CanvasNode } from "../components/types";
 import { CANVAS_ARRANGEMENT_ORDER_KEY } from "../lib/canvas-arrangement";
 import { clickBlankCanvas } from "./canvas-test-actions";

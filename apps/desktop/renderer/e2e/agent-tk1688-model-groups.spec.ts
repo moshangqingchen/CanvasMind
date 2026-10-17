@@ -166,7 +166,7 @@ async function scenario(
     page
       .getByRole("region", { name: "通用创作智能体" })
       .getByRole("button", { name: "聊天", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
+  ).toHaveCount(0);
   return state;
 }
 

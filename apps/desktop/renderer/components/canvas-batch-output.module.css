@@ -5,6 +5,10 @@
   outline:1px solid var(--batch-port-color); pointer-events:auto;
 }
 .output:hover, .output:focus-visible { outline:2px solid var(--batch-port-color); }
+.output::after { content:""; position:absolute; inset:-5px; border-radius:50%; border:1px solid transparent; border-top-color:color-mix(in srgb,var(--batch-port-color) 70%,transparent); pointer-events:none; animation:batch-port-orbit 4.8s linear infinite; }
+:global(.is-interacting) .output::after, :global(.effects-paused) .output::after, :global(.canvas-lod-compact) .output::after, :global([data-ambient-detail="off"]) .output::after, :global(html[data-motion="off"]) .output::after, :global(html[data-page-hidden="true"]) .output::after { display:none; }
+@media (prefers-reduced-motion:reduce) { .output::after { display:none; } }
+@keyframes batch-port-orbit { to { transform:rotate(360deg); } }
 .badge {
   position:absolute; left:50%; bottom:23px; transform:translateX(-50%);
   color:var(--text-secondary); background:var(--surface-floating);

@@ -11,7 +11,6 @@ import type {
 } from "@super-canvas/db";
 import {
   quoteCandidate,
-  parametersForRequirements,
   routeDirectorCalls,
   type RoutedDirectorCall,
   type ResolvedDirectorConnection,
@@ -20,6 +19,9 @@ import type { PreparedRun } from "@super-canvas/runtime";
 import { repository, storage, runService, publicRunSnapshot } from "./server";
 import { completeAgentModel, type AgentModelCallInput } from "./agent-model-call";
 import { agentSystemPrompt } from "./agent-prompts";
+import { agentProposalAllowed } from "./agent-intent";
+import { agentCallParameters, agentParameterIssues, agentRequirementsForParameters, scalarAgentParameters } from "./agent-plan-parameters";
+import { agentOutputParameters, agentOutputResolutionConflict, currentSingleOutputResolution, preserveCurrentProposalRequirements } from "./agent-plan-requirements";
 import { AgentMessageProjection } from "./agent-stream-message";
 import { agentModelEvidenceFingerprint } from "./agent-model-capabilities";
 import { agentAttachmentError, selectAgentAttachments } from "./agent-attachment-policy";
@@ -78,6 +80,7 @@ interface StoredAgentPlan {
   assetIds?: string[];
   error?: string;
   authorization?: AgentPlanAuthorization;
+  requiredResolution?: string;
 }
 type AgentPlanAuthorization =
   | { kind: "user-plan"; requestId: string }
@@ -93,7 +96,8 @@ async function assertAuthorization(sessionId: string, authorization: AgentPlanAu
   if (session.metadata.canvasPlanRequestId !== authorization.requestId) return fail(REVOKED_PLAN);
   if (authorization.kind === "user-plan") return;
   const source = await repository.getDirectorMessage(`${sessionId}:${authorization.requestId}`);
-  if (!source || source.role !== "user" || source.metadata.intent !== "canvas-plan" ||
+  if (!source || source.role !== "user" ||
+      !agentProposalAllowed(source.metadata.intent === "auto" ? "auto" : source.metadata.intent === "canvas-plan" ? "canvas-plan" : "chat", source.content) ||
       source.metadata.turnId !== authorization.turnId ||
       !(source.metadata.turnStatus === "succeeded" || (allowRunning && source.metadata.turnStatus === "running")) ||
       agentFingerprint({ message: source.content, selectedNodeIds: source.metadata.selectedNodeIds,
@@ -356,9 +360,17 @@ async function assetsFor(ids: readonly string[]): Promise<AssetRecord[]> {
 }
 async function routeProposal(
   proposal: AgentProposal,
+  requiredResolution?: string,
 ): Promise<RoutedDirectorCall[]> {
   const catalog = await loadAgentCatalog();
-  return routeDirectorCalls(proposal.calls, catalog).map((call) => {
+  const drafts = proposal.calls.map(draft => {
+    const candidate = catalog.find(candidate => candidate.connectionId === draft.preferredConnectionId && candidate.model.id === draft.preferredModelId);
+    if (!draft.parameters || !candidate) return draft;
+    const issues = agentParameterIssues(draft.requirements, candidate, draft.parameters);
+    if (issues.length) throw new AgentError(`${draft.label}：${issues.map(issue => issue.message).join("；")}`);
+    return { ...draft, requirements: { ...draft.requirements, ...agentRequirementsForParameters(draft.requirements, draft.parameters, candidate.model), ...(requiredResolution ? { resolution: requiredResolution } : {}) } };
+  });
+  return routeDirectorCalls(drafts, catalog).map((call) => {
     const draft = proposal.calls.find((c) => c.id === call.id)!;
     const exact = call.alternatives.find(
       (q) =>
@@ -382,13 +394,14 @@ async function routeProposal(
               ),
             )
             .find(Boolean));
+    if (draft.parameters && selected) {
+      const issues = agentParameterIssues(call.requirements, selected.candidate, draft.parameters);
+      if (issues.length) throw new AgentError(`${draft.label}：${issues.map(issue => issue.message).join("；")}`);
+    }
     return {
       ...call,
       selected,
-      parameters: parametersForRequirements(
-        call.requirements,
-        selected?.candidate.model,
-      ),
+      parameters: draft.parameters ? scalarAgentParameters(draft.parameters) : selected ? agentCallParameters(call.requirements, selected.candidate) : {},
     };
   });
 }
@@ -413,6 +426,7 @@ export async function createAgentPlan(
   proposalInput: unknown,
   allowedNodeIds: string[] = [],
   authorization?: AgentPlanAuthorization,
+  requiredResolution?: string,
 ): Promise<AgentPlan> {
   let session = await agentSession(sessionId);
   const proposal = AgentProposalSchema.parse(proposalInput);
@@ -433,7 +447,9 @@ export async function createAgentPlan(
   await assertAuthorization(sessionId, authorization, true);
   const canvas = await repository.getCanvas(session.canvasId);
   if (!canvas) throw new AgentError("画布不存在", 404);
-  const calls = await routeProposal(proposal);
+  const routed = await routeProposal(proposal, requiredResolution);
+  const conflict = requiredResolution && routed.length === 1 ? agentOutputResolutionConflict(requiredResolution, routed[0]!.parameters) : undefined;
+  const calls = conflict ? routed.map(call => ({ ...call, selected: undefined })) : routed;
   const assets = await assetsFor(
     proposal.calls.flatMap((c) => c.sourceAssetIds),
   );
@@ -453,8 +469,11 @@ export async function createAgentPlan(
       schemaVersion: 2,
       mode: "agent",
       authorization,
+      ...(requiredResolution ? { requiredResolution } : {}),
       proposal,
       calls,
+      ...(conflict ? { error: `用户要求 ${requiredResolution}，当前步骤参数 ${conflict} 与其不一致。已保留原要求并停止放入画布，请明确修改输出参数或切换渠道后再检查。` }
+        : calls.some(call => !call.selected?.eligible) ? { error: "当前目录没有匹配本方案全部要求的可用渠道。已保留所需规格，请选择合法渠道或明确调整要求后再检查；尚不能放入画布。" } : {}),
       changes: proposalChanges(proposal, canvas.graph),
       ...(patch ? { patch } : {}),
     }),
@@ -508,12 +527,24 @@ export async function reviseAgentPlan(
   checkProposalAssetScope(proposal, s.authorization!);
   const canvas = await repository.getCanvas(p.canvasId);
   if (!canvas) throw new AgentError("画布不存在", 404);
-  const calls = await routeProposal(proposal);
+  const previousCall = s.proposal.calls[0], nextCall = proposal.calls[0];
+  const changedOutput = previousCall && nextCall && (previousCall.preferredConnectionId !== nextCall.preferredConnectionId || previousCall.preferredModelId !== nextCall.preferredModelId ||
+    agentFingerprint(agentOutputParameters(nextCall.parameters ?? s.calls[0]?.parameters)) !== agentFingerprint(agentOutputParameters(s.calls[0]?.parameters)) ||
+    (!Object.keys(agentOutputParameters(nextCall.parameters)).length && nextCall.requirements.resolution !== previousCall.requirements.resolution));
+  // Only a user's actual output/control change can replace the initial pixel
+  // requirement. “检查方案” without changing it must not bypass a conflict.
+  const requiredResolution = changedOutput ? undefined : s.requiredResolution;
+  const checkedProposal = requiredResolution && proposal.calls.length === 1
+    ? { ...proposal, calls: proposal.calls.map(call => ({ ...call, requirements: { ...call.requirements, resolution: requiredResolution } })) }
+    : proposal;
+  const routed = await routeProposal(checkedProposal, requiredResolution);
+  const conflict = requiredResolution && routed.length === 1 ? agentOutputResolutionConflict(requiredResolution, routed[0]!.parameters) : undefined;
+  const calls = conflict ? routed.map(call => ({ ...call, selected: undefined })) : routed;
   const assets = await assetsFor(
     proposal.calls.flatMap((c) => c.sourceAssetIds),
   );
   const patch = calls.every((c) => c.selected?.eligible)
-    ? compileAgentGraph(p.id, proposal, calls, canvas.graph, assets)
+    ? compileAgentGraph(p.id, checkedProposal, calls, canvas.graph, assets)
     : undefined;
   await assertPlanAuthorization(p);
   const next = await repository.updateDirectorProposal(
@@ -526,10 +557,12 @@ export async function reviseAgentPlan(
         schemaVersion: 2,
         mode: "agent",
         authorization: s.authorization,
-        proposal,
+        ...(requiredResolution ? { requiredResolution } : {}),
+        proposal: checkedProposal,
         calls,
         patch,
         changes: proposalChanges(proposal, canvas.graph),
+        ...(conflict ? { error: `用户要求 ${requiredResolution}，当前步骤参数 ${conflict} 与其不一致。请明确修改输出参数或切换渠道；尚不能放入画布。` } : {}),
       }),
       expiresAt: new Date(Date.now() + TTL).toISOString(),
     },
@@ -997,6 +1030,7 @@ async function runAgentTurnCore(
   }
   const turnId = randomUUID();
   const intent = input.intent ?? "chat";
+  const proposalAllowed = agentProposalAllowed(intent, input.message);
   const claimed = await repository.updateDirectorSession(
     session.id,
     {
@@ -1008,7 +1042,7 @@ async function runAgentTurnCore(
         ...session.metadata,
         activeTurnId: turnId,
         activeRequestId: input.requestId,
-        canvasPlanRequestId: intent === "canvas-plan" ? input.requestId : null,
+        canvasPlanRequestId: proposalAllowed ? input.requestId : null,
         stage: "understanding",
       },
     },
@@ -1108,6 +1142,13 @@ async function runAgentTurnCore(
     );
     const taskPlans = (await getAgentSession(session.id)).plans;
     const canvasSummary = shortAgentCanvas(await repository.getCanvas(session.canvasId), input.selectedNodeIds);
+    // An explicit current creation request can use the saved generation catalog
+    // immediately. This is the same read-only source as list_models, bounded to
+    // a small first page; omitted contracts remain available through that tool.
+    const generationCatalog = intent === "auto" && proposalAllowed ? observationPage(
+      (await loadAgentCatalog(signal)).map(candidate => ({ connectionId: candidate.connectionId, connectionName: candidate.connectionName,
+        group: candidate.group, model: candidate.model })), { limit: 8, maximumCharacters: 7000 },
+    ) : undefined;
     const historicalIds = [
       ...new Set(
         history.flatMap((m) =>
@@ -1316,10 +1357,10 @@ async function runAgentTurnCore(
           system: agentSystemPrompt(intent, `【只读上下文数据 JSON】\n${JSON.stringify({
             currentUserMessage: clipContextText(input.message, 3000),
             historicalFirstGoal: clipContextText(history.find((m) => m.role === "user")?.content ?? "", 3000),
-            canvasSummary, attachmentAssetIds: attachmentIds, selectedNodeIds: input.selectedNodeIds,
+            canvasSummary, ...(generationCatalog ? { generationCatalog } : {}), attachmentAssetIds: attachmentIds, selectedNodeIds: input.selectedNodeIds,
             taskMemory: compactObservation(session.metadata.taskMemory ?? {}, 5000),
             plansAndRecordedResults: compactObservation(taskPlans.slice(-12).map((p) => ({ id: p.id, summary: p.summary, workflowRunId: p.workflowRunId, status: p.status, results: p.results })), 4000),
-          })}`),
+          })}`, proposalAllowed),
           messages,
           attachments: compatible,
           responseJsonSchema: AGENT_OUTPUT_SCHEMA,
@@ -1370,8 +1411,8 @@ async function runAgentTurnCore(
         continue;
       }
       if (d.type === "proposal") {
-        if (intent === "chat") {
-          await saveMessage(`${d.summary}\n\n这只是聊天建议。需要制作时，请明确选择制作方案，再检查画布并确认生成。`, { kind: "message" });
+        if (!proposalAllowed) {
+          await saveMessage(`${d.summary}\n\n这只是聊天建议。需要制作时，请明确告诉我你要做的作品；方案仍由你检查，再放入画布。`, { kind: "message", suggestPlan: true });
           emit({ type: "session", session: await getAgentSession(session.id) });
           return;
         }
@@ -1379,7 +1420,7 @@ async function runAgentTurnCore(
         if (!canvas) throw new AgentError("画布不存在", 404);
         const plan = await createAgentPlan(
           session.id,
-          d,
+          preserveCurrentProposalRequirements(d, input.message),
           input.selectedNodeIds,
           { kind: "user-turn", requestId: input.requestId, turnId,
             messageFingerprint: agentFingerprint({ message: input.message, selectedNodeIds: input.selectedNodeIds,
@@ -1387,6 +1428,7 @@ async function runAgentTurnCore(
             selectedNodeIds: input.selectedNodeIds, attachmentAssetIds: input.attachmentAssetIds,
             allowedAssetIds: [...new Set([...input.attachmentAssetIds, ...(input.helper?.assetIds ?? []),
               ...selectedNodeAssetIds(canvas.graph, input.selectedNodeIds)])] },
+          intent === "auto" && d.calls.length === 1 ? currentSingleOutputResolution(input.message) : undefined,
         );
         try {
           await live();

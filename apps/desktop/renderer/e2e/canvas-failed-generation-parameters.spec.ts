@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "./helpers/canvas-offline-test";
 import type { CanvasNode } from "../components/types";
 
 const models = [

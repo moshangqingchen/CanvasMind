@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./helpers/canvas-offline-test";
 import type { ModelDescriptor } from "@super-canvas/providers";
 
 for (const modelId of ["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"]) {

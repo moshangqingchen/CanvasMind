@@ -32,6 +32,7 @@ import { collectIslandTasks, failedIslandStatuses, islandCanvasBounds, type Isla
 import { useRouter } from "next/navigation";
 import { CanvasInteractionFeedback, canvasMotionEnabled, useCanvasMotion } from "./canvas-motion";
 import { CanvasPortLabels } from "./canvas-port-labels";
+import { CanvasAmbientEffects } from "./canvas-ambient-effects";
 import { CanvasBatchOutput } from "./canvas-batch-output";
 import batchStyles from "./canvas-batch-output.module.css";
 import { batchOutputSources, batchConnectionSummary, checkCanvasConnection, planBatchConnections, type BatchConnectionSource } from "../lib/batch-connections";
@@ -10572,6 +10573,7 @@ function CanvasShell({
             <CanvasEdgePalette edges={displayedEdges} />
             <CanvasDotGrid />
             <CanvasLevelOfDetail />
+            <CanvasAmbientEffects enabled={showEffects} ready={initialization.status === "ready"} interactive={canvasMode === "pan" || canvasMode === "select"} />
             <DrawingLayer
               drawings={drawings}
               activeStroke={activeStroke}

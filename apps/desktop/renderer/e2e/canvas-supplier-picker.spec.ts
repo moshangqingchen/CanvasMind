@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "./helpers/canvas-offline-test";
 import { clickBlankCanvas, setCanvasZoomWithWheel } from "./canvas-test-actions";
 import { floatingPanelGeometry } from "./floating-panel-geometry";
 

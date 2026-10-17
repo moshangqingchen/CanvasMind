@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "./helpers/canvas-offline-test";
 import type { CanvasNode, RunSnapshot } from "../components/types";
 
 type ObservedWindow = Window & { auditStreams: { url: string; closed: boolean; emit?: () => void }[] };

@@ -26,6 +26,16 @@ describe("studio connection light", () => {
     expect(html).not.toContain("--edge-port");
   });
 
+  it("adds the shared light only for an explicit completed-result transfer", () => {
+    const html = markup({ data: { studio: { kind: "image", running: true, transferring: true } } });
+    expect(html).toContain("studio-edge-motion is-flowing is-running");
+    // Work feedback adds a bounded light, keeping the base edge neutral.
+    expect(html).toContain("var(--edge-idle, #62656d)");
+    expect(html).not.toContain("<linearGradient");
+    expect(markup({ data: { studio: { transferring: true, failed: true } } })).not.toContain("studio-edge-motion");
+    expect(markup({ data: { studio: { transferring: true, preview: true } } })).not.toContain("studio-edge-motion");
+  });
+
   it.each([
     ["horizontal", 700, 200, Position.Right, Position.Left],
     ["vertical", 100, 800, Position.Bottom, Position.Top],

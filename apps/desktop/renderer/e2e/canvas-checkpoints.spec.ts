@@ -1,5 +1,5 @@
 import { openWorkspaceProject } from "./helpers/workspace-navigation";
-import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
+import { test, expect, type APIRequestContext, type Page } from "./helpers/canvas-offline-test";
 
 type Position = { x: number; y: number };
 type CheckpointWindow = typeof window & { __draftPositions: Position[] };

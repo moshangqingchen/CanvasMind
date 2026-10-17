@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import sharp from "sharp";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./helpers/canvas-offline-test";
 import type { AssetView, CanvasDocument, CanvasNode } from "../components/types";
 import type { MaterialDropEventView } from "../lib/client-api";
 

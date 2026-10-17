@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./helpers/canvas-offline-test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { installPhase5StateFixture } from "./helpers/phase5-state-fixture";

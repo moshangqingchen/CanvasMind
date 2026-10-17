@@ -130,9 +130,18 @@
 .selectionChip { color:var(--agent-muted); }
 .selectionChip[aria-pressed="true"] { background:var(--neural-glass-hover); }
 .selectionChip > span { display:none; }
-.intentRow { display:flex; align-items:center; border:1px solid var(--agent-line); border-radius:999px; padding:2px; gap:0; }
-.intentRow button { height:24px; padding:2px 6px; font-size:11px; border:0; border-radius:999px; color:var(--agent-muted); }
-.intentRow button[aria-pressed="true"] { background:color-mix(in srgb,var(--text) 8%,transparent); color:var(--text); }
+.planParameters { border:1px solid var(--agent-line); border-radius:12px; margin:12px 0; padding:12px; min-width:0; display:grid; gap:12px; }
+.planParameters legend { padding:0 6px; font-size:12px; }
+.planParameters legend small { margin-left:4px; font:9px ui-monospace,Consolas,monospace; letter-spacing:.1em; }
+.planParameters:disabled { opacity:.7; }
+.planParameters :global(.field) { display:grid; gap:6px; min-width:0; }
+.planParameters :global(.field) > label { color:var(--agent-muted); font-size:12px; }
+.planParameters :global(.field) :is(input,select) { width:100%; }
+.planParameters :global(.parameter-dimensions-shortcuts) { display:flex; flex-wrap:wrap; gap:6px; }
+.planParameters :global(.parameter-group-note) { color:var(--agent-muted); font-size:11px; line-height:1.65; margin:0; }
+.planChannelSelectors { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.planChannelSelectors label { display:grid; gap:5px; min-width:0; font-size:12px; }
+.parameterNotice { color:var(--agent-muted); font-size:12px; line-height:1.65; margin:0; overflow-wrap:anywhere; }
 .actions .modelChip { display:flex; flex:1 1 90px; width:90px; justify-content:flex-start; gap:3px; font-size:11px; padding:5px; }
 .modelChip > span { min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
 .modelChip > small { display:none; }

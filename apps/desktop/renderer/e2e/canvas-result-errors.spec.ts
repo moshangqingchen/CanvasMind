@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./helpers/canvas-offline-test";
 
 for (const status of ["cancelled", "failed", "needs_attention"]) test(`${status}: result remains draggable with scrollable errors and working controls`, async ({ page, request }, testInfo) => {
   const message = status === "cancelled" ? "运行已取消" : "参考图片传输未完成，需要核对接口。".repeat(15) + "最后一行必须完整显示";

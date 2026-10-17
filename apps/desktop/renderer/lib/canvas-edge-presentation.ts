@@ -5,6 +5,8 @@ export interface StudioEdgeState {
   kind: "text" | "image" | "video" | "audio" | "asset" | "result";
   targetKind?: StudioEdgeState["kind"];
   running: boolean;
+  /** A completed upstream result is being consumed by the running target. */
+  transferring?: boolean;
   failed: boolean;
   preview: boolean;
 }
@@ -20,6 +22,7 @@ export function presentCanvasEdges(edges: CanvasEdge[], nodes: CanvasNode[], sta
     const source = nodeById.get(edge.source);
     const target = nodeById.get(edge.target);
     const targetStatus = statuses.get(edge.target) ?? target?.data.generatedStatus ?? target?.data.status ?? "";
+    const sourceStatus = statuses.get(edge.source) ?? source?.data.generatedStatus ?? source?.data.status ?? "";
     const related = selectedIds.has(edge.source) || selectedIds.has(edge.target);
     const failed = failedStates.has(targetStatus);
     const preview = Boolean(source?.data.directorDraft || target?.data.directorDraft);
@@ -36,6 +39,7 @@ export function presentCanvasEdges(edges: CanvasEdge[], nodes: CanvasNode[], sta
       kind: ["image", "video", "audio", "asset", "result"].includes(portKind) ? portKind as StudioEdgeState["kind"] : "text",
       targetKind: ["image", "video", "audio", "asset", "result"].includes(targetKind) ? targetKind as StudioEdgeState["kind"] : "text",
       running: !preview && !failed && runningStates.has(targetStatus),
+      transferring: !preview && !failed && sourceStatus === "succeeded" && runningStates.has(targetStatus),
       failed,
       preview,
     };

@@ -4,7 +4,7 @@ import type { CanvasEdge } from "./types";
 import type { StudioEdgeState } from "../lib/canvas-edge-presentation";
 import { EDGE_FEATHER_ID, EDGE_TERMINAL_ID, edgeLightEnabled } from "../lib/canvas-edge-palette";
 
-/** Only focused connections need light; all of them share the feather paints. */
+/** Focused connections and active result transfers share two feather paints. */
 export const CanvasEdgePalette = memo(function CanvasEdgePalette({ edges }: { edges: readonly CanvasEdge[] }) {
   const visible = useMemo(() => edges.some(edge => edgeLightEnabled(edge.selected,
     edge.data?.studio as StudioEdgeState | undefined)), [edges]);

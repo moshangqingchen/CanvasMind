@@ -4,7 +4,7 @@ import {
   test,
   type APIRequestContext,
   type Page,
-} from "@playwright/test";
+} from "./helpers/canvas-offline-test";
 import type { CanvasDocument, CanvasNode, RunSnapshot } from "../components/types";
 import { clickBlankCanvas, setCanvasZoomWithWheel } from "./canvas-test-actions";
 
@@ -543,7 +543,7 @@ test("任务运行期间保存失败始终可见，点击入口可重试保存",
   await expect(island).toHaveAttribute("data-status", "running");
 });
 
-test("画布无装饰鼠标轨迹，空白移动不重绘节点，动效偏好跨项目保存并遵循系统reduce", async ({
+test("画布轻量空白拖尾不重绘节点，编辑时关闭，动效偏好跨项目保存并遵循系统reduce", async ({
   page,
   request,
 }) => {
@@ -580,12 +580,24 @@ test("画布无装饰鼠标轨迹，空白移动不重绘节点，动效偏好�
   await open(page, canvas.id);
   await page.waitForTimeout(1000);
   const trail = page.locator(".canvas-pointer-trail"),
-    toggle = page.getByRole("button", { name: "画布动效", exact: true });
+    toggle = page.getByRole("button", { name: "画布动效", exact: true }),
+    ambient = page.getByTestId("canvas-ambient-effects");
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
-  const blank = await page.locator(".react-flow__pane").boundingBox();
-  expect(blank).not.toBeNull();
-  const x = blank!.x + blank!.width * 0.6,
-    y = blank!.y + 60;
+  await expect(ambient).toHaveAttribute("data-detail", "full");
+  const blank = async () => {
+    const point = await page.locator(".react-flow__pane").evaluate(pane => {
+      const bounds = pane.getBoundingClientRect();
+      for (let y = Math.max(bounds.y + 25, 95); y < Math.min(bounds.bottom - 95, innerHeight - 95); y += 35) {
+        for (let x = Math.max(bounds.x + 30, 90); x < Math.min(bounds.right - 100, innerWidth - 100); x += 35) {
+          if (document.elementFromPoint(x, y) === pane && document.elementFromPoint(x + 60, y + 8) === pane) return { x, y };
+        }
+      }
+      return null;
+    });
+    expect(point, "拖尾只在真实空白 pane 上验收").not.toBeNull();
+    return point!;
+  };
+  const { x, y } = await blank();
   const before = await page.evaluate(
     () => (window as MeasuredWindow).__canvasRenderMetrics,
   );
@@ -593,26 +605,42 @@ test("画布无装饰鼠标轨迹，空白移动不重绘节点，动效偏好�
   expect(before.nodes).toBeGreaterThan(0);
   await page.mouse.move(x, y);
   await page.mouse.move(x + 60, y + 8, { steps: 10 });
+  await expect(ambient).toHaveAttribute("data-pointer", "true");
+  // The old heavy decoration remains removed; the new bounded layer sleeps
+  // after its short trail instead of maintaining an idle requestAnimationFrame.
   await expect(trail).toHaveCount(0);
-  await page.waitForTimeout(250);
+  await expect(ambient).toHaveAttribute("data-frame-active", "false");
   expect(
     (await page.evaluate(() => (window as MeasuredWindow).__canvasRenderMetrics)).nodes,
   ).toBe(before.nodes);
   await page.locator('.react-flow__node[data-id="source"] .node-head').click();
   await page.locator('.react-flow__node[data-id="source"] .prompt-overview').click();
-  await page.locator(".tiptap-prompt").hover();
+  const editor = page.locator(".tiptap-prompt").first();
+  await editor.focus();
+  await expect(editor).toBeFocused();
+  const editingBlank = await blank();
+  await page.mouse.move(editingBlank.x, editingBlank.y);
+  await page.mouse.move(editingBlank.x + 60, editingBlank.y + 8, { steps: 10 });
+  await expect(ambient).toHaveAttribute("data-pointer", "false");
+  await expect(ambient).toHaveAttribute("data-frame-active", "false");
   await expect(trail).toHaveCount(0);
   await toggle.click();
   await page.reload();
   await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await expect(ambient).toHaveAttribute("data-detail", "off");
   const other = await create(request);
   await open(page, other.id);
   await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await expect(ambient).toHaveAttribute("data-detail", "off");
   await toggle.click();
   await page.emulateMedia({ reducedMotion: "reduce" });
   await expect(toggle).toHaveAttribute("aria-pressed", "false");
-  await page.mouse.move(x, y);
-  await page.mouse.move(x + 60, y + 8, { steps: 10 });
+  const reducedBlank = await blank();
+  await page.mouse.move(reducedBlank.x, reducedBlank.y);
+  await page.mouse.move(reducedBlank.x + 60, reducedBlank.y + 8, { steps: 10 });
+  await expect(ambient).toHaveAttribute("data-detail", "off");
+  await expect(ambient).toHaveAttribute("data-pointer", "false");
+  await expect(ambient).toHaveAttribute("data-frame-active", "false");
   await expect(trail).toHaveCount(0);
 });
 
@@ -790,7 +818,11 @@ test("永久删除历史结果后撤销重做均不能恢复失效素材", async
   await expect
     .poll(async () => (await request.get(`/api/assets/${asset.id}`)).status())
     .toBe(404);
+  // The delete API finishes before the library has refreshed its rows. Its
+  // close action intentionally waits for that work, so wait for UI completion.
+  await expect(modal.getByRole("status").filter({ hasText: "已删除 1 张图片" })).toBeVisible();
   await modal.getByRole("button", { name: "关闭历史生成", exact: true }).click();
+  await expect(modal).toBeHidden();
   await page.getByRole("button", { name: "重做", exact: true }).click();
   await page.getByRole("button", { name: "撤销", exact: true }).click();
   await expect(page.locator(".generated-result-node")).toHaveCount(0);

@@ -23,6 +23,15 @@ describe("canvas edge presentation", () => {
     expect(presentCanvasEdges(edges, nodes, new Map([["b", "succeeded"]]))[0].data?.studio).toMatchObject({ running: false });
     expect(presentCanvasEdges(edges, nodes, new Map([["a", "running"], ["b", "failed"]]))[0].data?.studio).toMatchObject({ running: false, failed: true });
   });
+  it("lights an unselected transfer only when the upstream actually completed and the target is active", () => {
+    const nodes = [node("a"), node("b")];
+    expect(presentCanvasEdges(edges, nodes, new Map([["a", "succeeded"], ["b", "running"]]))[0].data?.studio).toMatchObject({ transferring: true });
+    for (const statuses of [new Map([["b", "running"]]), new Map([["a", "running"], ["b", "running"]]), new Map([["a", "succeeded"], ["b", "queued"]]), new Map([["a", "succeeded"], ["b", "succeeded"]])]) {
+      expect(presentCanvasEdges(edges, nodes, statuses)[0].data?.studio).toMatchObject({ transferring: false });
+    }
+    expect(presentCanvasEdges(edges, [node("a", false, { generatedStatus: "succeeded" }), node("b", false, { generatedStatus: "polling" })], new Map())[0].data?.studio).toMatchObject({ transferring: true });
+    expect(presentCanvasEdges(edges, [node("a"), node("b", false, { directorDraft: true })], new Map([["a", "succeeded"], ["b", "running"]]))[0].data?.studio).toMatchObject({ transferring: false });
+  });
   it("keeps unrelated links unchanged when a single edge is selected", () => {
     const result = presentCanvasEdges([{ ...edges[0], selected: true }, edges[1]], [node("a"), node("b"), node("c"), node("d")], new Map());
     expect(result[0].selected).toBe(true);

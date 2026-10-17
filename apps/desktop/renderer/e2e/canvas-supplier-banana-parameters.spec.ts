@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "./helpers/canvas-offline-test";
 import { readFileSync } from "node:fs";
 import { cangyuanCurrentModel, type ModelDescriptor } from "@super-canvas/providers";
 import { applyBananaImageCapabilities } from "@super-canvas/providers/banana-image-contract";

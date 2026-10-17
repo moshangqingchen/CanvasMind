@@ -4,7 +4,7 @@ import {
   test as base,
   type APIRequestContext,
   type Page,
-} from "@playwright/test";
+} from "./helpers/canvas-offline-test";
 
 type NodeRecord = {
   id: string;

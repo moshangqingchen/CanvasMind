@@ -166,7 +166,7 @@ async function scenario(
     if (path === "/api/agent/turn") {
       turns++;
       const input = request.postDataJSON();
-      expect(input.intent).toBe(mode === "media" ? "canvas-plan" : "chat");
+      expect(input.intent).toBe("auto");
       session.messages.push({
         id: `u-${turns}`,
         role: "user",
@@ -475,7 +475,7 @@ test("纯文字分镜任务追问、编辑与刷新恢复，不强制生成节�
 });
 test("生成方案经过两次确认，第一次确认后刷新仍不运行", async ({ page }) => {
   const s = await scenario(page, "media");
-  await page.getByRole("button", { name: "制作画布方案", exact: true }).click();
+
   await page.getByLabel("创作任务要求").fill("给我制作产品主视觉");
   await page.getByRole("button", { name: "发送任务" }).click();
   await expect(page.getByRole("button", { name: "放入画布" })).toBeEnabled();
@@ -730,7 +730,7 @@ test("长附件名可查看全文，切换为不支持素材的模型时保留�
     panel.getByRole("button", { name: "发送任务", exact: true }),
   ).toHaveAttribute(
     "title",
-    "发送消息（输入文字后可按 Enter；Shift+Enter 换行）",
+    "发送消息（Enter 发送；Shift+Enter 换行）。制作方案仍需逐步确认。",
   );
   await page.route("**/api/assets/upload**", (route) =>
     route.fulfill({

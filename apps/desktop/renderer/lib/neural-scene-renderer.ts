@@ -1,5 +1,6 @@
+import { createNeuralAvatarGeometry, isNeuralAvatarData, NEURAL_AVATAR_FILES, type NeuralAvatarData } from "./neural-avatars";
 import { neuralFrameInterval, neuralLayout, neuralParticleDrawRanges, stepNeuralQuality, stepNeuralSpring, type NeuralLayout, type NeuralPoint, type NeuralQualityState, type NeuralSpring } from "./neural-motion";
-import { createNeuralEntityGeometry, createNeuralGeometry, NEURAL_VERTEX_STRIDE, type NeuralEntity, type NeuralGeometry } from "./neural-scene-geometry";
+import { createNeuralEntityGeometry, createNeuralGeometry, NEURAL_VERTEX_STRIDE, type NeuralEntity, type NeuralGeometry, neuralEntityOrbit, selectNeuralEntities } from "./neural-scene-geometry";
 import { NEURAL_MODULES, readNeuralPalette, type NeuralModule, type NeuralPalette, type NeuralRgb, type NeuralTheme } from "./neural-tokens";
 import { neuralBackgroundFragment, neuralBlurFragment, neuralCompositeFragment, neuralFullscreenVertex, neuralLineFragment, neuralPointFragment, neuralRimFragment, neuralShellFragment, neuralVertexShader } from "./neural-scene-shaders";
 
@@ -18,6 +19,7 @@ export interface NeuralSceneOptions {
 interface NeuralSceneFrame {
   width: number; height: number; dpr: number; time: number;
   layout: NeuralLayout; options: NeuralSceneOptions; palette: NeuralPalette;
+  pointer: NeuralPoint | null; trail: readonly { x: number; y: number; age: number }[]; ripple: number;
   growth: number; intro: number; departure: number; flash: number; quality: number;
 }
 interface NeuralPainter {
@@ -25,6 +27,7 @@ interface NeuralPainter {
   gpuMilliseconds: number | null;
   resize(width: number, height: number): void;
   entities(entities: readonly NeuralEntity[]): void;
+  avatars(avatars: readonly NeuralAvatarData[]): void;
   draw(frame: NeuralSceneFrame): void;
   dispose(loseContext?: boolean): void;
 }
@@ -41,6 +44,7 @@ function metrics(): SceneMetrics {
   return window.__superCanvasNeuralMetrics ??= { activeScenes: 0, activeContexts: 0, releasedContexts: 0, frames: 0, gpuMilliseconds: null, cpuMilliseconds: 0, frameMilliseconds: 0, renderer: "canvas2d", quality: 0 };
 }
 const rgb = (color: NeuralRgb, alpha = 1) => `rgba(${color.map(c => Math.round(c * 255)).join(",")},${Math.max(0, Math.min(1, alpha))})`;
+const mixRgb = (a: NeuralRgb, b: NeuralRgb, amount: number): NeuralRgb => [a[0] * (1 - amount) + b[0] * amount, a[1] * (1 - amount) + b[1] * amount, a[2] * (1 - amount) + b[2] * amount];
 
 interface GpuTimerExtension { TIME_ELAPSED_EXT: number; GPU_DISJOINT_EXT: number }
 interface GpuMesh { vao: WebGLVertexArrayObject; buffer: WebGLBuffer; count: number }
@@ -56,6 +60,8 @@ class WebGlNeuralPainter implements NeuralPainter {
   private geometry: Record<keyof NeuralGeometry, GpuMesh>;
   private entityPoints: GpuMesh;
   private entityLines: GpuMesh;
+  private trailPoints: GpuMesh;
+  private trailLines: GpuMesh;
   private background: WebGLProgram;
   private lines: WebGLProgram;
   private points: WebGLProgram;
@@ -83,6 +89,8 @@ class WebGlNeuralPainter implements NeuralPainter {
       this.geometry = Object.fromEntries(Object.entries(createNeuralGeometry()).map(([key, value]) => [key, this.mesh(value)])) as Record<keyof NeuralGeometry, GpuMesh>;
       this.entityPoints = this.mesh(new Float32Array());
       this.entityLines = this.mesh(new Float32Array());
+      this.trailPoints = this.mesh(new Float32Array());
+      this.trailLines = this.mesh(new Float32Array());
       this.timer = gl.getExtension("EXT_disjoint_timer_query_webgl2") as GpuTimerExtension | null;
       metrics().activeContexts++;
     } catch (error) {
@@ -132,7 +140,7 @@ class WebGlNeuralPainter implements NeuralPainter {
     gl.bindVertexArray(vao);
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
-    for (const [location, size, offset] of [[0, 3, 0], [1, 1, 3], [2, 1, 4], [3, 1, 5], [4, 1, 6], [5, 1, 7]]) {
+    for (const [location, size, offset] of [[0, 3, 0], [1, 1, 3], [2, 1, 4], [3, 1, 5], [4, 1, 6], [5, 1, 7], [6, 3, 8]]) {
       gl.enableVertexAttribArray(location);
       gl.vertexAttribPointer(location, size, gl.FLOAT, false, NEURAL_VERTEX_STRIDE * 4, offset * 4);
     }
@@ -181,16 +189,29 @@ class WebGlNeuralPainter implements NeuralPainter {
     }
   }
 
+  avatars(avatars: readonly NeuralAvatarData[]) {
+    const data = createNeuralAvatarGeometry(avatars);
+    this.upload(this.geometry.avatarLines, data.lines); this.upload(this.geometry.satellites, data.points);
+  }
+
+  private upload(mesh: GpuMesh, vertices: Float32Array) {
+    const gl = this.gl;
+    gl.bindBuffer(gl.ARRAY_BUFFER, mesh.buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+    mesh.count = vertices.length / NEURAL_VERTEX_STRIDE;
+  }
+
   private common(program: WebGLProgram, frame: NeuralSceneFrame, kind: number) {
     const gl = this.gl, p = frame.palette;
     gl.useProgram(program);
     gl.uniform2f(this.location(program, "uResolution"), frame.width, frame.height);
+    gl.uniform2f(this.location(program, "uPointer"), frame.pointer?.x ?? -1000, frame.pointer?.y ?? -1000);
     const core = frame.layout.core;
     const nodes = [core, ...NEURAL_MODULES.map(module => frame.layout.modules[module])];
     gl.uniform4fv(this.location(program, "uNodes[0]"), new Float32Array(nodes.flatMap((node, index) => [node.x, node.y, node.radius, index === 0 ? 1 : 1 - frame.departure])));
     gl.uniform3fv(this.location(program, "uColors[0]"), new Float32Array([p.shellLine, ...NEURAL_MODULES.map(module => p[module])].flat()));
     for (const [name, value] of [["uTime", frame.time], ["uDpr", frame.dpr], ["uGrowth", frame.growth], ["uKind", kind], ["uLightTheme", frame.options.theme === "light" ? 1 : 0], ["uHovered", frame.options.hoveredModule ? NEURAL_MODULES.indexOf(frame.options.hoveredModule) + 1 : 0], ["uSelected", frame.options.module ? NEURAL_MODULES.indexOf(frame.options.module) + 1 : 0], ["uDeparture", frame.departure], ["uIntro", frame.intro]] as const) gl.uniform1f(this.location(program, name), value);
-    for (const [name, value] of [["uSilver", p.silver], ["uEmber", p.ember], ["uEmberLight", p.emberLight], ["uShell", p.shell]] as const) gl.uniform3fv(this.location(program, name), value);
+    for (const [name, value] of [["uSilver", p.silver], ["uGold", p.gold], ["uEmber", p.ember], ["uEmberLight", p.emberLight], ["uShell", p.shell]] as const) gl.uniform3fv(this.location(program, name), value);
   }
 
   draw(frame: NeuralSceneFrame) {
@@ -221,6 +242,7 @@ class WebGlNeuralPainter implements NeuralPainter {
     gl.uniform1f(this.location(bg, "uLightTheme"), frame.options.theme === "light" ? 1 : 0);
     gl.uniform1f(this.location(bg, "uFlash"), frame.flash);
     gl.uniform1f(this.location(bg, "uIntro"), frame.intro);
+    gl.uniform1f(this.location(bg, "uRipple"), frame.ripple);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.enable(gl.BLEND);
     const additive = frame.options.theme !== "light";
@@ -237,12 +259,12 @@ class WebGlNeuralPainter implements NeuralPainter {
     this.common(this.rims, frame, 0);
     gl.bindVertexArray(this.geometry.rims.vao);
     gl.drawArrays(gl.TRIANGLES, 0, this.geometry.rims.count);
-    for (const [mesh, kind] of [[this.geometry.rays, 3], [this.geometry.bundles, 2], [this.entityLines, 1], [this.geometry.tendrils, 1], [this.geometry.cage, 0]] as const) {
+    for (const [mesh, kind] of [[this.geometry.rays, 3], [this.geometry.bundles, 2], [this.entityLines, 6], [this.geometry.avatarLines, 4], [this.geometry.tendrils, 1], [this.geometry.cage, 0]] as const) {
       this.common(this.lines, frame, kind);
       gl.bindVertexArray(mesh.vao);
       gl.drawArrays(gl.LINES, 0, mesh.count);
     }
-    for (const [mesh, kind] of [[this.geometry.embers, 0], [this.geometry.satellites, 1], [this.entityPoints, 1]] as const) {
+    for (const [mesh, kind] of [[this.geometry.embers, 0], [this.geometry.satellites, 5], [this.entityPoints, 6]] as const) {
       this.common(this.points, frame, kind);
       gl.bindVertexArray(mesh.vao);
       if (mesh === this.geometry.embers) gl.drawArrays(gl.POINTS, 0, 3);
@@ -250,6 +272,18 @@ class WebGlNeuralPainter implements NeuralPainter {
         for (const range of neuralParticleDrawRanges(mesh.count, mesh === this.geometry.satellites ? NEURAL_MODULES.length : 1, .55))
           gl.drawArrays(gl.POINTS, range.first, range.count);
       } else gl.drawArrays(gl.POINTS, 0, mesh.count);
+    }
+    if (frame.trail.length > 1) {
+      const points: number[] = [], lines: number[] = [];
+      for (let i = 0; i < frame.trail.length; i++) {
+        const point = frame.trail[i], strength = Math.exp(-point.age * 8) * .24;
+        const vertex = [point.x, point.y, 0, 0, strength, i / 20, 5, 0, -1, -1, -1];
+        points.push(...vertex);
+        if (i) lines.push(...points.slice(points.length - NEURAL_VERTEX_STRIDE * 2, points.length - NEURAL_VERTEX_STRIDE), ...vertex);
+      }
+      this.upload(this.trailLines, new Float32Array(lines)); this.upload(this.trailPoints, new Float32Array(points));
+      this.common(this.lines, frame, 7); gl.bindVertexArray(this.trailLines.vao); gl.drawArrays(gl.LINES, 0, this.trailLines.count);
+      this.common(this.points, frame, 7); gl.bindVertexArray(this.trailPoints.vao); gl.drawArrays(gl.POINTS, 0, this.trailPoints.count);
     }
     gl.disable(gl.BLEND); gl.bindVertexArray(null);
     const bloom = frame.quality < 2 && additive;
@@ -301,6 +335,7 @@ class CanvasNeuralPainter implements NeuralPainter {
   constructor(private context: CanvasRenderingContext2D) {}
   resize() {}
   entities(entities: readonly NeuralEntity[]) { this.entityData = createNeuralEntityGeometry(entities); }
+  avatars(avatars: readonly NeuralAvatarData[]) { const data = createNeuralAvatarGeometry(avatars); this.geometry.avatarLines = data.lines; this.geometry.satellites = data.points; }
   draw(frame: NeuralSceneFrame) {
     const ctx = this.context, p = frame.palette, light = frame.options.theme === "light";
     ctx.setTransform(frame.dpr, 0, 0, frame.dpr, 0, 0);
@@ -315,7 +350,7 @@ class CanvasNeuralPainter implements NeuralPainter {
       const group = values[offset + 3];
       const node = group ? frame.layout.modules[NEURAL_MODULES[group - 1]] : core;
       const x = values[offset], y = values[offset + 1], z = values[offset + 2];
-      const a = frame.time * .05, cosine = Math.cos(a), sine = Math.sin(a);
+      const a = values === this.entityData.lines || values === this.entityData.points || values === this.geometry.rays ? 0 : group ? Math.sin(frame.time * .27 + group * .8) * .20944 : frame.time * .05, cosine = Math.cos(a), sine = Math.sin(a);
       return { x: node.x + (x * cosine - z * sine) * node.radius, y: node.y + y * node.radius };
     };
     const drawLines = (values: Float32Array, alpha: number, skip = 1) => {
@@ -323,21 +358,33 @@ class CanvasNeuralPainter implements NeuralPainter {
       for (let i = 0; i < values.length; i += NEURAL_VERTEX_STRIDE * 2 * skip) {
         const group = values[i + 3], moduleId = NEURAL_MODULES[group - 1], dim = frame.options.hoveredModule && group && moduleId !== frame.options.hoveredModule ? .25 : 1;
         const from = project(values, i), to = project(values, i + NEURAL_VERTEX_STRIDE);
+        if (values === this.geometry.cage && values[i + 2] + values[i + NEURAL_VERTEX_STRIDE + 2] < .04) continue;
+        if (values === this.geometry.rays && Object.values(frame.layout.modules).some(node => [from, to].some(point => Math.abs(point.x - node.x) < 102 && point.y > node.y - 100 && point.y < node.y + 172))) continue;
         if (frame.growth < values[i + 7]) continue;
-        ctx.strokeStyle = rgb(group ? p[moduleId] : p.shellLine, values[i + 4] * alpha * dim);
+        let color = group ? p[moduleId] : p.shellLine;
+        if (values === this.geometry.avatarLines) color = light ? mixRgb(color, p.shellLine, .57) : mixRgb(color, [values[i + 8], values[i + 9], values[i + 10]], .25);
+        ctx.strokeStyle = rgb(color, values[i + 4] * alpha * dim * (moduleId === frame.options.hoveredModule ? 1.8 : 1) * (values === this.entityData.lines && frame.pointer ? 1 + Math.max(0, 1 - Math.hypot(from.x - frame.pointer.x, from.y - frame.pointer.y) / 120) * .65 : 1));
         ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(to.x, to.y); ctx.stroke();
       }
     };
     ctx.fillStyle = rgb(p.shell, light ? .3 : .78);
     ctx.beginPath(); ctx.arc(core.x, core.y, core.radius * .91, 0, Math.PI * 2); ctx.fill();
-    drawLines(this.geometry.cage, .7, 2);
-    drawLines(this.geometry.rays, .5, 2);
+    drawLines(this.geometry.cage, .7);
+    drawLines(this.geometry.rays, .5);
+    drawLines(this.geometry.avatarLines, .85);
     drawLines(this.geometry.tendrils, .8, 2);
     drawLines(this.entityData.lines, 1);
     for (const moduleId of NEURAL_MODULES) {
       const node = frame.layout.modules[moduleId];
-      ctx.strokeStyle = rgb(p[moduleId], .32 * Math.min(1, frame.growth));
-      ctx.beginPath(); ctx.moveTo(core.x, core.y); ctx.quadraticCurveTo((core.x + node.x) / 2, (core.y + node.y) / 2 - 13, node.x, node.y); ctx.stroke();
+      const distance = Math.max(1, Math.hypot(node.x - core.x, node.y - core.y)), dx = (node.x - core.x) / distance, dy = (node.y - core.y) / distance;
+      const start = { x: core.x + dx * core.radius * .99, y: core.y + dy * core.radius * .99 }, end = { x: node.x - dx * node.radius * .58, y: node.y - dy * node.radius * .58 };
+      const control = { x: (start.x + end.x) / 2 - dy * 7, y: (start.y + end.y) / 2 + dx * 7 };
+      const dim = frame.options.hoveredModule && frame.options.hoveredModule !== moduleId ? .25 : frame.options.hoveredModule === moduleId ? 1.8 : 1;
+      ctx.strokeStyle = rgb(p[moduleId], .36 * Math.min(1, frame.growth) * dim);
+      ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.quadraticCurveTo(control.x, control.y, end.x, end.y); ctx.stroke();
+      const t = .5 + Math.sin(frame.time * .7) * .5, inverse = 1 - t;
+      ctx.fillStyle = rgb(p[moduleId], .75 * dim);
+      ctx.beginPath(); ctx.arc(inverse * inverse * start.x + 2 * inverse * t * control.x + t * t * end.x, inverse * inverse * start.y + 2 * inverse * t * control.y + t * t * end.y, 1.3, 0, Math.PI * 2); ctx.fill();
     }
     for (const [values, ember] of [[this.geometry.embers, true], [this.geometry.satellites, false], [this.entityData.points, false]] as const) {
       const keepEvery = values === this.entityData.points ? 1 : ember ? 4 : 2;
@@ -347,10 +394,22 @@ class CanvasNeuralPainter implements NeuralPainter {
         const point = project(values, i), group = values[i + 3], moduleId = NEURAL_MODULES[group - 1];
         const dim = frame.options.hoveredModule && group && moduleId !== frame.options.hoveredModule ? .25 : 1;
         const twinkle = .7 + Math.sin(frame.time + values[i + 5] * 33) * .3;
-        ctx.fillStyle = rgb(ember ? p.emberLight : p[moduleId], Math.min(1, values[i + 4] * .68 * twinkle * dim));
+        let color = ember ? p.emberLight : p[moduleId];
+        if (values === this.geometry.satellites) color = light ? mixRgb(color, p.shellLine, .57) : mixRgb(color, [values[i + 8], values[i + 9], values[i + 10]], .25);
+        ctx.fillStyle = rgb(color, Math.min(1, values[i + 4] * .68 * twinkle * dim));
         const radius = Math.max(.45, values[i + 6] * .55);
         if (radius < 1.1) ctx.fillRect(point.x - radius, point.y - radius, radius * 2, radius * 2);
         else { ctx.beginPath(); ctx.arc(point.x, point.y, radius, 0, Math.PI * 2); ctx.fill(); }
+      }
+    }
+    if (frame.ripple >= 0) {
+      ctx.strokeStyle = rgb(p.gold, (1 - frame.ripple) * .06); ctx.lineWidth = .7;
+      ctx.beginPath(); ctx.arc(core.x, core.y, core.radius * (.3 + frame.ripple * 2.8), 0, Math.PI * 2); ctx.stroke();
+    }
+    if (frame.trail.length > 1) {
+      for (let i = 1; i < frame.trail.length; i++) {
+        ctx.strokeStyle = rgb(p.gold, Math.exp(-frame.trail[i].age * 8) * .25); ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(frame.trail[i - 1].x, frame.trail[i - 1].y); ctx.lineTo(frame.trail[i].x, frame.trail[i].y); ctx.stroke();
       }
     }
     if (frame.flash > .01) {
@@ -358,7 +417,7 @@ class CanvasNeuralPainter implements NeuralPainter {
       ctx.fillRect(0, 0, frame.width, frame.height);
     }
   }
-  dispose() { this.entityData = { points: new Float32Array(), lines: new Float32Array() }; }
+  dispose() { this.entityData = { points: new Float32Array(), lines: new Float32Array(), visible: [] }; }
 }
 
 export function mountNeuralScene(host: HTMLDivElement, initialOptions: NeuralSceneOptions) {
@@ -371,7 +430,25 @@ export function mountNeuralScene(host: HTMLDivElement, initialOptions: NeuralSce
   let layout = neuralLayout(width, height, options.module);
   const springs = new Map<string, NeuralSpring>();
   let pointer = { x: 0, y: 0 }, parallax = { x: 0, y: 0 };
-  let departure = { value: 0, velocity: 0 }, flashStarted = -Infinity;
+  let departure = { value: 0, velocity: 0 }, flashStarted = -Infinity, rippleStarted = -Infinity;
+  let cursor: NeuralPoint | null = null;
+  let trail: Array<NeuralPoint & { time: number }> = [];
+  let avatars: NeuralAvatarData[] = [];
+  const avatarAbort = new AbortController();
+  let visibleEntities = selectNeuralEntities(options.entities);
+  const aggregates = new Map<string, HTMLSpanElement>();
+  const syncAggregates = () => {
+    for (const element of aggregates.values()) element.remove(); aggregates.clear();
+    visibleEntities = selectNeuralEntities(options.entities);
+    host.dataset.entityPoints = String(visibleEntities.length);
+    for (const entity of visibleEntities.filter(entity => entity.aggregateCount)) {
+      const element = document.createElement("span");
+      element.textContent = "+" + entity.aggregateCount;
+      element.setAttribute("aria-hidden", "true");
+      Object.assign(element.style, { position: "absolute", font: "10px ui-monospace,Consolas,monospace", color: "var(--neural-" + entity.module + ")", transform: "translate(7px,-50%)", pointerEvents: "none" });
+      host.append(element); aggregates.set(entity.id, element);
+    }
+  };
   const first = firstSessionEntry;
   let frameCount = 0, previousEntities = options.entities;
   metrics().activeScenes++;
@@ -390,7 +467,7 @@ export function mountNeuralScene(host: HTMLDivElement, initialOptions: NeuralSce
     if (disposed || painter.kind !== "webgl") return;
     painter.dispose(false);
     canvas.removeEventListener("webglcontextlost", lost);
-    createFallback(); painter.entities(options.entities); resize();
+    createFallback(); painter.entities(options.entities); painter.avatars(avatars); resize();
     host.dataset.renderer = painter.kind;
     host.dataset.gpuMs = "unavailable";
     requestFrame();
@@ -424,6 +501,7 @@ export function mountNeuralScene(host: HTMLDivElement, initialOptions: NeuralSce
     return { core: result.core, modules: Object.fromEntries(NEURAL_MODULES.map(key => [key, result[key]])) as NeuralLayout["modules"] };
   }
 
+  function introForAggregate() { return !options.motion || !first ? .7 : Math.min(.7, (performance.now() - started) / 2400); }
   function draw(now: number) {
     frameHandle = 0;
     if (disposed || document.hidden) return;
@@ -437,12 +515,24 @@ export function mountNeuralScene(host: HTMLDivElement, initialOptions: NeuralSce
     departure = options.motion ? stepNeuralSpring(departure, options.departing ? 1 : 0, seconds, 95) : { value: options.departing ? 1 : 0, velocity: 0 };
     parallax = { x: interpolate("pointer.x", pointer.x, seconds), y: interpolate("pointer.y", pointer.y, seconds) };
     layout = calculateLayout(seconds);
+    for (const moduleId of NEURAL_MODULES) {
+      const entries = visibleEntities.filter(entity => entity.module === moduleId);
+      entries.forEach((entity, index) => {
+        const element = aggregates.get(entity.id);
+        if (!element) return;
+        const orbit = neuralEntityOrbit(index, entries.length), node = layout.modules[moduleId];
+        element.style.left = (node.x + orbit.x * node.radius) + "px"; element.style.top = (node.y + orbit.y * node.radius) + "px";
+        element.style.opacity = String(options.module && options.module !== moduleId ? .35 : introForAggregate());
+      });
+    }
     options.onPositions?.(Object.fromEntries(NEURAL_MODULES.map(module => [module, { x: layout.modules[module].x, y: layout.modules[module].y }])) as Record<NeuralModule, NeuralPoint>);
     const intro = !options.motion ? 1 : Math.min(1, elapsed / (first ? 1.2 : .5));
     const growth = !options.motion || !first ? 3 : Math.min(3, elapsed / .8);
     const flashElapsed = (now - flashStarted) / 1000;
     const flash = options.motion ? Math.max(Math.max(0, 1 - flashElapsed / .48) * .27, first ? Math.exp(-Math.pow((elapsed - .35) * 7, 2)) * .25 : 0, Math.max(0, departure.value - .5) * 1.9) : 0;
-    painter.draw({ width, height, dpr, time: options.motion ? sceneTime : 0, layout, options, palette, growth, intro, departure: departure.value, flash, quality: quality.level });
+    trail = options.motion ? trail.filter(point => now - point.time < 420).slice(-20) : [];
+    const ripple = options.motion && now - rippleStarted < 1000 ? (now - rippleStarted) / 1000 : -1;
+    painter.draw({ pointer: cursor, trail: trail.map(point => ({ x: point.x, y: point.y, age: (now - point.time) / 1000 })), ripple, width, height, dpr, time: options.motion ? sceneTime : 0, layout, options, palette, growth, intro, departure: departure.value, flash, quality: quality.level });
     lastFrame = now; frameCount++; firstSessionEntry = false;
     const stats = metrics();
     stats.frames++; stats.cpuMilliseconds = performance.now() - before; stats.frameMilliseconds = delta;
@@ -475,13 +565,39 @@ export function mountNeuralScene(host: HTMLDivElement, initialOptions: NeuralSce
   function move(event: PointerEvent) {
     if (!options.motion) return;
     const rect = host.getBoundingClientRect();
+    cursor = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    if (!options.dimmed && !(event.target instanceof Element && event.target.closest("button,input,textarea,select,[role=dialog]"))) {
+      const previous = trail.at(-1);
+      if (!previous || Math.hypot(cursor.x - previous.x, cursor.y - previous.y) > 2) trail.push({ ...cursor, time: performance.now() });
+      trail = trail.slice(-20);
+    }
     pointer = { x: Math.max(-6, Math.min(6, ((event.clientX - rect.left) / width - .5) * 12)), y: Math.max(-6, Math.min(6, ((event.clientY - rect.top) / height - .5) * 12)) };
+  }
+  function leave() { cursor = null; }
+  function click(event: PointerEvent) {
+    if (!options.motion || options.dimmed || event.button !== 0 || event.target instanceof Element && event.target.closest("button,input,textarea,select,[role=dialog],a")) return;
+    rippleStarted = performance.now(); requestFrame();
   }
   const observer = new ResizeObserver(resize);
   observer.observe(host);
   document.addEventListener("visibilitychange", visibility);
   window.addEventListener("focus", focus); window.addEventListener("blur", blur); window.addEventListener("pointermove", move, { passive: true });
-  painter!.entities(options.entities); resize();
+  host.parentElement?.addEventListener("pointerdown", click);
+  host.parentElement?.addEventListener("pointerleave", leave);
+  const parent = host.parentElement;
+  void Promise.all(NEURAL_MODULES.map(async module => {
+    try {
+      const response = await fetch(NEURAL_AVATAR_FILES[module], { signal: avatarAbort.signal, cache: "force-cache" });
+      if (!response.ok) return null;
+      const data: unknown = await response.json();
+      return isNeuralAvatarData(data) && data.module === module ? data : null;
+    } catch { return null; }
+  })).then(results => {
+    if (disposed) return;
+    avatars = results.filter((avatar): avatar is NeuralAvatarData => avatar !== null);
+    painter.avatars(avatars); host.dataset.avatars = String(avatars.length); requestFrame();
+  });
+  painter!.entities(options.entities); syncAggregates(); resize();
   return {
     update(next: NeuralSceneOptions) {
       if (disposed) return;
@@ -490,22 +606,24 @@ export function mountNeuralScene(host: HTMLDivElement, initialOptions: NeuralSce
       if (next.entities !== previousEntities) { painter.entities(next.entities); previousEntities = next.entities; }
       if (next.motion !== options.motion) {
         lastFrame = 0;
-        if (!next.motion) { springs.clear(); pointer = { x: 0, y: 0 }; }
+        if (!next.motion) { springs.clear(); pointer = { x: 0, y: 0 }; cursor = null; trail = []; }
       }
       options = next;
-      requestFrame();
+      syncAggregates(); requestFrame();
     },
     dispose() {
       if (disposed) return;
-      disposed = true; cancelAnimationFrame(frameHandle);
+      disposed = true; cancelAnimationFrame(frameHandle); avatarAbort.abort(); avatars = []; trail = [];
+      parent?.removeEventListener("pointerdown", click); parent?.removeEventListener("pointerleave", leave);
       observer.disconnect(); document.removeEventListener("visibilitychange", visibility);
       window.removeEventListener("focus", focus); window.removeEventListener("blur", blur); window.removeEventListener("pointermove", move);
       canvas.removeEventListener("webglcontextlost", lost);
       painter.dispose(); canvas.remove(); springs.clear();
+      for (const element of aggregates.values()) element.remove(); aggregates.clear();
       metrics().activeScenes = Math.max(0, metrics().activeScenes - 1);
       // Drop callback closures and entity arrays promptly on desktop route transitions.
       options = { ...options, onPositions: undefined, entities: [] };
-      previousEntities = [];
+      previousEntities = []; visibleEntities = [];
     },
   };
 }

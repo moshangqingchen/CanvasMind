@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "./helpers/canvas-offline-test";
 import { CANGYUAN_IMAGE_CONNECTOR } from "../lib/provider-presets";
 
 const journalKey = "super-canvas:node-configuration-journal:v1";

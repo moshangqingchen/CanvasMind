@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "./helpers/canvas-offline-test";
 import type { CanvasDocument, CanvasNode } from "../components/types";
 import { clickBlankCanvas } from "./canvas-test-actions";
 

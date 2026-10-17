@@ -1,4 +1,4 @@
-import { expect, test, type Page, type APIRequestContext } from "@playwright/test";
+import { expect, test, type Page, type APIRequestContext } from "./helpers/canvas-offline-test";
 import { imageSizeOptions, type ModelDescriptor } from "@super-canvas/providers";
 import { parseSupplierGroupDetails, supplierGroupModelPriceDetails, supplierGroupPriceLabel, supplierGroupResolutionLabel } from "@super-canvas/providers/supplier-group-details";
 import type { ProviderConnectionView } from "../lib/client-api";

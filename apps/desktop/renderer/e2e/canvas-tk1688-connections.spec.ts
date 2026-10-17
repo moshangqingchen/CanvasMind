@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "./helpers/canvas-offline-test";
 import { parseTk1688Marketplace } from "@super-canvas/providers";
 import type { ProviderConnectionView } from "../lib/client-api";
 import type { SupplierRecord } from "../lib/client-suppliers";

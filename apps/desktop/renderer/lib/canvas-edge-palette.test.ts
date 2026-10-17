@@ -35,6 +35,7 @@ describe("shared selection light paints", () => {
   it("suppresses failed and preview lights even if selected, and accepts edge or endpoint selection", () => {
     expect(edgeLightEnabled(false, undefined)).toBe(false);
     expect(edgeLightEnabled(false, { running: true })).toBe(false);
+    expect(edgeLightEnabled(false, { running: true, transferring: true })).toBe(true);
     expect(edgeLightEnabled(true, undefined)).toBe(true);
     expect(edgeLightEnabled(false, { related: true })).toBe(true);
     for (const state of [{ failed: true }, { preview: true }]) {

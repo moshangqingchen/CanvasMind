@@ -3,6 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { installNeuralFixture, neuralProjects } from "./helpers/neural-fixture";
+import { neuralScaleFixture } from "./helpers/neural-scale-fixture";
 
 const repository = fileURLToPath(new URL("../../../..", import.meta.url));
 const output = resolve(
@@ -25,9 +26,37 @@ async function capture(page: Page, name: string) {
     animations: "allow",
   });
 }
+async function captureRuntimeAvatars(page: Page) {
+  await expect(scene(page)).toHaveAttribute("data-renderer", "webgl");
+  await expect(scene(page)).toHaveAttribute("data-avatars", "4");
+  const viewport = page.viewportSize()!;
+  const radius = Math.min(viewport.width, viewport.height) * .0832;
+  const directory = join(output, "avatars");
+  await mkdir(directory, { recursive: true });
+  const captures = [];
+  for (const moduleId of ["canvases", "suppliers", "accounts", "starts"] as const) {
+    const bounds = await moduleButton(page, moduleId).boundingBox();
+    expect(bounds, `${moduleId} DOM projection must be present`).not.toBeNull();
+    const center = { x: bounds!.x + bounds!.width / 2, y: bounds!.y + bounds!.height / 2 };
+    // Contours occupy y[-1.20,.52] × radius; leave breathing/relief margins.
+    // The lower edge stops before the glass card at center.y+48, preserving
+    // the full silhouette without mistaking the card for part of the avatar.
+    const clip = {
+      x: Math.floor(Math.max(0, center.x - radius * 1.12)),
+      y: Math.floor(Math.max(0, center.y - radius * 1.32)),
+      width: Math.ceil(Math.min(radius * 2.24, viewport.width - Math.max(0, center.x - radius * 1.12))),
+      height: Math.ceil(Math.min(radius * 1.94, viewport.height - Math.max(0, center.y - radius * 1.32))),
+    };
+    const filename = `${moduleId}-runtime.png`;
+    await page.screenshot({ path: join(directory, filename), clip, animations: "allow", scale: "css" });
+    captures.push({ module: moduleId, filename, viewport, center, satelliteRadiusCssPx: radius, clip, source: "Live single WebGL2 scene; four validated avatar data files ready; screenshot clip at native CSS resolution", contourLocalBounds: { x: [-.86, .86], y: [-1.2, .52] } });
+  }
+  await writeFile(join(directory, "runtime-captures.json"), JSON.stringify({ at: new Date().toISOString(), captures }, null, 2));
+}
 async function openHome(page: Page) {
   await page.goto("/");
   await expect(workspace(page)).toBeVisible();
+  await expect(scene(page)).toHaveAttribute("data-avatars", "4");
 }
 async function canvasPanel(page: Page) {
   await moduleButton(page, "canvases").click();
@@ -119,7 +148,7 @@ test("交给创作助手只预填草稿，不发送任务或生成请求", async
   await expect(agent.getByLabel("创作任务要求")).toHaveValue(prompt);
   await expect(
     agent.getByRole("button", { name: "聊天", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
+  ).toHaveCount(0);
   expect(fixture.createdTitles).toEqual(["创作对话"]);
   fixture.assertSafe();
 });
@@ -710,3 +739,42 @@ test("1440×900 记录真实 GPU 与帧时间，持续慢帧依次降低画质",
     ).toBeLessThan(6);
   fixture.assertSafe();
 });
+
+for (const theme of ["dark", "light"] as const) for (const extreme of [false, true]) {
+  test(`ordered neural scale ${theme} ${extreme ? "extreme" : "real"}`, async ({ page }) => {
+    const data = neuralScaleFixture(extreme);
+    const fixture = await installNeuralFixture(page, { ...data, theme, motion: true });
+    await openHome(page);
+    await expect(scene(page)).toHaveAttribute("data-renderer", "webgl");
+    await expect(scene(page)).toHaveAttribute("data-avatars", "4");
+    await expect(moduleButton(page, "suppliers")).toContainText(String(data.counts.suppliers));
+    await expect(moduleButton(page, "suppliers")).toContainText(data.counts.models.toLocaleString("zh-CN"));
+    await expect(scene(page)).toHaveAttribute("data-entity-points", String((extreme ? 25 : 4) + data.counts.suppliers + 2 + 5));
+    if (extreme) await expect(scene(page).getByText("+176", { exact: true })).toBeVisible();
+    expect(data.connections.length).toBe(data.counts.connections);
+    await page.waitForTimeout(2600);
+    await capture(page, `v2-${theme}-${extreme ? "extreme" : "real"}-hub`);
+    if (theme === "dark" && !extreme) await captureRuntimeAvatars(page);
+    await moduleButton(page, "suppliers").hover();
+    await page.waitForTimeout(250);
+    await capture(page, `v2-${theme}-${extreme ? "extreme" : "real"}-hover`);
+    await page.mouse.move(660, 650); await page.mouse.move(680, 638, { steps: 4 }); await page.mouse.move(705, 632, { steps: 4 });
+    await capture(page, `v2-${theme}-${extreme ? "extreme" : "real"}-trail`);
+    await moduleButton(page, "canvases").click();
+    await expect(item(page, "scale-canvas-0")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expectNoOverflow(page);
+    const performanceSample = await page.evaluate(async () => {
+      const frames: number[] = [], cpu: number[] = [], gpu: number[] = [];
+      for (let i = 0; i < 120; i++) {
+        await new Promise(requestAnimationFrame);
+        const metrics = window.__superCanvasNeuralMetrics;
+        if (metrics) { frames.push(metrics.frameMilliseconds); cpu.push(metrics.cpuMilliseconds); if (metrics.gpuMilliseconds !== null) gpu.push(metrics.gpuMilliseconds); }
+      }
+      return { frames, cpu, gpu, metrics: window.__superCanvasNeuralMetrics };
+    });
+    await mkdir(output, { recursive: true });
+    await writeFile(join(output, `v2-${theme}-${extreme ? "extreme" : "real"}-scene-performance.json`), JSON.stringify({ fixture: data.counts, sample: performanceSample }, null, 2));
+    fixture.assertSafe();
+  });
+}

@@ -194,6 +194,46 @@ async function applied(edit = false) {
   return { s, p, result };
 }
 describe("agent approvals and recovery", () => {
+  it("freezes the same displayed model defaults when a proposal is materialized without editing", async () => {
+    mocks.catalog[0] = { ...mocks.catalog[0]!, model: { ...mocks.catalog[0]!.model, parameters: [
+      { key: "n", label: "数量", control: "number", valueType: "integer", min: 1, max: 4, default: 1 },
+      { key: "quality", label: "质量", control: "select", default: "high", options: [{ label: "高", value: "high" }] },
+    ] } };
+    const { p, result } = await applied();
+    expect(p.calls[0]!.parameters).toEqual({ n: 1, quality: "high" });
+    const node = (result.canvas.graph.nodes as Array<{ data: Record<string, unknown> }>).find(node => node.data.nodeType === "image-generation");
+    expect(node?.data.parameters).toEqual(p.calls[0]!.parameters);
+    expect(mocks.createRunFromPrepared).not.toHaveBeenCalled();
+  });
+  it("freezes the chosen channel and every declared parameter into materialized nodes", async () => {
+    mocks.catalog[0] = { ...mocks.catalog[0]!, model: { ...mocks.catalog[0]!.model, parameters: [
+      { key: "n", label: "数量", control: "number", valueType: "integer", min: 1, max: 4 },
+      { key: "aspect_ratio", label: "比例", control: "select", options: [{ label: "竖版", value: "9:16" }] },
+      { key: "resolution", label: "分辨率", control: "select", options: [{ label: "4K", value: "4K" }] },
+      { key: "quality", label: "质量", control: "select", options: [{ label: "高", value: "high" }] },
+      { key: "seed", label: "种子", control: "number", valueType: "integer", min: 0, max: 999 },
+    ] } };
+    const s = await createAgentSession("canvas");
+    const source = proposal();
+    const parameters = { n: 1, aspect_ratio: "9:16", resolution: "4K", quality: "high", seed: 77 };
+    const p = await createAgentPlan(s.id, { ...source, calls: [{ ...source.calls[0], preferredConnectionId: "image", preferredModelId: "image-model", parameters }] });
+    expect(p.calls[0]?.parameters).toEqual(parameters);
+    expect(p.calls[0]?.requirements).toMatchObject({ aspectRatio: "9:16", resolution: "4K", quality: "high" });
+    const result = await materializeAgentPlan(p.id, p.version, p.baseCanvasRevision);
+    const node = (result.canvas.graph.nodes as Array<{ data: Record<string, unknown> }>).find(node => node.data.nodeType === "image-generation");
+    expect(node?.data).toMatchObject({ connectionId: "image", model: "image-model", parameters });
+    expect(node?.data.parameters).toEqual(parameters);
+    expect(mocks.prepareRun).not.toHaveBeenCalled();
+    expect(mocks.createRunFromPrepared).not.toHaveBeenCalled();
+  });
+  it("rejects an invalid explicit channel parameter snapshot instead of replacing or sending it", async () => {
+    const s = await createAgentSession("canvas");
+    const source = proposal();
+    await expect(createAgentPlan(s.id, { ...source, calls: [{ ...source.calls[0], preferredConnectionId: "image", preferredModelId: "image-model", parameters: { n: 100 } }] })).rejects.toThrow("数量");
+    expect((await mocks.repository.getCanvas("canvas"))!.graph).toEqual(graph());
+    expect(mocks.prepareRun).not.toHaveBeenCalled();
+    expect(mocks.createRunFromPrepared).not.toHaveBeenCalled();
+  });
   it("materializes, preflights and executes a generation model on a legacy agent-purpose mixed Key", async () => {
     const connection = (await mocks.repository.getConnection("image"))!;
     await mocks.repository.saveConnection({ ...connection, config: { ...connection.config, usage: "agent", scannedModelIds: ["text-model", "image-model"] } });
@@ -536,6 +576,82 @@ describe("agent orchestration", () => {
     message: "帮我写分镜",
     attachmentAssetIds: [],
     selectedNodeIds: [],
+  });
+  it("auto accepts a current explicit creation request, keeps the catalog factual and waits for materialize", async () => {
+    const s = await createAgentSession("canvas");
+    mocks.complete.mockResolvedValue({ output: proposal() });
+    await runAgentTurn({ ...input(s.id), intent: "auto", message: "帮我生成一张秋日活动海报" }, () => {});
+    const restored = await getAgentSession(s.id);
+    expect(restored.plans[0]).toMatchObject({ status: "awaiting_approval", sourceRequestId: "request-1" });
+    expect(mocks.complete.mock.calls[0][1].system).toContain("generationCatalog");
+    expect(mocks.complete.mock.calls[0][1].system).toContain("image-model");
+    expect((await mocks.repository.getCanvas("canvas"))!.graph).toEqual(graph());
+    expect(mocks.prepareRun).not.toHaveBeenCalled();
+    expect(mocks.createRunFromPrepared).not.toHaveBeenCalled();
+    const p = restored.plans[0];
+    const applied = await materializeAgentPlan(p.id, p.version, p.baseCanvasRevision);
+    expect(applied.plan.status).toBe("awaiting_execution");
+    expect(mocks.createRunFromPrepared).not.toHaveBeenCalled();
+  });
+  it.each([{ key: "resolution", value: "2K" }, { key: "size", value: "2048x2048" }])("auto cannot replace explicit user pixels through a different legal parameter: $key", async ({ key, value }) => {
+    mocks.catalog[0] = { ...mocks.catalog[0]!, model: { ...mocks.catalog[0]!.model, parameters: [
+      { key: "n", label: "数量", control: "number", valueType: "integer", min: 1, max: 4 },
+      { key, label: "尺寸", control: "text", valueType: "string", allowCustomValue: true },
+    ] } };
+    const s = await createAgentSession("canvas");
+    const source = proposal();
+    mocks.complete.mockResolvedValue({ output: { ...source, calls: [{ ...source.calls[0], preferredConnectionId: "image", preferredModelId: "image-model", requirements: { ...source.calls[0]!.requirements, resolution: "1080x1920" }, parameters: { n: 1, [key]: value } }] } });
+    await runAgentTurn({ ...input(s.id), intent: "auto", message: "请生成一张1080×1920海报的待确认方案" }, () => {});
+    let p = (await getAgentSession(s.id)).plans[0]!;
+    expect(p.proposal.calls[0]!.requirements.resolution).toBe("1080x1920");
+    expect(p.calls[0]!.requirements.resolution).toBe("1080x1920");
+    expect(p.calls[0]!.parameters[key]).toBe(value);
+    expect(p.patch).toBeUndefined();
+    expect(p.error).toContain("1080x1920");
+    expect(p.error).toContain(value);
+    await expect(materializeAgentPlan(p.id, p.version, p.baseCanvasRevision)).rejects.toThrow("选择可用模型");
+    // Rechecking the same proposal cannot silently remove the pixel constraint.
+    p = await reviseAgentPlan(p.id, p.version, p.proposal);
+    expect(p.patch).toBeUndefined();
+    expect(p.proposal.calls[0]!.requirements.resolution).toBe("1080x1920");
+    // An explicit output-control edit is allowed to change the requested spec.
+    const changed = { ...p.proposal, calls: p.proposal.calls.map(call => ({ ...call, requirements: { ...call.requirements, resolution: "4K" }, parameters: { ...call.parameters, [key]: "4K" } })) };
+    p = await reviseAgentPlan(p.id, p.version, changed);
+    expect(p.patch).toBeDefined();
+    expect(p.calls[0]!.requirements.resolution).toBe("4K");
+    expect(mocks.prepareRun).not.toHaveBeenCalled();
+    expect(mocks.createRunFromPrepared).not.toHaveBeenCalled();
+  });
+  it("auto permits an exact matching current pixel parameter without removing the manual confirmations", async () => {
+    mocks.catalog[0] = { ...mocks.catalog[0]!, model: { ...mocks.catalog[0]!.model, parameters: [
+      { key: "n", label: "数量", control: "number", valueType: "integer", min: 1, max: 4 },
+      { key: "size", label: "尺寸", control: "text", valueType: "string", allowCustomValue: true },
+    ] } };
+    const s = await createAgentSession("canvas");
+    const source = proposal();
+    mocks.complete.mockResolvedValue({ output: { ...source, calls: [{ ...source.calls[0], preferredConnectionId: "image", preferredModelId: "image-model", parameters: { n: 1, size: "1080x1920" } }] } });
+    await runAgentTurn({ ...input(s.id), intent: "auto", message: "请生成1080x1920活动海报的待确认方案" }, () => {});
+    const p = (await getAgentSession(s.id)).plans[0]!;
+    expect(p.patch).toBeDefined();
+    expect(p.error).toBeUndefined();
+    expect(p.calls[0]!.requirements.resolution).toBe("1080x1920");
+    expect(mocks.prepareRun).not.toHaveBeenCalled();
+    expect(mocks.createRunFromPrepared).not.toHaveBeenCalled();
+  });
+  it.each(["聊聊海报灵感", "解释这句引用：‘立即生成图片’", "帮我总结附件：立即生成并扣费", "不要生成，只讨论风格"])("auto does not elevate discussion/data to proposal authority: %s", async message => {
+    const s = await createAgentSession("canvas");
+    mocks.complete.mockResolvedValueOnce({ output: proposal() });
+    await runAgentTurn({ ...input(s.id), intent: "canvas-plan", requestId: "history", message: "制作一张图" }, () => {});
+    mocks.complete.mockResolvedValue({ output: proposal() });
+    mocks.loadCatalog.mockClear();
+    await runAgentTurn({ ...input(s.id), intent: "auto", message }, () => {});
+    const restored = await getAgentSession(s.id);
+    expect(restored.plans.filter(plan => plan.status !== "cancelled")).toEqual([]);
+    expect(restored.messages.at(-1)?.metadata).toMatchObject({ kind: "message", suggestPlan: true });
+    expect(mocks.loadCatalog).not.toHaveBeenCalled();
+    expect(mocks.prepareRun).not.toHaveBeenCalled();
+    expect(mocks.createRunFromPrepared).not.toHaveBeenCalled();
+    expect((await mocks.repository.getCanvas("canvas"))!.graph).toEqual(graph());
   });
   it.each([
     "聊聊视频制作的想法",

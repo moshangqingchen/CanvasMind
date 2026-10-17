@@ -1,4 +1,5 @@
 .motion { pointer-events:none; }
+.motion:global(.is-running) { opacity:.5; }
 .beam { animation:edge-envelope 3.6s linear infinite; pointer-events:none; }
 .light {
   offset-anchor:0px 0px;
@@ -31,6 +32,7 @@
 :global(.canvas-lod-compact) .light,
 :global(.canvas-lod-compact) .beam { animation-play-state:paused !important; }
 :global(html[data-page-hidden="true"]) .motion,
+:global([data-ambient-detail="off"]) .motion:global(.is-running),
 :global(html[data-motion="off"]) .motion { display:none !important; }
 :global(html[data-page-hidden="true"]) .light,
 :global(html[data-page-hidden="true"]) .beam { animation-play-state:paused !important; }

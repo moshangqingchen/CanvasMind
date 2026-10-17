@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "./helpers/canvas-offline-test";
 import { canvasUsableArea } from "../lib/canvas-usable-area";
 
 type GraphNode = {

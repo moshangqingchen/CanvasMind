@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "./helpers/canvas-offline-test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { freemem } from "node:os";
 import { join } from "node:path";

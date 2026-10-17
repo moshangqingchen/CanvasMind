@@ -37,7 +37,7 @@ function ModelIdentity({ model, parameters, capabilities, price = false, selecte
 }
 
 export function ModelPicker({ id, label, connectionId, models, value, onChange, parameters = {}, capabilities = {},
-  open: controlledOpen, onOpenChange, anchorKey, loading = false, failed = false, authoritative = true, allowManual = false, badge, catalogDirectory,
+  open: controlledOpen, onOpenChange, anchorKey, loading = false, failed = false, authoritative = true, allowManual = false, badge, catalogDirectory, allowAutomatic = true,
 }: {
   id?: string; label: string; connectionId: string; models: readonly ModelDescriptor[]; value: string;
   onChange: (modelId: string) => void; parameters?: Record<string, unknown>; open?: boolean;
@@ -45,6 +45,7 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
   authoritative?: boolean; allowManual?: boolean; badge?: (model: ModelDescriptor) => ReactNode;
   capabilities?: Readonly<Record<string, ImageEditingCapabilities>>;
   catalogDirectory?: CatalogPickerDirectory;
+  allowAutomatic?: boolean;
 }) {
   const generatedId = useId();
   const listId = `${id ?? generatedId}-options`;
@@ -71,7 +72,7 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
   const hasFilters = Boolean(query.trim()) || kind !== "all" || status !== "all";
   const options = useMemo<PickerOption[]>(() => {
     if (!open) return [];
-    const automatic: PickerOption[] = !hasFilters && !family ? [{ id: "", label: "自动模型", reason: null }] : [];
+    const automatic: PickerOption[] = allowAutomatic && !hasFilters && !family ? [{ id: "", label: "自动模型", reason: null }] : [];
     if (!grouped) return [...automatic, ...filtered.map(model => ({ id: model.id, model,
       label: cleanModelDisplayName(model.name, model.metadata?.priceLabel), reason: modelCanvasUnavailableReason(model) }))];
     if (family) return groupTk1688Models(filtered).find(group => group.id === family)?.models.map(model => ({
@@ -81,7 +82,7 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
       label: group.id, merchants: group.merchants.length, reason: null })),
       ...filtered.filter(model => !tk1688ModelFamily(model)).map(model => ({ id: model.id, model,
         label: cleanModelDisplayName(model.name, model.metadata?.priceLabel), reason: modelCanvasUnavailableReason(model) }))];
-  }, [open, filtered, hasFilters, family, grouped]);
+  }, [open, filtered, hasFilters, family, grouped, allowAutomatic]);
   const activeIndex = Math.min(active, Math.max(0, options.length - 1));
   const page = Math.floor(activeIndex / MODEL_PICKER_PAGE_SIZE);
   const pageStart = page * MODEL_PICKER_PAGE_SIZE;
@@ -103,8 +104,8 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
         const selectedFamily = selected && tk1688ModelFamily(selected);
         const groupedIndex = selectedFamily ? groups.findIndex(group => group.id === selectedFamily)
           : groups.length + openingModels.filter(model => !tk1688ModelFamily(model)).findIndex(model => model.id === value);
-        setActive(groupedIndex + 1);
-      } else setActive(index < 0 ? 0 : index + 1);
+        setActive(groupedIndex + (allowAutomatic ? 1 : 0));
+      } else setActive(index < 0 ? 0 : index + (allowAutomatic ? 1 : 0));
     }
   };
   const choose = (modelId: string) => {

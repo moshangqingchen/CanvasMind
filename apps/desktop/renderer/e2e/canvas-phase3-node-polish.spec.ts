@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./helpers/canvas-offline-test";
 
 test("节点正文不被端口列挤窄，图标按钮统一且缺报价不留破折号", async ({ page, request }) => {
   await page.setViewportSize({ width: 1366, height: 768 });

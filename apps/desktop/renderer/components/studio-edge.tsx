@@ -26,7 +26,7 @@ export const StudioEdge = memo(function StudioEdge(props: EdgeProps) {
       <StudioEdgeContent {...props} sourceX={0} sourceY={0} targetX={targetX} targetY={targetY} path={path} />
     </g>
     {flowing && <EdgeLabelRenderer>
-      <div className={`studio-edge-motion is-flowing is-focused ${styles.motion}`}
+      <div className={`studio-edge-motion is-flowing ${props.selected || state?.related ? "is-focused" : "is-running"} ${styles.motion}`}
         data-edge-id={props.id} aria-hidden="true" style={{
           width: bounds.width, height: bounds.height,
           transform: `translate(${props.sourceX + bounds.x}px, ${props.sourceY + bounds.y}px)`,

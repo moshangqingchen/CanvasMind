@@ -141,14 +141,16 @@ export async function installNeuralFixture(
   page: Page,
   options: {
     projects?: ProjectSummaryView[];
+    suppliers?: SupplierRecord[];
+    connections?: ProviderConnectionView[];
     theme?: "dark" | "light";
     motion?: boolean;
     noWebGL?: boolean;
   } = {},
 ) {
   let projects = structuredClone(options.projects ?? neuralProjects);
-  const suppliers = structuredClone(neuralSuppliers);
-  const connections = structuredClone(neuralConnections);
+  const suppliers = structuredClone(options.suppliers ?? neuralSuppliers);
+  const connections = structuredClone(options.connections ?? neuralConnections);
   const prohibited: string[] = [],
     unexpected: string[] = [],
     mutations: string[] = [],

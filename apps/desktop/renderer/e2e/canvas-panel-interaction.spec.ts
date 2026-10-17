@@ -4,7 +4,7 @@ import {
   type APIRequestContext,
   type Locator,
   type Page,
-} from "@playwright/test";
+} from "./helpers/canvas-offline-test";
 import { floatingPanelGeometry } from "./floating-panel-geometry";
 
 const models = [

@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { AgentEvent } from "../../lib/agent-contracts";
 import { EVALUATION_CASES, SCORE_DIMENSIONS, SCORE_RUBRIC, type EvaluationCase } from "./cases";
-import { createEvaluationRepository, SYNTHETIC_CANVAS_ID, SYNTHETIC_TEXT_NODE_ID, type SelectionSnapshot } from "./fixture";
+import { createEvaluationRepository, SYNTHETIC_CANVAS_ID, SYNTHETIC_TEXT_NODE_ID, SYNTHETIC_CATALOG, type SelectionSnapshot } from "./fixture";
 import { countHttpAttempts, writeExclusiveJson, type AttemptIdentity } from "./budget";
 import { makeSecretRedactor } from "./guard";
 import { createEvaluationTransport, type EvaluationSender } from "./transport";
@@ -58,10 +58,11 @@ export async function runEvaluation(options: EvaluationRunOptions) {
   const runtimeSha256 = createHash("sha256").update(JSON.stringify(sourceFiles)).digest("hex");
   const testCases = options.cases ?? EVALUATION_CASES;
   let currentCase = testCases[0];
+  const requestIntent = (item: EvaluationCase) => options.phase === "baseline" ? item.baselineIntent ?? item.intent : item.intent;
   const transport = createEvaluationTransport({ connection: options.snapshot.connection, secrets,
     ledgerDirectory: options.ledgerDirectory, send: options.send, phaseLimit: options.phaseLimit,
     identity: () => ({ phase: options.phase, caseId: currentCase.id, connectionId: options.snapshot.connection.id,
-      modelId: options.snapshot.connection.model, intent: currentCase.intent }),
+      modelId: options.snapshot.connection.model, intent: requestIntent(currentCase) }),
     inputSummary: () => `${currentCase.label}：${currentCase.message.slice(0, 160)}` });
   const runtime = await loadIsolatedRuntime({ runtimeDirectory: options.runtimeDirectory,
     snapshot: options.snapshot, fetch: transport.fetch });
@@ -70,6 +71,7 @@ export async function runEvaluation(options: EvaluationRunOptions) {
   mkdirSync(runDirectory, { recursive: false });
   writeExclusiveJson(join(runDirectory, "manifest.json"), { runId, phase: options.phase, mode: options.mode,
     startedAt: new Date().toISOString(), sourceSha256, runtimeSha256, sourceFiles, fixtureCatalog: true,
+    fixtureCatalogSha256: createHash("sha256").update(JSON.stringify(SYNTHETIC_CATALOG)).digest("hex"),
     model: { connectionId: options.snapshot.connection.id, modelId: options.snapshot.connection.model,
       supplier: options.snapshot.option.supplierName, group: options.snapshot.option.group,
       protocol: options.snapshot.connection.protocol },
@@ -97,7 +99,7 @@ export async function runEvaluation(options: EvaluationRunOptions) {
     try {
       status = await runtime.runAgentTurn({ canvasId: SYNTHETIC_CANVAS_ID, sessionId: session.id,
         requestId: `eval-${runId}-${testCase.id}`, connectionId: options.snapshot.connection.id,
-        modelId: options.snapshot.connection.model, message: testCase.message, intent: testCase.intent,
+        modelId: options.snapshot.connection.model, message: testCase.message, intent: requestIntent(testCase),
         attachmentAssetIds: [], selectedNodeIds: testCase.selectedText ? [SYNTHETIC_TEXT_NODE_ID] : [], reasoningEffort: "auto",
       }, event => events.push(event));
     } catch (caught) {
@@ -109,11 +111,11 @@ export async function runEvaluation(options: EvaluationRunOptions) {
     const afterCanvas = await repository.getCanvas(SYNTHETIC_CANVAS_ID);
     const invariant = { canvasUnchanged: JSON.stringify(beforeCanvas) === JSON.stringify(afterCanvas),
       noExecution: output.plans.every(plan => !plan.workflowRunId && plan.status === "awaiting_approval"),
-      noChatPlan: testCase.intent !== "chat" || output.plans.length === 0,
+      noChatPlan: requestIntent(testCase) !== "chat" || output.plans.length === 0,
       textOnlyInputs: true, sourceDataAccess: false };
     const durationMs = Math.round(performance.now() - started);
     const calls = transport.calls() - beforeCalls;
-    writeExclusiveJson(join(runDirectory, `${testCase.id}.json`), safe({ case: testCase, mode: options.mode, status,
+    writeExclusiveJson(join(runDirectory, `${testCase.id}.json`), safe({ case: testCase, requestIntent: requestIntent(testCase), mode: options.mode, status,
       completedAt: new Date().toISOString(), durationMs, httpAttempts: calls, ...(error ? { error } : {}),
       output, events, invariant, scores: null, scoringNotes: "需根据真实输出逐题人工自评，fixture不得作为真实评测得分。" }));
     results.push({ id: testCase.id, status, durationMs, calls });
@@ -124,5 +126,7 @@ export async function runEvaluation(options: EvaluationRunOptions) {
     calls: transport.calls(), globalReserved: countHttpAttempts(options.ledgerDirectory),
     ...(transport.stopped() ? { stopped: transport.stopped() } : {}) };
   writeExclusiveJson(join(runDirectory, "summary.json"), summary);
+  if (options.mode === "real" && transport.stopped()) writeExclusiveJson(join(EVALUATION_LOG, "REAL_EVAL_STOP.json"),
+    { at: new Date().toISOString(), reason: transport.stopped(), runId, globalReserved: summary.globalReserved });
   return { ...summary, runDirectory };
 }

@@ -586,7 +586,7 @@ test("切换显示偏好保留搜索、排序与进入画布行为", async ({ pa
   await expect.poll(() => f.canvasReads).toContain("/api/canvas/home-older");
   f.assertSafe();
 });
-test("场景无装饰鼠标轨迹，搜索焦点不受鼠标影响，隐藏时暂停", async ({
+test("轨迹复用场景，搜索焦点不受鼠标影响，隐藏时暂停", async ({
   page,
 }) => {
   const f = await installNeuralFixture(page, { projects: [older, newer] });

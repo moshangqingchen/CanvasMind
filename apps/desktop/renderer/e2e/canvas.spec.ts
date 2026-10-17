@@ -8,7 +8,7 @@ import {
   type Locator,
   type Page,
   type Route,
-} from "@playwright/test";
+} from "./helpers/canvas-offline-test";
 import {
   CANGYUAN_BACKUP_IMAGE_GROUP,
   CANGYUAN_IMAGE_CONNECTOR,
@@ -339,6 +339,13 @@ async function mockCangyuanBackupCatalog(page: Page): Promise<void> {
   );
   await page.route(/\/api\/providers\/[^/]+\/models(?:\?.*)?$/u, async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", headers: { "X-Model-Scan-Status": "live" }, body: JSON.stringify(models) });
+  });
+  // This legacy node also reads the supplier's public availability endpoint
+  // when its model controls open. Keep that unrelated read offline too, with
+  // no fabricated ready/healthy status and no request to a real supplier.
+  await page.route(/\/api\/providers\/[^/]+\/availability(?:\?.*)?$/u, async route => {
+    if (route.request().method() !== "GET") return route.fallback();
+    await route.fulfill({ json: { enabled: false, ready: false, checkedAt: "2026-10-16T00:00:00.000Z", source: "stale", items: [] } });
   });
   const marketplaceModels = models.map((model) => ({
     id: model.id,
@@ -3047,6 +3054,9 @@ test.describe("超级画布完整验收", () => {
     page,
     request,
   }) => {
+    // The toolbar's 650px gate belongs to the original 720px-high scenario.
+    // Keep that smaller viewport explicit under the 1440×900 evidence config.
+    await page.setViewportSize({ width: 1280, height: 720 });
     await createOfflineImageModelFixture(request);
     await openWorkspace(page);
     const asset = await uploadImageAsset(request);
@@ -4580,10 +4590,15 @@ test.describe("超级画布完整验收", () => {
         defaultModel: "codex-gpt-image-2-1k",
       },
     });
-    const models = await getJson<Array<{ id: string }>>(
-      page.request,
-      `/api/providers/${connection!.id}/models`,
-    );
+    // Use the same browser request path as the installed offline UI catalog
+    // route above; APIRequestContext intentionally bypasses page.route.
+    const directory = await page.evaluate(async id => {
+      const response = await fetch(`/api/providers/${id}/models`);
+      return { ok: response.ok, status: response.status, models: await response.json() as Array<{ id: string }> };
+    }, connection!.id);
+    expect(directory.ok, "isolated model directory should return success").toBeTruthy();
+    expect(directory.status).toBe(200);
+    const models = directory.models;
     expect(models.map((model) => model.id)).toEqual([
       "codex-gpt-image-2-1k",
       "gemini-banana-2.0",

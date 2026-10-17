@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Locator, type Page } from "./helpers/canvas-offline-test";
 
 async function openCanvas(page: Page, request: APIRequestContext, grouped = false, empty = false) {
   const response = await request.post("/api/canvas", { data: {
