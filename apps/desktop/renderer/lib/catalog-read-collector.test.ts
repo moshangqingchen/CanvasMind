@@ -8,7 +8,7 @@ vi.mock("./supplier-service", () => ({ getSupplierRecord: guards.implicit }));
 vi.mock("./supplier-site-session", () => ({ openSupplierSiteSession: guards.implicit, supplierSiteLoginCacheIdentity: vi.fn() }));
 
 import { collectCatalogReadCycle, type CatalogCollectorDependencies } from "./catalog-read-collector";
-import { catalogConnectionManifest, type CatalogReadObservation } from "./catalog-read-contracts";
+import { catalogConnectionManifest, catalogReadReason, type CatalogReadObservation } from "./catalog-read-contracts";
 import { catalogConnectionScopes, catalogReadItem, catalogReadPreviewEnabled, catalogSourcePlan } from "./catalog-source-plan";
 
 const now = () => "2026-10-17T12:00:00.000Z";
@@ -179,4 +179,16 @@ describe("source identities and manifest completeness", () => {
       expect(result.keyVisibleModels.map(model => model.id)).toEqual(["gpt-image-2"]);
       expect(guards.implicit).not.toHaveBeenCalled();
     });
+});
+
+describe("catalog read failure reasons", () => {
+  it("classifies an exhausted balance as balance even when the gateway answers 401 or 403", () => {
+    expect(catalogReadReason("insufficient_balance", 403)).toBe("balance");
+    expect(catalogReadReason("insufficient_quota", 401)).toBe("balance");
+    expect(catalogReadReason("账户余额不足", 403)).toBe("balance");
+    expect(catalogReadReason(undefined, 402)).toBe("balance");
+    expect(catalogReadReason("permission_denied", 403)).toBe("authentication");
+    expect(catalogReadReason(undefined, 401)).toBe("authentication");
+    expect(catalogReadReason("credentials-unavailable")).toBe("authentication");
+  });
 });

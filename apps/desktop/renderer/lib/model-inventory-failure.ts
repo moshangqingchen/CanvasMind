@@ -52,7 +52,7 @@ const strictCount = (value: unknown): number | undefined => {
   return Number.isSafeInteger(number) && number >= 0 ? number : undefined;
 };
 
-function balanceError(payload: unknown): boolean {
+export function balanceError(payload: unknown): boolean {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
   const root = payload as Record<string, unknown>;
   const nested = root.error && typeof root.error === "object" && !Array.isArray(root.error) ? root.error as Record<string, unknown> : {};

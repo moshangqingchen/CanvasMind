@@ -1,7 +1,7 @@
 import { scanProviderModelCatalog, supplierDirectoryPayloadComplete, type ModelDescriptor } from "@super-canvas/providers";
 import { createHash } from "node:crypto";
 import {
-  assertCompleteModelInventoryPayload, modelInventoryFailure, ModelInventoryReadError,
+  assertCompleteModelInventoryPayload, balanceError, modelInventoryFailure, ModelInventoryReadError,
   type ModelInventoryFailure,
 } from "./model-inventory-failure";
 import { readBoundedModelJson } from "./supplier-scan-utils";
@@ -54,6 +54,12 @@ async function traced<T extends InventoryCollectorResult>(options: InventoryColl
   return { ...result, ...(attemptedUrls.length ? { sourceUrl: attemptedUrls.at(-1) } : {}), attemptedUrls };
 }
 
+function failedResponse(response: Response, errorPayload: unknown, options: InventoryCollectorOptions): InventoryCollectorResult {
+  return balanceError(errorPayload) || response.status === 402
+    ? failed({ code: "insufficient_balance", httpStatus: response.status }, options)
+    : failed(modelInventoryFailure(undefined, response), options);
+}
+
 function failed(failure: Pick<ModelInventoryFailure, "code" | "httpStatus"> | { code: string; httpStatus?: number }, options: InventoryCollectorOptions): InventoryCollectorResult {
   return { models: [], complete: false, status: ["invalid_credentials", "permission_denied"].includes(failure.code) ? "unauthorized" : "failed",
     checkedAt: sampleAt(options), failure: { code: failure.code, ...(failure.httpStatus ? { httpStatus: failure.httpStatus } : {}) } };
@@ -66,10 +72,19 @@ function apiBase(value: string): string {
   return url.toString().replace(/\/+$/u, "");
 }
 
-async function readJson(url: string, options: InventoryCollectorOptions, apiKey?: string, native = false): Promise<{ response: Response; payload?: unknown }> {
+async function readJson(url: string, options: InventoryCollectorOptions, apiKey?: string, native = false): Promise<{ response: Response; payload?: unknown; errorPayload?: unknown }> {
   const response = await options.fetch(url, { method: "GET", redirect: "error", cache: "no-store", signal: AbortSignal.timeout(20_000),
     ...(apiKey ? { headers: native ? { "x-goog-api-key": apiKey } : { Authorization: `Bearer ${apiKey}` } } : {}) });
-  if (!response.ok) { await response.body?.cancel(); return { response }; }
+  if (!response.ok) {
+    // Gateways report an exhausted balance as 401/402/403 with a JSON code.
+    // Read only that bounded error body; other failures are discarded.
+    if ([401, 402, 403].includes(response.status)) {
+      try { return { response, errorPayload: await readBoundedModelJson(response) }; }
+      catch { return { response }; }
+    }
+    await response.body?.cancel();
+    return { response };
+  }
   try { return { response, payload: await readBoundedModelJson(response) }; }
   catch { throw new ModelInventoryReadError("invalid_response", response.status); }
 }
@@ -106,10 +121,10 @@ async function readGenericKeyInventory(input: CollectorInput, options: Inventory
     const base = apiBase(input.baseUrl), google = input.protocol === "google-generate-content";
     const candidates = [...new Set([`${base}/models`, `${base.replace(/\/v1(?:beta)?$/u, "")}/${google ? "v1beta" : "v1"}/models`])];
     for (const [index, url] of candidates.entries()) {
-      const { response, payload } = await readJson(url, options, input.apiKey, google);
+      const { response, payload, errorPayload } = await readJson(url, options, input.apiKey, google);
       if (!response.ok) {
         if ([404, 405, 415].includes(response.status) && index < candidates.length - 1) continue;
-        return failed(modelInventoryFailure(undefined, response), options);
+        return failedResponse(response, errorPayload, options);
       }
       assertListComplete(payload);
       const checkedAt = sampleAt(options);
@@ -125,8 +140,8 @@ async function readNativeKeyInventory(input: { config: Readonly<Record<string, u
   try {
     const url = monsterNativeImageCatalogUrl(input.config) ?? mikotoNativeImageCatalogUrl(input.config);
     if (!url || !input.apiKey.trim()) return failed({ code: "invalid_configuration" }, options);
-    const { response, payload } = await readJson(url, options, input.apiKey, true);
-    if (!response.ok) return failed(modelInventoryFailure(undefined, response), options);
+    const { response, payload, errorPayload } = await readJson(url, options, input.apiKey, true);
+    if (!response.ok) return failedResponse(response, errorPayload, options);
     assertListComplete(payload, true);
     const records = (payload as { models?: unknown }).models;
     if (!Array.isArray(records) || records.some(row => !row || typeof row !== "object" || typeof row.name !== "string" || !row.name.trim() ||
@@ -201,8 +216,8 @@ async function readChentuImageCapabilities(apiKey: string, options: InventoryCol
   try {
     if (!apiKey.trim()) return failed({ code: "invalid_configuration" }, options);
     const url = `${new URL(CHENTU_CATALOG_SOURCE).origin}/v1/image/model-capabilities`;
-    const { response, payload } = await readJson(url, options, apiKey);
-    if (!response.ok) return failed(modelInventoryFailure(undefined, response), options);
+    const { response, payload, errorPayload } = await readJson(url, options, apiKey);
+    if (!response.ok) return failedResponse(response, errorPayload, options);
     assertListComplete(payload);
     const data = (payload as { data?: unknown }).data;
     if (!Array.isArray(data)) throw new ModelInventoryReadError("invalid_response");
@@ -230,8 +245,8 @@ async function readChentuImageCapabilities(apiKey: string, options: InventoryCol
 async function readMiaowuMediaInventory(apiKey: string, options: InventoryCollectorOptions): Promise<InventoryCollectorResult> {
   try {
     if (!apiKey.trim()) return failed({ code: "invalid_configuration" }, options);
-    const { response, payload } = await readJson(`${MIAOWU_BASE_URL}/v1/dream/model_list`, options, apiKey);
-    if (!response.ok) return failed(modelInventoryFailure(undefined, response), options);
+    const { response, payload, errorPayload } = await readJson(`${MIAOWU_BASE_URL}/v1/dream/model_list`, options, apiKey);
+    if (!response.ok) return failedResponse(response, errorPayload, options);
     assertListComplete(payload);
     const rows = (payload as { data?: unknown }).data;
     if (!Array.isArray(rows) || rows.some(row => !row || typeof row !== "object" || typeof row.id !== "string" || !row.id.trim() || !["image", "video"].includes(row.type)))
@@ -251,8 +266,8 @@ export type MiaowuSchemaCollectorResult = InventoryCollectorResult & {
 async function readMiaowuSchema(id: string, kind: "image" | "video", apiKey: string, options: InventoryCollectorOptions): Promise<MiaowuSchemaCollectorResult> {
   try {
     if (!id.trim() || !apiKey.trim()) return failed({ code: "invalid_configuration" }, options);
-    const { response, payload } = await readJson(`${MIAOWU_BASE_URL}/v1/dream/model_schema?model=${encodeURIComponent(id)}`, options, apiKey);
-    if (!response.ok) return failed(modelInventoryFailure(undefined, response), options);
+    const { response, payload, errorPayload } = await readJson(`${MIAOWU_BASE_URL}/v1/dream/model_schema?model=${encodeURIComponent(id)}`, options, apiKey);
+    if (!response.ok) return failedResponse(response, errorPayload, options);
     let contract: MiaowuImageSchemaContract | MiaowuVideoSchemaContract;
     try { contract = kind === "image" ? parseMiaowuImageSchema(id, payload) : parseMiaowuVideoSchema(id, payload); }
     catch { return failed({ code: "invalid_response" }, options); }

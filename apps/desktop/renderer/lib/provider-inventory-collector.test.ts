@@ -38,6 +38,17 @@ describe("independent, publication-free inventory sources", () => {
     expect(JSON.stringify(result)).not.toContain(apiKey);
   });
 
+  it("a 403 that carries INSUFFICIENT_BALANCE is a balance failure, while a plain 403 stays a denial", async () => {
+    const baseUrl = "https://balance.fixture.invalid/v1";
+    const balance = await collectGenericKeyInventory({ baseUrl, apiKey }, { now,
+      fetch: vi.fn<typeof fetch>(async () => json({ error: { code: "INSUFFICIENT_BALANCE", message: "fixture" } }, 403)) });
+    expect(balance).toMatchObject({ complete: false, status: "failed", failure: { code: "insufficient_balance", httpStatus: 403 } });
+    const denied = await collectGenericKeyInventory({ baseUrl, apiKey }, { now,
+      fetch: vi.fn<typeof fetch>(async () => json({ error: { code: "permission_denied" } }, 403)) });
+    expect(denied).toMatchObject({ complete: false, status: "unauthorized", failure: { code: "permission_denied", httpStatus: 403 } });
+    expect(JSON.stringify([balance, denied])).not.toContain(apiKey);
+  });
+
   it("404 alternatives are one logical list, while a denied alternative is final", async () => {
     const transport = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response(null, { status: 404 }))
       .mockResolvedValueOnce(json({ data: [{ id: "same-source-id" }] }));

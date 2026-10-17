@@ -118,8 +118,9 @@ export interface CatalogReadCollection {
 }
 
 export function catalogReadReason(code?: string, status?: number): CatalogReadReason {
+  // Gateways often send exhausted balance as 401/403; the explicit code wins.
+  if (status === 402 || /balance|quota|insufficient|credit|余额|额度|欠费/iu.test(code ?? "")) return "balance";
   if (status === 401 || status === 403 || /credential|permission|unauthor/u.test(code ?? "")) return "authentication";
-  if (status === 402 || /balance|quota/u.test(code ?? "")) return "balance";
   if (/incomplete|truncat/u.test(code ?? "")) return "incomplete";
   if (/invalid_response|invalid-response/u.test(code ?? "")) return "invalid-response";
   if (/unsupported/u.test(code ?? "")) return "unsupported";
