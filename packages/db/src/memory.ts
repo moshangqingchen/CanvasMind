@@ -34,6 +34,8 @@ import {
   catalogPipelineSettingKey,
   prepareCatalogObservation,
   prepareCatalogReservation,
+  prepareCatalogPipelineUpdate,
+  type CatalogPipelineUpdate,
   type CatalogObservationCommit,
   type CatalogObservationPrepared,
   type CatalogObservationReservation,
@@ -267,6 +269,12 @@ export class MemoryRepository implements Repository {
     const result = clone(prepared.pipeline);
     this.publishCatalogObservation(prepared);
     return result;
+  }
+
+  async updateCatalogPipelineState(input: CatalogPipelineUpdate): Promise<CatalogPipelineState> {
+    const pipeline = prepareCatalogPipelineUpdate(this.catalogObservationView(input.identity.supplierId), input);
+    this.publishCatalogObservation({ connections: [], pipeline });
+    return clone(pipeline);
   }
 
   private canvasNodeKey(record: NodeRunRecord): string | undefined {

@@ -32,7 +32,8 @@ export function legacyCatalogObservationEntries(supplier: SupplierRecord, connec
   mode: CatalogCheckMode, now: number): Record<string, LegacyCatalogObservationEntry> {
   const entries: Record<string, LegacyCatalogObservationEntry> = {};
   for (const connection of connections) {
-    if (connection.config.supplierId !== supplier.id || connection.config.supplierArchived === true ||
+    const legacyOwner = supplier.id === `connection:${connection.id}` && typeof connection.config.supplierId !== "string";
+    if (!legacyOwner && connection.config.supplierId !== supplier.id || connection.config.supplierArchived === true ||
       supplier.state && connection.config.supplierSourceId !== supplier.state.sourceId) continue;
     const legacy: JsonObject = {};
     for (const key of legacyFields) {

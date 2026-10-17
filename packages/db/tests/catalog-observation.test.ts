@@ -4,7 +4,7 @@ import { join, resolve, sep } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { MemoryRepository } from "../src/memory.js";
 import { FileRepository } from "../src/file.js";
-import { catalogObservationIdentity, catalogObservationGroupIdentity, catalogPipelineSettingKey, type CatalogObservationCommit, type CatalogObservationReservation } from "../src/catalog-observation.js";
+import { CATALOG_PIPELINE_MAX_BYTES, catalogObservationIdentity, catalogObservationGroupIdentity, catalogPipelineSettingKey, type CatalogObservationCommit, type CatalogObservationReservation, type CatalogPipelineUpdate } from "../src/catalog-observation.js";
 import type { ProviderConnectionRecord, SupplierRecord } from "../src/types.js";
 
 const temporaryRoot = fileURLToPath(new URL("../../../.codex-temp/catalog-observation-tests/", import.meta.url));
@@ -14,6 +14,152 @@ afterEach(async () => {
     if (!resolve(directory).startsWith(resolve(temporaryRoot) + sep)) throw new Error("Unexpected test directory");
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+describe.each(["memory", "file"] as const)("catalog queue-only atomic state: %s", backend => {
+  async function fixture() {
+    const path = backend === "file" ? await testPath() : undefined;
+    const repository = path ? new FileRepository(path) : new MemoryRepository();
+    return { repository, path, ...await seed(repository) };
+  }
+  function update(supplier: SupplierRecord, connections: ProviderConnectionRecord[], state: CatalogPipelineUpdate["state"],
+    extra: Partial<CatalogPipelineUpdate> = {}): CatalogPipelineUpdate {
+    return { identity: catalogObservationIdentity(supplier, connections), expectedMode: "daily", state, ...extra };
+  }
+  it("can initialize a queue without reserving or accepting an observation", async () => {
+    const { repository, path, supplier, connections } = await fixture(), before = repository.exportSnapshot();
+    const state = await repository.updateCatalogPipelineState(update(supplier, connections,
+      [{ key: "queue", value: { status: "deferred", nextEligibleAt: "2001-01-02T00:00:00Z" } }],
+      { initialEntries: { migration: { paused: true, nextEligibleAt: "2001-01-03T00:00:00Z" } } }));
+    expect(state).toMatchObject({ schemaVersion: 1, nextDispatchSeq: 1, sources: {}, entries: {
+      queue: { status: "deferred" }, migration: { paused: true } } });
+    expect(repository.exportSnapshot().connections).toEqual(before.connections);
+    expect(repository.exportSnapshot().suppliers).toEqual(before.suppliers);
+    if (repository instanceof FileRepository && path) {
+      await repository.flush();
+      expect(await new FileRepository(path)
+        .getApplicationSetting(catalogPipelineSettingKey(supplier.id))).toEqual(state);
+    }
+  });
+  it("queue and lease updates retain dispatch and accepted sequences exactly", async () => {
+    const { repository, supplier, connections } = await fixture(), token = await reserve(repository, supplier, connections[0]!);
+    const before = await repository.getApplicationSetting(catalogPipelineSettingKey(supplier.id)) as { sources: unknown; nextDispatchSeq: number };
+    const first = await repository.updateCatalogPipelineState(update(supplier, connections,
+      [{ key: "queue", value: { status: "queued", lease: "lease-1" } }], { expectedIdentityEpoch: token.identityEpoch }));
+    const second = await repository.updateCatalogPipelineState(update(supplier, connections,
+      [{ key: "queue", expected: first.entries.queue, value: { status: "deferred", reason: "host-cooldown" } }],
+      { expectedIdentityEpoch: token.identityEpoch }));
+    expect(second.identityEpoch).toBe(token.identityEpoch); expect(second.nextDispatchSeq).toBe(before.nextDispatchSeq);
+    expect(second.sources).toEqual(before.sources); expect(second.sources[token.sourceKey]?.lastAcceptedSeq).toBe(0);
+    await repository.commitCatalogObservation({ reservation: token, state: [{ key: "receipt", value: { complete: true } }] });
+    const accepted = await repository.getApplicationSetting(catalogPipelineSettingKey(supplier.id)) as { sources: unknown };
+    expect(accepted.sources).toMatchObject({ [token.sourceKey]: { lastAcceptedSeq: token.dispatchSeq } });
+  });
+  it("permits off-mode cancellation while off-mode dispatch remains forbidden", async () => {
+    const { repository, supplier, connections } = await fixture(), token = await reserve(repository, supplier, connections[0]!);
+    await repository.updateCatalogPipelineState(update(supplier, connections, [{ key: "queue", value: { status: "queued" } }]));
+    await repository.setApplicationSetting("supplierCatalogCheckMode", "off");
+    const before = repository.exportSnapshot(), state = await repository.updateCatalogPipelineState(update(supplier, connections,
+      [{ key: "queue", expected: { status: "queued" }, value: { status: "superseded", reason: "disabled" } }],
+      { expectedMode: "off", expectedIdentityEpoch: token.identityEpoch }));
+    expect(state.nextDispatchSeq).toBe(2); expect(state.sources[token.sourceKey]?.lastAcceptedSeq).toBe(0);
+    expect(repository.exportSnapshot().connections).toEqual(before.connections); expect(repository.exportSnapshot().suppliers).toEqual(before.suppliers);
+    await expect(repository.reserveCatalogObservation({ identity: catalogObservationIdentity(supplier, connections), sourceKey: "off",
+      observationCycleId: "day-off", expectedMode: "off" })).rejects.toThrow("设置已改变");
+    await expect(repository.updateCatalogPipelineState(update(supplier, connections, []))).rejects.toThrow("设置已改变");
+  });
+  it("serializes unrelated entry patches against the latest queue", async () => {
+    const { repository, supplier, connections } = await fixture(), token = await reserve(repository, supplier, connections[0]!);
+    await Promise.all([repository.updateCatalogPipelineState(update(supplier, connections,
+      [{ key: "queue:a", value: { status: "queued" } }], { expectedIdentityEpoch: token.identityEpoch })),
+    repository.updateCatalogPipelineState(update(supplier, connections,
+      [{ key: "queue:b", value: { status: "deferred" } }], { expectedIdentityEpoch: token.identityEpoch }))]);
+    expect(await repository.getApplicationSetting(catalogPipelineSettingKey(supplier.id))).toMatchObject({ nextDispatchSeq: 2,
+      sources: { [token.sourceKey]: { lastDispatchedSeq: 1, lastAcceptedSeq: 0 } },
+      entries: { "queue:a": { status: "queued" }, "queue:b": { status: "deferred" } } });
+  });
+  it("rejects same-entry contention atomically without accepting either read", async () => {
+    const { repository, supplier, connections } = await fixture(), token = await reserve(repository, supplier, connections[0]!);
+    await repository.updateCatalogPipelineState(update(supplier, connections, [{ key: "queue", value: { status: "queued" } }]));
+    const results = await Promise.allSettled(["owner-a", "owner-b"].map(owner => repository.updateCatalogPipelineState(update(supplier, connections,
+      [{ key: "queue", expected: { status: "queued" }, value: { status: "running", owner } }], { expectedIdentityEpoch: token.identityEpoch }))));
+    expect(results.filter(result => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter(result => result.status === "rejected")).toHaveLength(1);
+    const failed = results.find(result => result.status === "rejected") as PromiseRejectedResult;
+    expect(String(failed.reason)).toContain("任务或计数已改变");
+    expect(await repository.getApplicationSetting(catalogPipelineSettingKey(supplier.id))).toMatchObject({ nextDispatchSeq: 2,
+      sources: { [token.sourceKey]: { lastAcceptedSeq: 0 } }, entries: { queue: { status: "running" } } });
+  });
+  it("rejects a stale identity epoch and every patch in that transaction", async () => {
+    const { repository, supplier, connections } = await fixture(); await reserve(repository, supplier, connections[0]!);
+    const before = repository.exportSnapshot();
+    await expect(repository.updateCatalogPipelineState(update(supplier, connections,
+      [{ key: "new-entry", value: { status: "queued" } }], { expectedIdentityEpoch: "old-epoch" }))).rejects.toThrow("身份代次已改变");
+    expect(repository.exportSnapshot()).toEqual(before);
+  });
+  it("rolls back earlier queue patches when a later entry CAS fails", async () => {
+    const { repository, supplier, connections } = await fixture(); await reserve(repository, supplier, connections[0]!);
+    await repository.updateCatalogPipelineState(update(supplier, connections, [{ key: "queue", value: { status: "running", owner: "new-owner" } }]));
+    const before = repository.exportSnapshot();
+    await expect(repository.updateCatalogPipelineState(update(supplier, connections, [
+      { key: "first-patch", value: { count: 9 } },
+      { key: "queue", expected: { status: "queued" }, value: { status: "completed" } },
+    ]))).rejects.toThrow("任务或计数已改变");
+    expect(repository.exportSnapshot()).toEqual(before);
+  });
+  it("checks source/config identities before any queue changes", async () => {
+    const { repository, supplier, connections } = await fixture(); await reserve(repository, supplier, connections[0]!);
+    await repository.saveConnection({ ...connections[0]!, encryptedSecret: "changed-encrypted-fixture" });
+    const before = repository.exportSnapshot();
+    await expect(repository.updateCatalogPipelineState(update(supplier, connections,
+      [{ key: "queue", value: { status: "queued" } }]))).rejects.toThrow("Key 或分组身份已改变");
+    expect(repository.exportSnapshot()).toEqual(before);
+  });
+  it("enforces namespace hard budget without leaking state or sequence changes", async () => {
+    const { repository, supplier, connections } = await fixture(); await reserve(repository, supplier, connections[0]!);
+    const before = repository.exportSnapshot();
+    await expect(repository.updateCatalogPipelineState(update(supplier, connections,
+      [{ key: "oversized", value: { diagnostic: "x".repeat(CATALOG_PIPELINE_MAX_BYTES) } }]))).rejects.toThrow("体积保护上限");
+    expect(repository.exportSnapshot()).toEqual(before);
+  });
+});
+
+describe("FileRepository queue-only durability barrier", () => {
+  it.each(["create", "update"])("rename failure rolls back queue-only transaction completely: %s", async phase => {
+    const path = await testPath(); let fail = false;
+    const repository = new FileRepository(path, async (from, to) => {
+      if (fail) throw Object.assign(new Error("fixture-queue-rename-error"), { code: "EIO" });
+      return rename(from, to);
+    });
+    const { supplier, connections } = await seed(repository);
+    const token = phase === "update" ? await reserve(repository, supplier, connections[0]!) : undefined;
+    const beforeDisk = await readFile(path, "utf8"), beforeMemory = repository.exportSnapshot(); fail = true;
+    await expect(repository.updateCatalogPipelineState({ identity: catalogObservationIdentity(supplier, connections), expectedMode: "daily",
+      ...(token ? { expectedIdentityEpoch: token.identityEpoch } : {}), state: [{ key: "queue", value: { status: "queued" } }] }))
+      .rejects.toThrow("fixture-queue-rename-error");
+    expect(await readFile(path, "utf8")).toBe(beforeDisk); expect(repository.exportSnapshot()).toEqual(beforeMemory);
+  });
+  it("holds foreground mutations behind one durable queue publication", async () => {
+    const path = await testPath(); let hold = false, entered!: () => void, release!: () => void, renames = 0;
+    const writing = new Promise<void>(resolve => { entered = resolve; }), held = new Promise<void>(resolve => { release = resolve; });
+    const repository = new FileRepository(path, async (from, to) => {
+      renames++; if (hold) { entered(); await held; } return rename(from, to);
+    });
+    const { supplier, connections } = await seed(repository), token = await reserve(repository, supplier, connections[0]!);
+    const connection = connections[0]!, before = repository.exportSnapshot(); hold = true; renames = 0;
+    const queue = repository.updateCatalogPipelineState({ identity: catalogObservationIdentity(supplier, connections), expectedMode: "daily",
+      expectedIdentityEpoch: token.identityEpoch, state: [{ key: "queue", value: { status: "running", owner: "fixture-owner" } }] });
+    await writing;
+    const foreground = repository.saveConnection({ ...connection, name: "Foreground queue barrier name" });
+    expect(repository.exportSnapshot()).toEqual(before);
+    release(); await Promise.all([queue, foreground]);
+    expect(renames).toBe(2);
+    const disk = new FileRepository(path);
+    expect((await disk.getConnection(connection.id))?.name).toBe("Foreground queue barrier name");
+    expect((await disk.getSupplier(supplier.id))?.catalog).toEqual(supplier.catalog);
+    expect(await disk.getApplicationSetting(catalogPipelineSettingKey(supplier.id))).toMatchObject({ nextDispatchSeq: 2,
+      sources: { [token.sourceKey]: { lastAcceptedSeq: 0 } }, entries: { queue: { status: "running", owner: "fixture-owner" } } });
+  });
 });
 async function testPath() {
   await mkdir(temporaryRoot, { recursive: true });

@@ -31,6 +31,8 @@ export interface CatalogObservationReserve {
   sourceKey: string;
   observationCycleId: string;
   expectedMode: CatalogCheckMode;
+  /** Only an explicitly requested manual read may run while automatic mode is off. */
+  manual?: boolean;
   /** Used only when no namespace exists. Old due/paused values are app-migrated. */
   initialEntries?: Record<string, JsonObject>;
   /** Rotate after explicit refresh/config invalidation, without resetting order. */
@@ -43,6 +45,7 @@ export interface CatalogObservationReservation {
   dispatchSeq: number;
   identityEpoch: string;
   expectedMode: CatalogCheckMode;
+  manual?: boolean;
 }
 type SupplierGroup = SupplierRecord["catalog"]["groups"][number];
 export const catalogObservationGroupIdentity = (group: Pick<SupplierGroup, "id" | "supplierGroupId">): string =>
@@ -83,14 +86,26 @@ export interface CatalogConnectionPatch {
   fields?: CatalogFieldPatch<CatalogConnectionFields>;
   connectorModels?: { expected: unknown; value: unknown };
   protocolModels?: { expected: unknown; value: unknown };
+  /** A coherent guarded automatic contract, never a complete connection. */
+  connectorContract?: { expected: unknown; value: unknown };
 }
 export interface CatalogStateEntryPatch {
   key: string;
   expected?: JsonObject;
   value?: JsonObject;
 }
+/** Short queue/lease transaction. No catalog fields and no observation accepted. */
+export interface CatalogPipelineUpdate {
+  identity: CatalogObservationIdentity;
+  expectedMode: CatalogCheckMode;
+  expectedIdentityEpoch?: string;
+  initialEntries?: Record<string, JsonObject>;
+  state: CatalogStateEntryPatch[];
+}
 export interface CatalogObservationCommit {
   reservation: CatalogObservationReservation;
+  /** Rechecked inside the atomic barrier, including time spent behind saves. */
+  leaseDeadline?: number;
   supplierFields?: CatalogFieldPatch<CatalogSupplierFields>;
   groups?: CatalogGroupPatch[];
   connections?: CatalogConnectionPatch[];
@@ -137,20 +152,51 @@ export function catalogObservationIdentity(supplier: SupplierRecord, connections
   return { supplierId: supplier.id, supplierIdentity: catalogSupplierIdentity(supplier),
     connections: connections.map(row => ({ connectionId: row.id, identity: catalogConnectionIdentity(row) })) };
 }
-function assertIdentity(view: CatalogObservationView, identity: CatalogObservationIdentity, mode: CatalogCheckMode): SupplierRecord {
-  const supplier = view.supplier;
+/** Namespace anchor only; legacy connections do not acquire a stored supplier. */
+export function catalogLegacyObservationOwner(connection: ProviderConnectionRecord): SupplierRecord {
+  const base = new URL(String(connection.config.baseUrl));
+  if (!["https:", "http:"].includes(base.protocol) || base.username || base.password || base.search || base.hash ||
+    typeof connection.config.supplierId === "string") fail("独立连接来源无效");
+  return { id: `connection:${connection.id}`, name: "独立连接", supplierKey: "legacy", siteUrl: base.origin, apiUrl: base.href,
+    kind: "auto", scanStatus: "unscanned", catalog: { groups: [] }, createdAt: connection.createdAt, updatedAt: connection.updatedAt };
+}
+function assertIdentity(view: CatalogObservationView, identity: CatalogObservationIdentity, mode: CatalogCheckMode, allowOff = false): SupplierRecord {
+  const legacy = !view.supplier && identity.connections.length === 1 && identity.supplierId === `connection:${identity.connections[0]!.connectionId}`;
+  const anchor = legacy ? view.connections.get(identity.connections[0]!.connectionId) : undefined;
+  const supplier = view.supplier ?? (anchor ? catalogLegacyObservationOwner(anchor) : undefined);
   if (!supplier || supplier.id !== identity.supplierId || catalogSupplierIdentity(supplier) !== identity.supplierIdentity || supplier.state?.visibility === "deleted")
     fail("目录来源已改变，旧观察已丢弃");
-  if ((view.mode ?? "daily") !== mode || mode === "off") fail("自动检查设置已改变，旧观察已丢弃");
+  if ((view.mode ?? "daily") !== mode || mode === "off" && !allowOff) fail("自动检查设置已改变，旧观察已丢弃");
   const ids = new Set<string>();
   for (const guard of identity.connections) {
     const connection = view.connections.get(guard.connectionId);
-    if (ids.has(guard.connectionId) || !connection || connection.config.supplierId !== supplier.id || connection.config.supplierArchived === true ||
+    if (ids.has(guard.connectionId) || !connection || !legacy && connection.config.supplierId !== supplier.id || connection?.config.supplierArchived === true ||
       catalogConnectionIdentity(connection) !== guard.identity || supplier.state && connection.config.supplierSourceId !== supplier.state.sourceId)
       fail("目录 Key 或分组身份已改变，旧观察已丢弃");
     ids.add(guard.connectionId);
   }
   return supplier;
+}
+function applyStateEntries(pipeline: CatalogPipelineState, patches: readonly CatalogStateEntryPatch[]): void {
+  const touched = new Set<string>();
+  for (const patch of patches) {
+    if (!patch.key || touched.has(patch.key) || !isDeepStrictEqual(Object.hasOwn(pipeline.entries, patch.key) ? pipeline.entries[patch.key] : undefined, patch.expected))
+      fail("目录观察任务或计数已改变，未发布任何更改");
+    touched.add(patch.key);
+    if (patch.value === undefined) delete pipeline.entries[patch.key];
+    else Object.defineProperty(pipeline.entries, patch.key, { value: clone(patch.value), enumerable: true, configurable: true, writable: true });
+  }
+}
+export function prepareCatalogPipelineUpdate(view: CatalogObservationView, input: CatalogPipelineUpdate): CatalogPipelineState {
+  assertIdentity(view, input.identity, input.expectedMode, true);
+  if (view.pipeline !== undefined) assertCatalogPipelineState(view.pipeline, input.identity.supplierId);
+  const pipeline: CatalogPipelineState = view.pipeline === undefined
+    ? { schemaVersion: 1, supplierId: input.identity.supplierId, identityEpoch: randomUUID(), nextDispatchSeq: 1, sources: {}, entries: clone(input.initialEntries ?? {}) }
+    : clone(view.pipeline as CatalogPipelineState);
+  if (input.expectedIdentityEpoch !== undefined && input.expectedIdentityEpoch !== pipeline.identityEpoch) fail("目录观察身份代次已改变");
+  applyStateEntries(pipeline, input.state);
+  assertCatalogPipelineState(pipeline, input.identity.supplierId);
+  return pipeline;
 }
 export function assertCatalogPipelineState(value: unknown, supplierId: string): asserts value is CatalogPipelineState {
   const state = object(value);
@@ -167,7 +213,7 @@ export function assertCatalogPipelineState(value: unknown, supplierId: string): 
   if (Buffer.byteLength(JSON.stringify(value), "utf8") > CATALOG_PIPELINE_MAX_BYTES) fail("目录观察状态超过体积保护上限，未发布任何更改");
 }
 export function prepareCatalogReservation(view: CatalogObservationView, input: CatalogObservationReserve): { pipeline: CatalogPipelineState; reservation: CatalogObservationReservation } {
-  assertIdentity(view, input.identity, input.expectedMode);
+  assertIdentity(view, input.identity, input.expectedMode, input.manual === true);
   if (!input.sourceKey || !input.observationCycleId) fail("目录观察来源或周期为空");
   if (view.pipeline !== undefined) assertCatalogPipelineState(view.pipeline, input.identity.supplierId);
   const pipeline: CatalogPipelineState = view.pipeline === undefined
@@ -180,7 +226,7 @@ export function prepareCatalogReservation(view: CatalogObservationView, input: C
   Object.defineProperty(pipeline.sources, input.sourceKey, { value: { lastDispatchedSeq: dispatchSeq, lastAcceptedSeq: previous?.lastAcceptedSeq ?? 0 }, enumerable: true, configurable: true, writable: true });
   assertCatalogPipelineState(pipeline, input.identity.supplierId);
   return { pipeline, reservation: { identity: clone(input.identity), sourceKey: input.sourceKey, observationCycleId: input.observationCycleId,
-    dispatchSeq, identityEpoch: pipeline.identityEpoch, expectedMode: input.expectedMode } };
+    dispatchSeq, identityEpoch: pipeline.identityEpoch, expectedMode: input.expectedMode, ...(input.manual ? { manual: true } : {}) } };
 }
 function applyFields(current: JsonObject, patch: CatalogFieldPatch<object>, allowed: readonly string[]): JsonObject {
   const keys = Object.keys(patch.set);
@@ -195,8 +241,10 @@ function applyFields(current: JsonObject, patch: CatalogFieldPatch<object>, allo
 }
 const stableGroupId = catalogObservationGroupIdentity;
 export function prepareCatalogObservation(view: CatalogObservationView, input: CatalogObservationCommit): CatalogObservationPrepared {
+  if (input.leaseDeadline !== undefined && (!Number.isFinite(input.leaseDeadline) || Date.now() >= input.leaseDeadline))
+    fail("目录任务租约已失效，未发布任何更改");
   const token = input.reservation;
-  const current = assertIdentity(view, token.identity, token.expectedMode);
+  const current = assertIdentity(view, token.identity, token.expectedMode, token.manual === true);
   assertCatalogPipelineState(view.pipeline, current.id);
   const pipeline = clone(view.pipeline);
   const source = Object.hasOwn(pipeline.sources, token.sourceKey) ? pipeline.sources[token.sourceKey] : undefined;
@@ -204,6 +252,7 @@ export function prepareCatalogObservation(view: CatalogObservationView, input: C
     fail("目录观察已被更新的请求替代");
   let supplier = clone(current);
   let supplierChanged = false;
+  if (!view.supplier && (input.supplierFields || input.groups?.length)) fail("独立连接不能发布供应商补丁");
   if (input.supplierFields) { supplier = applyFields(supplier as unknown as JsonObject, input.supplierFields, supplierFields) as unknown as SupplierRecord; supplierChanged = true; }
   const touchedGroups = new Set<string>();
   for (const patch of input.groups ?? []) {
@@ -240,6 +289,11 @@ export function prepareCatalogObservation(view: CatalogObservationView, input: C
     touchedConnections.add(row.id);
     const next = clone(row);
     if (patch.fields) next.config = applyFields(next.config, patch.fields, connectionFields);
+    if (patch.connectorContract) {
+      if (!isDeepStrictEqual(row.config.connector, patch.connectorContract.expected)) fail("目录调用契约已改变，旧观察已丢弃");
+      if (patch.connectorContract.value === undefined) delete next.config.connector;
+      else next.config.connector = clone(patch.connectorContract.value);
+    }
     for (const [name, models] of [["connector", patch.connectorModels], ["modelProtocolTemplate", patch.protocolModels]] as const) {
       if (!models) continue;
       const parent = object(next.config[name]);
@@ -248,14 +302,7 @@ export function prepareCatalogObservation(view: CatalogObservationView, input: C
     }
     connections.push(next);
   }
-  const touchedEntries = new Set<string>();
-  for (const patch of input.state ?? []) {
-    if (!patch.key || touchedEntries.has(patch.key) || !isDeepStrictEqual(Object.hasOwn(pipeline.entries, patch.key) ? pipeline.entries[patch.key] : undefined, patch.expected))
-      fail("目录观察任务或计数已改变，未发布任何更改");
-    touchedEntries.add(patch.key);
-    if (patch.value === undefined) delete pipeline.entries[patch.key];
-    else Object.defineProperty(pipeline.entries, patch.key, { value: clone(patch.value), enumerable: true, configurable: true, writable: true });
-  }
+  applyStateEntries(pipeline, input.state ?? []);
   source.lastAcceptedSeq = token.dispatchSeq;
   assertCatalogPipelineState(pipeline, current.id);
   return { supplier: supplierChanged ? supplier : undefined, connections, pipeline };

@@ -1,5 +1,5 @@
 import type { SupplierVerificationRecord } from "./supplier-verification.js";
-import type { CatalogObservationCommit, CatalogObservationReservation, CatalogObservationReserve, CatalogPipelineState } from "./catalog-observation.js";
+import type { CatalogObservationCommit, CatalogObservationReservation, CatalogObservationReserve, CatalogPipelineState, CatalogPipelineUpdate } from "./catalog-observation.js";
 export type JsonObject = Record<string, unknown>;
 
 export interface CanvasRecord {
@@ -415,6 +415,8 @@ export interface Repository {
   reserveCatalogObservation(input: CatalogObservationReserve): Promise<CatalogObservationReservation>;
   /** Atomically apply owned catalog fields and the same observation's state. */
   commitCatalogObservation(input: CatalogObservationCommit): Promise<CatalogPipelineState>;
+  /** Atomic queue/lease CAS without publishing catalog data or accepting a read. */
+  updateCatalogPipelineState(input: CatalogPipelineUpdate): Promise<CatalogPipelineState>;
   /** Confirm all current changes are durable before acknowledging a retried save. */
   flush?(): Promise<void>;
   listSupplierVerifications(): Promise<SupplierVerificationRecord[]>;

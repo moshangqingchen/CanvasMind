@@ -1,4 +1,4 @@
-import type { DocumentedModelInterface, ModelDescriptor } from "@super-canvas/providers";
+import type { DocumentedModelInterface, ModelDescriptor, ProviderOperation } from "@super-canvas/providers";
 import type { collectCangyuanCatalogRead } from "./cangyuan-catalog";
 import type { collectWeAiPricingRead } from "./weai-pricing-server";
 import type { collectTk1688CatalogRead } from "./tk1688-catalog";
@@ -67,10 +67,16 @@ export interface CatalogReadReceipt {
 export interface CatalogNormalizedFacts {
   /** Application descriptors are projections, not proof of supplier field ownership. */
   models: ModelDescriptor[];
+  /** Only rows validated by a successful membership parser may add partial positives. */
+  validatedMembershipModelIds?: string[];
   groups?: Array<{ id: string; label: string; modelIds: readonly string[] }>;
   dependencies?: Record<string, number | string>;
   contractDigests?: string[];
   contracts?: DocumentedModelInterface[];
+  /** API origin used to compile relative invocation paths, not the docs host. */
+  contractOrigin?: string;
+  /** Only exact model/path declarations; no raw document or free-form error. */
+  contractDiagnostics?: CatalogContractDiagnostic[];
   /** Normalized declarations/dependencies only; never raw HTTP bodies or saved connections. */
   sourceFacts?:
     | { kind: "cangyuan"; value: Awaited<ReturnType<typeof collectCangyuanCatalogRead>> }
@@ -80,6 +86,15 @@ export interface CatalogNormalizedFacts {
     | { kind: "miaowu-schema"; contract: MiaowuSchemaCollectorResult["contract"] };
   supplierGroups?: GenericSupplierSourceRead["groups"];
   supplement?: CatalogSupplementReadResult;
+}
+export interface CatalogContractDiagnostic {
+  modelId: string;
+  operation: ProviderOperation;
+  code: "contract_incomplete" | "conflicting_contracts";
+  method: string;
+  submitEndpoint: string;
+  parameterFingerprint?: string;
+  schemaFingerprint?: string;
 }
 export interface CatalogReadObservation { receipt: CatalogReadReceipt; facts: CatalogNormalizedFacts }
 export interface ConnectionObservationManifest {

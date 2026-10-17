@@ -2,7 +2,7 @@ import { mkdir, rename, unlink, writeFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { catalogPipelineSettingKey, prepareCatalogReservation, type CatalogObservationPrepared, type CatalogObservationReservation } from "./catalog-observation.js";
+import { catalogPipelineSettingKey, prepareCatalogReservation, prepareCatalogPipelineUpdate, type CatalogObservationPrepared, type CatalogObservationReservation } from "./catalog-observation.js";
 import { setTimeout as delay } from "node:timers/promises";
 import type {
   AssetRecord,
@@ -578,6 +578,17 @@ export class FileRepository extends MemoryRepository {
         [catalogPipelineSettingKey(prepared.pipeline.supplierId)]: prepared.pipeline },
         suppliers: snapshot.suppliers?.map(row => row.id === prepared.supplier?.id ? prepared.supplier : row),
         connections: snapshot.connections.map(row => rows.get(row.id) ?? row) };
+    }, async () => { this.publishCatalogObservation(prepared); });
+    return structuredClone(prepared.pipeline);
+  }
+
+  override async updateCatalogPipelineState(input: Parameters<MemoryRepository["updateCatalogPipelineState"]>[0]): ReturnType<MemoryRepository["updateCatalogPipelineState"]> {
+    const request = structuredClone(input);
+    let prepared!: CatalogObservationPrepared;
+    await this.catalogTransaction(snapshot => {
+      const pipeline = prepareCatalogPipelineUpdate(this.catalogObservationView(request.identity.supplierId), request);
+      prepared = { connections: [], pipeline };
+      return { ...snapshot, applicationSettings: { ...snapshot.applicationSettings, [catalogPipelineSettingKey(pipeline.supplierId)]: pipeline } };
     }, async () => { this.publishCatalogObservation(prepared); });
     return structuredClone(prepared.pipeline);
   }

@@ -14,15 +14,15 @@ export function catalogReadPreviewEnabled(environment: Record<string, string | u
 export function catalogReadSourceKey(input: Omit<CatalogReadItemSpec, "sourceKey" | "applyScope">): string {
   return digest([input.entryId, input.sourceUrl, input.parserVersion, input.authScope, input.role, input.requiredForMembership]);
 }
-export function catalogSafeSourceUrl(value: string): string {
+export function catalogSafeSourceUrl(value: string, allowConfiguredHttp = false): string {
   const url = new URL(value);
-  if (url.protocol !== "https:" || url.username || url.password || url.hash ||
+  if (url.protocol !== "https:" && !(allowConfiguredHttp && url.protocol === "http:") || url.username || url.password || url.hash ||
     [...url.searchParams.keys()].some(key => /key|token|secret|password|cookie|auth/iu.test(key))) throw new Error("Invalid catalog source URL");
   return url.href;
 }
 export function catalogReadItem(entryId: string, sourceUrl: string, role: CatalogEvidenceRole, authScope: CatalogAuthScope,
   applyScope: CatalogApplyScope, requiredForMembership = false): CatalogReadItemSpec {
-  const entry = { entryId, sourceUrl: catalogSafeSourceUrl(sourceUrl), role, authScope,
+  const entry = { entryId, sourceUrl: catalogSafeSourceUrl(sourceUrl, authScope.kind === "connection-key"), role, authScope,
     parserVersion: CATALOG_READ_PARSER_VERSION, requiredForMembership };
   return { ...entry, sourceKey: catalogReadSourceKey(entry), applyScope: structuredClone(applyScope) };
 }
@@ -43,7 +43,7 @@ export function catalogConnectionScopes(connection: ProviderConnectionRecord, su
 }
 
 export function catalogSourcePlan(connection: ProviderConnectionRecord, supplier?: SupplierRecord): CatalogReadItemSpec[] {
-  const scopes = catalogConnectionScopes(connection, supplier), base = catalogSafeSourceUrl(String(connection.config.baseUrl)).replace(/\/$/u, "");
+  const scopes = catalogConnectionScopes(connection, supplier), base = catalogSafeSourceUrl(String(connection.config.baseUrl), true).replace(/\/$/u, "");
   const parsedBase = new URL(base), host = parsedBase.hostname, plan: CatalogReadItemSpec[] = [];
   if (parsedBase.search) throw new Error("Catalog base URL cannot contain a query");
   const officialRoot = !parsedBase.port && /^\/(?:v1|v1beta)?\/?$/u.test(parsedBase.pathname);

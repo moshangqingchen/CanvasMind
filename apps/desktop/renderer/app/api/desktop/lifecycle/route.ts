@@ -33,6 +33,7 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null) as { draining?: unknown } | null;
   if (typeof body?.draining !== "boolean") return new Response(null, { status: 400 });
   desktopLifecycleState().draining = body.draining;
+  if (body.draining) (globalThis as typeof globalThis & { __supplierCatalogReadStop?: () => void }).__supplierCatalogReadStop?.();
   if (!body.draining && process.env.NODE_ENV !== "test" && process.env.SUPPLIER_AUTO_VERIFY !== "off") {
     void import("../../../../lib/supplier-verification").then(module => module.resumeSupplierVerification()).catch(() => {});
   }

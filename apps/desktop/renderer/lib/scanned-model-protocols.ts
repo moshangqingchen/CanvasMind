@@ -43,6 +43,7 @@ import { withHighestModelQualityDefault } from "./model-quality";
 import { applyGenimageImageCapabilities } from "@super-canvas/providers/genimage-image-capabilities";
 import { applySavedModelInterfaces, hasMiaowuExplicitVideoInterface } from "./supplier-interface-discovery";
 import { guardNativeVideoRunnableContract } from "./native-video-runnable-contract";
+import { isCatalogContractProjection, projectCatalogContractModels, type CatalogContractProjectionOptions } from "./catalog-contract-policy";
 
 type Connection = { provider: string; config: Record<string, unknown> };
 
@@ -472,7 +473,19 @@ export function bindScannedModelProtocols(
   connection: Connection,
   scanned: readonly ModelDescriptor[],
   previous: Connection = connection,
+  contractProjection?: CatalogContractProjectionOptions,
 ): ReturnType<typeof bindExistingModelProtocols> {
+  if (contractProjection) return projectCatalogContractModels(connection, scanned, contractProjection);
+  if (scanned.some(isCatalogContractProjection)) {
+    const legacy = bindScannedModelProtocols(connection, scanned.filter(model => !isCatalogContractProjection(model)), previous);
+    const byId = new Map(legacy.models.map(model => [model.id, model]));
+    const models = scanned.map(model => isCatalogContractProjection(model) ? structuredClone(model) : byId.get(model.id)!);
+    const connector = connectorOf(connection);
+    if (!connector) return { models };
+    const liveIds = new Set(models.filter(model => model.operations.length && model.metadata?.canvasRunnable !== false).map(model => model.id));
+    return { models, connector: { ...structuredClone(connector), restrictModels: true, models: models.filter(model => liveIds.has(model.id)),
+      modelOverrides: Object.fromEntries(Object.entries(connector.modelOverrides ?? {}).filter(([id]) => liveIds.has(id))) } };
+  }
   // Older agent discovery stamped Chat text output onto this video directory
   // entry. Its exact video endpoint and current Key inventory are stronger facts.
   const currentScan = scanned.map(model => {

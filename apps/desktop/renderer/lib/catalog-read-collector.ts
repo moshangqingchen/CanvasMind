@@ -15,7 +15,7 @@ import { collectCatalogSupplementRead, type CatalogSupplementEntry } from "./cat
 import { catalogConnectionManifest, catalogReadReason, type CatalogReadCollection, type CatalogReadItemSpec,
   type CatalogObservationContext, type CatalogReadObservation, type CatalogNormalizedFacts } from "./catalog-read-contracts";
 
-interface ReadResult {
+export interface CatalogItemReadResult {
   status: "live" | "empty" | "failed" | "unauthorized";
   complete: boolean;
   checkedAt: string;
@@ -35,13 +35,13 @@ export interface CatalogCollectorDependencies {
   supplementBudget?: number;
   schemaBudget?: number;
 }
-const inventory = (value: InventoryCollectorResult): ReadResult => ({ ...value, facts: { models: value.models,
+const inventory = (value: InventoryCollectorResult): CatalogItemReadResult => ({ ...value, facts: { models: value.models,
   ...(value.groups ? { groups: value.groups } : {}) } });
 const bareModels = (offers: readonly { modelId: string; groupId?: string }[]): ModelDescriptor[] => offers.map(({ modelId: id, groupId }) =>
   ({ id, name: id, operations: [], ...(groupId ? { metadata: { catalogGroup: groupId, publicCatalogOnly: true } } : {}) }));
 
-async function readItem(spec: CatalogReadItemSpec, connection: ProviderConnectionRecord, supplier: SupplierRecord | undefined,
-  fetcher: typeof fetch, deps: CatalogCollectorDependencies): Promise<ReadResult> {
+export async function readCatalogItemFacts(spec: CatalogReadItemSpec, connection: ProviderConnectionRecord, supplier: SupplierRecord | undefined,
+  fetcher: typeof fetch, deps: CatalogCollectorDependencies): Promise<CatalogItemReadResult> {
   const checkedAt = deps.now?.() ?? new Date().toISOString(), options = { fetch: fetcher, now: deps.now };
   const loaderOptions = { fetch: fetcher, signal: deps.signal, checkedAt };
   switch (spec.entryId) {
@@ -106,7 +106,7 @@ export async function collectCatalogReadCycle(connection: ProviderConnectionReco
       row.receipt.spec.authScope.kind === "connection-key" && row.receipt.status === "succeeded").flatMap(row => row.facts.models).map(model => [model.id, model])).values()],
     manifest: catalogConnectionManifest(connection.id, deps.context.observationCycleId, observations, plan), publication: "disabled" });
   if (deps.enabled !== true) return finish();
-  const capture = async (spec: CatalogReadItemSpec, work: (fetcher: typeof fetch) => Promise<ReadResult>) => {
+  const capture = async (spec: CatalogReadItemSpec, work: (fetcher: typeof fetch) => Promise<CatalogItemReadResult>) => {
     const attemptedUrls: string[] = [];
     let startedAt: string | undefined;
     const attemptId = randomUUID();
@@ -118,7 +118,7 @@ export async function collectCatalogReadCycle(connection: ProviderConnectionReco
       }
       const fetcher: typeof fetch = (input, init) => {
         deps.signal?.throwIfAborted();
-        const url = catalogSafeSourceUrl(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+        const url = catalogSafeSourceUrl(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, spec.authScope.kind === "connection-key");
         if ((init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase() !== "GET")
           throw new Error("Catalog collector accepts GET only");
         if (spec.authScope.kind !== "anonymous" && new URL(url).origin !== new URL(spec.sourceUrl).origin)
@@ -152,7 +152,7 @@ export async function collectCatalogReadCycle(connection: ProviderConnectionReco
     }
   };
   for (const spec of plan.filter(spec => !spec.entryId.startsWith("supplement:")))
-    await capture(spec, fetcher => readItem(spec, connection, supplier, fetcher, deps));
+    await capture(spec, fetcher => readCatalogItemFacts(spec, connection, supplier, fetcher, deps));
   const scopes = catalogConnectionScopes(connection, supplier), visible = finish().keyVisibleModels;
   const supplementSeen = new Set<string>(); let supplementSpent = 0;
   for (const entry of supplements) {

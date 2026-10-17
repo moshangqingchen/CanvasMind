@@ -13,6 +13,7 @@ import { applyChuangxiangMidjourneyCapabilities, isChuangxiangMidjourneyConnecti
 import { cyberAfeiDocumentedModel } from "./cyberafei-catalog";
 import { supplierKeyForConnection } from "./supplier-identity";
 import { matchesSupplierTemplate } from "./supplier-template-source";
+import { isCatalogContractProjection } from "./catalog-contract-policy";
 
 import { readSupplierInterfaceDocuments, type InterfaceDocumentReadOptions } from "./supplier-interface-documents";
 export { readSupplierInterfaceDocuments, type InterfaceDocument } from "./supplier-interface-documents";
@@ -34,6 +35,7 @@ function mayBind(model: ModelDescriptor) {
 }
 
 function nativeContract(connection: Connection, model: ModelDescriptor): ModelDescriptor | undefined {
+  if (isCatalogContractProjection(model)) return undefined;
   if (hasMiaowuExplicitVideoInterface(connection, model)) return undefined;
   if (!mayBind(model)) return undefined;
   if (connection.provider === "rest" && isCangyuanMusicRequest(model.id, String(connection.config.baseUrl ?? ""))) return cangyuanMusicModel(model);
@@ -99,6 +101,7 @@ function nativeContract(connection: Connection, model: ModelDescriptor): ModelDe
 export function applySavedModelInterfaces(connection: Connection, models: readonly ModelDescriptor[]): ModelDescriptor[] {
   const bindings = savedModelInterfaces(connection.config);
   return models.map(model => {
+    if (isCatalogContractProjection(model)) return model;
     const native = nativeContract(connection, model);
     if (native) return native;
     const binding = bindings[model.id];
@@ -120,7 +123,7 @@ export function applySavedModelInterfaces(connection: Connection, models: readon
 /** All live models consult supplier documentation before keeping a compatibility route. */
 export async function discoverSupplierModelInterfaces(connection: Connection, models: readonly ModelDescriptor[], previous: Connection,
   read = readSupplierInterfaceDocuments, options: InterfaceDocumentReadOptions = {}): Promise<{ models: ModelDescriptor[]; bindings: Record<string, DocumentedModelInterface> }> {
-  const visible = new Set(models.filter(mayBind).map(model => model.id));
+  const visible = new Set(models.filter(model => !isCatalogContractProjection(model) && mayBind(model)).map(model => model.id));
   const sameSource = connection.config.baseUrl === previous.config.baseUrl && connection.config.supplierSourceId === previous.config.supplierSourceId;
   const bindings = Object.assign(Object.create(null) as Record<string, DocumentedModelInterface>,
     Object.fromEntries(Object.entries(sameSource ? savedModelInterfaces(connection.config) : {}).filter(([id]) => visible.has(id))));
@@ -128,7 +131,7 @@ export async function discoverSupplierModelInterfaces(connection: Connection, mo
   for (const id of native.keys()) delete bindings[id];
   if (["agent", "disabled"].includes(String(connection.config.usage)) || connection.config.supplierArchived === true
     || !["openai", "weai", "rest", "runway"].includes(connection.provider)) return { models: [...models], bindings };
-  const candidates = models.filter(model => !native.has(model.id) && !hasMiaowuExplicitVideoInterface(connection, model) && mayBind(model) && model.operations.length);
+  const candidates = models.filter(model => !isCatalogContractProjection(model) && !native.has(model.id) && !hasMiaowuExplicitVideoInterface(connection, model) && mayBind(model) && model.operations.length);
   if (!candidates.length) return { models: models.map(model => native.get(model.id) ?? model), bindings };
   const baseUrl = String(connection.config.baseUrl ?? "");
   const docs = await read(baseUrl, candidates, String(connection.config.supplierWebsiteUrl ?? baseUrl), options);

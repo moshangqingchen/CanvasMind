@@ -1,4 +1,4 @@
-import { SupplierCatalogUpgrade } from "../../../../lib/supplier-catalog-upgrade";
+import { SupplierCatalogUpgrade, SUPPLIER_CATALOG_REVISION } from "../../../../lib/supplier-catalog-upgrade";
 import { trackDesktopBackgroundWrite } from "../../../../lib/desktop-server";
 import { readProviderModelInventory } from "../../../../lib/provider-model-inventory";
 import { repository } from "../../../../lib/server";
@@ -10,9 +10,30 @@ import type { SupplierRecord } from "@super-canvas/db";
 import { decryptSecret, providerFetch } from "@super-canvas/providers";
 import { requireServerMasterKey } from "../../../../lib/master-key";
 import { previewCatalogUpgradeReads } from "../../../../lib/catalog-upgrade-preview";
+import { catalogReadPreviewEnabled } from "../../../../lib/catalog-source-plan";
+import { createCatalogPipelineService } from "../../../../lib/catalog-pipeline-service";
+import { createCatalogPipelineWakeLoop } from "../../../../lib/catalog-pipeline-wake";
 
 export const dynamic = "force-dynamic";
-const scope = globalThis as typeof globalThis & { __supplierCatalogUpgrade?: SupplierCatalogUpgrade };
+const scope = globalThis as typeof globalThis & { __supplierCatalogUpgrade?: SupplierCatalogUpgrade;
+  __supplierCatalogReadPipeline?: ReturnType<typeof createCatalogPipelineService>;
+  __supplierCatalogReadWake?: ReturnType<typeof createCatalogPipelineWakeLoop>;
+  __supplierCatalogReadStop?: () => void };
+function stopReadPipeline() {
+  scope.__supplierCatalogReadWake?.close(); scope.__supplierCatalogReadPipeline?.close();
+  delete scope.__supplierCatalogReadWake; delete scope.__supplierCatalogReadPipeline; delete scope.__supplierCatalogReadStop;
+}
+function readPipeline() {
+  return scope.__supplierCatalogReadPipeline ??= createCatalogPipelineService({ repository, environment: process.env,
+    canContinue: () => globalThis.__superCanvasDesktopLifecycle?.draining !== true,
+    trackWrite: async work => { let value!: Awaited<ReturnType<typeof work>>;
+      await trackDesktopBackgroundWrite(async () => { value = await work(); }); return value; },
+    readers: async connection => {
+      let apiKey = "";
+      try { if (connection.encryptedSecret) apiKey = decryptSecret(connection.encryptedSecret, requireServerMasterKey()); } catch { /* Remains unread. */ }
+      return { apiKey, fetchFor: spec => spec.authScope.kind === "site-account" || spec.authScope.kind === "connection-key" && !apiKey ? undefined : providerFetch };
+    } });
+}
 function service() {
   // Shared only within one scheduled cycle; a foreground supplier edit invalidates
   // the cache. Each Key inventory is still checked independently once per cycle.
@@ -52,6 +73,25 @@ function service() {
 // The desktop session proxy authorizes browser requests before this route.
 export async function POST(request?: Request): Promise<Response> {
   if (process.env.SUPERCANVAS_DESKTOP !== "true") return new Response(null, { status: 404 });
+  if (request && new URL(request.url).searchParams.has("readPipeline")) {
+    if (!catalogReadPreviewEnabled(process.env)) return new Response(null, { status: 404 });
+    const body = await request.json().catch(() => null) as { connectionId?: unknown } | null;
+    if (typeof body?.connectionId !== "string" || body.connectionId.length > 256) return Response.json({ error: "请选择连接" }, { status: 400 });
+    const pipeline = readPipeline();
+    scope.__supplierCatalogReadStop = stopReadPipeline;
+    const result = await pipeline.run(body.connectionId, { observationCycleId: `daily:${new Date().toISOString().slice(0, 10)}`,
+      revision: SUPPLIER_CATALOG_REVISION });
+    if (globalThis.__superCanvasDesktopLifecycle?.draining === true) return Response.json(result, { status: 202, headers: { "Cache-Control": "no-store" } });
+    const wake = scope.__supplierCatalogReadWake ??= createCatalogPipelineWakeLoop({
+      clock: { now: Date.now, setTimeout: (callback, delay) => { const timer = setTimeout(callback, delay); timer.unref(); return timer; },
+        clearTimeout: timer => clearTimeout(timer as ReturnType<typeof setTimeout>) },
+      connectionIds: async () => (await repository.listConnections()).filter(row => row.config.supplierArchived !== true).map(row => row.id),
+      run: (connectionId, observationCycleId) => pipeline.run(connectionId, { observationCycleId, revision: SUPPLIER_CATALOG_REVISION }),
+      canContinue: () => globalThis.__superCanvasDesktopLifecycle?.draining !== true, close: () => pipeline.close(),
+    });
+    void wake.wake().catch(() => undefined);
+    return Response.json(result, { status: 202, headers: { "Cache-Control": "no-store" } });
+  }
   if (request && new URL(request.url).searchParams.has("readPreview")) {
     const body = await request.json().catch(() => null) as { connectionId?: unknown } | null;
     if (typeof body?.connectionId !== "string" || body.connectionId.length > 256)
@@ -78,5 +118,6 @@ export async function PATCH(request: Request): Promise<Response> {
   if (!body || !["off", "upgrade", "daily"].includes(String(body.mode)))
     return Response.json({ error: "请选择关闭、仅软件升级后或每天一次" }, { status: 400 });
   await service().setMode(body.mode as "off" | "upgrade" | "daily");
+  if (body.mode === "off") stopReadPipeline();
   return Response.json(await service().status(), { headers: { "Cache-Control": "no-store" } });
 }
