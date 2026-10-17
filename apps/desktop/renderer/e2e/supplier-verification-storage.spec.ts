@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { join, resolve, sep } from "node:path";
 import { expect, test } from "@playwright/test";
@@ -21,7 +21,7 @@ test("核验证据独立落盘后冷开完整读回，分组、原图和实扣�
   const directory = await mkdtemp(join(temporaryRoot, "cold-open-"));
   const path = join(directory, "super-canvas.json");
   const errors: string[] = [];
-  let writes = 0, submissions = 0, reads = 0;
+  let writes = 0, submissions = 0, reads = 0, readFailures = 0;
   page.on("pageerror", error => errors.push(error.message));
   await page.route("**/api/runs", route => {
     if (route.request().method() === "POST") { submissions++; return route.abort(); }
@@ -70,24 +70,30 @@ test("核验证据独立落盘后冷开完整读回，分组、原图和实扣�
     expect(stored.supplierVerifications[0]!.cases).toEqual([]);
     expect(stored.applicationSettings["supplierVerificationEvidenceStorage:v1"]).toBeTruthy();
     const cold = new FileRepository(path);
+    expect(await cold.getSupplierVerificationStatus(supplier.id)).toMatchObject({ id: supplier.id, revision: saved.revision });
     const full = (await cold.getSupplierVerification(supplier.id))!;
     expect(full).toEqual(saved);
     expect(canonicalHash(full)).toBe(canonicalHash(saved));
     expect(full.cases[0]!.task!.providerTaskId).toBe("original-task-0");
     expect(full.cases[0]!.actualCharge!.requestId).toBe("original-request-0");
-    const publicRecord = {
-      ...full,
-      cases: full.cases.map(({ task, ...item }) => ({
-        ...Object.fromEntries(Object.entries(item).filter(([key]) => key !== "fingerprint")), taskId: task?.providerTaskId,
-      })),
-      evidence: full.evidence.map(item => Object.fromEntries(Object.entries(item).filter(([key]) => key !== "fingerprint"))),
-    };
     await page.route(`**/api/suppliers/${supplier.id}/verification**`, async route => {
       if (route.request().method() !== "GET") { writes++; return route.abort(); }
       reads++;
       // Use complete cold-loaded repository values, with the existing public
       // API's task/fingerprint redaction. No hand-written evidence response.
-      await route.fulfill({ json: publicRecord });
+      try {
+        const loaded = (await cold.getSupplierVerification(supplier.id))!;
+        await route.fulfill({ json: {
+          ...loaded,
+          cases: loaded.cases.map(({ task, ...item }) => ({
+            ...Object.fromEntries(Object.entries(item).filter(([key]) => key !== "fingerprint")), taskId: task?.providerTaskId,
+          })),
+          evidence: loaded.evidence.map(item => Object.fromEntries(Object.entries(item).filter(([key]) => key !== "fingerprint"))),
+        } });
+      } catch {
+        readFailures++;
+        await route.fulfill({ status: 500, json: { error: "隔离核验证据无法读取" } });
+      }
     });
     await page.goto("/");
     await page.getByTestId("workspace-settings").or(page.getByRole("button", { name: "供应商与模型", exact: true })).click();
@@ -118,7 +124,18 @@ test("核验证据独立落盘后冷开完整读回，分组、原图和实扣�
     expect(reads).toBeGreaterThan(0);
     expect({ writes, submissions, errors }).toEqual({ writes: 0, submissions: 0, errors: [] });
     expect(await cold.getSupplierVerification(supplier.id)).toEqual(saved);
-    await testInfo.attach("external-evidence-round-trip", { body: JSON.stringify({ canonicalHash: canonicalHash(saved), sameRecord: canonicalHash(full) === canonicalHash(saved), caseCount: full.cases.length, evidenceCount: full.evidence.length, reads, writes, submissions }), contentType: "application/json" });
+    // A cached activity projection cannot hide corruption of its immutable
+    // source, and the evidence panel reports failure rather than an empty ledger.
+    const manifest = stored.applicationSettings["supplierVerificationEvidenceStorage:v1"] as { entries: Record<string, { sha256: string }> };
+    await writeFile(join(directory, "supplier-verification-evidence", `${manifest.entries[supplier.id]!.sha256}.json`), "{\"corrupt\":true}");
+    await expect(cold.getSupplierVerificationStatus(supplier.id)).rejects.toThrow();
+    await expect(cold.getSupplierVerification(supplier.id)).rejects.toThrow();
+    await page.getByRole("tab", { name: "连接配置", exact: true }).click();
+    await page.getByRole("tab", { name: "核验记录", exact: true }).click();
+    await expect(panel.getByText("核验记录暂时无法读取", { exact: true })).toBeVisible();
+    expect(readFailures).toBeGreaterThan(0);
+    expect({ writes, submissions, errors }).toEqual({ writes: 0, submissions: 0, errors: [] });
+    await testInfo.attach("external-evidence-round-trip", { body: JSON.stringify({ canonicalHash: canonicalHash(saved), sameRecord: canonicalHash(full) === canonicalHash(saved), caseCount: full.cases.length, evidenceCount: full.evidence.length, reads, readFailures, writes, submissions }), contentType: "application/json" });
   } finally {
     if (!resolve(directory).startsWith(resolve(temporaryRoot) + sep)) throw new Error("Unsafe fixture cleanup");
     await rm(directory, { recursive: true, force: true });

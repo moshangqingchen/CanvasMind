@@ -7,11 +7,14 @@ import { publicVerification } from "../../../../../lib/supplier-verification-ser
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   const id = parseRouteIdentifier((await context.params).id, "供应商 ID");
   if (!id.success) return id.response;
+  if (new URL(request.url).searchParams.get("summary") === "1") {
+    const record = repository.getSupplierVerificationStatus
+      ? await repository.getSupplierVerificationStatus(id.data)
+      : await repository.getSupplierVerification(id.data);
+    return Response.json({ revision: record?.revision ?? 0 }, { headers: { "Cache-Control": "no-store" } });
+  }
   const record = await repository.getSupplierVerification(id.data);
-  const body = new URL(request.url).searchParams.get("summary") === "1"
-    ? { revision: record?.revision ?? 0 }
-    : publicVerification(record);
-  return Response.json(body, { headers: { "Cache-Control": "no-store" } });
+  return Response.json(publicVerification(record), { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {

@@ -1546,6 +1546,43 @@ describe("universal supplier price lookup", () => {
     vi.mocked(repository.getSupplierVerification).mockResolvedValue(null);
   });
 
+  it("keeps a genuinely missing verification record distinct from unreadable price evidence", async () => {
+    const supplier = { id: "missing-evidence", apiUrl: "https://missing-evidence.invalid/v1", siteUrl: "https://missing-evidence.invalid", state: { sourceId: "source" },
+      catalog: { groups: [{ id: "images", label: "images", models: [] }] }, kind: "newapi", scanStatus: "live", scanComplete: true, scannedAt: "2026-10-17T00:00:00Z", updatedAt: "2026-10-17T00:00:00Z" };
+    vi.mocked(getSupplierRecord).mockResolvedValue(supplier as unknown as Awaited<ReturnType<typeof getSupplierRecord>>);
+    vi.mocked(repository.getSupplierVerification).mockResolvedValue(null);
+    try {
+      const image: ModelDescriptor = { id: "fixture/no-price", name: "Fixture image", operations: ["image.generate"], outputKinds: ["image"] };
+      const connection = { config: { supplierId: supplier.id, supplierSourceId: "source", baseUrl: supplier.apiUrl, modelGroup: "images" } };
+      const result = await enrichSupplierModelPrices(connection, [image], false, false);
+      expect(result[0]?.pricing).toBeUndefined();
+      expect(result[0]?.metadata?.measuredPrice).toBeUndefined();
+      const published = { ...image, metadata: { priceLabel: "¥0.2/张", priceSource: "manual" } };
+      const retained = await enrichSupplierModelPrices(connection, [published], false, false);
+      expect(retained[0]?.metadata).toMatchObject(published.metadata);
+    } finally {
+      vi.mocked(getSupplierRecord).mockResolvedValue(null);
+      vi.mocked(repository.getSupplierVerification).mockResolvedValue(null);
+    }
+  });
+
+  it.each(["missing", "integrity"])("rejects %s external verification evidence instead of falling back to a published quote", async kind => {
+    const supplier = { id: "unreadable-evidence", apiUrl: "https://unreadable-evidence.invalid/v1", siteUrl: "https://unreadable-evidence.invalid", state: { sourceId: "source" },
+      catalog: { groups: [{ id: "images", label: "images", models: [] }] }, kind: "newapi", scanStatus: "live", scanComplete: true, scannedAt: "2026-10-17T00:00:00Z", updatedAt: "2026-10-17T00:00:00Z" };
+    const failure = kind === "missing" ? Object.assign(new Error("Missing verification evidence object"), { code: "ENOENT" }) : new Error("Verification evidence integrity mismatch");
+    vi.mocked(getSupplierRecord).mockResolvedValue(supplier as unknown as Awaited<ReturnType<typeof getSupplierRecord>>);
+    vi.mocked(repository.getSupplierVerification).mockRejectedValue(failure);
+    try {
+      const connection = { config: { supplierId: supplier.id, supplierSourceId: "source", baseUrl: supplier.apiUrl, modelGroup: "images" } };
+      const image: ModelDescriptor = { id: "fixture/published", name: "Published fixture", operations: ["image.generate"], outputKinds: ["image"],
+        metadata: { priceLabel: "¥0.2/张", priceSource: "manual" } };
+      await expect(enrichSupplierModelPrices(connection, [image], false, false)).rejects.toBe(failure);
+    } finally {
+      vi.mocked(getSupplierRecord).mockResolvedValue(null);
+      vi.mocked(repository.getSupplierVerification).mockResolvedValue(null);
+    }
+  });
+
   it("fills partial-directory placeholders from an exact successful test charge", async () => {
     const supplier = { id: "partial-price", apiUrl: "https://partial-evidence.example/v1", siteUrl: "https://partial-evidence.example", state: { sourceId: "source" },
       catalog: { groups: [] }, kind: "sub2api", scanStatus: "live", scanComplete: false, scannedAt: "2026-10-09T08:00:00Z", updatedAt: "2026-10-09T08:00:00Z" };

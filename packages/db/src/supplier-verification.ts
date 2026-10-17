@@ -124,6 +124,30 @@ export interface SupplierVerificationRecord {
   skipped: Array<{ connectionId: string; group?: string; modelId: string; reason: string }>;
 }
 
+/** Small, verified runtime projection. It is never a persisted replacement for
+ * task or price evidence and must not be confused with old-version summaries. */
+export interface SupplierVerificationStateSummary {
+  id: string;
+  revision: number;
+  cases: Array<{
+    status: SupplierVerificationStatus;
+    task?: { providerTaskId?: string; result?: { cloudAccepted?: boolean } };
+  }>;
+}
+
+export function supplierVerificationStateSummary(record: SupplierVerificationRecord): SupplierVerificationStateSummary {
+  return {
+    id: record.id, revision: record.revision,
+    cases: record.cases.map(test => {
+      const result = test.task?.result as Record<string, unknown> | undefined;
+      return { status: test.status, ...(test.task ? { task: {
+        ...(typeof test.task.providerTaskId === "string" ? { providerTaskId: test.task.providerTaskId } : {}),
+        ...(result ? { result: { cloudAccepted: result.cloudAccepted === true } } : {}),
+      } } : {}) };
+    }),
+  };
+}
+
 export class SupplierVerificationConflictError extends Error {
   constructor() {
     super("核验记录已更新，请重新读取");

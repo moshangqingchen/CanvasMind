@@ -1,6 +1,8 @@
 import {
   SupplierVerificationConflictError,
+  supplierVerificationStateSummary,
   type SupplierVerificationRecord,
+  type SupplierVerificationStateSummary,
 } from "./supplier-verification.js";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
@@ -367,6 +369,26 @@ export class MemoryRepository implements Repository {
 
   async listSupplierVerifications(): Promise<SupplierVerificationRecord[]> {
     return [...this.supplierVerifications.values()].map(clone);
+  }
+
+  /** Storage adapters may retain a small row after its immutable evidence is
+   * durable. Identity comparison protects a concurrently saved newer revision. */
+  protected storedSupplierVerification(id: string): SupplierVerificationRecord | undefined {
+    return this.supplierVerifications.get(id);
+  }
+
+  protected replaceStoredSupplierVerification(expected: SupplierVerificationRecord, replacement: SupplierVerificationRecord): void {
+    if (this.supplierVerifications.get(expected.id) === expected)
+      this.supplierVerifications.set(expected.id, replacement);
+  }
+
+  async getSupplierVerificationStatus(id: string): Promise<SupplierVerificationStateSummary | null> {
+    const record = this.supplierVerifications.get(id);
+    return record ? supplierVerificationStateSummary(record) : null;
+  }
+
+  async listSupplierVerificationStatuses(): Promise<SupplierVerificationStateSummary[]> {
+    return [...this.supplierVerifications.values()].map(supplierVerificationStateSummary);
   }
   async getSupplierVerification(
     id: string,

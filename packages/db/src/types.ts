@@ -1,4 +1,4 @@
-import type { SupplierVerificationRecord } from "./supplier-verification.js";
+import type { SupplierVerificationRecord, SupplierVerificationStateSummary } from "./supplier-verification.js";
 import type { CatalogObservationCommit, CatalogObservationReservation, CatalogObservationReserve, CatalogPipelineState, CatalogPipelineUpdate } from "./catalog-observation.js";
 export type JsonObject = Record<string, unknown>;
 
@@ -424,6 +424,9 @@ export interface Repository {
   flush?(): Promise<void>;
   listSupplierVerifications(): Promise<SupplierVerificationRecord[]>;
   getSupplierVerification(id: string): Promise<SupplierVerificationRecord | null>;
+  /** Validated small projection for revision polling and desktop drain. */
+  getSupplierVerificationStatus?(id: string): Promise<SupplierVerificationStateSummary | null>;
+  listSupplierVerificationStatuses?(): Promise<SupplierVerificationStateSummary[]>;
   saveSupplierVerification(record: SupplierVerificationRecord, expectedRevision: number): Promise<SupplierVerificationRecord>;
   listSuppliers(): Promise<SupplierRecord[]>;
   getSupplier(id: string): Promise<SupplierRecord | null>;

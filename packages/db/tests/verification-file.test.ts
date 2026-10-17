@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, readdir, rename, rm, unlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat, unlink, utimes, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve, sep } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -145,13 +145,16 @@ describe("FileRepository verification evidence integration", () => {
     const path = await pathFor();
     await inlineSeed(path);
     const writes = vi.spyOn(VerificationEvidenceStore.prototype, "writeRecord");
+    const reads = vi.spyOn(VerificationEvidenceStore.prototype, "readRecordSync");
     let mainWrites = 0;
     const repository = new FileRepository(path, async (from, to) => { if (String(to) === path) mainWrites++; await rename(from, to); });
     await repository.flush();
     expect(writes).toHaveBeenCalledTimes(1);
+    expect(reads).not.toHaveBeenCalled();
     const reference = manifest(await disk(path));
     for (let index = 0; index < 3; index++) await repository.saveCanvas({ id: "canvas", graph: { nodes: [], edges: [], content: index } });
     expect(writes).toHaveBeenCalledTimes(1);
+    expect(reads).not.toHaveBeenCalled();
     expect(mainWrites).toBe(4);
     expect(manifest(await disk(path))).toEqual(reference);
     expect(await readdir(evidenceDirectory(path))).toHaveLength(1);
@@ -179,7 +182,11 @@ describe("FileRepository verification evidence integration", () => {
     await new FileRepository(path).flush();
     const before = await readFile(path), reference = manifest(await disk(path)).entries.supplier!;
     await unlink(join(evidenceDirectory(path), `${reference.sha256}.json`));
-    expect(() => new FileRepository(path)).toThrow();
+    const repository = new FileRepository(path);
+    await expect(repository.getSupplierVerification("supplier")).rejects.toThrow();
+    await expect(repository.listSupplierVerifications()).rejects.toThrow();
+    await expect(repository.listSupplierVerificationStatuses()).rejects.toThrow();
+    expect(() => repository.exportSnapshot()).toThrow();
     expect(await readFile(path)).toEqual(before);
   });
 
@@ -192,7 +199,11 @@ describe("FileRepository verification evidence integration", () => {
     const contents = JSON.parse(await readFile(blob, "utf8")) as SupplierVerificationRecord;
     contents.cases[0]!.actualCharge!.amount = 999;
     await writeFile(blob, JSON.stringify(contents));
-    expect(() => new FileRepository(path)).toThrow("integrity mismatch");
+    const repository = new FileRepository(path);
+    await expect(repository.getSupplierVerification("supplier")).rejects.toThrow("integrity mismatch");
+    await expect(repository.listSupplierVerifications()).rejects.toThrow("integrity mismatch");
+    await expect(repository.getSupplierVerificationStatus("supplier")).rejects.toThrow("integrity mismatch");
+    expect(() => repository.exportSnapshot()).toThrow("integrity mismatch");
     expect(await readFile(path)).toEqual(before);
   });
 
@@ -250,5 +261,110 @@ describe("FileRepository verification evidence integration", () => {
     await new FileRepository(path).flush();
     expect(() => new FileRepository(path, rename, { verificationEvidence: "inline" })).toThrow("Cannot downgrade");
     expect(await new FileRepository(path).getSupplierVerification(original.id)).toEqual(original);
+  });
+
+  it("keeps only small storage rows after migration and cold open, and never retains parsed DTOs", async () => {
+    class InspectableRepository extends FileRepository {
+      storedRows() { return this.exportSnapshotView().supplierVerifications; }
+    }
+    const path = await pathFor(), original = await inlineSeed(path);
+    const reads = vi.spyOn(VerificationEvidenceStore.prototype, "readRecordSync");
+    const repository = new InspectableRepository(path);
+    expect(repository.storedRows()![0]!.cases).toHaveLength(1);
+    await repository.flush();
+    expect(Buffer.byteLength(JSON.stringify(repository.storedRows()))).toBeLessThan(1024);
+    expect(repository.storedRows()![0]!.cases).toEqual([]);
+    const reopened = new InspectableRepository(path);
+    expect(reads).not.toHaveBeenCalled();
+    const first = (await reopened.getSupplierVerification(original.id))!;
+    const second = (await reopened.getSupplierVerification(original.id))!;
+    expect(first).toEqual(original);
+    expect(second).toEqual(original);
+    expect(first).not.toBe(second);
+    expect(reads).toHaveBeenCalledTimes(2);
+    first.cases[0]!.task!.extra = "caller modification";
+    expect(second.cases[0]!.task!.extra).toBeUndefined();
+    expect(Buffer.byteLength(JSON.stringify(reopened.storedRows()))).toBeLessThan(1024);
+  });
+
+  it("keeps verification budget and revision CAS on resident rows and rejects storage-only summaries", async () => {
+    const path = await pathFor(), original = await inlineSeed(path), repository = new FileRepository(path);
+    await repository.flush();
+    const input = (await repository.getSupplierVerification(original.id))!;
+    await expect(repository.saveSupplierVerification(input, 0)).rejects.toThrow("核验记录已更新");
+    await expect(repository.saveSupplierVerification({ ...input, used: 0, limit: 0 }, input.revision)).rejects.toThrow("Invalid verification budget");
+    await expect(repository.saveSupplierVerification((await disk(path)).supplierVerifications[0]!, input.revision)).rejects.toThrow("Incomplete verification evidence");
+    const next = await repository.saveSupplierVerification({ ...input, reason: "metadata update" }, input.revision);
+    expect(next.cases).toEqual(original.cases);
+    await expect(repository.saveSupplierVerification(input, input.revision)).rejects.toThrow("核验记录已更新");
+    expect(await repository.getSupplierVerification(original.id)).toEqual(next);
+  });
+
+  it("does not replace a concurrent newer full revision with the earlier snapshot's summary", async () => {
+    const path = await pathFor(), original = await inlineSeed(path);
+    let entered!: () => void, release!: () => void, held = false;
+    const writing = new Promise<void>(resolve => { entered = resolve; });
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const repository = new FileRepository(path, async (from, to) => {
+      if (String(to) === path && !held) { held = true; entered(); await gate; }
+      await rename(from, to);
+    });
+    const migration = repository.flush();
+    await writing;
+    const update = repository.saveSupplierVerification({ ...original, reason: "newer full revision" }, original.revision);
+    release();
+    await migration;
+    const next = await update;
+    expect(await repository.getSupplierVerification(original.id)).toEqual(next);
+    expect(await new FileRepository(path).getSupplierVerification(original.id)).toEqual(next);
+    expect(next.cases).toEqual(original.cases);
+  });
+
+  it("uses a verified small lifecycle projection and revalidates it without parsing full evidence on every poll", async () => {
+    const path = await pathFor(), original = await inlineSeed(path), repository = new FileRepository(path);
+    const input = structuredClone(original);
+    input.cases = [
+      { ...input.cases[0]!, status: "running", task: { providerTaskId: "cloud-task", result: { cloudAccepted: true, raw: "body".repeat(8192) } } },
+      { ...input.cases[0]!, status: "archiving", task: { providerTaskId: "cloud-task", result: { cloudAccepted: true } } },
+      { ...input.cases[0]!, status: "submitting", task: { providerTaskId: "local-task", result: { cloudAccepted: "true" } } },
+    ];
+    const saved = await repository.saveSupplierVerification(input, original.revision);
+    const reads = vi.spyOn(VerificationEvidenceStore.prototype, "readRecordSync");
+    const verifies = vi.spyOn(VerificationEvidenceStore.prototype, "verifyReference");
+    const reopened = new FileRepository(path);
+    const expected = { id: saved.id, revision: saved.revision, cases: [
+      { status: "running", task: { providerTaskId: "cloud-task", result: { cloudAccepted: true } } },
+      { status: "archiving", task: { providerTaskId: "cloud-task", result: { cloudAccepted: true } } },
+      { status: "submitting", task: { providerTaskId: "local-task", result: { cloudAccepted: false } } },
+    ] };
+    expect(await reopened.getSupplierVerificationStatus(saved.id)).toEqual(expected);
+    expect(await reopened.listSupplierVerificationStatuses()).toEqual([expected]);
+    const dto = (await reopened.getSupplierVerificationStatus(saved.id))!;
+    dto.cases[0]!.status = "succeeded";
+    expect(await reopened.getSupplierVerificationStatus(saved.id)).toEqual(expected);
+    expect(reads).toHaveBeenCalledTimes(1);
+    expect(verifies).toHaveBeenCalledTimes(3);
+    expect(await reopened.getSupplierVerificationStatus("absent")).toBeNull();
+    expect(await reopened.getSupplierVerification(saved.id)).toEqual(saved);
+  });
+
+  it("fails closed when cached lifecycle evidence is removed or changed with identical length and timestamps", async () => {
+    const path = await pathFor();
+    await inlineSeed(path);
+    await new FileRepository(path).flush();
+    const repository = new FileRepository(path), reference = manifest(await disk(path)).entries.supplier!;
+    await repository.listSupplierVerificationStatuses();
+    const blob = join(evidenceDirectory(path), `${reference.sha256}.json`), details = await stat(blob);
+    const contents = await readFile(blob), changed = Buffer.from(contents);
+    const offset = changed.indexOf("ZmFrZQ==");
+    expect(offset).toBeGreaterThan(0);
+    changed[offset] = 89;
+    await writeFile(blob, changed);
+    await utimes(blob, details.atime, details.mtime);
+    expect((await stat(blob)).size).toBe(details.size);
+    await expect(repository.getSupplierVerificationStatus("supplier")).rejects.toThrow("integrity mismatch");
+    await expect(repository.listSupplierVerificationStatuses()).rejects.toThrow("integrity mismatch");
+    await unlink(blob);
+    await expect(repository.listSupplierVerificationStatuses()).rejects.toThrow();
   });
 });

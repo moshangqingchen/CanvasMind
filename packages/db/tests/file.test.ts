@@ -22,6 +22,24 @@ afterEach(async () => {
 });
 
 describe("FileRepository", () => {
+  it("streams large rows and small chunks without changing Unicode or JSON array semantics", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "super-canvas-db-stream-"));
+    temporaryDirectories.push(directory);
+    const path = join(directory, "state.json"), repository = new FileRepository(path);
+    const holey = new Array(3);
+    holey[1] = "中文🪷";
+    const graph = {
+      nodes: Array.from({ length: 60 }, (_, index) => ({ id: `${index}`, text: `${"😀中文".repeat(1000)}\\\"\n\ud800` })),
+      edges: [], holey, absent: undefined, numbers: [NaN, Infinity, -Infinity, -0],
+    };
+    await repository.saveCanvas({ id: "stream", graph });
+    const parsed = JSON.parse(await readFile(path, "utf8"));
+    const expected = JSON.parse(JSON.stringify(graph));
+    expect(parsed.canvases[0].graph).toEqual(expected);
+    expect(parsed.revisions[0].graph).toEqual(expected);
+    expect((await new FileRepository(path).getCanvas("stream"))!.graph).toEqual(expected);
+  });
+
   it("keeps the durable file and revisions unchanged on an equivalent autosave", async () => {
     const directory = await mkdtemp(join(tmpdir(), "super-canvas-db-noop-"));
     temporaryDirectories.push(directory);

@@ -2,13 +2,14 @@ import { mkdir, open, rename, unlink } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { createHash } from "node:crypto";
 import { OwnedJsonMemo } from "./owned-json-memo.js";
 import {
   VerificationEvidenceStore, VERIFICATION_EVIDENCE_SETTING,
   readVerificationEvidenceSnapshot, verificationEvidenceSummary,
   type VerificationEvidenceReference, type StoredVerificationSummary,
 } from "./verification-evidence-store.js";
-import type { SupplierVerificationRecord } from "./supplier-verification.js";
+import { supplierVerificationStateSummary, type SupplierVerificationRecord, type SupplierVerificationStateSummary } from "./supplier-verification.js";
 import { CatalogSidecarStore, isCatalogSidecarSetting } from "./catalog-sidecar.js";
 import { catalogPipelineSettingKey, prepareCatalogReservation, prepareCatalogPipelineUpdate, type CatalogObservationPrepared, type CatalogObservationReservation } from "./catalog-observation.js";
 import { setTimeout as delay } from "node:timers/promises";
@@ -217,7 +218,9 @@ function readDirectorFieldJson(contents: string): Map<DirectorSnapshotField, str
       index += 1;
     }
     if (directorSnapshotFields.includes(key))
-      fields.set(key, contents.slice(start, index).trimEnd());
+      // A sliced V8 string can retain the entire original database (including
+      // inline image responses). These few historical fields own their bytes.
+      fields.set(key, Buffer.from(contents.slice(start, index).trimEnd(), "utf8").toString("utf8"));
     if (contents[index] === "}") break;
     index += 1;
   }
@@ -303,6 +306,7 @@ export class FileRepository extends MemoryRepository {
   private readonly externalEvidence: boolean;
   private readonly evidenceCache = new WeakMap<SupplierVerificationRecord, {
     reference: VerificationEvidenceReference; summary: StoredVerificationSummary;
+    status?: SupplierVerificationStateSummary;
   }>();
   private readonly preservedDirectorFields = new Map<
     string,
@@ -317,13 +321,12 @@ export class FileRepository extends MemoryRepository {
     const evidenceReferences = readVerificationEvidenceSnapshot(sidecars.settings[VERIFICATION_EVIDENCE_SETTING]);
     if (options.verificationEvidence === "inline" && evidenceReferences)
       throw new Error("Cannot downgrade an external verification evidence snapshot");
-    const records = stored?.version === 2
-      ? evidenceStore.hydrateRecordsSync(stored.supplierVerifications ?? [], evidenceReferences) : undefined;
+    if (stored?.version === 2)
+      evidenceStore.validateRecords(stored.supplierVerifications ?? [], evidenceReferences);
     // Storage references never leak into portable in-memory snapshots or DTOs.
     delete sidecars.settings[VERIFICATION_EVIDENCE_SETTING];
     const compacted = compactSnapshot(
-      stored ? { ...migrateMemoryRepositorySnapshot(stored), applicationSettings: sidecars.settings,
-        ...(records ? { supplierVerifications: records } : {}) } : undefined,
+      stored ? { ...migrateMemoryRepositorySnapshot(stored), applicationSettings: sidecars.settings } : undefined,
     );
     super(compacted.snapshot);
     this.path = path;
@@ -336,7 +339,7 @@ export class FileRepository extends MemoryRepository {
     for (const row of loadedSnapshot.supplierVerifications ?? []) {
       const reference = evidenceReferences && Object.hasOwn(evidenceReferences.entries, row.id)
         ? evidenceReferences.entries[row.id] : undefined;
-      if (reference) this.evidenceCache.set(row, { reference, summary: verificationEvidenceSummary(row) });
+      if (reference) this.evidenceCache.set(row, { reference, summary: row as StoredVerificationSummary });
     }
     this.needsSnapshotWrite ||= this.externalEvidence && Boolean(loadedSnapshot.supplierVerifications?.length) && !evidenceReferences;
     sidecars.adoptReferences(loadedSnapshot.applicationSettings ?? {});
@@ -398,36 +401,46 @@ export class FileRepository extends MemoryRepository {
     return work().finally(() => { if (this.catalogGate === gate) this.catalogGate = null; release(); });
   }
 
-  private serializeSnapshot(snapshot: MemoryRepositorySnapshot): string {
-    const properties: string[] = [];
+  private *serializeSnapshot(snapshot: MemoryRepositorySnapshot): Generator<string> {
+    yield "{";
+    let first = true;
     for (const [key, value] of Object.entries(snapshot)) {
-      // These two stores use copy-on-write owned rows. Reuse their JSON without
-      // cloning/stringifying all other suppliers on every scheduler checkpoint.
-      // The final snapshot, barrier, CAS and single atomic rename stay intact.
-      const serialized = key === "connections"
-          ? `[${snapshot.connections.map(row => this.ownedJson.stringify(`connection:${row.id}`, row)).join(",")}]`
-          : JSON.stringify(value);
-      if (serialized === undefined) continue;
       const preserved = this.preservedDirectorFields.get(key);
-      // Current agent sessions share these tables. Preserve untouched historical
-      // JSON verbatim, while allowing genuine agent mutations to persist normally.
-      const json = preserved?.loadedJson === serialized
-        ? preserved.originalJson
-        : serialized;
-      properties.push(`${JSON.stringify(key)}:${json}`);
+      const serialized = !Array.isArray(value) || preserved ? JSON.stringify(value) : undefined;
+      if (!Array.isArray(value) && serialized === undefined) continue;
+      if (!first) yield ",";
+      first = false;
+      yield `${JSON.stringify(key)}:`;
+      if (!Array.isArray(value) || preserved) {
+        // Preserve untouched historical agent JSON verbatim. Other tables are
+        // written row by row, never joined into a second full-database string.
+        yield preserved && preserved.loadedJson === serialized ? preserved.originalJson : serialized!;
+        continue;
+      }
+      yield "[";
+      for (let index = 0; index < value.length; index++) {
+        if (index) yield ",";
+        const row = value[index];
+        yield key === "connections"
+          ? this.ownedJson.stringify(`connection:${row.id}`, row) ?? "null"
+          : JSON.stringify(row) ?? "null";
+      }
+      yield "]";
     }
-    return `{${properties.join(",")}}`;
+    yield "}";
   }
 
   private async replaceSnapshot(
     temporaryPath: string,
-    contents: string,
+    contents: Iterable<string>,
+    receipt: { sha256?: string; byteLength?: number },
   ): Promise<void> {
-    await this.replaceDurableFile(this.path, contents, temporaryPath);
+    await this.replaceDurableFile(this.path, contents, temporaryPath, receipt);
   }
 
-  private async replaceDurableFile(path: string, contents: string,
-    temporaryPath = `${path}.${process.pid}.${++this.writeSequence}.tmp`): Promise<void> {
+  private async replaceDurableFile(path: string, contents: string | Iterable<string>,
+    temporaryPath = `${path}.${process.pid}.${++this.writeSequence}.tmp`,
+    receipt?: { sha256?: string; byteLength?: number }): Promise<void> {
     await mkdir(dirname(path), { recursive: true });
 
     // Windows can briefly hold the destination while another reader closes it.
@@ -435,7 +448,29 @@ export class FileRepository extends MemoryRepository {
     const retryableCodes = new Set(["EPERM", "EACCES", "EBUSY", "ETXTBSY"]);
     try {
       const file = await open(temporaryPath, "w");
-      try { await file.writeFile(contents, "utf8"); await file.sync(); }
+      try {
+        const hash = receipt ? createHash("sha256") : undefined;
+        let byteLength = 0, pending: string[] = [], pendingLength = 0;
+        const write = async (text: string) => {
+          const buffer = Buffer.from(text, "utf8");
+          hash?.update(buffer);
+          byteLength += buffer.byteLength;
+          await file.writeFile(buffer);
+        };
+        for (const chunk of typeof contents === "string" ? [contents] : contents) {
+          if (chunk.length >= 64 * 1024) {
+            if (pendingLength) { await write(pending.join("")); pending = []; pendingLength = 0; }
+            await write(chunk);
+          } else {
+            pending.push(chunk);
+            pendingLength += chunk.length;
+            if (pendingLength >= 64 * 1024) { await write(pending.join("")); pending = []; pendingLength = 0; }
+          }
+        }
+        if (pendingLength) await write(pending.join(""));
+        await file.sync();
+        if (receipt) { receipt.sha256 = hash!.digest("hex"); receipt.byteLength = byteLength; }
+      }
       finally { await file.close(); }
       for (let attempt = 0; ; attempt += 1) {
         try {
@@ -469,18 +504,32 @@ export class FileRepository extends MemoryRepository {
     const prepared = await this.catalogSidecars.prepare(snapshot.applicationSettings ?? {},
       (path, contents) => this.replaceDurableFile(path, contents));
     const diskSnapshot = { ...withEvidence, applicationSettings: this.catalogSidecars.mainSettings(withEvidence.applicationSettings ?? {}, prepared.marker) };
-    const contents = this.serializeSnapshot(diskSnapshot);
+    const receipt: { sha256?: string; byteLength?: number } = {};
     try {
-      await this.replaceSnapshot(`${this.path}.${process.pid}.${++this.writeSequence}.tmp`, contents);
+      await this.replaceSnapshot(`${this.path}.${process.pid}.${++this.writeSequence}.tmp`, this.serializeSnapshot(diskSnapshot), receipt);
     } catch (error) {
       // A rename can land before directory fsync (or an injected error) fails.
-      // Compare complete bytes only on failure: an unchanged marker alone does
+      // Verify complete bytes only on failure: an unchanged marker alone does
       // not prove that a legacy business-only candidate reached disk.
       let landed = false;
-      try { landed = readFileSync(this.path, "utf8") === contents; } catch { /* No durable replacement can be proved. */ }
+      try {
+        if (receipt.sha256 && receipt.byteLength !== undefined) {
+          const file = await open(this.path, "r"), hash = createHash("sha256"), buffer = Buffer.allocUnsafe(64 * 1024);
+          let bytes = 0;
+          try {
+            for (;;) {
+              const { bytesRead } = await file.read(buffer, 0, buffer.length, null);
+              if (!bytesRead) break;
+              hash.update(buffer.subarray(0, bytesRead)); bytes += bytesRead;
+            }
+            landed = bytes === receipt.byteLength && hash.digest("hex") === receipt.sha256;
+          } finally { await file.close(); }
+        }
+      } catch { /* No durable replacement can be proved. */ }
       if (landed) {
         this.catalogSidecars.accept(prepared, snapshot.applicationSettings ?? {});
         if (publish) await publish();
+        this.releaseEvidenceRecords(snapshot);
       }
       throw error;
     }
@@ -489,6 +538,7 @@ export class FileRepository extends MemoryRepository {
     // business rows next to a committed new queue/counter on disk.
     this.catalogSidecars.accept(prepared, snapshot.applicationSettings ?? {});
     if (publish) await publish();
+    this.releaseEvidenceRecords(snapshot);
     await this.catalogSidecars.recover((path, contents) => this.replaceDurableFile(path, contents));
   }
 
@@ -501,7 +551,8 @@ export class FileRepository extends MemoryRepository {
       if (Object.hasOwn(entries, record.id)) throw new Error("Duplicate verification evidence identity");
       let cached = this.evidenceCache.get(record);
       if (!cached) {
-        cached = { reference: await this.evidenceStore.writeRecord(record), summary: verificationEvidenceSummary(record) };
+        cached = { reference: await this.evidenceStore.writeRecord(record), summary: verificationEvidenceSummary(record),
+          status: supplierVerificationStateSummary(record) };
         // Only immutable repository-owned rows are memoized. Public inputs and
         // returned DTOs are clones, and updates replace the owned row identity.
         this.evidenceCache.set(record, cached);
@@ -512,6 +563,72 @@ export class FileRepository extends MemoryRepository {
     return { ...snapshot, supplierVerifications: summaries, applicationSettings: {
       ...snapshot.applicationSettings, [VERIFICATION_EVIDENCE_SETTING]: { schemaVersion: 1, entries },
     } };
+  }
+
+  private releaseEvidenceRecords(snapshot: MemoryRepositorySnapshot): void {
+    if (!this.externalEvidence) return;
+    for (const record of snapshot.supplierVerifications ?? []) {
+      const cached = this.evidenceCache.get(record);
+      if (!cached || record === cached.summary) continue;
+      this.evidenceCache.set(cached.summary, cached);
+      this.replaceStoredSupplierVerification(record, cached.summary);
+    }
+  }
+
+  private readCompleteVerification(record: SupplierVerificationRecord): SupplierVerificationRecord {
+    const cached = this.evidenceCache.get(record);
+    if ((record as Partial<StoredVerificationSummary>).verificationEvidenceStorageVersion === 1) {
+      if (!cached) throw new Error("Missing verification evidence reference");
+      // A newly parsed DTO belongs to this caller. Never memoize its large
+      // response strings, or return the old-version safety summary as evidence.
+      const complete = this.evidenceStore.readRecordSync(cached.reference);
+      cached.status = supplierVerificationStateSummary(complete);
+      return complete;
+    }
+    return structuredClone(record);
+  }
+
+  override async getSupplierVerification(id: string): Promise<SupplierVerificationRecord | null> {
+    const record = this.storedSupplierVerification(id);
+    return record ? this.readCompleteVerification(record) : null;
+  }
+
+  override async listSupplierVerifications(): Promise<SupplierVerificationRecord[]> {
+    return (this.exportSnapshotView().supplierVerifications ?? []).map(record => this.readCompleteVerification(record));
+  }
+
+  private async readVerificationStatus(record: SupplierVerificationRecord): Promise<SupplierVerificationStateSummary> {
+    const cached = this.evidenceCache.get(record);
+    if ((record as Partial<StoredVerificationSummary>).verificationEvidenceStorageVersion !== 1)
+      return supplierVerificationStateSummary(record);
+    if (!cached) throw new Error("Missing verification evidence reference");
+    if (!cached.status) cached.status = supplierVerificationStateSummary(this.evidenceStore.readRecordSync(cached.reference));
+    else await this.evidenceStore.verifyReference(cached.reference);
+    return structuredClone(cached.status);
+  }
+
+  override async getSupplierVerificationStatus(id: string): Promise<SupplierVerificationStateSummary | null> {
+    const record = this.storedSupplierVerification(id);
+    return record ? this.readVerificationStatus(record) : null;
+  }
+
+  override async listSupplierVerificationStatuses(): Promise<SupplierVerificationStateSummary[]> {
+    const result: SupplierVerificationStateSummary[] = [];
+    // Sequential reads bound temporary allocations to one record, even on the
+    // first lifecycle poll. Later polls only revalidate streaming hashes.
+    for (const record of this.exportSnapshotView().supplierVerifications ?? [])
+      result.push(await this.readVerificationStatus(record));
+    return result;
+  }
+
+  override exportSnapshot(): MemoryRepositorySnapshot {
+    const view = this.exportSnapshotView();
+    // Portable export deliberately loads complete evidence, but must not first
+    // clone every pending inline record only to clone it again below.
+    const snapshot = structuredClone({ ...view, supplierVerifications: [] }) as MemoryRepositorySnapshot;
+    snapshot.supplierVerifications = (view.supplierVerifications ?? [])
+      .map(record => this.readCompleteVerification(record));
+    return snapshot;
   }
 
   private resolveWriteWaiters(): void {
@@ -584,6 +701,8 @@ export class FileRepository extends MemoryRepository {
   }
 
   override async saveSupplierVerification(input: Parameters<MemoryRepository["saveSupplierVerification"]>[0], expectedRevision: number) {
+    if ((input as Partial<StoredVerificationSummary>).verificationEvidenceStorageVersion !== undefined)
+      throw new Error("Incomplete verification evidence cannot replace a complete record");
     const result = await super.saveSupplierVerification(input, expectedRevision);
     await this.persist();
     return result;

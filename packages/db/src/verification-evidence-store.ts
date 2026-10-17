@@ -127,6 +127,24 @@ export class VerificationEvidenceStore {
     return verifyContents(readFileSync(this.path(reference)), reference);
   }
 
+  /** Revalidate cached small projections without parsing or retaining the
+   * original response. A fixed buffer also detects same-size/mtime tampering. */
+  async verifyReference(reference: VerificationEvidenceReference): Promise<void> {
+    const file = await open(this.path(reference), "r");
+    try {
+      const hash = createHash("sha256"), buffer = Buffer.allocUnsafe(64 * 1024);
+      let bytes = 0;
+      for (;;) {
+        const { bytesRead } = await file.read(buffer, 0, buffer.length, null);
+        if (!bytesRead) break;
+        hash.update(buffer.subarray(0, bytesRead));
+        bytes += bytesRead;
+      }
+      if (bytes !== reference.byteLength || hash.digest("hex") !== reference.sha256)
+        throw new Error("Verification evidence integrity mismatch");
+    } finally { await file.close(); }
+  }
+
   async writeRecord(record: SupplierVerificationRecord): Promise<VerificationEvidenceReference> {
     const contents = Buffer.from(canonicalVerificationJson(record), "utf8");
     const reference: VerificationEvidenceReference = {
@@ -196,21 +214,31 @@ export class VerificationEvidenceStore {
   }
 
   hydrateRecordsSync(rows: readonly SupplierVerificationRecord[], snapshotValue: unknown): SupplierVerificationRecord[] {
-    const references = readVerificationEvidenceSnapshot(snapshotValue)?.entries;
+    const references = this.validateRecords(rows, snapshotValue)?.entries;
+    return rows.map(row => {
+      const reference = references && Object.hasOwn(references, row.id) ? references[row.id] : undefined;
+      return reference ? this.readRecordSync(reference) : row;
+    });
+  }
+
+  /** Bind small storage rows without reading or retaining complete responses.
+   * Full record reads must still verify bytes and identity before use. */
+  validateRecords(rows: readonly SupplierVerificationRecord[], snapshotValue: unknown): VerificationEvidenceSnapshot | undefined {
+    const snapshot = readVerificationEvidenceSnapshot(snapshotValue);
+    const references = snapshot?.entries;
     const seen = new Set<string>();
-    const result = rows.map(row => {
+    for (const row of rows) {
       if (seen.has(row.id)) throw new Error("Duplicate verification evidence identity");
       seen.add(row.id);
       const reference = references && Object.hasOwn(references, row.id) ? references[row.id] : undefined;
       const summary = (row as Partial<StoredVerificationSummary>).verificationEvidenceStorageVersion;
       if (!reference) {
         if (summary !== undefined) throw new Error("Missing verification evidence reference");
-        return row;
+        continue;
       }
       if (summary !== 1 || row.revision !== reference.revision) throw new Error("Verification evidence summary mismatch");
-      return this.readRecordSync(reference);
-    });
+    }
     if (references && Object.keys(references).some(id => !seen.has(id))) throw new Error("Missing verification evidence summary");
-    return result;
+    return snapshot;
   }
 }

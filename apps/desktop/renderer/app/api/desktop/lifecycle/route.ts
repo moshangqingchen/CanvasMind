@@ -7,7 +7,11 @@ export const dynamic = "force-dynamic";
 async function status() {
   const state = desktopLifecycleState();
   const runs = await repository.listRecoverableRuns();
-  const verifications = await repository.listSupplierVerifications?.() ?? [];
+  // File-backed ledgers verify the immutable evidence but keep only the small
+  // activity projection here. A lifecycle poll must not parse every response.
+  const verifications = repository.listSupplierVerificationStatuses
+    ? await repository.listSupplierVerificationStatuses()
+    : await repository.listSupplierVerifications?.() ?? [];
   const activeVerifications = verifications.reduce((count, record) => count + record.cases.filter(test => ["submitting", "running", "archiving"].includes(test.status) &&
     !(test.status !== "archiving" && isCloudSubmission(test.task?.providerTaskId) && (test.task?.result as Record<string, unknown> | undefined)?.cloudAccepted === true)).length, 0);
   let resumableCloudRuns = 0;

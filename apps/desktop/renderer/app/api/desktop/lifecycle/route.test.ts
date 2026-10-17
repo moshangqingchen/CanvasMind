@@ -1,9 +1,15 @@
 import { beforeEach, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ runs: [] as unknown[], nodes: [] as unknown[], verifications: [] as unknown[], flush: vi.fn(), lifecycle: { writes: 0, draining: false } }));
+import type { SupplierVerificationStateSummary } from "@super-canvas/db";
+const mocks = vi.hoisted(() => ({ runs: [] as unknown[], nodes: [] as unknown[], verifications: [] as unknown[],
+  statuses: undefined as (() => Promise<SupplierVerificationStateSummary[]>) | undefined,
+  readFull: vi.fn(), flush: vi.fn(), lifecycle: { writes: 0, draining: false } }));
 vi.mock("../../../../lib/desktop-server", () => ({ desktopAuthorized: () => true, desktopLifecycleState: () => mocks.lifecycle }));
-vi.mock("../../../../lib/server", () => ({ repository: { listRecoverableRuns: async () => mocks.runs, listNodeRuns: async () => mocks.nodes, listSupplierVerifications: async () => mocks.verifications, flush: mocks.flush } }));
+vi.mock("../../../../lib/server", () => ({ repository: { listRecoverableRuns: async () => mocks.runs, listNodeRuns: async () => mocks.nodes,
+  get listSupplierVerificationStatuses() { return mocks.statuses; },
+  listSupplierVerifications: async () => { mocks.readFull(); return mocks.verifications; }, flush: mocks.flush } }));
 import { GET, POST } from "./route";
-beforeEach(() => { mocks.runs = [{ id: "run" }]; mocks.nodes = []; mocks.verifications = []; mocks.flush.mockReset(); mocks.lifecycle.draining = false; });
+beforeEach(() => { mocks.runs = [{ id: "run" }]; mocks.nodes = []; mocks.verifications = []; mocks.statuses = undefined;
+  mocks.readFull.mockReset(); mocks.flush.mockReset(); mocks.lifecycle.draining = false; });
 const marker = "cloud:" + "a".repeat(64);
 const status = async () => (await GET(new Request("http://localhost/api/desktop/lifecycle"))).json();
 it("allows normal exit after the cloud task is durably accepted", async () => {
@@ -21,6 +27,28 @@ it("does not detach a graph while another local node is running", async () => {
 it("applies the same acceptance rule to supplier automatic verification", async () => {
   mocks.runs = []; mocks.verifications = [{ cases: [{ status: "running", task: { providerTaskId: marker, result: { cloudAccepted: true } } }, { status: "submitting", task: { providerTaskId: marker } }] }];
   expect(await status()).toMatchObject({ activeRuns: 1, activeVerifications: 1 });
+});
+it("uses the verified activity projection without reading full evidence and preserves all exit blockers", async () => {
+  mocks.runs = [];
+  mocks.statuses = async () => [{ id: "supplier", revision: 3, cases: [
+    { status: "running", task: { providerTaskId: marker, result: { cloudAccepted: true } } },
+    { status: "running", task: { providerTaskId: marker, result: { cloudAccepted: false } } },
+    { status: "submitting", task: { providerTaskId: marker } },
+    { status: "archiving", task: { providerTaskId: marker, result: { cloudAccepted: true } } },
+    { status: "running", task: { providerTaskId: "local-original-task", result: { cloudAccepted: true } } },
+    { status: "succeeded" },
+  ] }];
+  expect(await status()).toMatchObject({ activeRuns: 4, activeVerifications: 4 });
+  expect(mocks.readFull).not.toHaveBeenCalled();
+  expect(mocks.flush).not.toHaveBeenCalled();
+});
+it("does not approve exit or flush when evidence needed by the activity projection is unreadable", async () => {
+  mocks.runs = [];
+  const failure = new Error("Verification evidence integrity mismatch");
+  mocks.statuses = async () => { throw failure; };
+  await expect(status()).rejects.toBe(failure);
+  expect(mocks.readFull).not.toHaveBeenCalled();
+  expect(mocks.flush).not.toHaveBeenCalled();
 });
 it("stops the internal catalog owner on drain without holding a background write or waiting for cooldown", async () => {
   const stop = vi.fn(() => expect(mocks.lifecycle.draining).toBe(true));

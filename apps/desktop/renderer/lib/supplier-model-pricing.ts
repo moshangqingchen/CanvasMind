@@ -381,13 +381,10 @@ async function applyMeasuredSupplierPrices(
   supplierGroupId?: string,
 ): Promise<ModelDescriptor[]> {
   if (!supplierId || !models.length) return [...models];
-  let record: Awaited<ReturnType<typeof repository.getSupplierVerification>>;
-  try {
-    record = await repository.getSupplierVerification?.(supplierId);
-  } catch {
-    // A price lookup must never make an otherwise valid model scan fail.
-    return [...models];
-  }
+  // Missing evidence is valid; unreadable or corrupt evidence is not. In
+  // particular, an external evidence read must not silently become an empty
+  // price lookup that could hide an existing measured charge.
+  const record = await repository.getSupplierVerification?.(supplierId);
   if (!record || record.sourceId !== sourceId) return [...models];
   const measured = measuredPricesFromVerification(record, { supplierGroupId, group });
   if (!measured.size) return [...models];
