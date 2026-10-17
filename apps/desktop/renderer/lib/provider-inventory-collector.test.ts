@@ -49,6 +49,22 @@ describe("independent, publication-free inventory sources", () => {
     expect(JSON.stringify([balance, denied])).not.toContain(apiKey);
   });
 
+  it("a web page served at /models falls through to /v1/models, but a malformed versioned list is still final", async () => {
+    const page = () => new Response("<!doctype html><html><body>site</body></html>", { status: 200, headers: { "content-type": "text/html" } });
+    const transport = vi.fn<typeof fetch>().mockResolvedValueOnce(page()).mockResolvedValueOnce(json({ data: [{ id: "versioned-id" }] }));
+    const result = await collectGenericKeyInventory({ baseUrl: "https://site.fixture.invalid", apiKey }, { fetch: transport, now });
+    expect(result).toMatchObject({ status: "live", complete: true });
+    expect(result.models.map(model => model.id)).toEqual(["versioned-id"]);
+    expect(transport.mock.calls.map(call => String(call[0]))).toEqual(["https://site.fixture.invalid/models", "https://site.fixture.invalid/v1/models"]);
+    const denied = vi.fn<typeof fetch>().mockResolvedValueOnce(page()).mockResolvedValueOnce(json({ error: { code: "permission_denied" } }, 403));
+    const deniedResult = await collectGenericKeyInventory({ baseUrl: "https://site.fixture.invalid", apiKey }, { fetch: denied, now });
+    expect(deniedResult).toMatchObject({ complete: false, status: "unauthorized", failure: { code: "permission_denied", httpStatus: 403 } });
+    const bothPages = vi.fn<typeof fetch>().mockImplementation(async () => page());
+    const pageResult = await collectGenericKeyInventory({ baseUrl: "https://site.fixture.invalid", apiKey }, { fetch: bothPages, now });
+    expect(pageResult).toMatchObject({ complete: false, failure: { code: "invalid_response" } });
+    expect(bothPages).toHaveBeenCalledTimes(2);
+  });
+
   it("404 alternatives are one logical list, while a denied alternative is final", async () => {
     const transport = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response(null, { status: 404 }))
       .mockResolvedValueOnce(json({ data: [{ id: "same-source-id" }] }));

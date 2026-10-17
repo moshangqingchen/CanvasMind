@@ -121,12 +121,25 @@ async function readGenericKeyInventory(input: CollectorInput, options: Inventory
     const base = apiBase(input.baseUrl), google = input.protocol === "google-generate-content";
     const candidates = [...new Set([`${base}/models`, `${base.replace(/\/v1(?:beta)?$/u, "")}/${google ? "v1beta" : "v1"}/models`])];
     for (const [index, url] of candidates.entries()) {
-      const { response, payload, errorPayload } = await readJson(url, options, input.apiKey, google);
+      const hasAlternative = index < candidates.length - 1;
+      let read: Awaited<ReturnType<typeof readJson>>;
+      try { read = await readJson(url, options, input.apiKey, google); }
+      catch (error) {
+        // A site root often serves its web page at /models. Like the manual
+        // scanner, treat a non-JSON 200 as a miss and try the versioned path.
+        if (hasAlternative && error instanceof ModelInventoryReadError && error.code === "invalid_response") continue;
+        throw error;
+      }
+      const { response, payload, errorPayload } = read;
       if (!response.ok) {
-        if ([404, 405, 415].includes(response.status) && index < candidates.length - 1) continue;
+        if ([404, 405, 415].includes(response.status) && hasAlternative) continue;
         return failedResponse(response, errorPayload, options);
       }
-      assertListComplete(payload);
+      try { assertListComplete(payload); }
+      catch (error) {
+        if (hasAlternative && error instanceof ModelInventoryReadError && error.code === "invalid_response") continue;
+        throw error;
+      }
       const checkedAt = sampleAt(options);
       const scan = scanProviderModelCatalog(payload, { baseUrl: base, checkedAt, defaultModel: input.defaultModel });
       return { ...scan, complete: true, status: scan.models.length ? "live" : "empty" };
