@@ -1,5 +1,5 @@
 import { mkdir, readFile, writeFile, rename, readdir, lstat, stat, copyFile, realpath, rm } from "node:fs/promises";
-import { join, resolve, dirname, relative, isAbsolute, sep } from "node:path";
+import { join, resolve, dirname, basename, relative, isAbsolute, sep } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { createConnection } from "node:net";
 import { execFile } from "node:child_process";
@@ -32,6 +32,14 @@ export function within(root, key) {
 
 async function readOptional(path) {
   try { return await readFile(path, "utf8"); } catch (e) { if (e.code === "ENOENT") return ""; throw e; }
+}
+
+/** Storage adapters bind auxiliary files to the database filename. Copy them
+ * with the main snapshot, including immutable historical evidence objects. */
+export function databaseSidecarRoots(database) {
+  return basename(database) === "super-canvas.json"
+    ? [join(dirname(database), "catalog-pipeline"), join(dirname(database), "supplier-verification-evidence")]
+    : [`${database}.catalog-pipeline`, `${database}.supplier-verification-evidence`];
 }
 
 export async function discoverSource(selected) {
@@ -82,27 +90,98 @@ export function validateSnapshot(snapshot, masterKey) {
   if (![1, 2].includes(snapshot?.version) || arrays.some((key) => !Array.isArray(snapshot[key]))) throw new Error("不支持的本地数据库格式");
   if (snapshot.version === 2 && ["directorProfiles", "directorSessions", "directorMessages", "directorProposals"].some((key) => !Array.isArray(snapshot[key]))) throw new Error("导演数据不完整");
   if (snapshot.runs.some((run) => ["queued", "running"].includes(run.status))) throw new Error("旧版仍有未完成任务，请先完成或取消任务再迁移");
-  const visit = (value) => {
-    if (!value || typeof value !== "object") return;
-    for (const [key, child] of Object.entries(value)) {
-      if (["encryptedSecret", "encryptedApiKey"].includes(key) && typeof child === "string" && child) {
-        try { decryptSecret(child, masterKey); } catch { throw new Error("原主密钥无法解密连接或历史任务，迁移已停止；请检查旧版环境文件"); }
-      } else if (typeof child === "object") visit(child);
-    }
-  };
-  visit(snapshot);
+  validateCredentials(snapshot, masterKey);
 }
 
-async function treeManifest(root) {
+function validateCredentials(value, masterKey) {
+  if (!value || typeof value !== "object") return;
+  for (const [key, child] of Object.entries(value)) {
+    if (["encryptedSecret", "encryptedApiKey"].includes(key) && typeof child === "string" && child) {
+      try { decryptSecret(child, masterKey); } catch { throw new Error("原主密钥无法解密连接或历史任务，迁移已停止；请检查旧版环境文件"); }
+    } else if (typeof child === "object") validateCredentials(child, masterKey);
+  }
+}
+
+const storageObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+const validAnchor = (value) => storageObject(value) && typeof value.transactionId === "string" && value.transactionId.length > 0
+  && typeof value.sha256 === "string" && /^[a-f0-9]{64}$/u.test(value.sha256);
+const sameAnchor = (left, right) => validAnchor(left) && validAnchor(right) && left.transactionId === right.transactionId && left.sha256 === right.sha256;
+const invalidSidecars = () => { throw new Error("数据库独立状态或核验证据缺失、损坏或身份不符，迁移已停止；请保留完整原资料"); };
+
+async function readStorageObject(path) {
+  const info = await lstat(path);
+  if (info.isSymbolicLink() || !info.isFile()) invalidSidecars();
+  const raw = await readFile(path);
+  return { raw, value: JSON.parse(raw.toString("utf8")) };
+}
+
+/** Validate only by reading. Do not instantiate a repository here: importing
+ * must never migrate, finalize, scan or otherwise write the selected source. */
+export async function validateDatabaseSidecars(database, snapshot, masterKey) {
+  const [pipelineRoot, evidenceRoot] = databaseSidecarRoots(database), settings = snapshot.applicationSettings ?? {};
+  try {
+    for (const root of [pipelineRoot, evidenceRoot]) {
+      const info = await lstat(root).catch(error => { if (error.code === "ENOENT") return undefined; throw error; });
+      if (info && (info.isSymbolicLink() || !info.isDirectory())) invalidSidecars();
+    }
+    const marker = settings["supplierCatalogPipelineStorage:v1"];
+    if (marker !== undefined) {
+      if (!storageObject(marker) || marker.schemaVersion !== 1 || !storageObject(marker.entries)) invalidSidecars();
+      for (const [key, anchor] of Object.entries(marker.entries)) {
+        if (!(key.startsWith("supplierCatalogPipeline:") || key === "supplier-catalog-pipeline-notice-cursors:v1")
+          || !validAnchor(anchor) || Object.hasOwn(settings, key)) invalidSidecars();
+        const { value: document } = await readStorageObject(join(pipelineRoot, `${hash(key)}.json`));
+        if (!storageObject(document) || document.schemaVersion !== 1 || document.key !== key) invalidSidecars();
+        for (const version of [document.committed, document.prepared]) {
+          if (version === undefined) continue;
+          if (!storageObject(version) || !validAnchor(version.anchor) || !Number.isSafeInteger(version.sequence) || version.sequence < 1
+            || typeof version.transactionId !== "string" || !version.transactionId || hash(JSON.stringify(version.value)) !== version.sha256) invalidSidecars();
+        }
+        if (document.prepared && (document.prepared.transactionId !== document.prepared.anchor.transactionId
+          || document.prepared.sha256 !== document.prepared.anchor.sha256)) invalidSidecars();
+        const selected = sameAnchor(document.prepared?.anchor, anchor) ? document.prepared : document.committed;
+        if (!selected || !sameAnchor(selected.anchor, anchor)) invalidSidecars();
+      }
+    }
+    const references = settings["supplierVerificationEvidenceStorage:v1"];
+    if (references !== undefined && (!storageObject(references) || references.schemaVersion !== 1 || !storageObject(references.entries))) invalidSidecars();
+    const seen = new Set();
+    for (const row of snapshot.supplierVerifications ?? []) {
+      if (seen.has(row.id)) invalidSidecars(); seen.add(row.id);
+      const reference = references && Object.hasOwn(references.entries, row.id) ? references.entries[row.id] : undefined;
+      if (!reference) { if (row.verificationEvidenceStorageVersion !== undefined) invalidSidecars(); continue; }
+      if (!storageObject(reference) || reference.schemaVersion !== 1 || reference.id !== row.id
+        || !Number.isSafeInteger(reference.revision) || reference.revision < 0 || typeof reference.sha256 !== "string" || !/^[a-f0-9]{64}$/u.test(reference.sha256)
+        || !Number.isSafeInteger(reference.byteLength) || reference.byteLength < 2
+        || row.verificationEvidenceStorageVersion !== 1 || row.revision !== reference.revision) invalidSidecars();
+      const { raw, value: record } = await readStorageObject(join(evidenceRoot, `${reference.sha256}.json`));
+      if (raw.length !== reference.byteLength || hash(raw) !== reference.sha256 || !storageObject(record) || record.id !== reference.id
+        || record.revision !== reference.revision || record.schemaVersion !== 1 || !Array.isArray(record.cases)
+        || !Array.isArray(record.evidence) || !Array.isArray(record.skipped)) invalidSidecars();
+      validateCredentials(record, masterKey);
+    }
+    if (references && Object.keys(references.entries).some(id => !seen.has(id))) invalidSidecars();
+  } catch (error) {
+    if (error.message?.startsWith("原主密钥无法解密")) throw error;
+    invalidSidecars();
+  }
+}
+
+async function treeManifest(root, withHashes = false) {
   const result = [];
-  if (!await exists(root)) return result;
+  const rootInfo = await lstat(root).catch(error => { if (error.code === "ENOENT") return undefined; throw error; });
+  if (!rootInfo) return result;
+  if (rootInfo.isSymbolicLink()) throw new Error("迁移目录包含符号链接，请先将素材整理为实际文件");
+  if (!rootInfo.isDirectory()) throw new Error("迁移目录不是实际文件夹");
   const walk = async (directory) => {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       const file = join(directory, entry.name);
       const info = await lstat(file);
       if (info.isSymbolicLink()) throw new Error("迁移目录包含符号链接，请先将素材整理为实际文件");
       if (info.isDirectory()) await walk(file);
-      else if (info.isFile()) result.push({ key: relative(root, file), size: info.size, modified: info.mtimeMs });
+      else if (info.isFile()) result.push({ key: relative(root, file), size: info.size, modified: info.mtimeMs,
+        ...(withHashes ? { sha256: hash(await readFile(file)) } : {}) });
+      else throw new Error("迁移目录包含非普通文件");
     }
   };
   await walk(root);
@@ -116,6 +195,7 @@ async function copyTree(source, target, manifest) {
     await mkdir(dirname(to), { recursive: true });
     await copyFile(within(source, file.key), to);
     if ((await stat(to)).size !== file.size) throw new Error("素材复制校验失败");
+    if (file.sha256 && hash(await readFile(to)) !== file.sha256) throw new Error("数据库独立文件复制校验失败");
   }
 }
 
@@ -140,14 +220,18 @@ export async function initializeProfile(root, { source, encrypt, ensureStopped =
     let summary = { source: null, createdAt: new Date().toISOString() };
     if (source) {
       await ensureStopped(source);
+      if ((await lstat(source.database)).isSymbolicLink()) throw new Error("迁移数据库包含符号链接，请先整理为实际文件");
       const raw = await readFile(source.database);
       const snapshot = JSON.parse(raw.toString("utf8").replace(/^\uFEFF/, ""));
       const masterKey = source.environment.MASTER_KEY || "local-development-master-key";
       validateSnapshot(snapshot, masterKey);
+      await validateDatabaseSidecars(source.database, snapshot, masterKey);
       const network = Object.fromEntries(NETWORK_KEYS.filter((key) => source.environment[key]).map((key) => [key, source.environment[key]]));
       secrets = { masterKey, network };
-      const entries = [[source.storage, "storage"], [source.projects, "projects"], [source.recovery, "data/artifact-recovery"]];
-      const before = await Promise.all(entries.map(([path]) => treeManifest(path)));
+      const sourceSidecars = databaseSidecarRoots(source.database);
+      const entries = [[source.storage, "storage"], [source.projects, "projects"], [source.recovery, "data/artifact-recovery"],
+        [sourceSidecars[0], "data/catalog-pipeline", true], [sourceSidecars[1], "data/supplier-verification-evidence", true]];
+      const before = await Promise.all(entries.map(([path, , hashes]) => treeManifest(path, hashes)));
       for (let i = 0; i < entries.length; i++) await copyTree(entries[i][0], join(stage, entries[i][1]), before[i]);
       for (const asset of snapshot.assets) {
         if (asset.deleted) continue;
@@ -155,12 +239,20 @@ export async function initializeProfile(root, { source, encrypt, ensureStopped =
         const file = within(join(stage, "storage"), asset.storageKey);
         if (!await exists(file) || (await stat(file)).size !== asset.size) throw new Error(`素材缺失或大小不符：${asset.id}`);
       }
-      const after = await Promise.all(entries.map(([path]) => treeManifest(path)));
-      await ensureStopped(source);
-      if (hash(await readFile(source.database)) !== hash(raw) || JSON.stringify(before) !== JSON.stringify(after)) throw new Error("迁移期间旧版数据发生变化，请停止旧版后重试");
       await writeFile(join(stage, "data/super-canvas.json"), raw);
       await mkdir(join(stage, "backups"), { recursive: true });
       await writeFile(join(stage, "backups/imported-database.json"), raw);
+      // The legacy backup filename remains, with its matching auxiliary roots.
+      // A copied main JSON alone is no longer a complete database backup.
+      for (let i = 0; i < sourceSidecars.length; i++) {
+        const suffix = i === 0 ? "catalog-pipeline" : "supplier-verification-evidence";
+        await copyTree(sourceSidecars[i], join(stage, `backups/imported-database.json.${suffix}`), before[i + 3]);
+      }
+      await ensureStopped(source);
+      const after = await Promise.all(entries.map(([path, , hashes]) => treeManifest(path, hashes)));
+      if (hash(await readFile(source.database)) !== hash(raw) || JSON.stringify(before) !== JSON.stringify(after)) throw new Error("迁移期间旧版数据发生变化，请停止旧版后重试");
+      await validateDatabaseSidecars(join(stage, "data/super-canvas.json"), snapshot, masterKey);
+      await validateDatabaseSidecars(join(stage, "backups/imported-database.json"), snapshot, masterKey);
       summary = { ...summary, source: source.root, databaseSha256: hash(raw), canvases: snapshot.canvases.length, assets: snapshot.assets.length, publicAssetChannel: source.environment.PUBLIC_BASE_URL ? "requires-reconfiguration" : "not-configured" };
     }
     await mkdir(join(stage, "storage"), { recursive: true });

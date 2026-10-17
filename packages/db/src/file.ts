@@ -1,8 +1,15 @@
-import { mkdir, rename, unlink, writeFile } from "node:fs/promises";
+import { mkdir, open, rename, unlink } from "node:fs/promises";
 import { readFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { OwnedJsonMemo } from "./owned-json-memo.js";
+import {
+  VerificationEvidenceStore, VERIFICATION_EVIDENCE_SETTING,
+  readVerificationEvidenceSnapshot, verificationEvidenceSummary,
+  type VerificationEvidenceReference, type StoredVerificationSummary,
+} from "./verification-evidence-store.js";
+import type { SupplierVerificationRecord } from "./supplier-verification.js";
+import { CatalogSidecarStore, isCatalogSidecarSetting } from "./catalog-sidecar.js";
 import { catalogPipelineSettingKey, prepareCatalogReservation, prepareCatalogPipelineUpdate, type CatalogObservationPrepared, type CatalogObservationReservation } from "./catalog-observation.js";
 import { setTimeout as delay } from "node:timers/promises";
 import type {
@@ -34,6 +41,8 @@ import {
 export const LOCAL_CANVAS_REVISION_LIMIT = 20;
 export const LOCAL_RETRYABLE_RUN_LIMIT = 20;
 export const RUN_RECOVERY_EXPIRED_KEY = "localRecoveryExpired";
+export const verificationEvidenceDirectory = (path: string): string => basename(path) === "super-canvas.json"
+  ? join(dirname(path), "supplier-verification-evidence") : `${path}.supplier-verification-evidence`;
 
 const compactedRunGraph: Record<string, unknown> = {
   schemaVersion: 1,
@@ -266,6 +275,11 @@ function readSnapshot(path: string): {
   }
 }
 
+export interface FileRepositoryOptions {
+  /** Benchmark/import tooling only. Existing external evidence cannot be downgraded. */
+  verificationEvidence?: "external" | "inline";
+}
+
 export class FileRepository extends MemoryRepository {
   private catalogGate: Promise<void> | null = null;
   private activeMutations = 0;
@@ -283,23 +297,50 @@ export class FileRepository extends MemoryRepository {
   private needsSnapshotWrite: boolean;
   private readonly path: string;
   private readonly replaceFile: typeof rename;
-  private readonly ownedJson = new OwnedJsonMemo();
+  private readonly ownedJson = new OwnedJsonMemo(256, 8 * 1024 * 1024);
+  private readonly catalogSidecars: CatalogSidecarStore;
+  private readonly evidenceStore: VerificationEvidenceStore;
+  private readonly externalEvidence: boolean;
+  private readonly evidenceCache = new WeakMap<SupplierVerificationRecord, {
+    reference: VerificationEvidenceReference; summary: StoredVerificationSummary;
+  }>();
   private readonly preservedDirectorFields = new Map<
     string,
     { originalJson: string; loadedJson: string }
   >();
 
-  constructor(path: string, replaceFile: typeof rename = rename) {
+  constructor(path: string, replaceFile: typeof rename = rename, options: FileRepositoryOptions = {}) {
     const storedFile = readSnapshot(path);
     const stored = storedFile?.snapshot;
+    const sidecars = new CatalogSidecarStore(path, stored?.version === 2 ? stored.applicationSettings : undefined);
+    const evidenceStore = new VerificationEvidenceStore(verificationEvidenceDirectory(path));
+    const evidenceReferences = readVerificationEvidenceSnapshot(sidecars.settings[VERIFICATION_EVIDENCE_SETTING]);
+    if (options.verificationEvidence === "inline" && evidenceReferences)
+      throw new Error("Cannot downgrade an external verification evidence snapshot");
+    const records = stored?.version === 2
+      ? evidenceStore.hydrateRecordsSync(stored.supplierVerifications ?? [], evidenceReferences) : undefined;
+    // Storage references never leak into portable in-memory snapshots or DTOs.
+    delete sidecars.settings[VERIFICATION_EVIDENCE_SETTING];
     const compacted = compactSnapshot(
-      stored ? migrateMemoryRepositorySnapshot(stored) : undefined,
+      stored ? { ...migrateMemoryRepositorySnapshot(stored), applicationSettings: sidecars.settings,
+        ...(records ? { supplierVerifications: records } : {}) } : undefined,
     );
     super(compacted.snapshot);
     this.path = path;
+    this.catalogSidecars = sidecars;
+    this.evidenceStore = evidenceStore;
+    this.externalEvidence = options.verificationEvidence !== "inline";
     this.replaceFile = replaceFile;
     this.needsSnapshotWrite = compacted.changed || stored?.version === 1;
     const loadedSnapshot = this.exportSnapshotView();
+    for (const row of loadedSnapshot.supplierVerifications ?? []) {
+      const reference = evidenceReferences && Object.hasOwn(evidenceReferences.entries, row.id)
+        ? evidenceReferences.entries[row.id] : undefined;
+      if (reference) this.evidenceCache.set(row, { reference, summary: verificationEvidenceSummary(row) });
+    }
+    this.needsSnapshotWrite ||= this.externalEvidence && Boolean(loadedSnapshot.supplierVerifications?.length) && !evidenceReferences;
+    sidecars.adoptReferences(loadedSnapshot.applicationSettings ?? {});
+    this.needsSnapshotWrite ||= sidecars.hasUnmigrated(loadedSnapshot.applicationSettings ?? {});
     for (const [field, originalJson] of storedFile?.directorFieldJson ?? []) {
       this.preservedDirectorFields.set(field, {
         originalJson,
@@ -329,7 +370,7 @@ export class FileRepository extends MemoryRepository {
     catch (error) { done(); return Promise.reject(error); }
   }
 
-  private catalogTransaction(candidate: (current: MemoryRepositorySnapshot) => MemoryRepositorySnapshot, publish: () => Promise<void>): Promise<void> {
+  private catalogTransaction(candidate: (current: MemoryRepositorySnapshot) => MemoryRepositorySnapshot, publish: () => Promise<void>, stateOnlyKey?: string): Promise<void> {
     const previous = this.catalogGate;
     let release!: () => void;
     const gate = new Promise<void>(resolve => { release = resolve; });
@@ -338,13 +379,20 @@ export class FileRepository extends MemoryRepository {
       if (previous) await previous;
       if (this.activeMutations) await new Promise<void>(resolve => { this.mutationIdleWaiters.push(resolve); });
       if (this.writeLoop) await this.writeLoop;
+      await this.catalogSidecars.recover((path, contents) => this.replaceDurableFile(path, contents));
       // Reuse untouched records while saves are gated. A catalog check need not
       // clone the user's canvases, media or conversation history into memory.
-      const contents = this.serializeSnapshot(candidate(this.exportSnapshotView()));
-      await this.replaceSnapshot(`${this.path}.${process.pid}.${++this.writeSequence}.tmp`, contents);
+      const next = candidate(this.exportSnapshotView());
+      if (stateOnlyKey && !this.catalogSidecars.hasUnmigrated(next.applicationSettings ?? {}) &&
+        await this.catalogSidecars.writeState(stateOnlyKey, next.applicationSettings?.[stateOnlyKey],
+          (path, contents) => this.replaceDurableFile(path, contents), publish)) {
+        this.catalogSidecars.adoptReferences(this.exportSnapshotView().applicationSettings ?? {});
+        return;
+      }
+      await this.persistSnapshot(next, publish);
+      this.catalogSidecars.adoptReferences(this.exportSnapshotView().applicationSettings ?? {});
       // No foreground mutation can have entered since the candidate was built.
       // Only a successful atomic replacement publishes in-memory records.
-      await publish();
       this.needsSnapshotWrite = false;
     };
     return work().finally(() => { if (this.catalogGate === gate) this.catalogGate = null; release(); });
@@ -356,12 +404,7 @@ export class FileRepository extends MemoryRepository {
       // These two stores use copy-on-write owned rows. Reuse their JSON without
       // cloning/stringifying all other suppliers on every scheduler checkpoint.
       // The final snapshot, barrier, CAS and single atomic rename stay intact.
-      const serialized = key === "applicationSettings"
-        ? `{${Object.entries(snapshot.applicationSettings ?? {}).flatMap(([setting, row]) => {
-          const json = this.ownedJson.stringify(`setting:${setting}`, row);
-          return json === undefined ? [] : [`${JSON.stringify(setting)}:${json}`];
-        }).join(",")}}`
-        : key === "connections"
+      const serialized = key === "connections"
           ? `[${snapshot.connections.map(row => this.ownedJson.stringify(`connection:${row.id}`, row)).join(",")}]`
           : JSON.stringify(value);
       if (serialized === undefined) continue;
@@ -380,16 +423,31 @@ export class FileRepository extends MemoryRepository {
     temporaryPath: string,
     contents: string,
   ): Promise<void> {
-    await mkdir(dirname(this.path), { recursive: true });
+    await this.replaceDurableFile(this.path, contents, temporaryPath);
+  }
+
+  private async replaceDurableFile(path: string, contents: string,
+    temporaryPath = `${path}.${process.pid}.${++this.writeSequence}.tmp`): Promise<void> {
+    await mkdir(dirname(path), { recursive: true });
 
     // Windows can briefly hold the destination while another reader closes it.
     // Retry the atomic replacement instead of poisoning the save queue.
     const retryableCodes = new Set(["EPERM", "EACCES", "EBUSY", "ETXTBSY"]);
     try {
-      await writeFile(temporaryPath, contents, "utf8");
+      const file = await open(temporaryPath, "w");
+      try { await file.writeFile(contents, "utf8"); await file.sync(); }
+      finally { await file.close(); }
       for (let attempt = 0; ; attempt += 1) {
         try {
-          await this.replaceFile(temporaryPath, this.path);
+          await this.replaceFile(temporaryPath, path);
+          // Directory fsync is available on POSIX. Windows does not permit
+          // opening a directory; the fully synced file is still atomically replaced.
+          try {
+            const directory = await open(dirname(path), "r");
+            try { await directory.sync(); } finally { await directory.close(); }
+          } catch (error) {
+            if (process.platform !== "win32" || !["EPERM", "EACCES", "EISDIR", "EINVAL", "ENOTSUP", "EBADF"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+          }
           return;
         } catch (error) {
           const code = (error as NodeJS.ErrnoException).code;
@@ -403,6 +461,57 @@ export class FileRepository extends MemoryRepository {
       // this is safe for both normal and failed replacements.
       await unlink(temporaryPath).catch(() => undefined);
     }
+  }
+
+  private async persistSnapshot(snapshot: MemoryRepositorySnapshot, publish?: () => Promise<void>): Promise<void> {
+    await this.catalogSidecars.recover((path, contents) => this.replaceDurableFile(path, contents));
+    const withEvidence = await this.externalizeEvidence(snapshot);
+    const prepared = await this.catalogSidecars.prepare(snapshot.applicationSettings ?? {},
+      (path, contents) => this.replaceDurableFile(path, contents));
+    const diskSnapshot = { ...withEvidence, applicationSettings: this.catalogSidecars.mainSettings(withEvidence.applicationSettings ?? {}, prepared.marker) };
+    const contents = this.serializeSnapshot(diskSnapshot);
+    try {
+      await this.replaceSnapshot(`${this.path}.${process.pid}.${++this.writeSequence}.tmp`, contents);
+    } catch (error) {
+      // A rename can land before directory fsync (or an injected error) fails.
+      // Compare complete bytes only on failure: an unchanged marker alone does
+      // not prove that a legacy business-only candidate reached disk.
+      let landed = false;
+      try { landed = readFileSync(this.path, "utf8") === contents; } catch { /* No durable replacement can be proved. */ }
+      if (landed) {
+        this.catalogSidecars.accept(prepared, snapshot.applicationSettings ?? {});
+        if (publish) await publish();
+      }
+      throw error;
+    }
+    // The main atomic rename is the commit point. Publish memory before
+    // finalizing the sidecar so even a finalization error cannot expose old
+    // business rows next to a committed new queue/counter on disk.
+    this.catalogSidecars.accept(prepared, snapshot.applicationSettings ?? {});
+    if (publish) await publish();
+    await this.catalogSidecars.recover((path, contents) => this.replaceDurableFile(path, contents));
+  }
+
+  private async externalizeEvidence(snapshot: MemoryRepositorySnapshot): Promise<MemoryRepositorySnapshot> {
+    const records = snapshot.supplierVerifications ?? [];
+    if (!this.externalEvidence || !records.length) return snapshot;
+    const entries: Record<string, VerificationEvidenceReference> = Object.create(null) as Record<string, VerificationEvidenceReference>;
+    const summaries: StoredVerificationSummary[] = [];
+    for (const record of records) {
+      if (Object.hasOwn(entries, record.id)) throw new Error("Duplicate verification evidence identity");
+      let cached = this.evidenceCache.get(record);
+      if (!cached) {
+        cached = { reference: await this.evidenceStore.writeRecord(record), summary: verificationEvidenceSummary(record) };
+        // Only immutable repository-owned rows are memoized. Public inputs and
+        // returned DTOs are clones, and updates replace the owned row identity.
+        this.evidenceCache.set(record, cached);
+      }
+      entries[record.id] = cached.reference;
+      summaries.push(cached.summary);
+    }
+    return { ...snapshot, supplierVerifications: summaries, applicationSettings: {
+      ...snapshot.applicationSettings, [VERIFICATION_EVIDENCE_SETTING]: { schemaVersion: 1, entries },
+    } };
   }
 
   private resolveWriteWaiters(): void {
@@ -426,9 +535,7 @@ export class FileRepository extends MemoryRepository {
         const compacted = compactSnapshot(this.exportSnapshotView());
         const snapshot = compacted.snapshot ?? this.exportSnapshotView();
         this.applyCompactedRecords(snapshot);
-        const contents = this.serializeSnapshot(snapshot);
-        const temporaryPath = `${this.path}.${process.pid}.${++this.writeSequence}.tmp`;
-        await this.replaceSnapshot(temporaryPath, contents);
+        await this.persistSnapshot(snapshot);
         this.completedWriteGeneration = generation;
         this.needsSnapshotWrite = generation < this.requestedWriteGeneration;
         this.resolveWriteWaiters();
@@ -554,7 +661,7 @@ export class FileRepository extends MemoryRepository {
   override async setApplicationSetting(key: string, value: unknown): Promise<void> {
     const saved = structuredClone(value);
     await this.catalogTransaction(snapshot => ({ ...snapshot, applicationSettings: { ...snapshot.applicationSettings, [key]: saved } }),
-      () => super.setApplicationSetting(key, saved));
+      () => super.setApplicationSetting(key, saved), isCatalogSidecarSetting(key) ? key : undefined);
   }
 
   override async commitCatalogSnapshot(input: Parameters<MemoryRepository["commitCatalogSnapshot"]>[0]): Promise<void> {
@@ -577,7 +684,7 @@ export class FileRepository extends MemoryRepository {
       prepared = { connections: [], pipeline: result.pipeline };
       return { ...snapshot, applicationSettings: { ...snapshot.applicationSettings,
         [catalogPipelineSettingKey(result.pipeline.supplierId)]: result.pipeline } };
-    }, async () => { this.publishCatalogObservation(prepared); });
+    }, async () => { this.publishCatalogObservation(prepared); }, catalogPipelineSettingKey(request.identity.supplierId));
     return reservation;
   }
 
@@ -591,7 +698,8 @@ export class FileRepository extends MemoryRepository {
         [catalogPipelineSettingKey(prepared.pipeline.supplierId)]: prepared.pipeline },
         suppliers: snapshot.suppliers?.map(row => row.id === prepared.supplier?.id ? prepared.supplier : row),
         connections: snapshot.connections.map(row => rows.get(row.id) ?? row) };
-    }, async () => { this.publishCatalogObservation(prepared); });
+    }, async () => { this.publishCatalogObservation(prepared); },
+      request.connections?.length || request.groups?.length || request.supplierFields ? undefined : catalogPipelineSettingKey(request.reservation.identity.supplierId));
     return this.catalogPipelineResult(prepared.pipeline, request.resultEntryKeys, request.resultEntryPrefixes);
   }
 
@@ -603,7 +711,7 @@ export class FileRepository extends MemoryRepository {
         (value, supplierId) => this.assertStoredCatalogPipelineState(value, supplierId));
       prepared = { connections: [], pipeline };
       return { ...snapshot, applicationSettings: { ...snapshot.applicationSettings, [catalogPipelineSettingKey(pipeline.supplierId)]: pipeline } };
-    }, async () => { this.publishCatalogObservation(prepared); });
+    }, async () => { this.publishCatalogObservation(prepared); }, catalogPipelineSettingKey(request.identity.supplierId));
     return this.catalogPipelineResult(prepared.pipeline, request.resultEntryKeys, request.resultEntryPrefixes);
   }
 

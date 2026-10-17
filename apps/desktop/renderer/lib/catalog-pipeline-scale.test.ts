@@ -1,4 +1,4 @@
-﻿import { rename, stat, mkdir, readFile, writeFile } from "node:fs/promises";
+import { rename, stat, mkdir, mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { monitorEventLoopDelay, performance } from "node:perf_hooks";
 import { describe, expect, it, vi } from "vitest";
@@ -228,7 +228,8 @@ describe("16 supplier / 131 Key isolated catalog scale", () => {
     expect(connection?.config.parameters).toEqual({ quality: "high", userMustKeep: true }); service.close();
   }, 30_000);
   it("measures full-state atomic writes and foreground canvas saves with all 16 namespaces populated", async () => {
-    const directory = resolve(process.cwd(), "../../../.codex-temp/catalog-slice3-scale"), path = resolve(directory, "full-state-snapshot.json");
+    const directory = resolve(process.cwd(), "../../../.codex-temp/catalog-slice3-scale");
+    const runDirectory = await mkdtemp(resolve(directory, "save-run-")), path = resolve(runDirectory, "full-state-snapshot.json");
     const meta = JSON.parse(await readFile(resolve(directory, "filled-snapshot-meta.json"), "utf8")) as { fixtureOnly: boolean; suppliers: number; connections: number; clockNow: number; cycles: number };
     expect(meta).toMatchObject({ fixtureOnly: true, suppliers: 16, connections: 131, cycles: 4 });
     const seed = await readFile(resolve(directory, "filled-snapshot.json"), "utf8");
@@ -239,38 +240,57 @@ describe("16 supplier / 131 Key isolated catalog scale", () => {
     const initialStateBytes = namespaceValues.reduce((sum, [, value]) => sum + Buffer.byteLength(JSON.stringify(value)), 0);
     await writeFile(path, seed);
     let writes = 0, maxSnapshotBytes = 0;
-    const foreground: Promise<void>[] = [], foregroundMs: number[] = [], replacementMs: number[] = [], fullStateReadMs: number[] = [];
+    const foregroundMs: number[] = [], replacementMs: number[] = [], fullStateReadMs: number[] = [];
     const repository = new FileRepository(path, async (from, to) => {
       const begin = performance.now(); writes++; maxSnapshotBytes = Math.max(maxSnapshotBytes, (await stat(String(from))).size);
-      if (writes % 3 === 0 && foreground.length < 24) {
-        const readStarted = performance.now(); await repository.getCatalogPipelineState("scale-supplier-0"); fullStateReadMs.push(performance.now() - readStarted);
-        const started = performance.now();
-        foreground.push(repository.saveCanvas({ id: "foreground-fixture", title: "Foreground fixture", graph: {
-          nodes: Array.from({ length: 200 }, (_, index) => ({ id: "foreground-" + index, position: { x: index * 240 + writes, y: 0 }, data: { text: "Fictional foreground save" } })), edges: [],
-        } }).then(() => { foregroundMs.push(performance.now() - started); }));
-      }
       await rename(from, to); replacementMs.push(performance.now() - begin);
     });
+    // Separate migration from steady-state saves. Schedule foreground work
+    // independently: pure state checkpoints no longer replace the main file.
+    await repository.flush();
     const timer = fixtureClock(); timer.advance(meta.clockNow - timer.clock.now() + DAY + 1_000);
     const transport = fixtureTransport(timer.clock, () => 0), service = createCatalogPipelineService({ environment: {}, repository, clock: timer.clock,
       sessionStartedAt: timer.clock.now() - 60_000, random: () => .5, readers: async () => ({ apiKey: "fictional", fetchFor: () => transport }) });
     const ids = (await repository.listConnections()).filter(connection => connection.id.startsWith("scale-supplier-0-")).map(connection => connection.id);
     const lag = monitorEventLoopDelay({ resolution: 10 }); lag.enable(); const started = performance.now();
-    await sweep(service, ids, timer, "full-state-file-cycle", repository); service.close(); await Promise.all(foreground); lag.disable();
+    let settled = false, savesWhileChecking = 0;
+    const checking = sweep(service, ids, timer, "full-state-file-cycle", repository).finally(() => { settled = true; });
+    void checking.catch(() => {});
+    try {
+    for (let sample = 0; sample < 24; sample++) {
+      await new Promise<void>(done => setImmediate(done));
+      if (!settled) savesWhileChecking++;
+      const readStarted = performance.now(); await repository.getCatalogPipelineState("scale-supplier-0"); fullStateReadMs.push(performance.now() - readStarted);
+      const savedAt = performance.now();
+      await repository.saveCanvas({ id: "foreground-fixture", title: "Foreground fixture", graph: {
+        nodes: Array.from({ length: 200 }, (_, index) => ({ id: "foreground-" + index, position: { x: index * 240 + sample, y: 0 }, data: { text: "Fictional foreground save" } })), edges: [],
+      } });
+      foregroundMs.push(performance.now() - savedAt);
+    }
+    await checking; service.close(); lag.disable();
     const data = JSON.parse(await readFile(path, "utf8")) as { applicationSettings: Record<string, unknown> };
     const result = { fixture: { suppliers: 16, connections: 131, keyModels: 64, publicModelsPerSupplier: 512, populatedCycles: 4, activeOwnerKeys: 9 },
       elapsedMs: performance.now() - started, writes, actualUpstreamRequests: 0, mockedHttpCalls: transport.mock.calls.length,
       initialSnapshotBytes: Buffer.byteLength(seed), maxSnapshotBytes, initialPipelineStateBytes: initialStateBytes,
-      pipelineStateBytes: Object.entries(data.applicationSettings).filter(([key]) => key.startsWith("supplierCatalogPipeline:")).reduce((sum, [, value]) => sum + Buffer.byteLength(JSON.stringify(value)), 0),
+      pipelineStateBytesInMain: Object.entries(data.applicationSettings).filter(([key]) => key.startsWith("supplierCatalogPipeline:")).reduce((sum, [, value]) => sum + Buffer.byteLength(JSON.stringify(value)), 0),
+      savesWhileChecking,
       atomicRenameCallbackMs: { p50: quantile(replacementMs, .5), p95: quantile(replacementMs, .95), max: Math.max(0, ...replacementMs) },
       fullNamespaceReadMs: { samples: fullStateReadMs.length, p50: quantile(fullStateReadMs, .5), p95: quantile(fullStateReadMs, .95), max: Math.max(0, ...fullStateReadMs) },
       eventLoopDelayMs: { resolution: 10, p50: lag.percentile(50) / 1e6, p95: lag.percentile(95) / 1e6, max: lag.max / 1e6 },
       foregroundSaveMs: { samples: foregroundMs.length, p50: quantile(foregroundMs, .5), p95: quantile(foregroundMs, .95), max: Math.max(0, ...foregroundMs) } };
     if (process.env.CATALOG_SCALE_EVIDENCE) await writeFile(resolve(process.env.CATALOG_SCALE_EVIDENCE, "scale-file-full-state.json"), JSON.stringify(result, null, 2));
     expect(writes).toBeGreaterThan(0); expect(transport).toHaveBeenCalledTimes(11); expect(foregroundMs).toHaveLength(24);
+    expect(savesWhileChecking).toBeGreaterThan(0);
+    expect(result.pipelineStateBytesInMain).toBe(0);
+    expect(await repository.getCatalogPipelineState("scale-supplier-0")).toBeDefined();
     expect((await repository.getCanvas("foreground-fixture"))?.graph.nodes).toHaveLength(200);
     for (const original of initial.connections.filter(connection => !connection.id.startsWith("scale-supplier-0-")))
       expect(await repository.getConnection(original.id)).toEqual(original);
     expect(result.foregroundSaveMs.p95).toBeLessThan(1500);
+    } finally {
+      await checking.catch(() => {}); service.close(); lag.disable();
+      // Unique fictional run directory, never a user's data path.
+      await rm(runDirectory, { recursive: true, force: true });
+    }
   }, 600_000);
 });

@@ -1,10 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, readFile, readdir, rm, stat } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, readdir, rm, stat, unlink, utimes, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
 import { encryptSecret } from "@super-canvas/providers/credentials";
-import { initializeProfile, loadProfile, discoverSource, parseEnvironment, validateSnapshot, within } from "../src/data.mjs";
+import { initializeProfile, loadProfile, discoverSource, parseEnvironment, validateSnapshot, within, databaseSidecarRoots } from "../src/data.mjs";
+import { FileRepository, catalogObservationIdentity } from "../../../packages/db/dist/index.js";
 import { backendEnvironment, isAppUrl, externalUrl } from "../src/policy.mjs";
 
 const snapshot = () => ({ version: 2, canvases: [], revisions: [], assets: [], connections: [], runs: [], nodeRuns: [], webhookKeys: [], directorProfiles: [], directorSessions: [], directorMessages: [], directorProposals: [] });
@@ -120,3 +122,134 @@ test("runtime inherits only allowed environment and never publishes the old asse
   assert.equal(externalUrl("https://user:password@example.com"), null);
   assert.deepEqual(parseEnvironment('\uFEFFMASTER_KEY="some-key"\n# comment\nPORT=3210'), { MASTER_KEY: "some-key", PORT: "3210" });
 });
+
+async function storageFixture(root) {
+  const sourceRoot = join(root, "source"), database = join(sourceRoot, "data/super-canvas.json");
+  const repository = new FileRepository(database);
+  const supplier = await repository.saveSupplier({ id: "supplier", name: "Fixture", supplierKey: "fixture",
+    siteUrl: "https://fixture.invalid", apiUrl: "https://fixture.invalid/v1", kind: "newapi", scanStatus: "live", catalog: { groups: [] } });
+  const connection = await repository.saveConnection({ id: "connection", provider: "openai", name: "Fixture",
+    encryptedSecret: encryptSecret("fictional-api-key", "local-development-master-key"), config: { supplierId: supplier.id, baseUrl: supplier.apiUrl } });
+  await repository.updateCatalogPipelineState({ identity: catalogObservationIdentity(supplier, [connection]), expectedMode: "daily",
+    state: [{ key: "queue", value: { status: "deferred", due: "2099-01-01T00:00:00Z" } }] });
+  await repository.setApplicationSetting("supplier-catalog-pipeline-notice-cursors:v1", { "supplier/changes": 4 });
+  const firstRecord = await repository.saveSupplierVerification({ id: supplier.id, schemaVersion: 1, revision: 0, sourceId: "fixture-source",
+    policyVersion: 2, limit: 0, used: 0, round: 1, paused: true, pauseReason: "safety", createdAt: "2026-10-17T00:00:00Z", updatedAt: "2026-10-17T00:00:00Z",
+    cases: [], evidence: [], skipped: [], originalResponse: { requestId: "original-fictional-request", payload: "未截断的原始正文".repeat(2000) } }, 0);
+  await repository.saveSupplierVerification({ ...firstRecord, originalResponse: { ...firstRecord.originalResponse, extra: "second revision" } }, firstRecord.revision);
+  await repository.flush();
+  return { source: await discoverSource(sourceRoot), database, supplier, expected: repository.exportSnapshot() };
+}
+
+async function treeHashes(root) {
+  const entries = [];
+  const walk = async directory => {
+    for (const file of await readdir(directory, { withFileTypes: true })) {
+      const target = join(directory, file.name);
+      if (file.isDirectory()) await walk(target);
+      else entries.push([target.slice(root.length), createHash("sha256").update(await readFile(target)).digest("hex")]);
+    }
+  };
+  await walk(root); return entries.sort(([left], [right]) => left.localeCompare(right));
+}
+
+test("new storage import preserves cold-open state, complete evidence history and a cold-openable backup", async () => {
+  const root = await mkdtemp(join(tmpdir(), "canvas-sidecar-complete-"));
+  try {
+    const fixture = await storageFixture(root), target = join(root, "target");
+    const original = await readFile(fixture.database), sourceRoots = databaseSidecarRoots(fixture.database);
+    const before = await Promise.all(sourceRoots.map(treeHashes));
+    await initializeProfile(target, { source: fixture.source, encrypt: protect, ensureStopped: async () => {} });
+    const current = join(target, "profile/data/super-canvas.json"), backup = join(target, "profile/backups/imported-database.json");
+    assert.deepEqual(new FileRepository(current).exportSnapshot(), fixture.expected);
+    assert.deepEqual(new FileRepository(backup).exportSnapshot(), fixture.expected);
+    assert.deepEqual(await readFile(fixture.database), original);
+    assert.deepEqual(await Promise.all(sourceRoots.map(treeHashes)), before);
+    assert.deepEqual(await Promise.all(databaseSidecarRoots(current).map(treeHashes)), before);
+    assert.deepEqual(await Promise.all(databaseSidecarRoots(backup).map(treeHashes)), before);
+    assert.equal((await readdir(sourceRoots[1])).length, 2, "both historical immutable blobs remain");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+for (const kind of ["missing-state", "corrupt-state", "changed-state", "missing-evidence", "corrupt-evidence", "changed-evidence"]) {
+  test(`${kind} prevents profile activation and leaves the selected source intact`, async () => {
+    const root = await mkdtemp(join(tmpdir(), `canvas-${kind}-`));
+    try {
+      const fixture = await storageFixture(root), target = join(root, "target"), [pipeline, evidence] = databaseSidecarRoots(fixture.database);
+      const main = JSON.parse(await readFile(fixture.database, "utf8"));
+      const file = kind.endsWith("state")
+        ? join(pipeline, `${createHash("sha256").update("supplierCatalogPipeline:supplier").digest("hex")}.json`)
+        : join(evidence, `${main.applicationSettings["supplierVerificationEvidenceStorage:v1"].entries.supplier.sha256}.json`);
+      if (kind.startsWith("missing")) await unlink(file);
+      else if (kind.startsWith("changed")) {
+        const changed = JSON.parse(await readFile(file, "utf8"));
+        if (kind.endsWith("state")) changed.committed.value.entries.queue.status = "tampered";
+        else changed.originalResponse.requestId = "different-request";
+        await writeFile(file, JSON.stringify(changed), "utf8");
+      } else await writeFile(file, "{corrupt-json", "utf8");
+      const original = await readFile(fixture.database), before = await Promise.all([pipeline, evidence].map(treeHashes));
+      await assert.rejects(initializeProfile(target, { source: fixture.source, encrypt: protect, ensureStopped: async () => {} }), /独立状态或核验证据/);
+      await assert.rejects(stat(join(target, "profile")), { code: "ENOENT" });
+      assert.deepEqual(await readdir(target), []);
+      assert.deepEqual(await readFile(fixture.database), original);
+      assert.deepEqual(await Promise.all([pipeline, evidence].map(treeHashes)), before);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+}
+
+test("import reads a main-committed prepared state without finalizing or modifying the source", async () => {
+  const root = await mkdtemp(join(tmpdir(), "canvas-sidecar-prepared-"));
+  try {
+    const fixture = await storageFixture(root), pipeline = databaseSidecarRoots(fixture.database)[0];
+    const file = join(pipeline, `${createHash("sha256").update("supplierCatalogPipeline:supplier").digest("hex")}.json`);
+    const document = JSON.parse(await readFile(file, "utf8"));
+    await writeFile(file, JSON.stringify({ schemaVersion: 1, key: document.key, prepared: document.committed }), "utf8");
+    const original = await readFile(file), target = join(root, "target");
+    await initializeProfile(target, { source: fixture.source, encrypt: protect, ensureStopped: async () => {} });
+    assert.deepEqual(new FileRepository(join(target, "profile/data/super-canvas.json")).exportSnapshot(), fixture.expected);
+    assert.deepEqual(new FileRepository(join(target, "profile/backups/imported-database.json")).exportSnapshot(), fixture.expected);
+    assert.deepEqual(await readFile(file), original);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("sidecar source changes with identical size and mtime are rejected by the final content hash after the stopped check", async () => {
+  const root = await mkdtemp(join(tmpdir(), "canvas-sidecar-race-"));
+  try {
+    const fixture = await storageFixture(root), target = join(root, "target"), pipeline = databaseSidecarRoots(fixture.database)[0];
+    const file = join(pipeline, `${createHash("sha256").update("supplierCatalogPipeline:supplier").digest("hex")}.json`);
+    // Fix representable integer seconds so the test changes content only.
+    await utimes(file, new Date("2026-10-17T00:00:00Z"), new Date("2026-10-17T00:00:00Z"));
+    const info = await stat(file), original = await readFile(file, "utf8"); let probes = 0;
+    await assert.rejects(initializeProfile(target, { source: fixture.source, encrypt: protect, ensureStopped: async () => {
+      if (++probes !== 2) return;
+      const changed = original.replace("deferred", "requeued");
+      assert.notEqual(changed, original); assert.equal(Buffer.byteLength(changed), Buffer.byteLength(original));
+      await writeFile(file, changed, "utf8"); await utimes(file, info.atime, info.mtime);
+    } }), /数据发生变化/);
+    const after = await stat(file); assert.equal(after.size, info.size); assert.equal(after.mtimeMs, info.mtimeMs);
+    assert.equal(probes, 2); await assert.rejects(stat(join(target, "profile")), { code: "ENOENT" });
+    assert.deepEqual(await readdir(target), []);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+for (const type of ["root", "child"]) {
+  test(`an auxiliary ${type} symlink cannot be imported`, async t => {
+    const root = await mkdtemp(join(tmpdir(), `canvas-sidecar-link-${type}-`));
+    try {
+      const fixture = await storageFixture(root), pipeline = databaseSidecarRoots(fixture.database)[0], target = join(root, "target");
+      const linked = join(root, "unrelated"), original = await readFile(fixture.database);
+      await mkdir(linked); await writeFile(join(linked, "history.bin"), "unrelated");
+      try {
+        if (type === "root") { await rm(pipeline, { recursive: true }); await symlink(linked, pipeline, process.platform === "win32" ? "junction" : "dir"); }
+        else await symlink(linked, join(pipeline, "nested-link"), process.platform === "win32" ? "junction" : "dir");
+      } catch (error) {
+        if (["EPERM", "EACCES", "ENOTSUP"].includes(error.code)) { t.skip("symlinks unavailable in this environment"); return; }
+        throw error;
+      }
+      await assert.rejects(initializeProfile(target, { source: fixture.source, encrypt: protect, ensureStopped: async () => {} }), /符号链接|独立状态或核验证据/);
+      await assert.rejects(stat(join(target, "profile")), { code: "ENOENT" });
+      assert.deepEqual(await readFile(fixture.database), original);
+      assert.equal(await readFile(join(linked, "history.bin"), "utf8"), "unrelated");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+}

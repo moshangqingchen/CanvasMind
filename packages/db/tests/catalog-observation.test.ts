@@ -388,12 +388,13 @@ describe("catalog observation atomic storage", () => {
     expect((await disk.getSupplier(supplier.id))?.catalog.groups.map(group => group.models[0]?.priceLabel)).toEqual(["¥0.20/张", "¥0.20/张"]);
     expect(await disk.getApplicationSetting(catalogPipelineSettingKey(supplier.id))).toMatchObject({ nextDispatchSeq: 3, entries: { "job:connection-a": { count: 1 }, "job:connection-b": { count: 1 } } });
   });
-  it("one durable rename publishes directory and queue/counter state together", async () => {
-    const path = await testPath(); let writes = 0;
-    const repository = new FileRepository(path, async (from, to) => { writes++; return rename(from, to); });
-    const { supplier, connections } = await seed(repository), token = await reserve(repository, supplier, connections[0]!); writes = 0;
+  it("a prepared sidecar and one main rename publish directory and queue/counter state together", async () => {
+    const path = await testPath(); const writes: string[] = [];
+    const repository = new FileRepository(path, async (from, to) => { writes.push(String(to)); return rename(from, to); });
+    const { supplier, connections } = await seed(repository), token = await reserve(repository, supplier, connections[0]!); writes.length = 0;
     await repository.commitCatalogObservation(change(token, connections[0]!));
-    expect(writes).toBe(1);
+    expect(writes.filter(target => target === path)).toHaveLength(1);
+    expect(writes.filter(target => target !== path)).toHaveLength(2);
     const disk = new FileRepository(path);
     expect((await disk.getSupplier(supplier.id))?.catalog.groups[0]?.models[0]?.priceLabel).toBe("¥0.20/张");
     expect(await disk.getApplicationSetting(catalogPipelineSettingKey(supplier.id))).toMatchObject({ entries: { "job:connection-a": { count: 1 } }, sources: { "connection-a": { lastAcceptedSeq: token.dispatchSeq } } });
