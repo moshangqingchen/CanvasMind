@@ -12,6 +12,7 @@ import { ModelPriceDetails } from "./model-price-details";
 import { AgentCatalogNotice } from "./agent-catalog-notice";
 import type { AgentCatalogConnection } from "../lib/agent-catalog-status";
 import styles from "./creative-agent-panel.module.css";
+import "./information-layout.css";
 
 type Call = AgentProposal["calls"][number];
 export function AgentPlanStepEditor({ call, route, connections, catalogConnections, disabled, onManage, onChange }: {
@@ -77,7 +78,7 @@ export function AgentPlanStepEditor({ call, route, connections, catalogConnectio
       <ModelResolutionShortcuts models={models} selected={selected.model} onChange={id => choose(candidates.find(candidate => candidate.connectionId === connectionId && candidate.model.id === id))} />
       <NodeParameterFields nodeId={`agent-${call.id}`} nodeType={agentNodeType(call.requirements.operation)} provider={selected.provider} model={selected.model}
         operation={call.requirements.operation} parameters={parameters} showAdvanced={false} normalizeAutomatically={false} onChange={updateParameters} />
-      {issues.length > 0 && <p role="alert" className={styles.parameterNotice}>{issues.map(issue => issue.message).join("；")}</p>}
+      {issues.length > 0 && <ul role="alert" className={`information-list ${styles.parameterNotice}`}>{issues.map((issue, index) => <li key={index}>{issue.message}</li>)}</ul>}
       <ModelPriceDetails model={selected.model} parameters={{ ...parameters, prompt: call.prompt }} />
     </>}
   </fieldset>;

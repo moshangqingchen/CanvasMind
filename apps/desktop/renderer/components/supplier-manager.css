@@ -721,7 +721,7 @@
 }
 .sm-model-item {
   display:grid;
-  grid-template-columns:minmax(130px, 1.3fr) minmax(130px, 1fr) minmax(100px, .7fr);
+  grid-template-columns:minmax(0, 1fr) minmax(120px, 1fr) min(48%, 224px);
   align-items:start;
   gap:16px;
   padding:14px;
@@ -738,8 +738,10 @@
   overflow-wrap:anywhere;
   font-family:ui-monospace, SFMono-Regular, Consolas, monospace;
 }
-.sm-model-item span,
-.sm-model-item small {
+.sm-model-item > span,
+.sm-model-item > small,
+.sm-model-facts > span,
+.sm-model-facts > small {
   color:var(--muted);
   font-size:12px;
 }
@@ -1167,7 +1169,7 @@
 .sm-model-filters select, .sm-mobile-supplier select { padding:7px 10px; max-width:100%; min-width:0; color:var(--text); background:var(--panel); border:1px solid var(--line); border-radius:999px; }
 .sm-model-filters select { border-color:transparent; background:transparent; }
 .sm-model-filters option { background:var(--surface-floating); }
-.sm-model-columns { position:sticky; top:0; z-index:2; display:grid; grid-template-columns:minmax(130px, 1.3fr) minmax(130px, 1fr) minmax(100px, .7fr); gap:16px; padding:10px 14px; color:var(--muted); font-size:12px; background:var(--surface-floating); }
+.sm-model-columns { position:sticky; top:0; z-index:2; display:grid; grid-template-columns:minmax(0, 1fr) minmax(120px, 1fr) min(48%, 224px); gap:16px; padding:10px 14px; color:var(--muted); font-size:12px; background:var(--surface-floating); }
 .sm-model-columns > :last-child { text-align:right; }
 .sm-model-name { display:grid; gap:6px; min-width:0; }
 .sm-model-name strong { color:var(--text); font-size:14px; font-weight:500; overflow-wrap:anywhere; line-height:1.5; }
@@ -1177,8 +1179,14 @@
 .sm-model-evidence { flex-basis:100%; font-size:12px; color:var(--muted); }
 .sm-model-evidence summary { cursor:pointer; width:fit-content; }
 .sm-model-evidence p { margin:8px 0 0; overflow-wrap:anywhere; }
-.sm-model-price { font-size:13px; color:var(--text); line-height:1.7; overflow-wrap:anywhere; text-align:right; font-variant-numeric:tabular-nums; }
+.sm-model-price { min-width:0; font-size:13px; color:var(--text); line-height:1.7; overflow-wrap:normal; text-align:right; font-variant-numeric:tabular-nums; }
 .sm-model-price-evidence { grid-column:1 / -1; min-width:0; text-align:left; }
+.sm-model-price-details { min-width:0; margin:0 0 8px; font-size:12px; color:var(--text-secondary); }
+.sm-model-price-details > summary { width:fit-content; cursor:pointer; }
+.sm-model-price-details[open] > summary { margin-bottom:10px; }
+.sm-model-freshness-rows { display:grid; gap:4px; }
+.sm-model-interface { display:flex; flex-wrap:wrap; gap:4px 10px; }
+.sm-model-item .information-grid dd { color:var(--text); }
 .sm-model-price-evidence ul { grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr)); }
 .sm-model-route-guide { margin:0 0 12px; color:var(--muted); font-size:12px; line-height:1.7; }
 .sm-model-families { display:grid; gap:10px; margin-bottom:10px; }
@@ -1205,7 +1213,7 @@
   .sm-model-item, .sm-model-columns { grid-template-columns:minmax(115px, 1fr) minmax(110px, 1fr); }
   .sm-model-columns > :last-child { display:none; }
   .sm-model-price { grid-column:1 / -1; }
-  .sm-model-price::before { content:"参考标价："; color:var(--muted); }
+  .sm-model-price::before { content:"概括价："; color:var(--text-tertiary); }
 }
 @media (max-width:700px) {
   .sm-sidebar { max-height:245px; }

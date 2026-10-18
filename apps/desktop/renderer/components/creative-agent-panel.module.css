@@ -88,6 +88,7 @@
 .planStep summary small { margin:3px 0; font-size:11px; }
 .planStep .stepMeta { display:block; white-space:normal; overflow:visible; text-overflow:clip; overflow-wrap:anywhere; line-height:1.7; }
 .stepMeta code { font:inherit; font-family:ui-monospace,"Cascadia Mono",Consolas,monospace; }
+.stepMeta > span { display:block; margin-top:3px; }
 .planStep .promptPreview { margin:7px 0; white-space:normal; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; color:var(--agent-muted); font-size:12px; }
 .buttons { display:flex; flex-wrap:wrap; gap:7px; margin-top:12px; }
 .panel .primary { border-radius:999px; border-color:transparent; background:var(--neural-button); color:var(--neural-button-text); font-weight:600; }

@@ -1,7 +1,7 @@
 /* Shared model menu:stable geometry, quiet identity and bounded rows. */
 .picker { min-width:0; position:relative; }
 .trigger { min-height:52px; height:auto; padding:8px 12px; }
-.identity { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:4px 12px; min-width:0; overflow:hidden; text-align:left; }
+.identity { display:grid; grid-template-columns:minmax(0, 1fr) fit-content(65%); gap:4px 12px; min-width:0; overflow:hidden; text-align:left; }
 .heading { display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; min-width:0; grid-column:1; }
 .name { min-width:0; max-width:100%; color:var(--text); font-size:13px; font-weight:600; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
 .capabilities { display:inline-flex; flex-wrap:wrap; gap:4px; align-items:center; }
@@ -9,7 +9,7 @@
 .transparent { color:var(--status-success); }
 .editable { color:var(--text-secondary); }
 .id { grid-column:1; color:var(--text-secondary); font-size:11px; line-height:1.4; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.price { grid-column:2; grid-row:1 / span 2; align-self:center; max-width:140px; color:var(--text-secondary); font-size:12px; line-height:1.4; text-align:right; white-space:normal; overflow-wrap:anywhere; font-variant-numeric:tabular-nums; }
+.price { grid-column:2; grid-row:1 / span 2; align-self:center; min-width:0; max-width:240px; color:var(--text-secondary); font-size:12px; line-height:1.4; text-align:right; white-space:normal; overflow-wrap:normal; font-variant-numeric:tabular-nums; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
 .route { grid-column:1; color:var(--text-secondary); font-size:11px; }
 .summary { grid-column:1 / -1; color:var(--text-secondary); font-size:11px; line-height:1.5; white-space:normal; overflow-wrap:anywhere; }
 .routingHeading { order:1; position:sticky; top:0; display:flex; flex-wrap:wrap; align-items:center; gap:8px; flex:0 0 auto; background:var(--surface-floating); color:var(--text-secondary); font-size:12px; }
@@ -29,11 +29,17 @@
 .option:hover { background:color-mix(in srgb, var(--selection-ink) 5.00%, transparent); }
 .option[aria-disabled="true"] { color:var(--text-tertiary); cursor:not-allowed; }
 .note { color:var(--text-secondary); font-size:11px; line-height:1.4; margin:4px 0; }
-.directorySummary { order:2; display:flex; flex-wrap:wrap; gap:4px 12px; flex:0 0 auto; margin:0; padding:4px 0; color:var(--text-secondary); font-size:11px; line-height:1.5; font-variant-numeric:tabular-nums; }
+.directorySummary { order:2; display:grid; gap:6px; flex:0 0 auto; margin:0; color:var(--text-secondary); font-size:11px; line-height:1.5; font-variant-numeric:tabular-nums; }
 .directorySummary span { overflow-wrap:anywhere; }
-.pagination { order:4; display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:11px; color:var(--text-secondary); flex:0 0 auto; font-variant-numeric:tabular-nums; }
+.pricePreview { order:4; display:flex; flex-direction:column; gap:6px; flex:0 1 var(--price-preview-height, 220px); height:var(--price-preview-height, 220px); min-height:64px; min-width:0; box-sizing:border-box; border-top:1px solid var(--line); padding-top:8px; }
+.previewHeading { display:flex; align-items:baseline; justify-content:space-between; gap:12px; font-size:11px; min-width:0; flex:0 0 auto; }
+.previewHeading strong { font-size:12px; white-space:nowrap; }
+.previewHeading span { color:var(--text-secondary); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.previewScroll { overflow:auto; min-height:0; min-width:0; overscroll-behavior:contain; scrollbar-gutter:stable; }
+.previewScroll:focus-visible { outline:1px solid var(--accent); outline-offset:-1px; }
+.pagination { order:5; display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:11px; color:var(--text-secondary); flex:0 0 auto; font-variant-numeric:tabular-nums; }
 .pagination button, .manual { color:var(--text); background:transparent; border:1px solid var(--line); border-radius:6px; padding:4px 8px; font-size:11px; cursor:pointer; }
-.manual { order:5; }
+.manual { order:6; }
 .pagination button:disabled { color:var(--text-tertiary); opacity:.6; cursor:default; }
 .details { display:grid; gap:8px; margin-top:12px; color:var(--text-secondary); font-size:12px; line-height:1.6; overflow-wrap:anywhere; font-variant-numeric:tabular-nums; }
 .details > span { display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px; }

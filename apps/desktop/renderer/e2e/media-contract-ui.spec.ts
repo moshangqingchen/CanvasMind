@@ -1,3 +1,4 @@
+import { expectQuotedAmount } from "./helpers/readable-facts";
 import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 import type { ModelDescriptor } from "@super-canvas/providers";
 import type { ProviderConnectionView } from "../lib/client-api";
@@ -152,7 +153,7 @@ for (const kind of ["image", "video", "music"] as const) {
       if (kind === "image") {
         await page.keyboard.press("Escape");
         const prices = f.panel.getByLabel("当前参数价格", { exact: true });
-        await expect(prices).toContainText("型号报价 0.08 CNY / 张");
+        await expectQuotedAmount(prices.getByRole("region", { name: "型号报价", exact: true }), 0.08, "CNY", "张");
         await f.panel.getByLabel("生成数量", { exact: true }).fill("3");
         await expect(prices).toContainText("本次预计费用 0.24 CNY");
         await expect.poll(async () => (await f.saved()).parameters.n).toBe(3);
@@ -206,7 +207,8 @@ test("视频分辨率切换收紧离散时长，费用随秒数和数量变化�
     await expect(resolution).toHaveValue("4K");
     await expect(duration).toHaveValue("4");
     await expect(count).toHaveCount(0);
-    await expect(prices).toContainText("型号报价 2 USD / 次（目录快照）");
+    await expectQuotedAmount(prices.getByRole("region", { name: "型号报价", exact: true }), 2, "USD", "次");
+    await expect(prices.getByRole("region", { name: "型号报价", exact: true })).toContainText("目录快照");
     await expect(prices).toContainText("本次预计费用 2 USD（参考）");
     await expect.poll(async () => (await f.saved()).model).toBe(alternateVideo.id);
     await expect.poll(async () => (await f.saved()).parameters).toEqual({ resolution: "4K", duration: 4 });

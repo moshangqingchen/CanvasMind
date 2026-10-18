@@ -1245,7 +1245,7 @@ function PlanCard({
           <pre>{change.after}</pre>
         </details>
       ))}
-      {draft.assumptions.length > 0 && <p>{draft.assumptions.join("；")}</p>}
+      {draft.assumptions.length > 0 && <ul className="information-list" aria-label="方案假设">{draft.assumptions.map((assumption, index) => <li key={index}>{assumption}</li>)}</ul>}
       {draft.texts.map((t, i) => (
         <details key={t.id}>
           <summary>
@@ -1279,7 +1279,11 @@ function PlanCard({
               <Layers3 size={16} aria-hidden="true" />
               <span><strong>{c.label}</strong><small title={c.requirements.operation}>{agentOperationNames[c.requirements.operation] ?? "创作步骤"} · {c.requirements.count} 项</small>
                 <p className={styles.promptPreview}>{c.prompt}</p>
-                <small className={styles.stepMeta}>依赖：{c.dependsOn?.map(id => draft.calls.find(call => call.id === id)?.label ?? id).join("、") || "无"} · 推荐模型：<code>{selected?.model.id ?? c.preferredModelId ?? "—"}</code>{selected?.model && <> · {modelPickerPriceCompact(selected.model)}</>}</small>
+                <small className={styles.stepMeta}>
+                  <span>依赖：{c.dependsOn?.map(id => draft.calls.find(call => call.id === id)?.label ?? id).join("、") || "无"}</span>
+                  <span>推荐模型：<code>{selected?.model.id ?? c.preferredModelId ?? "—"}</code></span>
+                  {selected?.model && <span>概括价：{modelPickerPriceCompact(selected.model)}</span>}
+                </small>
                 {route && !route.selected?.eligible && <small className={styles.stepMeta} title={unmatchedReasons.join("；")}>
                   待选择合法渠道 · {unmatchedReasons[0] ?? "当前选择尚未匹配该步骤"}
                 </small>}

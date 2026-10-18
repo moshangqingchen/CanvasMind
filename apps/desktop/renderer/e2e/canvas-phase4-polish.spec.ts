@@ -1,3 +1,4 @@
+import { expectQuotedAmount, estimateAmount } from "./helpers/readable-facts";
 import { idleCatalogCheckFixture } from "./helpers/catalog-check-fixture";
 import { expectCompactPromptLine } from "./helpers/lod-expectations";
 import { expect, test, type APIRequestContext, type Locator, type Page } from "./helpers/canvas-offline-test";
@@ -189,7 +190,8 @@ async function assertImageControls(panel: Locator) {
   await expect(price).toBeAttached(); await price.scrollIntoViewIfNeeded({ timeout: 10_000 }); await expect(price).toBeVisible();
   await expect(price).toContainText("型号报价"); await expect(price).toContainText("本次预计费用");
   // The evidence disclosure has its own heading; assert the two price rows.
-  await expect(price.locator(":scope > span > strong")).toHaveText(["0.1 USD / 次", "0.1 USD"]);
+  await expectQuotedAmount(price.getByRole("region", { name: "型号报价", exact: true }), 0.1, "USD", "次");
+  await expect(estimateAmount(price)).toHaveText("0.1 USD");
 }
 
 test("根参数卡首次打开不强制写滚动位置，切换真实型号仍重置已滚动内容", async ({ page, request }) => {

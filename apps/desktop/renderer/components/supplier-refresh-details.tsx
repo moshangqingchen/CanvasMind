@@ -6,6 +6,7 @@ import type { SupplierRefreshResult } from "../lib/refresh-suppliers";
 import { billingAmount, billingSourceLabel, billingTodayAmount } from "../lib/supplier-billing-display";
 import { useDialogFocus } from "./use-dialog-focus";
 import styles from "./supplier-refresh-details.module.css";
+import { InformationGrid } from "./information-layout";
 
 type RefreshStatus = "updated" | "partial" | "failed" | "empty" | "unconfigured" | "unconfirmed" | "idle";
 const STATUS_LABELS: Record<RefreshStatus, string> = {
@@ -119,9 +120,13 @@ export function SupplierRefreshDetails({ supplierName, result, running, canRefre
         <section className={styles.section} aria-label="连接与模型详情">
           <div className={styles.sectionHeading}><h3>连接与模型</h3><small>{connections.length} 个连接</small></div>
           {connections.length ? <div className={styles.connections}>{connections.map(item => <article key={item.id} className={styles.connection}>
-            <div className={styles.connectionHeading}><div><h4>{item.name}</h4><small>{item.group ?? item.groupId ?? "未指定分组"} · 已保存 {item.modelCount} 个模型</small></div><SupplierRefreshIndicator status={item.status} /></div>
+            <div className={styles.connectionHeading}><div><h4>{item.name}</h4></div><SupplierRefreshIndicator status={item.status} /></div>
+            <InformationGrid items={[
+              { label: "分组", value: item.group ?? item.groupId ?? "未指定分组" }, { label: "已保存模型", value: item.modelCount },
+              ...(item.checkedAt ? [{ label: "最近尝试", value: checkedLabel(item.checkedAt) }] : []),
+              ...(item.lastSuccessAt ? [{ label: "上次成功", value: checkedLabel(item.lastSuccessAt) }] : []),
+            ]} />
             <p>{item.message}</p>
-            {(item.checkedAt || item.lastSuccessAt) && <small>{item.checkedAt ? `最近尝试：${checkedLabel(item.checkedAt)}` : ""}{item.lastSuccessAt ? ` · 上次成功：${checkedLabel(item.lastSuccessAt)}` : ""}</small>}
             {!!item.modelIssues?.length && <details className={styles.modelIssues}>
               <summary><SupplierRefreshIndicator status="unconfirmed" label={`接口字段（${item.modelIssues.length} 个模型）`} /></summary>
               <ul>{item.modelIssues.map(model => <li key={model.id}><strong>{model.name}</strong><code>{model.id}</code><p>{model.message}</p></li>)}</ul>

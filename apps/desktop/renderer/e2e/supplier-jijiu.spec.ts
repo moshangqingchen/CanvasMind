@@ -1,3 +1,4 @@
+import { expectDirectoryStat, expectQuotedAmount, estimateAmount } from "./helpers/readable-facts";
 import { readFileSync } from "node:fs";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { parseSupplierCatalog, remainingVideoModel, scanProviderModelCatalog, type ModelDescriptor, type StructuredModelPricing } from "@super-canvas/providers";
@@ -95,7 +96,7 @@ async function setup(page: Page, request: APIRequestContext, kind: "image" | "vi
   const selectGroup = async (group: string) => {
     await groupControl.selectOption(group); await expect(groupControl).toHaveValue(group);
     await expect.poll(() => reads.get(group) ?? 0).toBeGreaterThan(0);
-    await menu(); await expect(summary).toContainText(`Key ${modelMap.get(group)!.length}`);
+    await menu(); await expectDirectoryStat(summary, "Key", modelMap.get(group)!.length);
     await expect(panel.getByRole("listbox").getByRole("option")).toHaveCount(modelMap.get(group)!.length + 1);
   };
   const saved = async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data;
@@ -118,7 +119,7 @@ async function assertPriceSource(panel: ReturnType<Page["getByRole"]>, model: Mo
   const unit = tariff!.billingUnit === "second" ? "秒" : "次";
   const rates = tariff!.tiers?.map(tier => tier.price) ?? [tariff!.unitAmount];
   expect(rates.length).toBeGreaterThan(0);
-  for (const amount of rates) await expect(price).toContainText(`${amount} ${tariff!.currency} / ${unit}`);
+  for (const amount of rates) await expectQuotedAmount(price.getByRole("region", { name: "型号报价", exact: true }), amount!, tariff!.currency, unit);
   for (const tier of tariff!.tiers ?? []) if (tier.value !== undefined) await expect(price).toContainText(String(tier.value));
   await expect(price.getByRole("link", { name: "查看价格来源", exact: true })).toHaveAttribute("href", `${origin}/api/pricing`);
 }
@@ -224,8 +225,8 @@ for (const kind of ["image", "video"] as const) test(`极九 ${kind} 全分组�
             await expect(resolution.locator('option[disabled]')).toHaveCount(0);
           }
           const price = f.panel.getByLabel("当前参数价格", { exact: true });
-          const summary = price.locator(":scope > span").filter({ hasText: "型号报价" }).locator("strong");
-          const estimate = price.locator(":scope > span").filter({ hasText: "本次预计费用" }).locator("strong");
+          const summary = price.getByRole("region", { name: "型号报价", exact: true });
+          const estimate = estimateAmount(price);
           // Independent official examples test real parameter-to-price rendering,
           // in addition to the full directory/source evidence checked below.
           const examples: Record<string, [string, string]> = {
@@ -237,7 +238,8 @@ for (const kind of ["image", "video"] as const) test(`极九 ${kind} 全分组�
             "MinimaxH3特价版": ["0.8 CNY / 次", "0.8 CNY"],
           };
           if (examples[model.id]) {
-            await expect(summary).toContainText(examples[model.id]![0]);
+            const [amount, currency, , unit] = examples[model.id]![0].split(" ");
+            await expectQuotedAmount(summary, amount!, currency!, unit!);
             await expect(estimate).toHaveText(examples[model.id]![1]);
           }
           // The merged October 14 E contract bills output seconds only: 4s at 480p is 1 CNY.
@@ -283,8 +285,9 @@ test("极九高档GPT的原生K档与独立最高质量保存、刷新和切组�
       await expect(f.panel.getByRole("textbox", { name: "图片高度", exact: true })).toHaveValue("");
     }
     const price = f.panel.getByLabel("当前参数价格", { exact: true });
-    await expect(price.locator(":scope > span").filter({ hasText: "型号报价" }).locator("strong")).toHaveText("按次 · 0.1 CNY / 次");
-    await expect(price.locator(":scope > span").filter({ hasText: "本次预计费用" }).locator("strong")).toHaveText("0.1 CNY");
+    await expectQuotedAmount(price.getByRole("region", { name: "型号报价", exact: true }), 0.1, "CNY", "次");
+    await expect(price.getByRole("region", { name: "型号报价", exact: true })).toContainText("按次");
+    await expect(estimateAmount(price)).toHaveText("0.1 CNY");
     await quality.scrollIntoViewIfNeeded();
     await f.panel.screenshot({ path: testInfo.outputPath("jijiu-gpt-4k-high-controls.png") });
     await page.reload(); await f.open();
@@ -327,7 +330,7 @@ test("极九高档GPT的原生K档与独立最高质量保存、刷新和切组�
 test("极九5–30、F4–30与mini5–10边界选择和刷新保存，错误分组型号不可运行", async ({ page, request }, testInfo) => {
   const f = await setup(page, request, "video", "视频SD2.0", { wrongGroup: true });
   try {
-    await f.menu(); await expect(f.summary).toContainText("Key 6");
+    await f.menu(); await expectDirectoryStat(f.summary, "Key", "6");
     const wrong = f.option("稳定seedance-2.5参图参音F");
     await expect(wrong).toHaveAttribute("aria-disabled", "true");
     await expect(wrong).not.toContainText("时长：");
@@ -385,7 +388,7 @@ test("极九视频比例快捷选择、自定义原值与供应商默认保存�
     await expect(f.panel.getByRole("slider", { name: "视频时长", exact: true })).toHaveAttribute("min", "4");
     await expect(f.panel.getByRole("slider", { name: "视频时长", exact: true })).toHaveAttribute("max", "30");
     await expect(f.panel.getByRole("combobox", { name: "输出分辨率", exact: true })).toHaveValue("720p");
-    await expect(f.panel.getByLabel("当前参数价格", { exact: true }).locator(":scope > span").filter({ hasText: "型号报价" }).locator("strong")).toHaveText("1.5 CNY / 次");
+    await expectQuotedAmount(f.panel.getByLabel("当前参数价格", { exact: true }).getByRole("region", { name: "型号报价", exact: true }), 1.5, "CNY", "次");
     await expect(ratio.locator("option")).toHaveText(["供应商默认", "16:9（横屏）", "9:16（竖屏）", "1:1（方形）", "自定义"]);
     await expect(ratio).toHaveValue("__custom_ratio__"); await expect(custom).toHaveValue("3:2");
     expect((await f.saved()).parameters.aspect_ratio).toBe("3:2");
@@ -442,15 +445,15 @@ test("极九F旧720p保留并提示，用户明确选480p与30秒后保存刷新
 test("极九目录内容相同时完成状态仍更新，切换与页面刷新保持确认", async ({ page, request }, testInfo) => {
   const f = await setup(page, request, "video", "视频SD2.0", { incomplete: true });
   try {
-    await f.menu(); await expect(f.summary).toContainText("Key —");
+    await f.menu(); await expectDirectoryStat(f.summary, "Key", "—");
     await f.finishScan();
-    await expect(f.summary).toContainText("Key 5"); await expect(f.summary).toContainText("双方 5");
+    await expectDirectoryStat(f.summary, "Key", "5"); await expectDirectoryStat(f.summary, "双方", "5");
     await expect.poll(() => f.responses.length).toBeGreaterThan(1);
     expect(new Set(f.responses).size).toBe(1);
     await f.panel.screenshot({ path: testInfo.outputPath("jijiu-same-models-confirmed.png") });
     await f.selectGroup("视频WAN3"); await f.selectGroup("视频SD2.0");
-    await expect(f.summary).toContainText("Key 5");
+    await expectDirectoryStat(f.summary, "Key", "5");
     await page.keyboard.press("Escape"); await expect.poll(async () => (await f.saved()).connectionId).toBeTruthy();
-    await page.reload(); await f.open(); await f.menu(); await expect(f.summary).toContainText("Key 5");
+    await page.reload(); await f.open(); await f.menu(); await expectDirectoryStat(f.summary, "Key", "5");
   } finally { f.safe(); }
 });

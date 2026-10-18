@@ -55,6 +55,8 @@ import { billingCompact } from "../lib/supplier-billing-display";
 import { choosePickerConnection, pickerConnectionGroups, pickerConnectionLabel } from "../lib/model-picker";
 import { ModelPicker } from "./model-picker";
 import { ModelPriceDetails } from "./model-price-details";
+import { ModelPriceTable } from "./model-price-table";
+import { InformationGrid } from "./information-layout";
 import {
   fetchCangyuanAvailability,
 } from "../lib/client-api";
@@ -871,13 +873,11 @@ export function GenerationNodeBody({
                 }}
               >
                 {!currentSupplier && <option value="">{currentConnection ? "原连接已不可用，请选择" : "请选择供应商"}</option>}
-                {supplierOptions.map(([supplier, label]) => {
-                  const candidate = choosePickerConnection(connectionOptions, currentConnection, supplier);
-                  return (
+                {supplierOptions.map(([supplier, label]) => (
                   <option key={supplier} value={supplier}>
-                    {label} · {supplier === currentSupplier ? modelPickerPriceData(selectedModel) : candidate?.modelQuote ?? "—"} · {billingCompact(billingAccounts.find(account => account.id === candidate?.supplierId)?.billing)}
+                    {label}
                   </option>
-                ); })}
+                ))}
               </select>
             </label>
             <label className="node-config-provider-header">
@@ -910,7 +910,27 @@ export function GenerationNodeBody({
               </select>
             </label>}
           </div>
-          <small className="node-config-supplier-quote" aria-label="当前供应商报价">{currentConnectionOption?.supplierLabel ?? "供应商"} · {modelPickerPriceData(selectedModel)} · {billingCompact(billingAccounts.find(account => account.id === currentConnectionOption?.supplierId)?.billing)}</small>
+          <div className="supplier-quote-summary" aria-label="当前供应商报价"><InformationGrid items={[
+            { label: "供应商", value: currentConnectionOption?.supplierLabel ?? "供应商" },
+            { label: "概括价", value: modelPickerPriceCompact(selectedModel) },
+            { label: "余额", value: billingCompact(billingAccounts.find(account => account.id === currentConnectionOption?.supplierId)?.billing) },
+          ]} /></div>
+          {supplierOptions.length > 1 && <details className="supplier-candidate-quotes"><summary>供应商候选报价</summary>
+            <table aria-label="供应商候选报价"><thead><tr><th scope="col">供应商</th><th scope="col">概括价</th><th scope="col">余额</th></tr></thead>
+              {supplierOptions.map(([supplier, label]) => {
+                const candidate = choosePickerConnection(connectionOptions, currentConnection, supplier);
+                const candidateModel = supplier === currentSupplier ? selectedModel : candidate?.modelDescriptor;
+                const legacyQuote = candidate?.modelQuote ?? "—";
+                return <tbody key={supplier}>
+                  <tr><th scope="row">{label}</th><td><span className="supplier-candidate-summary">{candidateModel ? modelPickerPriceCompact(candidateModel) : legacyQuote}</span></td>
+                    <td>{billingCompact(billingAccounts.find(account => account.id === candidate?.supplierId)?.billing)}</td></tr>
+                  {(candidateModel ? modelPickerPriceData(candidateModel) !== "—" : legacyQuote !== "—") && <tr className="supplier-candidate-detail"><td colSpan={3}>
+                    <details><summary>{label}价格明细</summary>{candidateModel ? <ModelPriceTable model={candidateModel} /> : <p>{legacyQuote}</p>}</details>
+                  </td></tr>}
+                </tbody>;
+              })}
+            </table>
+          </details>}
         </div>
         <div className="node-config-model-field node-config-model-header">
           <span>模型</span>

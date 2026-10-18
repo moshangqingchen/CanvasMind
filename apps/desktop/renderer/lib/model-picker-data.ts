@@ -1,4 +1,4 @@
-import type { ModelDescriptor, StructuredModelPricing, StructuredPriceTier } from "@super-canvas/providers";
+import type { ModelDescriptor, ProviderOperation, StructuredModelPricing, StructuredPriceTier } from "@super-canvas/providers";
 import { normalizeTk1688CnyModel } from "@super-canvas/providers/tk1688-catalog";
 import { applyUserImageSizePresets } from "@super-canvas/providers/image-size-presets";
 import { selectModelQuote } from "@super-canvas/providers/media-billing";
@@ -48,65 +48,188 @@ function historicalPricePrefix(model: ModelDescriptor, label: string): string {
   return `${name}${checkedAt ? ` · 采样时间 ${checkedAt}` : name === "上次价格" ? " · 采样时间 —" : ""} · `;
 }
 
-/** All recorded prices keep their exact billing conditions and sample scope.
- * This is a directory display. Request validation and cost estimation remain separate.
- */
-export function modelPickerPriceData(model: ModelDescriptor | null | undefined): string {
-  if (!model) return "—";
-  model = applyUserImageSizePresets(normalizeTk1688CnyModel(model));
-  const metadata = model.metadata;
-  const measured = metadata?.priceSource === "generated-result" ? record(metadata.measuredPrice) : undefined;
+export interface ModelPickerPriceCondition {
+  parameter: string;
+  label: string;
+  operator: "equals" | "contains";
+  value: string;
+}
+
+export interface ModelPickerPriceTier {
+  id: string;
+  /** Position in the original tariff, including any invalid-price branches. */
+  sourceIndex: number;
+  label: string;
+  conditions: readonly ModelPickerPriceCondition[];
+  conditionMode?: StructuredPriceTier["conditionMode"];
+  otherwise: boolean;
+  amount: number;
+  historical: boolean;
+  checkedAt?: string;
+  operations: readonly { value: ProviderOperation; label: string }[];
+  sourceUrl?: string;
+  /** Dimension tariffs use unique, case-insensitive matching rather than first-match. */
+  matching: "ordered" | "unique-dimension";
+  legacyCondition: string;
+  /** Old reports only mark an explicitly retained tier, even when a parent is retained. */
+  legacyRetained: boolean;
+  legacyCheckedAt?: string;
+}
+
+export interface ModelPickerMeasuredPrice {
+  label?: string;
+  amount?: number;
+  currency?: string;
+  unit?: string;
+  checkedAt?: string;
+  sourceUrl?: string;
+  requestId?: string;
+  providerTaskId?: string;
+  parameters: readonly { parameter: string; label: string; value: string; legacyLabel: string }[];
+  parametersState: "recorded" | "omitted" | "missing";
+}
+
+export interface ModelPickerStructuredPrice {
+  kind?: StructuredModelPricing["kind"];
+  currency?: string;
+  displayCurrency?: string;
+  unit?: string;
+  fixedAmount?: number;
+  tokenRates: readonly { label: string; amount: number }[];
+  tiers: readonly ModelPickerPriceTier[];
+  operations: readonly { value: ProviderOperation; label: string }[];
+  confidence?: StructuredModelPricing["confidence"];
+  checkedAt?: string;
+  historical?: { label: "上次价格" | "上次记录" | "部分上次价格"; checkedAt?: string };
+  timeMultipliers: NonNullable<StructuredModelPricing["timeMultipliers"]>;
+  billingIncludesInputDuration: boolean;
+  measuredPrices: readonly ModelPickerMeasuredPrice[];
+  prose?: string;
+}
+
+const operationNames: Record<ProviderOperation, string> = {
+  "image.generate": "图片生成", "image.edit": "图片编辑", "video.generate": "视频生成", "video.image-to-video": "图生视频", "music.generate": "音乐生成",
+};
+const operationsData = (values?: readonly ProviderOperation[]) => (values ?? []).map(value => ({ value, label: operationNames[value] }));
+function parameterLabel(model: ModelDescriptor, key: string): string {
+  return model.parameters?.find(parameter => parameter.key === key)?.label || parameterNames[key] || key;
+}
+const validAmount = (value: unknown): value is number => finite(value) && value >= 0;
+
+function measuredPriceData(model: ModelDescriptor, measured: Record<string, unknown>, label?: string): ModelPickerMeasuredPrice {
+  const sample = record(measured.parameters), charge = record(measured.actualCharge);
+  const parameters: ModelPickerMeasuredPrice["parameters"][number][] = [];
+  // Keep the same public scalar/count facts as before; source URLs and prompts stay private.
+  for (const [key, value] of Object.entries(sample ?? {})) if (key !== "prompt" && scalar(value) !== undefined &&
+    !(typeof value === "string" && /^(?:https?:|data:)/iu.test(value)))
+    parameters.push({ parameter: key, label: parameterLabel(model, key), legacyLabel: parameterNames[key] ?? key, value: String(value) });
+  for (const [key, value] of Object.entries(sample ?? {})) if (Array.isArray(value))
+    parameters.push({ parameter: key, label: `${parameterLabel(model, key)}数量`, legacyLabel: `${parameterNames[key] ?? key}数量`, value: String(value.length) });
+  const amount = measured.amount ?? charge?.amount;
+  const unit = scalar(measured.unit ?? charge?.unit);
+  return { ...(label ? { label } : {}), ...(validAmount(amount) ? { amount } : {}),
+    currency: scalar(measured.currency ?? charge?.currency),
+    unit: unit === "image" ? "张" : unit === "request" ? "次" : unit === "second" ? "秒" : unit,
+    checkedAt: scalar(measured.checkedAt), sourceUrl: scalar(measured.sourceUrl ?? charge?.sourceUrl),
+    requestId: scalar(measured.requestId), providerTaskId: scalar(measured.providerTaskId), parameters,
+    parametersState: parameters.length ? "recorded" : sample && Object.keys(sample).length === 0 ? "omitted" : "missing" };
+}
+
+/** Parse once for visual tables and the unchanged report/comparison strings. */
+function parseModelPrice(input: ModelDescriptor | null | undefined) {
+  const empty: ModelPickerStructuredPrice = { tiers: [], tokenRates: [], operations: [], timeMultipliers: [], billingIncludesInputDuration: false, measuredPrices: [] };
+  if (!input) return { data: empty, historical: "", label: "", measuredLabel: false, pricing: undefined };
+  const model = applyUserImageSizePresets(normalizeTk1688CnyModel(input)), metadata = model.metadata;
   const rawLabel = typeof metadata?.priceLabel === "string" ? metadata.priceLabel.trim() : "";
   const historical = historicalPricePrefix(model, rawLabel);
   const label = historical ? rawLabel.replace(/（上次价格）$/u, "") : rawLabel;
-  if (measured && label) {
-    const sample = record(measured.parameters);
-    const scope = Object.entries(sample ?? {}).filter(([key, value]) => key !== "prompt" && scalar(value) !== undefined &&
-      !(typeof value === "string" && /^(?:https?:|data:)/iu.test(value)))
-      .map(([key, value]) => `${parameterNames[key] ?? key}=${String(value)}`);
-    // Counts and durations are shown; reference URLs and raw prompts are not.
-    for (const [key, value] of Object.entries(sample ?? {})) if (Array.isArray(value)) scope.push(`${parameterNames[key] ?? key}数量=${value.length}`);
-    return `${historical}${label}${scope.length ? ` · 实测参数：${scope.join("，")}` : ` · 实测请求参数：${sample && Object.keys(sample).length === 0 ? "省略" : "—"}`}`;
-  }
-  const pricing = selectModelQuote(model).pricing;
+  const quote = selectModelQuote(model), pricing = quote.pricing;
+  const data: ModelPickerStructuredPrice = { ...empty,
+    checkedAt: modelPickerPriceSampleAt(model), billingIncludesInputDuration: metadata?.billingIncludesInputDuration === true,
+    ...(historical ? { historical: { label: historical.startsWith("部分") ? "部分上次价格" : historical.startsWith("上次记录") ? "上次记录" : "上次价格", checkedAt: modelPickerPriceSampleAt(model) } as ModelPickerStructuredPrice["historical"] } : {}) };
+  const measured = metadata?.priceSource === "generated-result" ? record(metadata.measuredPrice) : undefined;
+  // Preserve every distinct measured request as its own sample, never an unconditional quote.
+  const seen = new Set<string>();
+  data.measuredPrices = quote.measured.filter(item => {
+    const signature = JSON.stringify(item); if (seen.has(signature)) return false; seen.add(signature); return true;
+  }).map(item => measuredPriceData(model, item, item === measured && label ? label : undefined));
   if (pricing) {
-    const currency = pricing.currency === "credits" ? "额度" : pricing.currency;
-    const unit = priceUnit(pricing);
-    const rates: string[] = [];
-    if (finite(pricing.unitAmount) && pricing.unitAmount >= 0) rates.push(`${pricing.unitAmount} ${currency} / ${unit}`);
-    if (pricing.kind === "token") for (const [name, amount] of [["输入", pricing.inputPerMillion], ["输出", pricing.outputPerMillion], ["图片输出", pricing.imageOutputPerMillion]] as const)
-      if (finite(amount) && amount >= 0) rates.push(`${name} ${amount} ${currency} / ${unit}`);
-    for (const tier of pricing.tiers ?? []) if (finite(tier.price) && tier.price >= 0) rates.push(`${priceCondition(tier)} · ${tier.price} ${currency} / ${unit}${tier.evidence?.status === "retained" ? `（上次价格 · 采样时间 ${tier.evidence.checkedAt}）` : ""}`);
-    const times = pricing.timeMultipliers?.map(window => `上海 ${window.weekdaysOnly ? "周一至周五 " : ""}${window.startHour}:00–${window.endHour}:00 ×${window.multiplier}`).join("；");
-    if (rates.length) return `${operationScope(pricing)}${historical}${rates.join("；")}${pricing.confidence === "estimate" ? "（参考）" : pricing.confidence === "snapshot" ? "（目录快照）" : ""}${times ? `；时段倍率：${times}` : ""}${metadata?.billingIncludesInputDuration === true ? "；计费时长：输入 + 输出视频" : ""}`;
+    const ordered = !!pricing.tiers?.some(tier => tier.conditions || tier.otherwise);
+    data.kind = pricing.kind; data.currency = pricing.currency;
+    data.displayCurrency = pricing.currency === "credits" ? "额度" : pricing.currency;
+    data.unit = priceUnit(pricing); data.confidence = pricing.confidence;
+    data.operations = operationsData(pricing.evidence?.operations);
+    data.timeMultipliers = pricing.timeMultipliers ?? [];
+    if (validAmount(pricing.unitAmount)) data.fixedAmount = pricing.unitAmount;
+    if (pricing.kind === "token") data.tokenRates = ([["输入", pricing.inputPerMillion], ["输出", pricing.outputPerMillion], ["图片输出", pricing.imageOutputPerMillion]] as const)
+      .filter((entry): entry is readonly ["输入" | "输出" | "图片输出", number] => validAmount(entry[1])).map(([name, amount]) => ({ label: name, amount }));
+    data.tiers = (pricing.tiers ?? []).flatMap((tier, sourceIndex) => {
+      if (!validAmount(tier.price)) return [];
+      const provenance = tier.evidence ?? pricing.evidence;
+      const conditions = tier.conditions ?? (tier.dimension && tier.dimension !== "fixed" && tier.value !== undefined
+        ? [{ parameter: tier.dimension, operator: "equals" as const, value: String(tier.value) }] : []);
+      return [{ id: tier.id, sourceIndex, label: tier.label,
+        conditions: conditions.map(condition => ({ ...condition, label: parameterLabel(model, condition.parameter) })),
+        conditionMode: tier.conditionMode, otherwise: !!tier.otherwise, amount: tier.price,
+        historical: provenance ? provenance.status === "retained" : !!historical,
+        checkedAt: provenance?.checkedAt ?? data.checkedAt, operations: operationsData(provenance?.operations), sourceUrl: provenance?.sourceUrl ?? pricing.sourceUrl,
+        matching: ordered ? "ordered" as const : "unique-dimension" as const,
+        legacyCondition: priceCondition(tier), legacyRetained: tier.evidence?.status === "retained", legacyCheckedAt: tier.evidence?.checkedAt }];
+    });
   }
-  // Some suppliers publish prose group prices without a structured tariff.
-  // Preserve those facts, but never turn absence/status messages into a quote.
   const prose = modelPickerPriceLabelData(label);
-  return prose === "—" ? prose : historical + prose;
+  if (prose !== "—") data.prose = prose;
+  return { data, historical, label, measuredLabel: !!measured && !!label, pricing };
+}
+
+/** Every value belongs to this candidate model and its original tariff branch. */
+export function modelPickerStructuredPrice(model: ModelDescriptor | null | undefined): ModelPickerStructuredPrice {
+  return parseModelPrice(model).data;
+}
+
+export function modelPriceHasDetails(data: ModelPickerStructuredPrice): boolean {
+  return !data.measuredPrices.some(sample => sample.label) &&
+    (data.tiers.length + (data.fixedAmount !== undefined ? 1 : 0) > 1 || data.tokenRates.length > 1);
+}
+
+function priceDetailString(parsed: ReturnType<typeof parseModelPrice>): string {
+  const { data, historical, label, pricing } = parsed;
+  if (parsed.measuredLabel) {
+    const measured = data.measuredPrices[0]!;
+    const scope = measured.parameters.map(item => `${item.legacyLabel}=${item.value}`);
+    return `${historical}${label}${scope.length ? ` · 实测参数：${scope.join("，")}` : ` · 实测请求参数：${measured.parametersState === "omitted" ? "省略" : "—"}`}`;
+  }
+  if (pricing) {
+    const rates: string[] = [];
+    if (data.fixedAmount !== undefined) rates.push(`${data.fixedAmount} ${data.displayCurrency} / ${data.unit}`);
+    for (const rate of data.tokenRates) rates.push(`${rate.label} ${rate.amount} ${data.displayCurrency} / ${data.unit}`);
+    for (const tier of data.tiers) rates.push(`${tier.legacyCondition} · ${tier.amount} ${data.displayCurrency} / ${data.unit}${tier.legacyRetained ? `（上次价格 · 采样时间 ${tier.legacyCheckedAt}）` : ""}`);
+    const times = data.timeMultipliers.map(window => `上海 ${window.weekdaysOnly ? "周一至周五 " : ""}${window.startHour}:00–${window.endHour}:00 ×${window.multiplier}`).join("；");
+    if (rates.length) return `${operationScope(pricing)}${historical}${rates.join("；")}${pricing.confidence === "estimate" ? "（参考）" : pricing.confidence === "snapshot" ? "（目录快照）" : ""}${times ? `；时段倍率：${times}` : ""}${data.billingIncludesInputDuration ? "；计费时长：输入 + 输出视频" : ""}`;
+  }
+  return data.prose ? historical + data.prose : "—";
+}
+
+/** Stable plain-text contract for reports, price comparison and evidence. */
+export function modelPickerPriceData(model: ModelDescriptor | null | undefined): string {
+  return priceDetailString(parseModelPrice(model));
 }
 
 export function modelPickerPriceCompact(model: ModelDescriptor | null | undefined): string {
-  const detail = modelPickerPriceData(model);
+  const parsed = parseModelPrice(model), detail = priceDetailString(parsed);
+  const { data, historical, pricing } = parsed;
   if (!model || detail === "—") return "—";
-  model = applyUserImageSizePresets(normalizeTk1688CnyModel(model));
-  if (model.metadata?.priceSource === "generated-result" && record(model.metadata.measuredPrice) &&
-      typeof model.metadata.priceLabel === "string" && model.metadata.priceLabel.trim())
-    return detail.replace(/\s*·\s*实测(?:请求)?参数：[\s\S]*$/u, "");
-  const pricing = selectModelQuote(model).pricing;
+  if (parsed.measuredLabel) return detail.replace(/\s*·\s*实测(?:请求)?参数：[\s\S]*$/u, "");
   if (!pricing) return detail;
-  const historical = historicalPricePrefix(model, typeof model.metadata?.priceLabel === "string" ? model.metadata.priceLabel.trim() : "");
   const confidence = pricing.confidence === "estimate" ? "（参考）" : pricing.confidence === "snapshot" ? "（目录快照）" : "";
-  const times = pricing.timeMultipliers?.length ? " · 时段倍率" : "";
+  const times = data.timeMultipliers.length ? " · 时段倍率" : "";
   if (pricing.kind === "token") return `${operationScope(pricing)}${historical}Token 计价${confidence}${times}`;
-  const tiers = (pricing.tiers ?? []).filter(tier => finite(tier.price) && tier.price >= 0);
-  const amounts = tiers.map(tier => tier.price);
-  if (finite(pricing.unitAmount) && pricing.unitAmount >= 0) amounts.unshift(pricing.unitAmount);
+  const amounts = data.tiers.map(tier => tier.amount);
+  if (data.fixedAmount !== undefined) amounts.unshift(data.fixedAmount);
   if (!amounts.length) return detail;
   const minimum = Math.min(...amounts), maximum = Math.max(...amounts);
-  const currency = pricing.currency === "credits" ? "额度" : pricing.currency;
-  const scope = amounts.length > 1 ? ` · ${amounts.length} 档` : tiers[0] ? ` · ${priceCondition(tiers[0])}` : "";
-  return `${operationScope(pricing)}${historical}${minimum === maximum ? minimum : `${minimum}–${maximum}`} ${currency} / ${priceUnit(pricing)}${confidence}${scope}${times}${model.metadata?.billingIncludesInputDuration === true ? " · 输入+输出时长" : ""}`;
+  const scope = amounts.length > 1 ? ` · ${amounts.length} 档` : data.tiers[0] ? ` · ${data.tiers[0].legacyCondition}` : "";
+  return `${operationScope(pricing)}${historical}${minimum === maximum ? minimum : `${minimum}–${maximum}`} ${data.displayCurrency} / ${data.unit}${confidence}${scope}${times}${data.billingIncludesInputDuration ? " · 输入+输出时长" : ""}`;
 }
 
 export function modelPickerPriceLabelData(label: unknown): string {

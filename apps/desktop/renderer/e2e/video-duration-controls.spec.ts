@@ -1,3 +1,4 @@
+import { expectQuotedAmount } from "./helpers/readable-facts";
 import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 import { remainingVideoModel, type ModelDescriptor } from "@super-canvas/providers";
 import type { CanvasResponse, ProviderConnectionView } from "../lib/client-api";
@@ -254,7 +255,7 @@ test("连续视频时长通过键盘和鼠标选择，按次费用不随秒数�
     await expect(slider).toHaveAttribute("aria-valuetext", "5 秒");
     await expect(range.locator("output")).toHaveText("5 秒");
     await expect(range.locator(".parameter-duration-bounds span")).toHaveText(["4 秒", "30 秒"]);
-    await expect(price).toContainText("型号报价 5.5 CNY / 次");
+    await expectQuotedAmount(price.getByRole("region", { name: "型号报价", exact: true }), 5.5, "CNY", "次");
     await expect(price).toContainText("本次预计费用 5.5 CNY");
     await slider.press("Home");
     await expect(slider).toHaveValue("4");
