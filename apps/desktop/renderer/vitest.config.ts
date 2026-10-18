@@ -7,13 +7,15 @@ export default defineConfig({
     alias: { "server-only": fileURLToPath(new URL("./node_modules/next/dist/compiled/server-only/empty.js", import.meta.url)) },
   },
   test: {
-    // Finish parallel units before measuring disk latency; keep every assertion
+    // Finish parallel units before measuring layout and disk latency; keep every assertion
     // and collect the complete scale suite in the normal pnpm test command.
     projects: [
       { extends: true, test: { name: "unit", sequence: { groupOrder: 0 },
         include: ["app/api/**/*.test.ts", "lib/**/*.test.ts", "proxy.test.ts"],
-        exclude: ["lib/catalog-pipeline-scale.test.ts"] } },
-      { extends: true, test: { name: "catalog-save-serial", sequence: { groupOrder: 1 },
+        exclude: ["lib/canvas-layout.test.ts", "lib/catalog-pipeline-scale.test.ts"] } },
+      { extends: true, test: { name: "layout-performance-serial", sequence: { groupOrder: 1 },
+        include: ["lib/canvas-layout.test.ts"], fileParallelism: false, maxWorkers: 1 } },
+      { extends: true, test: { name: "catalog-save-serial", sequence: { groupOrder: 2 },
         include: ["lib/catalog-pipeline-scale.test.ts"], fileParallelism: false, maxWorkers: 1 } },
     ],
   },
