@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CanvasDocument } from "../components/types";
 import { installNeuralFixture } from "./helpers/neural-fixture";
+import { clickWorkspaceModule } from "./helpers/workspace-navigation";
 
 const repository = fileURLToPath(new URL("../../../..", import.meta.url));
 const output = resolve(repository, process.env.NEURAL_EVIDENCE_DIR ?? ".codex-logs/2026-10-16-redesign-v2/out");
@@ -208,7 +209,7 @@ test("开启光效并实际触发拖尾后首页与画布往返 20 次不累积�
     await expect(page.getByTestId("neural-workspace")).toBeVisible();
   };
   const enter = async () => {
-    await page.getByTestId("neural-module-canvases").click();
+    await clickWorkspaceModule(page, "canvases");
     await page.getByTestId("neural-item-neural-autumn").click();
     await page.getByTestId("neural-inspector").getByRole("button", { name: "打开画布", exact: true }).click();
     await expect(ambient(page)).toHaveAttribute("data-detail", "full");

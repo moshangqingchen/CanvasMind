@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { ProjectSummaryView } from "../lib/client-api";
 import { installNeuralFixture } from "./helpers/neural-fixture";
+import { clickWorkspaceModule } from "./helpers/workspace-navigation";
 
 // Preserve the former homepage's project, preference and dialog contracts in
 // the replacement's module/item layers. Bento and Aura no longer exist.
@@ -30,7 +31,7 @@ async function openHome(page: Page) {
   await expect(home(page)).toBeVisible();
 }
 async function canvases(page: Page) {
-  await page.getByTestId("neural-module-canvases").click();
+  await clickWorkspaceModule(page, "canvases");
 }
 async function selectProject(page: Page, id: string) {
   await row(page, id).click();
@@ -205,7 +206,7 @@ for (const title of ["做活动海报", "修改客户原图", "制作多尺寸�
       ],
     });
     await openHome(page);
-    await page.getByTestId("neural-module-starts").click();
+    await clickWorkspaceModule(page, "starts");
     await page
       .getByTestId(
         `neural-item-${({ 做活动海报: "event-poster", 修改客户原图: "revise", 制作多尺寸物料: "event-material" } as Record<string, string>)[title]}`,
@@ -223,7 +224,7 @@ for (const title of ["做活动海报", "修改客户原图", "制作多尺寸�
 test("设计任务入口创建项目后直接打开工作台", async ({ page }) => {
   const f = await installNeuralFixture(page, { projects: [] });
   await openHome(page);
-  await page.getByTestId("neural-module-starts").click();
+  await clickWorkspaceModule(page, "starts");
   await page.getByTestId("neural-item-event-poster").click();
   await page.getByRole("button", { name: "做活动海报", exact: true }).click();
   await expect(

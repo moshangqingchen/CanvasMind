@@ -13,6 +13,7 @@ import type {
   AgentTurnInput,
 } from "../lib/agent-contracts";
 import type { AgentModelOption } from "../lib/agent-models";
+import { clickWorkspaceModule } from "./helpers/workspace-navigation";
 
 /** Browser APIs and external requests are intercepted; no model or user data is used. */
 async function studioFixture(page: Page, startEmpty = false) {
@@ -301,7 +302,7 @@ test("首页聊天入口只打开对话工作区，不发送任务", async ({ pa
   // CanvasApp checks that its ID exists in the browser project list before loading the canvas.
   const fixture = await studioFixture(page, true);
   await page.goto("/");
-  await page.getByTestId("neural-module-starts").click();
+  await clickWorkspaceModule(page, "starts");
   await page.getByTestId("neural-item-chat").click();
   await expect(
     page.getByRole("button", { name: "聊聊创作想法", exact: true }),

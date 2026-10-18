@@ -19,6 +19,7 @@ import {
   expectAgentModel,
   openAgentSessions,
 } from "./helpers/agent-controls";
+import { clickWorkspaceModule } from "./helpers/workspace-navigation";
 
 const repository = fileURLToPath(new URL("../../../..", import.meta.url));
 const output = resolve(
@@ -765,7 +766,7 @@ test("首页头像与规整网络→合一草稿与模拟流→渠道参数→�
     await page.waitForTimeout(2500);
     await page.getByTestId("neural-module-suppliers").hover();
     await page.waitForTimeout(850);
-    await page.getByTestId("neural-module-canvases").click();
+    await clickWorkspaceModule(page, "canvases");
     await expect(page.getByTestId("neural-item-neural-autumn")).toBeVisible();
     await page.waitForTimeout(900);
     await page.getByRole("navigation", { name: "面包屑", exact: true }).getByRole("button", { name: "工作台", exact: true }).click();
