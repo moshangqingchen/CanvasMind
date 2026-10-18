@@ -1,3 +1,4 @@
+import { expectDirectoryStat } from "./helpers/readable-facts";
 import { expect, test, type Page } from "@playwright/test";
 import type { ProviderConnectionView } from "../lib/client-api";
 import type { SupplierRecord, SupplierSiteLoginSummary } from "../lib/client-suppliers";
@@ -467,7 +468,8 @@ test("后台目录升级同步已打开的官网与 Key 清单，并保留未保
   await openSettings(page);
   const dialog = page.getByRole("dialog", { name: "供应商与模型设置" });
   const group = dialog.locator(".sm-group-card").filter({ has: page.getByRole("heading", { name: "vip", exact: true }) });
-  await expect(group.getByLabel("官网与 Key 目录对照")).toContainText("官网目录 1 · Key 1");
+  await expectDirectoryStat(group.getByLabel("官网与 Key 目录对照"), "官网目录", 1);
+  await expectDirectoryStat(group.getByLabel("官网与 Key 目录对照"), "Key", 1);
   await dialog.getByRole("tab", { name: "连接配置", exact: true }).click();
   await group.getByLabel("vip API Key", { exact: true }).fill("unsaved-fixture-key");
 
@@ -481,7 +483,8 @@ test("后台目录升级同步已打开的官网与 Key 清单，并保留未保
   await page.evaluate(() => window.dispatchEvent(new CustomEvent("supplier-catalog-upgraded")));
   await expect(dialog.getByRole("heading", { name: "video-new", exact: true })).toBeVisible();
   await expect(group.getByLabel("vip API Key", { exact: true })).toHaveValue("unsaved-fixture-key");
-  await expect(group.getByLabel("官网与 Key 目录对照")).toContainText("官网目录 2 · Key 2");
+  await expectDirectoryStat(group.getByLabel("官网与 Key 目录对照"), "官网目录", 2);
+  await expectDirectoryStat(group.getByLabel("官网与 Key 目录对照"), "Key", 2);
   await dialog.getByRole("tab", { name: "模型与分组", exact: true }).click();
   await group.getByLabel("vip 模型类型", { exact: true }).selectOption("video");
   await expect(group.locator(".sm-model-item").filter({ hasText: "dola-seedance-2.5" })).toContainText("720p ¥0.875/次");

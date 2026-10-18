@@ -258,8 +258,8 @@ export function modelPriceSummary(model: import("@super-canvas/providers").Model
   return typeof model.metadata?.priceLabel === "string" ? displayPriceLabel(model.metadata.priceLabel, model.metadata?.priceStatus) : "价格未知";
 }
 
-/** A preview of the selected request, separate from the supplier's unit price. */
-export function modelEstimatedCost(model: ModelDescriptor | null | undefined, parameters: Readonly<Record<string, unknown>>): string | undefined {
+/** The estimate and its tariff branch share parameter defaults, aliases and validation. */
+export function modelEstimatedQuote(model: ModelDescriptor | null | undefined, parameters: Readonly<Record<string, unknown>>) {
   if (!model) return undefined;
   if (model.metadata?.mikotoImageContract === true && model.metadata.imageResolutionTierParameter === "size_tier" &&
       mikotoImageRatioIssues(parameters).length) return undefined;
@@ -283,7 +283,8 @@ export function modelEstimatedCost(model: ModelDescriptor | null | undefined, pa
   const image = model.operations.some(operation => operation.startsWith("image."))
     ? evaluateImageParameters(model, parameters) : undefined;
   const resolution = values.size_tier ?? values.resolution ?? values.image_size;
-  const quote = selectModelQuote(model, image?.pricingParameters ?? { ...values, ...(resolution ? { resolution } : {}) },
+  const priceParameters = image?.pricingParameters ?? { ...values, ...(resolution ? { resolution } : {}) };
+  const quote = selectModelQuote(model, priceParameters,
     { ...(model.operations.length === 1 ? { operation: model.operations[0] } : {}) });
   const amount = quote.amount;
   if (amount === undefined || !Number.isFinite(amount) || amount < 0) return undefined;
@@ -298,7 +299,13 @@ export function modelEstimatedCost(model: ModelDescriptor | null | undefined, pa
   const duration = Number(values.duration ?? values.duration_seconds ?? values.seconds);
   if (perSecond && (!Number.isFinite(duration) || duration <= 0 || model.metadata?.approximateVideoDurationSeconds || model.metadata?.billingIncludesInputDuration === true)) return undefined;
   const total = Number((amount * count * (perSecond ? duration : 1)).toPrecision(12));
-  return `${total} ${pricing.currency === "credits" ? "额度" : pricing.currency}${pricing.confidence === "exact" ? "" : "（参考）"}${pricing.timeMultipliers?.length ? "（上海当前时段价，以提交时刻为准）" : ""}`;
+  return { cost: `${total} ${pricing.currency === "credits" ? "额度" : pricing.currency}${pricing.confidence === "exact" ? "" : "（参考）"}${pricing.timeMultipliers?.length ? "（上海当前时段价，以提交时刻为准）" : ""}`,
+    tierIndex: quote.tier ? pricing.tiers?.indexOf(quote.tier) : undefined, parameters: priceParameters };
+}
+
+/** A preview of the selected request, separate from the supplier's unit price. */
+export function modelEstimatedCost(model: ModelDescriptor | null | undefined, parameters: Readonly<Record<string, unknown>>): string | undefined {
+  return modelEstimatedQuote(model, parameters)?.cost;
 }
 
 /** Compare only the exact model and supported parameter combination in this connection. */

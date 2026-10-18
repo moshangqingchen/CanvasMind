@@ -1,3 +1,4 @@
+import { expectDirectoryStat, expectQuotedAmount } from "./helpers/readable-facts";
 import { idleCatalogCheckFixture } from "./helpers/catalog-check-fixture";
 import { expect, test, type APIRequestContext, type Page } from "./helpers/canvas-offline-test";
 import type { ModelDescriptor } from "@super-canvas/providers";
@@ -81,7 +82,7 @@ async function fixture(page: Page, request: APIRequestContext, nodeType: "video-
   await openPicker();
   let directoryCycles = 1;
   return { panel, picker, list: panel.getByRole("listbox"), menu: panel.locator(".node-model-select-options"),
-    summary: panel.getByRole("status", { name: "官网与 Key 目录对照" }), search: panel.getByRole("combobox", { name: "搜索模型名称或 ID", exact: true }),
+    summary: panel.getByLabel("官网与 Key 目录对照", { exact: true }), search: panel.getByRole("combobox", { name: "搜索模型名称或 ID", exact: true }),
     readNode: async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data,
     confirmDirectoryWithPendingProtocol: async () => {
       directoryMode = false;
@@ -111,8 +112,8 @@ test("相同型号与报价的 Key 扫描从局部完成变成完整完成后，
   const ui = await fixture(page, request, "video-generation", key, key.map(model => publicVideo(model.id)), "partial", true);
   const canvasUrl = page.url();
   const before = await ui.readNode();
-  await expect(ui.summary).toContainText("官网目录 2");
-  await expect(ui.summary).toContainText("Key —");
+  await expectDirectoryStat(ui.summary, "官网目录", "2");
+  await expectDirectoryStat(ui.summary, "Key", "—");
   const choice = ui.list.getByRole("option", { name: "video-confirmed-b", exact: true });
   await expect(choice).toContainText("0.62");
 
@@ -120,9 +121,9 @@ test("相同型号与报价的 Key 扫描从局部完成变成完整完成后，
   // may be needed to make the newly confirmed inventory visible to React.
   for (let scan = 0; scan < 3; scan++) {
     await ui.refreshDirectoryWithSameModels();
-    await expect(ui.summary).toContainText("Key 2");
-    await expect(ui.summary).toContainText("双方 2");
-    await expect(ui.summary).toContainText("官网额外 0");
+    await expectDirectoryStat(ui.summary, "Key", "2");
+    await expectDirectoryStat(ui.summary, "双方", "2");
+    await expectDirectoryStat(ui.summary, "官网额外", "0");
     await expect(ui.summary).not.toContainText("待确认");
     await expect(ui.picker).toHaveAttribute("aria-expanded", "true");
     await expect(choice).toHaveAttribute("aria-disabled", "false");
@@ -142,10 +143,10 @@ test("官网18、Key15、交集10：八个目录型号显示官方价，键鼠�
   const key = Array.from({ length: 15 }, (_, i) => video(`video-key-${i}`));
   const official = [...key.slice(0, 10).map(model => publicVideo(model.id)), ...Array.from({ length: 8 }, (_, i) => publicVideo(`video-official-${i}`))];
   const ui = await fixture(page, request, "video-generation", key, official);
-  await expect(ui.summary).toContainText("官网目录 18");
-  await expect(ui.summary).toContainText("Key 15");
-  await expect(ui.summary).toContainText("双方 10");
-  await expect(ui.summary).toContainText("官网额外 8");
+  await expectDirectoryStat(ui.summary, "官网目录", "18");
+  await expectDirectoryStat(ui.summary, "Key", "15");
+  await expectDirectoryStat(ui.summary, "双方", "10");
+  await expectDirectoryStat(ui.summary, "官网额外", "8");
   await expect(ui.list.getByRole("option").first()).toHaveAttribute("aria-setsize", "24");
   expect(await ui.list.getByRole("option").count()).toBeLessThanOrEqual(24);
   // Windowed rows retain all eight catalog-only identities. Search each one
@@ -155,14 +156,16 @@ test("官网18、Key15、交集10：八个目录型号显示官方价，键鼠�
     const option = ui.list.getByRole("option", { name: `video-official-${index}`, exact: true });
     await expect(option).toHaveAttribute("data-catalog-only", "true");
     await expect(option).toHaveAttribute("aria-disabled", "true");
-    await expect(option).toContainText("0.62 CNY / 秒");
+    await expect(option).toContainText("0.4–1.45 CNY / 秒 · 3 档");
+    await expectQuotedAmount(ui.panel.getByRole("region", { name: "价格明细", exact: true }), 0.62, "CNY", "秒");
     await expect(option).toContainText("官网目录 · 当前 Key 返回：0");
   }
   await ui.search.fill("video-official-0");
   const before = await ui.readNode();
   const extra = ui.list.getByRole("option", { name: "video-official-0", exact: true });
   await expect(extra).toHaveAttribute("aria-disabled", "true");
-  await expect(extra).toContainText("0.62 CNY / 秒");
+  await expect(extra).toContainText("0.4–1.45 CNY / 秒 · 3 档");
+  await expectQuotedAmount(ui.panel.getByRole("region", { name: "价格明细", exact: true }), 0.62, "CNY", "秒");
   await expect(extra).toContainText("官网目录 · 当前 Key 返回：0");
   await expect(extra).not.toContainText(/未确认|不支持|不可运行/u);
   await extra.scrollIntoViewIfNeeded();
@@ -193,7 +196,7 @@ test("图片节点只展示图片目录差集，窄窗口保留报价和说明�
     { id: "lyria-3-pro", capability: "music", outputKinds: ["audio"] }, { id: "tts-1", capability: "other", outputKinds: ["audio"] },
     { id: "image-understanding", capability: "image", outputKinds: ["text"], inputKinds: ["image"] }];
   const ui = await fixture(page, request, "image-generation", key, official);
-  await expect(ui.summary).toContainText("官网目录 2");
+  await expectDirectoryStat(ui.summary, "官网目录", "2");
   await expect(ui.list.getByRole("option")).toHaveCount(3);
   await expect(ui.list.getByRole("option", { name: "GPT Image 3", exact: true })).toContainText("¥0.15/张");
   await expect(ui.list.getByRole("option", { name: /video-only|lyria|tts|understanding/u })).toHaveCount(0);
@@ -209,7 +212,7 @@ test("图片节点只展示图片目录差集，窄窗口保留报价和说明�
 
 for (const failure of ["stale", "failed", "partial", "http503"] as const) test(`Key目录${failure}时官网价格仍可查看，以缺少响应数据表示而不把读取失败写成Key返回0`, async ({ page, request }) => {
   const ui = await fixture(page, request, "video-generation", [video("video-key")], [publicVideo("video-extra")], failure);
-  await expect(ui.summary).toContainText("Key —");
+  await expectDirectoryStat(ui.summary, "Key", "—");
   const extra = ui.list.getByRole("option", { name: "video-extra", exact: true });
   await expect(extra).toHaveAttribute("aria-disabled", "true");
   await expect(extra).toContainText("官网目录 · 本次 Key 目录：—");
@@ -217,8 +220,8 @@ for (const failure of ["stale", "failed", "partial", "http503"] as const) test(`
   await expect(extra).not.toContainText(/未开通|无权限|未确认|不支持|不可运行/u);
   if (failure === "stale") {
     await ui.confirmDirectoryWithPendingProtocol();
-    await expect(ui.summary).toContainText("Key 1");
-    await expect(ui.summary).not.toContainText("Key —");
+    await expectDirectoryStat(ui.summary, "Key", "1");
+    await expectDirectoryStat(ui.summary, "Key", 1);
     await expect(ui.list.getByRole("option", { name: "video-key", exact: true })).toHaveAttribute("aria-disabled", "true");
     await expect(ui.list.getByRole("option", { name: "video-extra", exact: true })).toContainText("官网目录 · 当前 Key 返回：0");
   }

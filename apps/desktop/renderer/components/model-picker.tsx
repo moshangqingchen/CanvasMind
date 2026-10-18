@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Check, ChevronDown } from "lucide-react";
 import type { ModelDescriptor } from "@super-canvas/providers";
 import type { ImageEditingCapabilities } from "@super-canvas/providers/image-editing-capabilities";
@@ -11,15 +11,19 @@ import { displayPickerModels, filterPickerModels, MODEL_PICKER_PAGE_SIZE, readRe
 import styles from "./model-picker.module.css";
 import { groupTk1688Models, tk1688ModelFamily, tk1688RouteLabel, tk1688RouteSummary } from "../lib/tk1688-model-display";
 import type { CatalogPickerDirectory } from "../lib/supplier-model-directory-diff";
-import { modelPickerDirectoryFact, modelPickerPriceData } from "../lib/model-picker-data";
+import { modelPickerDirectoryFact, modelPickerPriceCompact, modelPickerStructuredPrice, modelPriceHasDetails } from "../lib/model-picker-data";
 import { imageTransparencyEvidenceNote } from "../lib/image-transparency-presentation";
 import { WindowedModelList, type ModelListMeasurements } from "./model-picker-window";
+import { ModelPriceTable } from "./model-price-table";
+import { ModelPriceCompact } from "./model-price-compact";
+import { DirectoryComparisonStats } from "./information-layout";
 
 type PickerOption = { id: string; model?: ModelDescriptor; label: string; reason: string | null; family?: string; merchants?: number };
 
-function ModelIdentity({ model, capabilities, price = false, detailsId, route = false, keyConfirmed = false }: { model: ModelDescriptor; capabilities?: ImageEditingCapabilities; price?: boolean; detailsId?: string; route?: boolean; keyConfirmed?: boolean }) {
+const ModelIdentity = memo(function ModelIdentity({ model, capabilities, price = false, detailsId, route = false, keyConfirmed = false }: { model: ModelDescriptor; capabilities?: ImageEditingCapabilities; price?: boolean; detailsId?: string; route?: boolean; keyConfirmed?: boolean }) {
   const family = tk1688ModelFamily(model);
   const directory = modelPickerDirectoryFact(model, keyConfirmed);
+  const compactPrice = useMemo(() => price ? modelPickerPriceCompact(model) : undefined, [price, model]);
   return <span className={styles.identity}>
     <span className={styles.heading}>
       <span id={detailsId ? `${detailsId}-name` : undefined} className={styles.name}>{family ? route ? tk1688RouteLabel(model) : family : cleanModelDisplayName(model.name, model.metadata?.priceLabel)}</span>
@@ -31,10 +35,10 @@ function ModelIdentity({ model, capabilities, price = false, detailsId, route = 
     {family && !route && <span id={detailsId ? `${detailsId}-route` : undefined} className={styles.route}>{tk1688RouteLabel(model)}</span>}
     <span id={detailsId ? `${detailsId}-id` : undefined} className={styles.id} title={model.id}>ID: {model.id}</span>
     {route && <span id={detailsId ? `${detailsId}-summary` : undefined} className={styles.summary}>{tk1688RouteSummary(model)}</span>}
-    {price && <span id={detailsId ? `${detailsId}-price` : undefined} className={styles.price}>{modelPickerPriceData(model)}</span>}
+    {price && <span id={detailsId ? `${detailsId}-price` : undefined} className={styles.price}><ModelPriceCompact label={compactPrice} /></span>}
     {directory && <span id={detailsId ? `${detailsId}-directory` : undefined} className={styles.summary}>{directory}</span>}
   </span>;
-}
+});
 
 export function ModelPicker({ id, label, connectionId, models, value, onChange, capabilities = {},
   open: controlledOpen, onOpenChange, anchorKey, loading = false, failed = false, authoritative = true, allowManual = false, badge, catalogDirectory, allowAutomatic = true,
@@ -86,7 +90,13 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
   const activeIndex = Math.min(active, Math.max(0, options.length - 1));
   const page = Math.floor(activeIndex / MODEL_PICKER_PAGE_SIZE);
   const pageStart = page * MODEL_PICKER_PAGE_SIZE;
-  const visible = options.slice(pageStart, pageStart + MODEL_PICKER_PAGE_SIZE);
+  const visible = useMemo(() => options.slice(pageStart, pageStart + MODEL_PICKER_PAGE_SIZE), [options, pageStart]);
+  // Resolve this once per page, rather than recomputing tariffs in every row
+  // on hover. Reserve the same menu geometry for single-price candidates too.
+  const pageHasPriceDetails = useMemo(() => visible.some(option => option.model && modelPriceHasDetails(modelPickerStructuredPrice(option.model))), [visible]);
+  const previewModel = options[activeIndex]?.model;
+  const previewPrice = useMemo(() => modelPickerStructuredPrice(previewModel), [previewModel]);
+  const showPricePreview = Boolean(previewModel && modelPriceHasDetails(previewPrice));
   const setOpen = (next: boolean, restoreFocus = false) => {
     setLocalOpen(next);
     onOpenChange?.(next);
@@ -130,6 +140,7 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
     // DOM ancestry, keyboard handling and accessible labels inside that panel.
     if (!panel.matches(":popover-open")) panel.showPopover();
     const position = () => {
+      const listScrollTop = list.current?.scrollTop ?? 0;
       const rect = trigger.current?.getBoundingClientRect();
       if (!rect) return;
       const viewport = window.visualViewport;
@@ -150,6 +161,10 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
       if (right <= left || bottom <= top) return;
       const gap = 8;
       const viewportHeight = bottom - top;
+      // A stable preview viewport lets neighboring multi-tier candidates share
+      // the same list geometry, independent of their tariff table's row count.
+      const previewHeight = Math.min(220, Math.max(64, viewportHeight * .28));
+      panel.style.setProperty("--price-preview-height", `${previewHeight}px`);
       const below = Math.max(0, bottom - rect.bottom - gap);
       const above = Math.max(0, rect.top - top - gap);
       const inspector = inspectorElement?.getBoundingClientRect();
@@ -158,8 +173,15 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
         // Measure at the final width, including rows hidden by list scrolling.
         // Short catalogs expand completely; only the viewport limits long ones.
         panel.style.width = `${width}px`;
+        panel.style.height = "auto";
+        // Clear the previous placement's cap before measuring. Flex shrink can
+        // otherwise hide part of the new preview from the intrinsic height,
+        // leaving a short catalog clipped even with ample viewport space.
+        panel.style.maxHeight = `${viewportHeight}px`;
+        const preview = panel.querySelector<HTMLElement>("[data-price-preview]");
         return Math.min(viewportHeight, panel.offsetHeight + Math.max(0, panel.scrollHeight - panel.clientHeight)
-          + (list.current ? list.current.scrollHeight - list.current.clientHeight : 0));
+          + (list.current ? list.current.scrollHeight - list.current.clientHeight : 0)
+          + (preview ? Math.max(0, previewHeight - preview.offsetHeight) : pageHasPriceDetails ? previewHeight + 8 : 0));
       };
       let height = measureHeight();
       let x = Math.max(left, Math.min(rect.left, right - width));
@@ -188,8 +210,14 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
         height = Math.min(height, bottom - y);
       }
       panel.style.maxHeight = `${height}px`;
+      // Hiding the preview for a single quote must not move the candidate
+      // underneath the pointer, including menus placed above their trigger.
+      panel.style.height = pageHasPriceDetails ? `${height}px` : "auto";
       panel.style.left = `${Math.max(left, Math.min(x, right - width))}px`;
       panel.style.top = `${y}px`;
+      // Intrinsic measurement briefly expands the list and can clamp its
+      // scrollTop to zero. Keep the keyboard/user's position when it shrinks.
+      if (list.current) list.current.scrollTop = listScrollTop;
     };
     position();
     const inspector = host.current?.closest(".node-config-popover");
@@ -216,7 +244,7 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
       window.visualViewport?.removeEventListener("resize", position);
       window.visualViewport?.removeEventListener("scroll", position);
     };
-  }, [open, options, page, anchorKey]);
+  }, [open, options, page, anchorKey, showPricePreview, pageHasPriceDetails]);
   useEffect(() => {
     if (!open) return;
     search.current?.focus();
@@ -231,6 +259,7 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
   const keyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.nativeEvent.isComposing) return;
     if (event.key === "Escape" && open) { event.preventDefault(); event.stopPropagation(); setOpen(false, true); return; }
+    if (event.target instanceof Element && event.target.closest("[data-price-preview]")) return;
     if (event.target instanceof HTMLSelectElement || event.target instanceof HTMLButtonElement && event.target !== trigger.current) return;
     if (!["ArrowDown", "ArrowUp", "Home", "End", "Enter"].includes(event.key)) return;
     event.preventDefault(); event.stopPropagation();
@@ -267,12 +296,11 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
           <option value="all">全部模型</option><option value="runnable">可运行</option><option value="verified">已实测</option><option value="recent">最近选择</option>
         </select>
       </div>
-      {catalogDirectory && <p className={styles.directorySummary} role="status" aria-label="官网与 Key 目录对照">
-        <span>官网目录 {catalogDirectory.catalogCount}</span><span>Key {catalogDirectory.keyConfirmed ? catalogDirectory.keyCount : "—"}</span>
-        <span>双方 {catalogDirectory.keyConfirmed ? catalogDirectory.sharedCount : "—"}</span>
-        <span>官网额外 {catalogDirectory.keyConfirmed ? catalogDirectory.catalogOnlyIds.length : "—"}（仅目录）</span>
+      {catalogDirectory && <div className={styles.directorySummary} role="status">
+        <DirectoryComparisonStats catalog={catalogDirectory.catalogCount} keyCount={catalogDirectory.keyConfirmed ? catalogDirectory.keyCount : "—"}
+          shared={catalogDirectory.keyConfirmed ? catalogDirectory.sharedCount : "—"} catalogOnly={catalogDirectory.keyConfirmed ? catalogDirectory.catalogOnlyIds.length : "—"} />
         {catalogDirectory.catalogStale && <span>官网目录为上次记录</span>}
-      </p>}
+      </div>}
       <WindowedModelList rows={visible} pageStart={pageStart} activeIndex={activeIndex} listRef={list} measurements={listMeasurements} id={listId} label={`${label} 可选模型`}
         emptyMessage={`没有符合筛选条件的${family ? "线路" : "模型"}。可清空搜索或调整筛选。`}
         renderRow={(option, index, style) => <button key={option.id} id={`${listId}-${index}`} style={style} type="button" role="option"
@@ -280,12 +308,16 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
           aria-describedby={option.model ? `${listId}-${index}-id ${listId}-${index}-price${family ? ` ${listId}-${index}-summary` : ""}${option.model.metadata?.publicCatalogOnly === true ? ` ${listId}-${index}-directory` : ""}${capabilities[option.model.id]?.transparent || capabilities[option.model.id]?.mask ? ` ${listId}-${index}-capabilities` : ""}` : undefined}
           className={styles.option} data-index={index} data-active={activeIndex === index || undefined} data-catalog-only={option.model?.metadata?.publicCatalogOnly === true || undefined}
           title={option.family ? "查看此模型的自动路由与商家渠道" : option.id || "使用连接默认模型"} tabIndex={-1}
-          onMouseDown={event => event.preventDefault()} onClick={() => activate(option)}>
+          onMouseDown={event => event.preventDefault()} onPointerMove={() => { if (activeIndex !== index) setActive(index); }} onClick={() => activate(option)}>
           {option.family ? <span className={styles.identity}><strong>{option.label}</strong><span className={styles.summary}>{option.merchants} 条商家渠道 · 查看线路与报价</span></span>
             : option.model ? <ModelIdentity model={option.model} capabilities={capabilities[option.model.id]} detailsId={`${listId}-${index}`} price route={Boolean(family)} keyConfirmed={catalogDirectory?.keyConfirmed} /> : <span>{option.label}</span>}
           {option.model && badge?.(option.model)}
           {(option.family ? tk1688ModelFamily(selected ?? { id: value }) === option.family : value === option.id) && <Check className={styles.currentCheck} size={14} aria-hidden="true" />}
         </button>} />
+      {showPricePreview && <section className={styles.pricePreview} data-price-preview="" aria-label="价格明细" aria-describedby={`${listId}-preview-model`}>
+        <div className={styles.previewHeading}><strong>价格明细</strong><span id={`${listId}-preview-model`} title={previewModel!.id}>{previewModel!.id}</span></div>
+        <div className={styles.previewScroll} tabIndex={0} aria-label="滚动价格明细"><ModelPriceTable model={previewModel} data={previewPrice} /></div>
+      </section>}
       <div className={styles.pagination}><span>{options.length ? `${pageStart + 1}–${Math.min(pageStart + MODEL_PICKER_PAGE_SIZE, options.length)} / ${options.length}${grouped ? family ? " 条线路" : " 个模型选项" : ""}` : "0 个模型"}</span>
         {options.length > MODEL_PICKER_PAGE_SIZE && <><button type="button" disabled={!page} onClick={() => { setActive(Math.max(0, pageStart - MODEL_PICKER_PAGE_SIZE)); search.current?.focus(); }}>上一页</button><button type="button" disabled={pageStart + MODEL_PICKER_PAGE_SIZE >= options.length} onClick={() => { setActive(pageStart + MODEL_PICKER_PAGE_SIZE); search.current?.focus(); }}>下一页</button></>}
       </div>

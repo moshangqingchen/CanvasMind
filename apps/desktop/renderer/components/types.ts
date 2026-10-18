@@ -169,6 +169,8 @@ export interface CanvasNodeData extends Record<string, unknown> {
     supplierLabel: string;
     supplierId?: string;
     modelQuote?: string;
+    /** Candidate model from this connection's existing directory; never the current supplier's tariff. */
+    modelDescriptor?: ModelDescriptor;
     modelMatch?: boolean;
     group: string;
     available?: boolean;

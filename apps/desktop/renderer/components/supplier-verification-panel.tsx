@@ -10,6 +10,7 @@ import { EVIDENCE_LABELS } from "../lib/supplier-capabilities";
 import { fetchAsset } from "../lib/client-api";
 import type { AssetView } from "./types";
 import { AssetPreviewModal } from "./workspace-modals";
+import { InformationGrid } from "./information-layout";
 
 type RecordView = Omit<SupplierVerificationRecord, "cases"> & {
   cases: Array<
@@ -290,40 +291,28 @@ function SupplierVerificationSession({
                 <strong title={test.modelId}>{test.modelId}</strong>
                 <span className="sm-badge">{labels[test.status]}</span>
               </header>
-              <p>
-                {test.group} · {test.resolution} ·{" "}
-                {test.quality ?? "模型决定质量"} · {test.ratio}
-              </p>
-              {test.actualWidth && (
-                <p>
-                  {test.approximate ? "近似档位 · " : ""}实际 {test.actualWidth}{" "}
-                  × {test.actualHeight}，请求 {test.expectedWidth} ×{" "}
-                  {test.expectedHeight}
-                </p>
-              )}
+              <InformationGrid items={[
+                { label: "分组", value: test.group }, { label: "档位", value: test.resolution },
+                { label: "质量", value: test.quality ?? "模型决定质量" }, { label: "比例", value: test.ratio },
+                ...(test.actualWidth ? [
+                  { label: "实际尺寸", value: `${test.actualWidth} × ${test.actualHeight}` },
+                  { label: "请求尺寸", value: `${test.expectedWidth} × ${test.expectedHeight}` },
+                  ...(test.approximate ? [{ label: "档位记录", value: "近似档位" }] : []),
+                ] : []),
+              ]} />
               <p>{test.reason}</p>
-              <p>
-                说明价格：
-                {test.expectedCharge
-                  ? `${test.expectedCharge.amount} ${test.expectedCharge.currency}/${test.expectedCharge.unit === "image" ? "张" : "次"}`
-                  : "未知"}{" "}
-                · 实际扣费：
-                {test.actualCharge
-                  ? `${test.actualCharge.amount} ${test.actualCharge.currency}`
-                  : "未核对"}
-                {test.chargeStatus === "mismatch"
-                  ? " · 与说明不符"
-                  : test.chargeStatus === "matched"
-                    ? " · 与说明相符"
-                    : ""}
-              </p>
+              <InformationGrid items={[
+                { label: "说明价格", value: test.expectedCharge ? `${test.expectedCharge.amount} ${test.expectedCharge.currency}/${test.expectedCharge.unit === "image" ? "张" : "次"}` : "—" },
+                { label: "实际扣费", value: test.actualCharge ? `${test.actualCharge.amount} ${test.actualCharge.currency}` : "—" },
+                ...(test.chargeStatus === "mismatch" || test.chargeStatus === "matched" ? [{ label: "扣费对照", value: test.chargeStatus === "mismatch" ? "与说明不符" : "与说明相符" }] : []),
+              ]} />
               <details>
                 <summary>请求详情</summary>
-                <p className="sm-monospace">{test.requestId}</p>
-                <p>
-                  {new Date(test.createdAt).toLocaleString("zh-CN")}
-                  {test.taskId && ` · 任务 ${test.taskId}`}
-                </p>
+                <InformationGrid items={[
+                  { label: "请求编号", value: <code>{test.requestId}</code> },
+                  { label: "创建时间", value: new Date(test.createdAt).toLocaleString("zh-CN") },
+                  ...(test.taskId ? [{ label: "任务编号", value: <code>{test.taskId}</code> }] : []),
+                ]} />
                 <pre>{JSON.stringify(test.parameters, null, 2)}</pre>
                 <button
                   className="sm-button"
@@ -378,14 +367,13 @@ function SupplierVerificationSession({
           <summary>参数依据与来源 · {evidence.length} 条</summary>
           {evidence.map((item) => (
             <div key={item.id}>
-              <strong>
-                {item.modelId} · {item.resolution ?? item.quality}
-              </strong>
+              <strong>{item.modelId}</strong>
               <span className="sm-badge">{EVIDENCE_LABELS[item.status]}</span>
-              <p>
-                {item.group} · {item.excerpt}
-              </p>
-              <small>{new Date(item.checkedAt).toLocaleString("zh-CN")}</small>
+              <InformationGrid items={[
+                { label: "档位 / 质量", value: item.resolution ?? item.quality ?? "—" },
+                { label: "分组", value: item.group }, { label: "采样时间", value: new Date(item.checkedAt).toLocaleString("zh-CN") },
+              ]} />
+              <p>{item.excerpt}</p>
               {item.sourceUrl && (
                 <a href={item.sourceUrl} target="_blank" rel="noreferrer">
                   查看来源 <ExternalLink size={12} />

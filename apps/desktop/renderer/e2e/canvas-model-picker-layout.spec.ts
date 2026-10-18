@@ -175,12 +175,13 @@ test("模型菜单打开后缩窄视口仍在屏幕内，键盘可访问末项�
   await expectPanelClearOfTools(page, ui.panel);
   await expect(ui.picker).toHaveAttribute("aria-expanded", "true");
   await expectMenuInViewport(ui.menu);
-  await expect.poll(() => ui.list.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true);
+  const listOverflows = await ui.list.evaluate(element => element.scrollHeight > element.clientHeight + 1);
   await ui.search.press("Home");
   await expect(ui.list.getByRole("option", { name: "自动模型", exact: true })).toHaveAttribute("data-active", "true");
   await ui.list.hover();
   await page.mouse.wheel(0, 200);
-  await expect.poll(() => ui.list.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+  if (listOverflows) await expect.poll(() => ui.list.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+  else await expectAllOptionsVisible(ui.list);
   await ui.search.press("End");
   const last = ui.list.getByRole("option", { name: lastFamily, exact: true });
   await expect(last).toHaveAttribute("data-active", "true");

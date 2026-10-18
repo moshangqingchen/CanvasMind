@@ -1,3 +1,4 @@
+import { expectDirectoryStat } from "./helpers/readable-facts";
 import { expect, test } from "./helpers/canvas-offline-test";
 import { readFileSync } from "node:fs";
 import type { ModelDescriptor } from "@super-canvas/providers";
@@ -94,13 +95,13 @@ for (const deliverWhileRunning of [false, true]) test(`Miaowu canvas updates the
   const panel = page.getByRole("dialog", { name: "喵呜升级验收 模型与参数", exact: true });
   const picker = panel.getByRole("combobox", { name: "喵呜升级验收 模型", exact: true });
   await picker.click();
-  const directory = panel.getByRole("status", { name: "官网与 Key 目录对照" });
-  await expect(directory).toContainText("官网目录 8");
-  await expect(directory).toContainText("Key 11");
+  const directory = panel.getByLabel("官网与 Key 目录对照", { exact: true });
+  await expectDirectoryStat(directory, "官网目录", "8");
+  await expectDirectoryStat(directory, "Key", "11");
   const firstReads = modelReads;
   upgraded = true;
-  await expect(directory).toContainText("官网目录 11");
-  await expect(directory).toContainText("Key 16");
+  await expectDirectoryStat(directory, "官网目录", "11");
+  await expectDirectoryStat(directory, "Key", "16");
   expect(upgradeEvents).toBeGreaterThan(0);
   expect(automaticStarts).toBe(1);
   expect(modelReads).toBeGreaterThan(firstReads);

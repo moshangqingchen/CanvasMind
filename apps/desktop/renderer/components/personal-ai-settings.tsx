@@ -10,6 +10,7 @@ import { modelDescriptorsFromConnectionConfig } from "../lib/model-parameters";
 import { useSettingsDraft, useSettingsLeaveGuard } from "./settings-draft-guard";
 import { settingsAccountTarget } from "../lib/settings-target";
 import styles from "./personal-ai-settings.module.css";
+import { InformationChips, InformationGrid } from "./information-layout";
 
 type Draft = CliSettings & { name: string; argumentsJson: string };
 function newDraft(template: "jimeng" | "custom" | "demo" = "jimeng"): Draft {
@@ -141,7 +142,10 @@ export function PersonalAiSettings({ targetConnectionId, startAdding = false }: 
       </div>
       {dirty && <p className={styles.note}>保存修改后，可以检测或同步。</p>}
       {busy && <p role="status">正在处理…</p>}{message && <p role="status">{message}</p>}{error && <p role="alert" className={styles.error}>{error}</p>}
-      <section className={styles.models} aria-label="已同步的模型与参数"><h3>模型与参数 <span className="sm-micro-label" aria-hidden="true">MODEL PARAMETERS</span> <span>{models.length}</span></h3>{models.length > 0 && (selected?.config.cliStatus as { state?: string } | undefined)?.state !== "ready" && <p>上次同步的目录；连接恢复并检测成功后才能生成。</p>}{models.length ? models.map(model => <article key={model.id}><strong>{model.name}</strong><code>{model.id}</code><p>{(model.parameters ?? []).map(parameter => `${parameter.label}${parameter.options?.length ? `：${parameter.options.map(option => option.label).join(" / ")}` : ""}`).join(" · ") || "此模型未声明可调参数"}</p></article>) : <p>等待接入后同步。画布会按所选模型显示它实际支持的参数。</p>}</section>
+      <section className={styles.models} aria-label="已同步的模型与参数"><h3>模型与参数 <span className="sm-micro-label" aria-hidden="true">MODEL PARAMETERS</span> <span>{models.length}</span></h3>{models.length > 0 && (selected?.config.cliStatus as { state?: string } | undefined)?.state !== "ready" && <p>上次同步的目录；连接恢复并检测成功后才能生成。</p>}{models.length ? models.map(model => <article key={model.id}><strong>{model.name}</strong><code>{model.id}</code>
+        {model.parameters?.length ? <InformationGrid label="模型参数" items={model.parameters.map(parameter => ({ label: parameter.label,
+          value: parameter.options?.length ? <InformationChips values={parameter.options.map(option => option.label)} /> : "—" }))} /> : <p>此模型未声明可调参数</p>}
+      </article>) : <p>等待接入后同步。画布会按所选模型显示它实际支持的参数。</p>}</section>
     </section>
   </div>;
 }

@@ -1,7 +1,7 @@
 "use client";
 import { cleanModelDisplayName } from "../lib/model-display";
 import { unsupportedAgentModelReason } from "../lib/agent-model-support";
-import { modelPickerInventoryFact, modelPickerPriceCompact, modelPickerPriceData } from "../lib/model-picker-data";
+import { modelPickerInventoryFact, modelPickerPriceData } from "../lib/model-picker-data";
 import { SupplierVerificationPanel } from "./supplier-verification-panel";
 import { useSupplierVerificationRevision } from "../lib/use-supplier-verification-revision";
 import { useSettingsDraft, useSettingsLeaveGuard } from "./settings-draft-guard";
@@ -87,6 +87,9 @@ import { supplierCatalogDisplayPrice, supplierModelDirectoryDiff } from "../lib/
 import { settingsSupplierTarget } from "../lib/settings-target";
 import { CatalogCheckSettings } from "./catalog-check-settings";
 import { ModelPriceEvidence } from "./model-price-evidence";
+import { ModelPriceTable } from "./model-price-table";
+import { ModelPriceCompact } from "./model-price-compact";
+import { DirectoryComparisonStats, InformationGrid, type InformationItem } from "./information-layout";
 import { catalogPriceDescriptor } from "../lib/supplier-catalog-price-merge";
 
 const DEFAULT_API_URLS: Record<string, string> = {
@@ -192,6 +195,10 @@ function savedModels(connection?: ProviderConnectionView): ModelDescriptor[] {
         .filter((id): id is string => typeof id === "string")
         .map((id) => ({ id, name: id, operations: [] }))
     : [];
+}
+
+function inventoryFactValue(value: unknown): string {
+  return typeof value === "string" || typeof value === "boolean" || typeof value === "number" && Number.isFinite(value) ? String(value) : "—";
 }
 
 export function SupplierManager({
@@ -2551,9 +2558,9 @@ function GroupConnectionEditor({
           </button>
         </div>
       </div>
-      {group.source !== "manual" && <p className="sm-model-freshness" aria-label="官网与 Key 目录对照">
-        官网目录 {directoryDiff.catalogCount} · Key {realScan ? directoryDiff.keyCount : "—"} · 双方 {realScan ? directoryDiff.sharedCount : "—"} · 官网额外 {realScan ? directoryDiff.catalogOnlyIds.length : "—"}（仅目录）
-      </p>}
+      {group.source !== "manual" && <DirectoryComparisonStats catalog={directoryDiff.catalogCount}
+        keyCount={realScan ? directoryDiff.keyCount : "—"} shared={realScan ? directoryDiff.sharedCount : "—"}
+        catalogOnly={realScan ? directoryDiff.catalogOnlyIds.length : "—"} />}
       {addingModel && (
         <div className="sm-manual-model-form">
           {protocols.length ? (
@@ -2638,10 +2645,10 @@ function GroupConnectionEditor({
       )}
       {expanded && (
         <div className="sm-model-lists" data-source={modelSource}>
-          <p className="sm-model-freshness">
-            {modelInventoryLastSuccessAt(connection?.config ?? {}) ? `目录成功更新于 ${new Date(modelInventoryLastSuccessAt(connection?.config ?? {})!).toLocaleString("zh-CN")}` : "尚无目录成功更新时间"}
-            {!realScan && actualModels.length > 0 ? " · 上次目录记录" : " · 目录返回与实际生成核验分别记录"}
-          </p>
+          <div className="sm-model-freshness sm-model-freshness-rows">
+            <span>{modelInventoryLastSuccessAt(connection?.config ?? {}) ? `目录成功更新于 ${new Date(modelInventoryLastSuccessAt(connection?.config ?? {})!).toLocaleString("zh-CN")}` : "尚无目录成功更新时间"}</span>
+            <span>{!realScan && actualModels.length > 0 ? "上次目录记录" : "目录返回与实际生成核验分别记录"}</span>
+          </div>
           <div className="sm-model-filters">
             <label>模型来源 <select aria-label={`${group.id} 模型来源`} value={modelSource} onChange={event => setModelSource(event.target.value)}><option value="actual">Key 模型（{supplierModelCount(actualModels)}）</option><option value="catalog">目录参考（{supplierModelCount(visibleCatalog)}）</option><option value="missing">未再返回（{supplierModelCount(inventoryModels(connection?.config.modelRemovedModels))}）</option><option value="manual">手动添加（{manualModels.length}）</option></select></label>
             <label>类型 <select aria-label={`${group.id} 模型类型`} value={kindFilter} onChange={event => setKindFilter(event.target.value as "all" | ModelKind)}><option value="all">全部类型</option><option value="image">图片</option><option value="video">视频</option><option value="music">音乐</option><option value="chat">对话</option></select></label>
@@ -2675,7 +2682,15 @@ function GroupConnectionEditor({
               descriptor: model,
               interfaceLabel: typeof model.metadata?.autoInterfaceLabel === "string" ? model.metadata.autoInterfaceLabel : undefined,
               interfaceSource: typeof model.metadata?.documentationUrl === "string" && /^https:\/\//u.test(model.metadata.documentationUrl) ? model.metadata.documentationUrl : undefined,
-              availability: modelPickerInventoryFact(model, modelStatus, typeof connection?.config.modelScanComplete === "boolean" ? connection.config.modelScanComplete : undefined),
+              availability: { ...modelPickerInventoryFact(model, modelStatus, typeof connection?.config.modelScanComplete === "boolean" ? connection.config.modelScanComplete : undefined),
+                facts: [
+                  { label: "扫描状态", value: modelStatus },
+                  ...(typeof connection?.config.modelScanComplete === "boolean" ? [{ label: "完整目录", value: String(connection.config.modelScanComplete) }] : []),
+                  { label: "协议", value: inventoryFactValue(model.metadata?.protocol), identifier: "token" as const },
+                  { label: "提交接口", value: inventoryFactValue(model.metadata?.endpointPath), identifier: "path" as const },
+                  ...(inventoryFactValue(model.metadata?.imageCapabilitiesVerifiedAt) !== "—" && inventoryFactValue(model.metadata?.imageCapabilitiesVerifiedAt) !== "" ? [{ label: "图片实测时间", value: inventoryFactValue(model.metadata?.imageCapabilitiesVerifiedAt) }] : []),
+                ],
+              },
               added: Array.isArray(connection?.config.modelAddedIds) && connection.config.modelAddedIds.includes(model.id),
             }))}
             empty={
@@ -2695,6 +2710,8 @@ function GroupConnectionEditor({
                 label: `本次返回：${realScan && returnedIds.has(model.id) ? "1" : realScan && connection?.config.modelScanComplete === true ? "0" : "—"}`,
                 tone: "unknown",
                 detail: `历史目录差异保留记录。当前扫描状态：${modelStatus}；完整目录：${connection?.config.modelScanComplete ?? "—"}。`,
+                facts: [{ label: "记录范围", value: "历史目录差异保留记录" }, { label: "当前扫描状态", value: modelStatus },
+                  { label: "完整目录", value: String(connection?.config.modelScanComplete ?? "—") }],
               },
             }))}
             empty=""
@@ -2767,7 +2784,7 @@ type SupplierModelListItem = SupplierCatalogModel & {
   kinds?: ModelKind[];
   runnable?: boolean;
   verified?: boolean;
-  availability?: { label: string; tone: string; detail: string };
+  availability?: { label: string; tone: string; detail: string; facts?: InformationItem[] };
   added?: boolean;
   qualityLabel?: string;
   interfaceLabel?: string;
@@ -2782,7 +2799,7 @@ function supplierModelCount(models: readonly Tk1688DisplayModel[], grouped = fal
   return `${groups.length + ordinaryCount} 个基础型号 · ${merchantCount} 条商家渠道`;
 }
 
-function SupplierModelRow({ model, route = false }: { model: SupplierModelListItem; route?: boolean }) {
+export function SupplierModelRow({ model, route = false }: { model: SupplierModelListItem; route?: boolean }) {
   const routeSummary = route ? tk1688RouteSummary(model) : undefined;
   const priceModel = model.descriptor ?? catalogPriceDescriptor({ ...model, id: model.id, name: model.name ?? model.id, operations: [],
     metadata: { ...model.metadata, priceLabel: supplierCatalogDisplayPrice(model),
@@ -2801,11 +2818,16 @@ function SupplierModelRow({ model, route = false }: { model: SupplierModelListIt
         </span>
         {model.protocol && model.protocol !== "unknown" && <small>{PROTOCOL_LABELS[model.protocol]}</small>}
         {model.qualityLabel && <small title={model.availability?.detail}>{model.qualityLabel}</small>}
-        {model.interfaceLabel && <small>{model.interfaceLabel}{model.interfaceSource && <> · <a href={model.interfaceSource} target="_blank" rel="noreferrer">接口说明</a></>}</small>}
-        {model.availability && <details className="sm-model-evidence"><summary>查看依据</summary><p>{model.availability.detail}</p></details>}
+        {model.interfaceLabel && <small className="sm-model-interface"><span>{model.interfaceLabel}</span>{model.interfaceSource && <a href={model.interfaceSource} target="_blank" rel="noreferrer">接口说明</a>}</small>}
+        {model.availability && <details className="sm-model-evidence"><summary>查看依据</summary>
+          {model.availability.facts ? <InformationGrid items={model.availability.facts} label="目录与调用依据" /> : <p>{model.availability.detail}</p>}
+        </details>}
       </div>
-      <div className="sm-model-price">{priceModel.pricing?.kind === "token" ? modelPickerPriceData(priceModel) : modelPickerPriceCompact(priceModel)}</div>
-      <div className="sm-model-price-evidence"><ModelPriceEvidence model={priceModel} /></div>
+      <div className="sm-model-price"><ModelPriceCompact model={priceModel} /></div>
+      <div className="sm-model-price-evidence">
+        {modelPickerPriceData(priceModel) !== "—" && <details className="sm-model-price-details"><summary>价格明细</summary><ModelPriceTable model={priceModel} /></details>}
+        <ModelPriceEvidence model={priceModel} />
+      </div>
       {routeSummary && <p className="sm-model-route-summary">{routeSummary}</p>}
     </div>
   );

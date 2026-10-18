@@ -7931,6 +7931,7 @@ function CanvasShell({
                 available: connectionIsConfigured(connection) && Boolean(generationType && connectionSupportsNodeType(connection, generationType, models)),
                 supplierId: typeof connection.config.supplierId === "string" ? connection.config.supplierId : undefined,
                 modelQuote: modelPickerPriceData(compatibleModels.find(model => model.id === node.data.model)),
+                modelDescriptor: compatibleModels.find(model => model.id === node.data.model),
                 modelMatch: compatibleModels.some(model => model.id === node.data.model && !modelCanvasUnavailableReason(model)),
                 unavailableReason: connection.provider === "cli" && !cliConnectionReady(connection) ? `${cliStatusLabel(connection)}，请在个人 AI 网站设置中接入` : generationType && !connectionSupportsNodeType(connection, generationType, models) ? `当前分组未声明${generationType === "image-generation" ? "图片" : "视频"}型号` : undefined,
               };

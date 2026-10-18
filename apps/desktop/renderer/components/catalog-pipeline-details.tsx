@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { CatalogConnectionStatus, CatalogMembershipCandidateSummary, CatalogPipelineDiagnostics, CatalogSourceDiagnostic } from "../lib/supplier-catalog-contracts";
 import styles from "./catalog-check.module.css";
+import { InformationChips, InformationGrid } from "./information-layout";
 
 const ROLES: Record<CatalogSourceDiagnostic["role"], string> = { "key-membership": "Key 成员清单", "catalog-offer": "供应目录", price: "公布价格", schema: "参数与调用资料", health: "来源状态" };
 const STATES: Record<CatalogSourceDiagnostic["status"], string> = { succeeded: "完整读取", partial: "部分读取", failed: "读取失败", deferred: "等待补查", unread: "尚未读取", running: "正在读取", unknown: "结果未定" };
@@ -10,12 +11,17 @@ const REASONS: Record<string, string> = { network: "网络", authentication: "�
 
 function DiagnosticSource({ source, connectionNames }: { source: CatalogSourceDiagnostic; connectionNames: Map<string, string> }) {
   return <li className={styles.source}>
-    <div className={styles.sourceHeading}><strong>{ROLES[source.role]}</strong><span>{STATES[source.status]}{source.paused ? " · 已暂停" : ""}</span></div>
-    <p>{source.connectionIds.map(id => connectionNames.get(id) ?? id).join("、")}{source.groupIdentity ? " · " + source.groupIdentity : ""}</p>
-    <p>{source.identity === "connection-key" ? "当前 Key" : source.identity === "site-account" ? "站点账号资料" : "公开资料"}{source.requiredForMembership ? " · 成员资格必需来源" : " · 补充资料"}{source.modelCount !== undefined ? ` · ${source.modelCount} 个型号` : ""}</p>
+    <div className={styles.sourceHeading}><strong>{ROLES[source.role]}</strong><InformationChips values={[STATES[source.status], ...(source.paused ? ["已暂停"] : [])]} /></div>
+    <InformationGrid items={[
+      { label: "连接", value: <InformationChips values={source.connectionIds.map(id => connectionNames.get(id) ?? id)} /> },
+      ...(source.groupIdentity ? [{ label: "分组", value: source.groupIdentity }] : []),
+      { label: "资料身份", value: source.identity === "connection-key" ? "当前 Key" : source.identity === "site-account" ? "站点账号资料" : "公开资料" },
+      { label: "用途", value: source.requiredForMembership ? "成员资格必需来源" : "补充资料" },
+      ...(source.modelCount !== undefined ? [{ label: "型号数", value: source.modelCount }] : []),
+      ...(source.checkedAt ? [{ label: "采样时间", value: <time dateTime={source.checkedAt}>{source.checkedAt}</time> }] : []),
+      ...(source.nextCheckAt ? [{ label: "下次资格", value: <time dateTime={source.nextCheckAt}>{source.nextCheckAt}</time> }] : []),
+    ]} />
     {source.reason && <p>{REASONS[source.reason] ?? "资料需下周期复查"}{source.status === "failed" || source.status === "unknown" ? "；保留已接受的目录与证据。" : ""}</p>}
-    {source.checkedAt && <p>采样时间 <time dateTime={source.checkedAt}>{source.checkedAt}</time></p>}
-    {source.nextCheckAt && <p>下次资格 <time dateTime={source.nextCheckAt}>{source.nextCheckAt}</time></p>}
     {source.sourceUrl && <a href={source.sourceUrl} target="_blank" rel="noreferrer">查看资料来源</a>}
   </li>;
 }
@@ -46,10 +52,14 @@ export function CatalogPipelineDetails({ pipeline, connections, selectedConnecti
     <section aria-label="待确认的目录骤降"><h4>待确认的目录变化 <small>CANDIDATES</small></h4>
       {!candidates.length ? <p className={styles.caption}>没有待确认的骤降目录。硬截断和读取不完整不能手动确认。</p> : candidates.map(candidate => <article className={styles.candidate} key={`${candidate.connectionId}:${candidate.sourceKey}`}>
         <strong>{names.get(candidate.connectionId) ?? candidate.connectionId}</strong>
-        <p>已接受 {candidate.baselineCount} 个 → 本次 {candidate.candidateCount} 个；原有型号中 {candidate.missingCount} 个未再返回。</p>
-        <p>已通过 {candidate.countedCycles} / {candidate.requiredCycles} 个独立日周期；每次至少相隔 24 小时。</p>
+        <InformationGrid items={[
+          { label: "已接受型号", value: candidate.baselineCount }, { label: "本次型号", value: candidate.candidateCount },
+          { label: "未再返回", value: candidate.missingCount }, { label: "独立日周期", value: `${candidate.countedCycles} / ${candidate.requiredCycles}` },
+          { label: "周期间隔", value: "每次至少相隔 24 小时" },
+          { label: "候选版本", value: <code title={candidate.candidateVersion}>{candidate.candidateVersion.slice(0, 12)}</code> },
+          { label: "采样时间", value: <time dateTime={candidate.checkedAt}>{candidate.checkedAt}</time> },
+        ]} />
         <p>保留已接受的目录，直到三个有效周期一致，或你确认这份候选。此操作只确认目录，不重新读取供应商。</p>
-        <small>候选版本 <code title={candidate.candidateVersion}>{candidate.candidateVersion.slice(0, 12)}</code> · <time dateTime={candidate.checkedAt}>{candidate.checkedAt}</time></small>
         <button type="button" className="sm-button" disabled={Boolean(busy)} onClick={() => void confirm(candidate)} aria-label={`确认 ${names.get(candidate.connectionId) ?? candidate.connectionId} 的候选目录 ${candidate.candidateVersion.slice(0, 12)}`}>{busy === candidate.candidateVersion ? "正在确认…" : "确认这份候选目录"}</button>
       </article>)}
       {error && <p role="status" className={styles.error}>{error} <button type="button" className="sm-button" onClick={() => void onRead()}>重新读取候选目录</button></p>}
@@ -63,7 +73,7 @@ export function CatalogPipelineDetails({ pipeline, connections, selectedConnecti
       <p className={styles.caption}>有目录记录不代表当前 Key 有权限，参数与调用契约也需独立完整。历史契约不作为新接口的兜底。</p>
       <ul className={styles.sources}>{contracts.slice(0, limit).map(row => <li className={styles.source} key={`${row.connectionId}:${row.modelId}:${row.operation}`}>
         <div className={styles.sourceHeading}><code>{row.modelId}</code><strong>{row.status === "pending" ? "待完整读取" : row.status === "protected" ? "保留人工或实测配置" : "契约已接受"}</strong></div>
-        <p>{names.get(row.connectionId) ?? row.connectionId} · {row.operation}</p>
+        <InformationGrid items={[{ label: "连接", value: names.get(row.connectionId) ?? row.connectionId }, { label: "操作", value: row.operation }]} />
         {row.reason && <p>{row.reason === "removed" ? "已确认不再提供此调用契约" : row.reason === "conflicting-source" ? "来源存在冲突，未覆盖已保存的配置" : "接口或参数发生变化，尚未取得完整契约"}</p>}
         <p>采样时间 <time dateTime={row.checkedAt}>{row.checkedAt}</time></p>
         {row.sourceUrl && <a href={row.sourceUrl} target="_blank" rel="noreferrer">查看提交接口</a>}
@@ -73,10 +83,10 @@ export function CatalogPipelineDetails({ pipeline, connections, selectedConnecti
     <section aria-label="不再可见的历史型号"><h4>历史型号与参数 <small>HISTORY</small></h4>
       <p className={styles.caption}>“该连接不再可见”只描述当前 Key；历史参数供查阅，已保存的画布和选择不会被改写。</p>
       {!history.length ? <p className={styles.caption}>没有已记录的不再可见型号。</p> : history.slice(0, historyLimit).map(row => <details className={styles.record} key={`${row.connectionId}:${row.modelId}:${row.unavailableAt}`}>
-        <summary><code>{row.modelId}</code><span>该连接不再可见 · {names.get(row.connectionId) ?? row.connectionId}</span></summary>
+        <summary><code>{row.modelId}</code><span>该连接不再可见</span><span>{names.get(row.connectionId) ?? row.connectionId}</span></summary>
         <p className={styles.caption}>记录时间 <time dateTime={row.unavailableAt}>{row.unavailableAt}</time></p>
         <div className={styles.descriptor}><strong>{row.descriptor.name}</strong>{row.descriptor.description && <p>{row.descriptor.description}</p>}
-          <p>操作：{row.descriptor.operations.join(" · ") || "—"}</p>
+          <InformationGrid items={[{ label: "操作", value: row.descriptor.operations.length ? <InformationChips values={row.descriptor.operations} /> : "—" }]} />
           <details><summary>查看完整历史参数与契约记录</summary><pre>{JSON.stringify(row.descriptor, null, 2)}</pre></details>
         </div>
       </details>)}
