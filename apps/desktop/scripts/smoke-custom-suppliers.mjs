@@ -83,7 +83,19 @@ export async function smokeCustomSuppliers(page, api, origin) {
   await page.reload();
   await open();
   await select.locator("option", { hasText: "怪兽设计" }).waitFor({ state: "attached" });
-  assert.match(await select.locator("option:checked").textContent(), /^怪兽设计 · .* · 余额未读取$/u);
+  assert.equal(await select.locator("option:checked").textContent(), "怪兽设计");
+  const quote = panel.getByLabel("当前供应商报价", { exact: true });
+  assert.deepEqual(await quote.getByRole("term").allTextContents(), ["供应商", "概括价", "余额"]);
+  assert.deepEqual(await quote.getByRole("definition").allTextContents(), ["怪兽设计", "—", "余额未读取"]);
+  const candidates = panel.locator("details.supplier-candidate-quotes");
+  await candidates.locator(":scope > summary").click();
+  const candidateTable = candidates.getByRole("table", { name: "供应商候选报价", exact: true });
+  for (const name of ["怪兽设计", "智元api"]) {
+    const row = candidateTable.getByRole("rowheader", { name, exact: true }).locator("..");
+    assert.equal(await row.isVisible(), true);
+    assert.deepEqual(await row.getByRole("cell").allTextContents(), ["—", "余额未读取"]);
+  }
+  assert.ok(await candidateTable.evaluate(element => element.scrollWidth <= element.clientWidth + 1));
   assert.equal(await select.inputValue(), monster.supplier.supplierKey);
   await page.goto(origin);
   await page.getByRole("button", { name: "创作设置", exact: true }).click();

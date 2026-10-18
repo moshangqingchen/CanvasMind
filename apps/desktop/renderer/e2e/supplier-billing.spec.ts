@@ -155,9 +155,29 @@ test("画布供应商选择显示对应报价余额，切换后刷新对应账�
   await page.getByRole("button", { name: "打开 账务测试 模型与参数", exact: true }).click();
   const panel = page.getByRole("dialog", { name: "账务测试 模型与参数" });
   const select = panel.getByRole("combobox", { name: "账务测试 供应商", exact: true });
-  await expect(select.locator(`option[value="${data.suppliers[0]!.supplierKey}"]`)).toContainText("0.4 CNY");
-  await expect(select.locator(`option[value="${data.suppliers[1]!.supplierKey}"]`)).toContainText("0.8 USD");
-  await expect(select.locator(`option[value="${data.suppliers[1]!.supplierKey}"]`)).toContainText("22 USD");
+  for (const supplier of data.suppliers) {
+    const option = select.locator(`option[value="${supplier.supplierKey}"]`);
+    await expect(option).toHaveText(supplier.name);
+    await expect(option).toHaveAttribute("value", supplier.supplierKey);
+  }
+  const candidates = panel.locator("details.supplier-candidate-quotes");
+  await candidates.locator(":scope > summary").click();
+  const candidateTable = candidates.getByRole("table", { name: "供应商候选报价", exact: true });
+  for (const [name, price, balance] of [["报价甲", "0.4 CNY / 张", "余额 10 CNY"], ["报价乙", "0.8 USD / 张", "余额 22 USD"]] as const) {
+    const row = candidateTable.getByRole("rowheader", { name, exact: true }).locator("..");
+    await expect(row).toBeVisible();
+    await expect(row.getByRole("cell")).toHaveText([price, balance]);
+    for (const cell of await row.getByRole("cell").all()) await expect(cell).toBeVisible();
+  }
+  await candidateTable.scrollIntoViewIfNeeded();
+  const candidateBounds = await candidateTable.evaluate(element => {
+    const table = element.getBoundingClientRect(), dialog = element.closest('[role="dialog"]')!.getBoundingClientRect();
+    return { inside: table.left >= dialog.left - 1 && table.right <= dialog.right + 1 && table.top >= dialog.top - 1 && table.bottom <= dialog.bottom + 1,
+      overflow: element.scrollWidth - element.clientWidth, pageOverflow: document.documentElement.scrollWidth - innerWidth };
+  });
+  expect(candidateBounds.inside).toBe(true);
+  expect(candidateBounds.overflow).toBeLessThanOrEqual(1);
+  expect(candidateBounds.pageOverflow).toBeLessThanOrEqual(1);
   await expect(panel.getByLabel("当前供应商报价")).toContainText("0.4 CNY");
   await select.selectOption(data.suppliers[1]!.supplierKey);
   await expect(panel.getByLabel("当前供应商报价")).toContainText("0.8 USD");

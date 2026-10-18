@@ -12,27 +12,20 @@ const [requestedWidth, requestedHeight] = requestedViewport?.split("x").map(Numb
 const viewport = { width: requestedWidth!, height: requestedHeight! };
 if (!Number.isSafeInteger(viewport.width) || !Number.isSafeInteger(viewport.height) || viewport.width < 320 || viewport.height < 320)
   throw new Error("UI_PHASE2_VIEWPORT must contain integer dimensions of at least 320x320");
-type AuraWindow = typeof window & { __auraDraws: number[]; __auraFrame: { drawn: boolean } | null };
+type AuraWindow = typeof window & { __auraDraws: number[] };
 
 async function instrumentAura(page: Page) {
   await page.addInitScript(() => {
     const w = window as AuraWindow;
     w.__auraDraws = [];
-    w.__auraFrame = null;
-    const originalClear = CanvasRenderingContext2D.prototype.clearRect;
-    CanvasRenderingContext2D.prototype.clearRect = function (...args) {
-      if (w.__auraFrame && this.canvas.closest("[data-animating]")) w.__auraFrame.drawn = true;
-      return originalClear.apply(this, args);
-    };
     const originalRaf = window.requestAnimationFrame.bind(window);
     window.requestAnimationFrame = callback => originalRaf(now => {
-      const capture = { drawn: false };
-      w.__auraFrame = capture;
+      const scene = document.querySelector<HTMLElement>('[data-testid="neural-scene"]');
+      const before = Number(scene?.dataset.frame ?? 0);
       const start = performance.now();
       try { callback(now); }
       finally {
-        if (capture.drawn) w.__auraDraws.push(performance.now() - start);
-        w.__auraFrame = null;
+        if (scene?.isConnected && Number(scene.dataset.frame) > before) w.__auraDraws.push(performance.now() - start);
       }
     });
   });
@@ -119,7 +112,9 @@ test("第二阶段隔离视觉证据与完整控件", async ({ page, request }, 
   await shot("home");
   const aura = await page.evaluate(() => {
     const frames = [...(window as AuraWindow).__auraDraws].sort((a, b) => a - b);
-    return { samples: frames.length, medianMs: frames[Math.floor(frames.length * .5)], p95Ms: frames[Math.floor(frames.length * .95)], maxMs: frames.at(-1), cpuRate: 1 };
+    return { samples: frames.length, medianMs: frames[Math.floor(frames.length * .5)], p95Ms: frames[Math.floor(frames.length * .95)], maxMs: frames.at(-1), cpuRate: 1,
+      measurementSource: "neural-scene data-frame growth within requestAnimationFrame callback",
+      renderer: document.querySelector('[data-testid="neural-scene"]')?.getAttribute("data-renderer") };
   });
   await page.emulateMedia({ reducedMotion: "reduce" });
   await expect(page.locator("[data-animating]").first()).toHaveAttribute("data-animating", "false");
@@ -218,7 +213,8 @@ test("第二阶段隔离视觉证据与完整控件", async ({ page, request }, 
       background: style.backgroundColor, shadow: style.boxShadow };
   });
   surfaceStyles["connecting-compatible-port"] = heldPortStyles;
-  expect(heldPortStyles).toMatchObject({ interacting: true, scale: "1.2", background: "rgb(45, 212, 191)" });
+  // Current light canvas accent (#6D50C8) is defined in app/theme-tokens.css.
+  expect(heldPortStyles).toMatchObject({ interacting: true, scale: "1.2", background: "rgb(109, 80, 200)" });
   expect(heldPortStyles.shadow).not.toBe("none");
   expect(heldPortStyles.shadow).toContain("4px");
   const incompatiblePort = page.locator('.react-flow__node[data-id="parameters"] .react-flow__handle.target[data-port-kind="text"]');

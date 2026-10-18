@@ -51,7 +51,12 @@ for (const theme of ["dark", "light"] as const) test(`${theme} 分来源诊断�
     await route.fulfill({ json: value });
   });
   const dialog = await openSettings(page);
-  await expect(dialog.getByLabel("待确认的目录骤降")).toContainText("36 个 → 本次 12 个");
+  const candidate = dialog.getByLabel("待确认的目录骤降").getByRole("article");
+  await expect(candidate).toHaveCount(1);
+  await expect(candidate.getByRole("term")).toHaveText(["已接受型号", "本次型号", "未再返回", "独立日周期", "周期间隔", "候选版本", "采样时间"]);
+  await expect(candidate.getByRole("definition")).toHaveText(["36", "12", "24", "1 / 3", "每次至少相隔 24 小时", version.slice(0, 12), checkedAt]);
+  await expect(candidate.locator("code")).toHaveAttribute("title", version);
+  await expect(candidate.locator("time")).toHaveAttribute("datetime", checkedAt);
   await expect(dialog.getByLabel("分来源读取诊断")).toContainText("公布价格");
   await expect(dialog.getByLabel("分来源读取诊断")).toContainText("读取失败");
   await expect(dialog.getByLabel("调用契约诊断")).toContainText("待完整读取");

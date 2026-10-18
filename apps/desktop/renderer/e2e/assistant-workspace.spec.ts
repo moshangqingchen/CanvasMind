@@ -133,7 +133,9 @@ for (const theme of ["dark", "light"] as const) {
     await expect(progress.locator('[aria-current="step"]')).toHaveText("① 检查方案");
     await expect(progress.getByRole("listitem")).toHaveCount(3);
     const meta = card.locator('summary [class*="stepMeta"]');
-    await expect(meta).toHaveText("依赖：无 · 推荐模型：—");
+    await expect(meta).toHaveCount(1);
+    await expect(meta.locator(":scope > span")).toHaveText(["依赖：无", "推荐模型：—"]);
+    await expect(meta.locator(":scope > span").nth(1).locator("code")).toHaveText("—");
     expect(await meta.evaluate(element => getComputedStyle(element).whiteSpace)).toBe("normal");
     expect(await meta.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
     await expect(card.getByRole("button", { name: "检查方案与模型", exact: true })).toHaveClass(/ghost/u);

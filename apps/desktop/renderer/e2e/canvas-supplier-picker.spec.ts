@@ -338,16 +338,28 @@ test("同群组多连接保留身份，旧智能体 Key 的图片模型可选择
   const endOfPage = panel.getByRole("option", { name: "列表模型 038", exact: true });
   await expect(endOfPage).toBeInViewport();
   await expect(endOfPage).toHaveAttribute("aria-posinset", "40");
-  // A longer quotation expands its row rather than being clipped by a fixed
-  // virtual-item height or overlapping its neighbour.
+  // Compact prose keeps its complete text and title while the rendered price
+  // stays within two lines and does not overlap its neighbour.
+  const fullQuote = models[38]!.metadata.priceLabel;
+  const compact = endOfPage.locator("[data-price-compact]");
+  await expect(compact).toHaveAttribute("title", fullQuote);
+  expect(await compact.textContent()).toBe(fullQuote);
+  await expect(compact.locator("[data-price-part]")).not.toHaveCount(0);
+  for (const part of await compact.locator("[data-price-part]").all()) {
+    await expect(part).toHaveAttribute("title", (await part.textContent())!.trim());
+    await expect(part).toHaveCSS("white-space", "nowrap");
+    await expect(part).toHaveCSS("text-overflow", "ellipsis");
+  }
   const rowGeometry = await endOfPage.evaluate(element => {
     const row = element.getBoundingClientRect();
-    const price = element.querySelector('[id$="-price"]')!.getBoundingClientRect();
+    const priceElement = element.querySelector('[id$="-price"]')!;
+    const price = priceElement.getBoundingClientRect();
     const previous = element.parentElement!.querySelector('[data-index="38"]')!.getBoundingClientRect();
-    return { height: row.height, previousHeight: previous.height, gap: row.top - previous.bottom,
+    return { height: row.height, priceHeight: price.height, priceLineHeight: Number.parseFloat(getComputedStyle(priceElement).lineHeight), gap: row.top - previous.bottom,
       priceInside: price.left >= row.left && price.right <= row.right + 1 && price.top >= row.top && price.bottom <= row.bottom + 1 };
   });
-  expect(rowGeometry.height).toBeGreaterThan(rowGeometry.previousHeight);
+  expect(rowGeometry.height).toBeGreaterThan(0);
+  expect(rowGeometry.priceHeight).toBeLessThanOrEqual(rowGeometry.priceLineHeight * 2 + 1);
   expect(rowGeometry.gap).toBeGreaterThanOrEqual(-1);
   expect(rowGeometry.priceInside).toBe(true);
   await expect.poll(() => mountedOptions.count()).toBeLessThan(40);
@@ -432,7 +444,6 @@ test("长目录暖开尺寸缓存随新报价与窄窗口重新测量", async ({
   await picker.click();
   await expect(row).toBeInViewport();
   await expect(row.locator("svg.lucide-check")).toHaveCount(1);
-  const originalHeight = (await row.boundingBox())!.height;
   const originalWidth = (await list.boundingBox())!.width;
   await search.press("Escape");
   // Reopen the same ModelPicker instance once to exercise its saved estimates.
@@ -450,6 +461,15 @@ test("长目录暖开尺寸缓存随新报价与窄窗口重新测量", async ({
     await picker.click();
     await expect(list.locator('[data-virtual-model-list]')).toHaveCount(1);
     await expect(row.locator('[id$="-price"]')).toHaveText(nextQuote);
+    const compact = row.locator("[data-price-compact]");
+    await expect(compact).toHaveAttribute("title", nextQuote);
+    expect(await compact.textContent()).toBe(nextQuote);
+    await expect(compact.locator("[data-price-part]")).not.toHaveCount(0);
+    for (const part of await compact.locator("[data-price-part]").all()) {
+      await expect(part).toHaveAttribute("title", (await part.textContent())!.trim());
+      await expect(part).toHaveCSS("white-space", "nowrap");
+      await expect(part).toHaveCSS("text-overflow", "ellipsis");
+    }
     await expect(row.locator("svg.lucide-check")).toHaveCount(1);
     await expect.poll(() => list.getByRole("option").count()).toBeLessThan(33);
     await expect.poll(() => list.evaluate(element => element.getBoundingClientRect().width)).toBeLessThan(originalWidth - 20);
@@ -459,7 +479,12 @@ test("长目录暖开尺寸缓存随新报价与窄窗口重新测量", async ({
       return price.left >= bounds.left - 1 && price.right <= bounds.right + 1
         && price.top >= bounds.top - 1 && price.bottom <= bounds.bottom + 1;
     })).toBe(true);
-    await expect.poll(async () => (await row.boundingBox())!.height).toBeGreaterThan(originalHeight + 20);
+    const priceGeometry = await row.locator('[id$="-price"]').evaluate(element => ({
+      height: element.getBoundingClientRect().height,
+      lineHeight: Number.parseFloat(getComputedStyle(element).lineHeight),
+    }));
+    expect(priceGeometry.height).toBeGreaterThan(0);
+    expect(priceGeometry.height).toBeLessThanOrEqual(priceGeometry.lineHeight * 2 + 1);
     await expect.poll(() => row.evaluate(element => {
       const next = element.parentElement!.querySelector('[data-index="7"]');
       return next ? next.getBoundingClientRect().top - element.getBoundingClientRect().bottom : -Infinity;

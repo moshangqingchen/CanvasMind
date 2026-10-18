@@ -73,8 +73,15 @@ test("模拟模板仅显式检测同步时启动操作，动态目录显示分�
   await expect.poll(() => api.actions).toEqual(["test"]);
   await panel.getByRole("button", { name: "同步模型与参数", exact: true }).click();
   await expect(panel.getByText("模拟视频模型", { exact: true })).toBeVisible();
-  await expect(panel.getByRole("region", { name: "已同步的模型与参数" })).toContainText("1080p / 720p");
-  await expect(panel.getByRole("region", { name: "已同步的模型与参数" })).toContainText("5 秒 / 10 秒");
+  const models = panel.getByRole("region", { name: "已同步的模型与参数" });
+  const parameters = models.getByLabel("模型参数", { exact: true });
+  await expect(parameters).toHaveCount(1);
+  await expect(parameters.getByRole("term")).toHaveText(["分辨率", "秒数"]);
+  const values = parameters.getByRole("definition");
+  await expect(values).toHaveCount(2);
+  await expect(values.nth(0).locator(".information-chips > span")).toHaveText(["1080p", "720p"]);
+  await expect(values.nth(1).locator(".information-chips > span")).toHaveText(["5 秒", "10 秒"]);
   expect(api.actions).toEqual(["test", "describe"]);
+  await models.scrollIntoViewIfNeeded();
   await page.screenshot({ path: testInfo.outputPath("personal-ai-settings.png") });
 });
