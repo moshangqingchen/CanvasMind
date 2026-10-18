@@ -1,6 +1,6 @@
 import type { ModelDescriptor, NormalizedRequest, StructuredModelPricing, StructuredPriceTier, ValidationIssue } from "./contracts.js";
 import type { RestConnectorConfig, RestModelConnectorOverride } from "./rest.js";
-import { cangyuanDocumentedImageModel, cangyuanDocumentedImageTransport, cangyuanDocumentedImageIssues, hasCangyuanImageDocument } from "./cangyuan-image-contract.js";
+import { cangyuanDocumentedImageModel, cangyuanDocumentedImageModelWithCatalogDimensions, cangyuanDocumentedImageTransport, cangyuanDocumentedImageIssues, hasCangyuanImageDocument, type CangyuanCatalogDimensionEvidence } from "./cangyuan-image-contract.js";
 
 export const isCangyuanCurrentModel = (id: string | undefined): boolean => hasCangyuanImageDocument(id ?? "");
 export function isCangyuanCurrentRequest(id: string | undefined, baseUrl?: string): boolean {
@@ -8,6 +8,7 @@ export function isCangyuanCurrentRequest(id: string | undefined, baseUrl?: strin
   try { return /(^|\.)cangyuansuanli\.cn$/u.test(new URL(baseUrl ?? "").hostname); } catch { return false; }
 }
 export const cangyuanCurrentModel = (model: ModelDescriptor): ModelDescriptor => cangyuanDocumentedImageModel(model);
+export const cangyuanCurrentCatalogModel = (model: ModelDescriptor, dimensions: CangyuanCatalogDimensionEvidence): ModelDescriptor => cangyuanDocumentedImageModelWithCatalogDimensions(model, dimensions);
 export const cangyuanCurrentTransport = (id: string, parameters?: Readonly<Record<string, unknown>>): RestModelConnectorOverride | undefined => cangyuanDocumentedImageTransport(id, parameters);
 export function cangyuanCurrentRequestIssues(request: NormalizedRequest, baseUrl?: string): ValidationIssue[] {
   return isCangyuanCurrentRequest(request.model, baseUrl) ? cangyuanDocumentedImageIssues(request) : [];

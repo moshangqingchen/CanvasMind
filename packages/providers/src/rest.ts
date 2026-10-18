@@ -18,7 +18,7 @@ import type {
   ValidationResult,
 } from "./contracts.js";
 import { referenceImageHostingEnabled, uploadTemporaryReferenceImages } from "./reference-image-hosting.js";
-import { canApplyCangyuanCurrentContract, managesCangyuanCurrentTransport, cangyuanCurrentRequestIssues, cangyuanCurrentTransport, isCangyuanCurrentRequest, withCangyuanCurrentRequestParameters } from "./cangyuan-current-models.js";
+import { canApplyCangyuanCurrentContract, managesCangyuanCurrentTransport, cangyuanCurrentRequestIssues, cangyuanCurrentTransport, withCangyuanCurrentRequestParameters } from "./cangyuan-current-models.js";
 import { cangyuanMusicModel, cangyuanMusicRequestIssues, cangyuanMusicTransport, isCangyuanMusicRequest, withCangyuanMusicRequestParameters } from "./cangyuan-music.js";
 import { cangyuanVideoModel, cangyuanVideoTransport, isCangyuanVideoRequest, normalizeCangyuanVideoParameters, validateCangyuanVideoRequest } from "./cangyuan-video-contract.js";
 import { remainingVideoSupplier, isRemainingVideoModel, remainingVideoModel, remainingVideoTransport, remainingVideoRequiresPublicUrls, restoreRemainingVideoModel, isRemainingVideoPublicHttpsUrl, normalizeRemainingVideoParameters, remainingVideoRequestIssues, type RemainingVideoContext } from "./remaining-video-contracts.js";
@@ -1169,14 +1169,25 @@ export class GenericRestAdapter implements ProviderAdapter {
       if (evidence?.transport.kind === "saved-rest" && evidence.transport.bodyMode === "multipart" &&
           (evidence.hostname === "api.mikoto.vip" && evidence.supplierGroupId === "5" ||
             evidence.hostname === "api.3365api.cn" && evidence.group === "image-2稳定生图" && model === "gpt-image-2.5")) {
+        const afeiImagesEdit = evidence.hostname === "api.3365api.cn";
         const template = isRecord(selected.submit.template) ? { ...selected.submit.template } : {};
         const fields = ["model", "prompt", "size", "quality", "n", "response_format", "background", "output_format"];
         for (const key of [...fields, "images", "image", "image_url", "image_url[]"]) delete template[key];
-        return { ...selected, assetsRequirePublicUrls: false, submit: { ...selected.submit,
+        // This exact edit route returns an Images body, while this model's
+        // separate generation route still uses Chat. Replace both halves of
+        // the contract; retaining Chat's stream/messages or output parser
+        // turned a real data[].b64_json HTTP200 into a false no-image error.
+        const chatFields = new Set(["messages", "stream", "stream_options"]);
+        if (afeiImagesEdit) for (const key of chatFields) delete template[key];
+        return { ...selected, assetsRequirePublicUrls: false,
+          ...(afeiImagesEdit ? { output: { path: "$.data", kind: "image" as const,
+            urlPath: "url", base64Path: "b64_json", defaultMimeType: "image/png" } } : {}),
+          submit: { ...selected.submit,
           path: evidence.transport.path, method: "POST", bodyMode: "multipart", idempotent: false,
           forceAssetFileUploads: true, template,
           mappings: [...(selected.submit.mappings ?? []).filter(mapping =>
             mapping.source.kind !== "assets" && !fields.some(field => mapping.target === `/${field}`) &&
+            !(afeiImagesEdit && (mapping.source.kind === "openaiMessages" || chatFields.has(mapping.target.replace(/^\//u, "")))) &&
             !["/images", "/image", "/image_url", "/image_url[]", "/aspect_ratio", "/aspectRatio", "/ratio", "/size_tier", "/resolution", "/image_size"].includes(mapping.target)),
             ...fields.map(key => ({ target: `/${key}`, source: { kind: "request" as const,
               path: key === "model" || key === "prompt" ? `$.${key}` : `$.parameters.${key}` }, omitIfUndefined: true })),

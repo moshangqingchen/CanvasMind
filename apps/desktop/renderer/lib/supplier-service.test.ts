@@ -42,6 +42,7 @@ import {
 } from "./supplier-service";
 import { decryptSecret, encryptSecret, parseSupplierCatalog, SupplierLoginError } from "@super-canvas/providers";
 import { requireServerMasterKey } from "./master-key";
+import { catalogChanges } from "./supplier-catalog-policy";
 
 beforeEach(() => {
   mocks.repository = new MemoryRepository();
@@ -143,9 +144,10 @@ describe("supplier service", () => {
     expect(mocks.models).not.toHaveBeenCalled();
     expect(await mocks.repository.listConnections()).toEqual(before);
   });
-  it("catalog-only reads retain current Key-owned groups as stale evidence without reviving old sources", async () => {
+  it.each([undefined, "8"])("catalog-only reads retain current Key-owned groups and stable identity %s without reviving old sources", async supplierGroupId => {
     const supplier = await createSupplierRecord({ name: "Account groups", siteUrl: "https://catalog-only.example.test", kind: "sub2api" });
     supplier.catalog = { groups: ["account-only", "old-source", "disabled"].map(id => ({ id, label: id, source: "catalog" as const,
+      ...(id === "account-only" && supplierGroupId ? { supplierGroupId } : {}),
       models: [{ id: "seedance-2.5", capability: "video" as const, priceLabel: "¥5.5/请求" }] })) };
     await mocks.repository.saveSupplier(supplier);
     for (const id of ["account-only", "old-source", "disabled"]) await mocks.repository.saveConnection({ id, name: id, provider: "openai", encryptedSecret: "opaque-key",
@@ -159,6 +161,9 @@ describe("supplier service", () => {
     const refreshed = await scanSupplierRecord(supplier.id, undefined, supplier.state!.revision, { catalogOnly: true });
     expect(refreshed.catalog.groups.find(group => group.id === "account-only")).toMatchObject({ status: "available",
       details: { stale: true, source: "key-groups" }, models: [{ id: "seedance-2.5", priceLabel: "¥5.5/请求" }] });
+    expect(refreshed.catalog.groups.find(group => group.id === "account-only")?.supplierGroupId).toBe(supplierGroupId);
+    expect(catalogChanges(before[0]!, before[0]!, supplier, refreshed).filter(change =>
+      change.groupId === "account-only" && ["group-added", "group-removed"].includes(change.kind))).toEqual([]);
     expect(refreshed.catalog.groups.filter(group => group.status === "missing").map(group => group.id)).toEqual(["old-source", "disabled"]);
     expect(await mocks.repository.listConnections()).toEqual(before);
     expect(mocks.accountKeys).not.toHaveBeenCalled();

@@ -18,6 +18,22 @@ beforeEach(() => { vi.stubGlobal("fetch", vi.fn(() => { throw new Error("Ambient
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe("one-HTTP supplementary sources", () => {
+  it("keeps Cyber Afei service health anonymous and separate from groups, models, prices and generation", async () => {
+    const sourceUrl = "https://api.3365api.cn/channel-status/api/overview";
+    const transport = vi.fn<typeof fetch>(async (_url, init) => {
+      expect(init).toMatchObject({ method: "GET", credentials: "omit", headers: {} });
+      return json({ generatedAt: 1792249581, services: [{ name: "生图", state: "up", availability: 100, latency: 25.35,
+        buckets: [{ state: "up", label: "3 次请求，成功 3，失败 0" }, { state: "unknown", label: "0 次请求，成功 0，失败 0" }], lastLabel: "3 次请求" }] });
+    });
+    const result = await collectCatalogSupplementRead({ entryId: "cyberafei-health", sourceUrl }, { fetch: transport, checkedAt });
+    expect(result).toMatchObject({ complete: true, status: "live", models: [], entries: [], evidence: { kind: "cyberafei-health",
+      generatedAt: 1792249581, generatedAtUnit: "unix-seconds", statisticsScope: "service-categories",
+      window: { seconds: 7200, sourceUrl: "https://api.3365api.cn/channel-status/", source: "published-page-label" },
+      observations: [{ serviceName: "生图", status: "up", availabilityPercent: 100, latencySeconds: 25.35,
+        buckets: [{ status: "up", label: "3 次请求，成功 3，失败 0" }, { status: "unknown", label: "0 次请求，成功 0，失败 0" }] }] } });
+    expect(JSON.stringify(result)).not.toMatch(/supplierGroupId|generationVerified|unitAmount|bucketSeconds/u);
+    expect(transport).toHaveBeenCalledExactlyOnceWith(sourceUrl, expect.anything()); expect(fetch).not.toHaveBeenCalled();
+  });
   it("Synora usage is a billed sample, independent of failed announcements, with no public quote or persistence", async () => {
     const repository = new MemoryRepository();
     const save = vi.spyOn(repository, "saveConnection"), settings = vi.spyOn(repository, "setApplicationSetting");
@@ -127,6 +143,7 @@ describe("one-HTTP supplementary sources", () => {
   it.each([
     ["synora-usage", SYNORA_LEDGER_URL], ["synora-announcements", SYNORA_NOTIFICATIONS_URL], ["weai-legacy-index", WEAI_LEGACY_MODELS_URL],
     ["monster-categories", "https://api.eaheng.com/api/v1/plaza/categories"], ["monster-range", "https://api.eaheng.com/api/v1/plaza?range=90m"],
+    ["cyberafei-health", "https://api.3365api.cn/channel-status/api/overview"],
   ])("unknown %s JSON never becomes complete", async (entryId, sourceUrl) => {
     const transport = vi.fn<typeof fetch>().mockResolvedValue(json({ success: true, data: { unknown: [] } }));
     await expect(collectCatalogSupplementRead({ entryId, sourceUrl }, { fetch: transport, checkedAt })).rejects.toMatchObject({ code: "invalid_response" });
@@ -145,6 +162,8 @@ describe("one-HTTP supplementary sources", () => {
     { entryId: "jiasu-script", sourceUrl: "https://ai.jiasuapi.com/static/js/index.a1.js?token=fixture" },
     { entryId: "monster-range", sourceUrl: "https://api.eaheng.com/api/v1/plaza?range=all" },
     { entryId: "weai-legacy-group", sourceUrl: `${WEAI_LEGACY_MODELS_URL}?group_id=101&token=fixture`, groupId: 101 },
+    { entryId: "cyberafei-health", sourceUrl: "https://api.3365api.cn/channel-status/api/overview?key=fixture" },
+    { entryId: "cyberafei-health", sourceUrl: "https://api.3365api.cn.evil.invalid/channel-status/api/overview" },
   ])("unregistered source never receives a credential or request", async input => {
     const transport = vi.fn<typeof fetch>();
     await expect(collectCatalogSupplementRead(input, { fetch: transport, checkedAt })).rejects.toThrow();

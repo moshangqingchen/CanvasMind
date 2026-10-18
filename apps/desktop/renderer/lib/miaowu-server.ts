@@ -9,12 +9,13 @@ import {
   type JsonObject,
   type ProviderConnectionRecord,
 } from "@super-canvas/db";
-import { decryptSecret, providerFetch, preservesMiaowuExplicitVideoContract, isMiaowuLegacyVideoBaseConnector } from "@super-canvas/providers";
+import { decryptSecret, providerFetch, preservesMiaowuExplicitVideoContract, isMiaowuLegacyVideoBaseConnector, isMiaowuLegacyChatVideoOverride } from "@super-canvas/providers";
 import { requireServerMasterKey } from "./master-key";
 import { clearEmptyScanConfirmation } from "./model-scan-confirmation";
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import type { ModelDescriptor, RestConnectorConfig, RestModelConnectorOverride } from "@super-canvas/providers";
-import { remainingVideoModelIds } from "@super-canvas/providers/remaining-video-contracts";
+import { remainingVideoModelIds, remainingVideoTransport } from "@super-canvas/providers/remaining-video-contracts";
 import {
   MIAOWU_BASE_URL,
   MIAOWU_PRESET_ID,
@@ -227,10 +228,21 @@ function refreshedMiaowuConnector(connection: ProviderConnectionRecord, models: 
   const protectedModels = new Map<string, ModelDescriptor>();
   for (const model of models) {
     const saved = previousModels.find(row => row && row.id === model.id && Array.isArray(row.operations));
-    if (!aliases.has(model.id) && saved?.metadata?.source !== "manual") continue;
+    const explicit = connection.config.manualProtocol === true || saved?.metadata?.source === "manual" ||
+      saved?.metadata?.source === "paid-test" || saved?.metadata?.protocolEvidence === "paid-test";
+    if (!aliases.has(model.id) && !explicit) continue;
     if (!saved || saved.metadata?.marketplaceGroup && saved.metadata.marketplaceGroup !== model.metadata?.marketplaceGroup) continue;
     const denied = saved.metadata?.canvasRunnable === false && /401|403|权限|未开通|拒绝|下架|停用|unauthorized|forbidden/iu.test(String(saved.metadata.canvasUnavailableReason ?? ""));
-    if (denied || saved.metadata?.source === "manual" || preservesMiaowuExplicitVideoContract(connection.config, saved) ||
+    // An unchanged automatic Chat fallback must not freeze a newer exact native
+    // schema. Keep manual/paid routes, user bindings and operation overrides.
+    const freshNative = model.metadata?.parameterSource === "dream.video_schema" && model.metadata.videoSchemaStatus === "live";
+    const savedBindings = connection.config.autoModelInterfaces as Record<string, unknown> | undefined;
+    const operationOverrides = [previous?.operationOverrides, previous?.modelOverrides?.[model.id]?.operationOverrides];
+    if (freshNative && !denied && !explicit &&
+        !savedBindings?.[model.id] && !operationOverrides.some(overrides => Object.entries(overrides ?? {}).some(([operation, value]) => operation.startsWith("video.") && Object.keys(value ?? {}).length)) &&
+        (isMiaowuLegacyChatVideoOverride(previous?.modelOverrides?.[model.id]) ||
+          isDeepStrictEqual(previous?.modelOverrides?.[model.id], remainingVideoTransport("miaowu", model.id)))) continue;
+    if (denied || explicit || preservesMiaowuExplicitVideoContract(connection.config, saved) ||
         saved.operations.some(operation => preservesMiaowuExplicitVideoContract(connection.config, saved, operation)))
       protectedModels.set(model.id, { ...structuredClone(saved), metadata: { ...model.metadata, ...saved.metadata,
         modelDirectorySources: model.metadata?.modelDirectorySources } });

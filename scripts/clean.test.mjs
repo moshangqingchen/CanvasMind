@@ -80,6 +80,49 @@ test("deep cleanup is limited to source workspaces, never installed app copies",
   );
 });
 
+test("normal and deep cleanup preserve original audit evidence, generated media and complete backups", async (t) => {
+  const { root, put } = await fixture(t);
+  const preserved = [
+    ".codex-logs/2026-10-17-supplier-live-image-check/original-response.private.json",
+    ".codex-logs/2026-10-17-supplier-live-image-check/billing-before.json",
+    ".codex-logs/2026-10-17-supplier-protocol-repair/installed-readonly-final-v2/readback-by-supplier.json",
+    ".codex-logs/2026-10-17-supplier-protocol-repair/repair-local-final/plan.private.json",
+    ".codex-logs/2026-10-17-supplier-protocol-repair/repair-local-final/applied.json",
+    ".codex-logs/2026-10-17-supplier-protocol-repair/build.log",
+    "output/imagegen/transparent-reference/original.png",
+    "output/supplier-recheck-20261017/c/sources.json",
+    "backups/before-repair/profile/data/super-canvas.json",
+    "backups/before-repair/profile/secrets.bin",
+  ];
+  for (const name of preserved) await put(name);
+  await put("apps/desktop/renderer/.next-old/cache.bin");
+  for (const deep of [false, true]) {
+    const plan = await planCleanup(root, { deep });
+    assert.ok(
+      plan.every(
+        (entry) =>
+          !/^(?:\.codex-logs|output|backups)(?:\/|$)/u.test(entry.path),
+      ),
+    );
+    await applyCleanup(root, plan);
+    for (const name of preserved)
+      assert.equal(
+        await readFile(path.join(root, name), "utf8"),
+        "keep or regenerate",
+      );
+    for (const forbidden of [
+      ".codex-logs",
+      ".codex-logs/2026-10-17-supplier-protocol-repair",
+      "output/imagegen",
+      "backups",
+    ])
+      await assert.rejects(
+        applyCleanup(root, [{ path: forbidden }]),
+        /Not a generated/u,
+      );
+  }
+});
+
 test("normal cleanup includes historical UI test outputs while preserving unrelated hidden folders", async (t) => {
   const { root, put } = await fixture(t);
   const removed = [
@@ -118,13 +161,19 @@ test("rejects workspace root, outside paths and non-generated paths in supplied 
     applyCleanup(root, [{ path: "apps/desktop/renderer/data" }]),
     /Not a generated/u,
   );
-  assert.ok(await readFile(path.join(root, "apps/desktop/renderer/data/super-canvas.json")));
+  assert.ok(
+    await readFile(
+      path.join(root, "apps/desktop/renderer/data/super-canvas.json"),
+    ),
+  );
 });
 
 test("rejects linked ancestors and never follows links inside generated output", async (t) => {
   const { root, put } = await fixture(t);
   await put("protected/sentinel.txt");
-  await mkdir(path.join(root, "apps/desktop/renderer/.next-old"), { recursive: true });
+  await mkdir(path.join(root, "apps/desktop/renderer/.next-old"), {
+    recursive: true,
+  });
   await symlink(
     path.join(root, "protected"),
     path.join(root, "apps/desktop/renderer/.next-old/link"),

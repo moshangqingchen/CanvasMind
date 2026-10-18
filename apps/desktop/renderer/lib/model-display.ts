@@ -258,15 +258,6 @@ export function modelPriceSummary(model: import("@super-canvas/providers").Model
   return typeof model.metadata?.priceLabel === "string" ? displayPriceLabel(model.metadata.priceLabel, model.metadata?.priceStatus) : "价格未知";
 }
 
-/** The menu shows the model's tariff and its conditions independently of the
- * current node's saved parameters. Validation and estimation are unchanged.
- */
-export function modelPickerPriceSummary(model: ModelDescriptor | undefined, _parameters: Readonly<Record<string, unknown>>, _selected: boolean): string {
-  void _parameters;
-  void _selected;
-  return modelPickerPriceData(model);
-}
-
 /** A preview of the selected request, separate from the supplier's unit price. */
 export function modelEstimatedCost(model: ModelDescriptor | null | undefined, parameters: Readonly<Record<string, unknown>>): string | undefined {
   if (!model) return undefined;

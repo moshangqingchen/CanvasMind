@@ -20,7 +20,7 @@ import { applyMiaowuVideoSchema, type MiaowuVideoSchemaContract } from "./miaowu
 import { MIAOWU_CONNECTOR, MIAOWU_IMAGE_OVERRIDE } from "./miaowu-presets";
 import { matchesSupplierTemplate } from "./supplier-template-source";
 import { supplierKeyForConnection } from "./supplier-identity";
-import { mikotoConnectorForGroup, mikotoGroup } from "./mikoto-presets";
+import { MIKOTO_IMAGE_1K_GROUP, mikotoConnectorForGroup, mikotoGroup } from "./mikoto-presets";
 
 const protectedModel = (model: ModelDescriptor) => ["manual", "paid-test"].includes(String(model.metadata?.source)) || model.metadata?.protocolEvidence === "paid-test";
 const denied = (model: ModelDescriptor) => /401|403|权限|未开通|拒绝|下架|停用|未返回|unauthor|forbidden|not.?returned/iu.test(String(model.metadata?.canvasUnavailableReason ?? ""));
@@ -84,7 +84,14 @@ function builtinRestContract(connection: ProviderConnectionRecord, model: ModelD
       return { adapter: "cyberafei-rest", model: completeBuiltinDescriptor(descriptor), connector: cyberAfeiConnectorForModels([descriptor], context) };
   }
   if (supplier === "mikoto" && config.preset === "mikoto-pro") {
-    const group = mikotoGroup(config.accountKeyGroup ?? config.modelGroup);
+    const stableGroupId = String(config.accountKeyGroupId ?? "");
+    const displayGroup = mikotoGroup(config.accountKeyGroup ?? config.modelGroup);
+    // Group5 Flare/Sunburst receipts belong to its official stable identity,
+    // including a rename. A reused display name must not grant another Key's
+    // group that exact built-in contract.
+    const group = stableGroupId === "5" ? mikotoGroup(MIKOTO_IMAGE_1K_GROUP) : displayGroup;
+    if (stableGroupId && stableGroupId !== "5" && group?.id === MIKOTO_IMAGE_1K_GROUP &&
+      ["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"].includes(model.id)) return;
     const descriptor = group?.provider === "rest" ? group.models.find(row => row.id === model.id) : undefined;
     if (group && descriptor && (!model.outputKinds?.length || !descriptor.outputKinds?.length || model.outputKinds.some(kind => descriptor.outputKinds!.includes(kind))))
       return { adapter: "mikoto-rest", model: completeBuiltinDescriptor(descriptor), connector: mikotoConnectorForGroup(group.id) };

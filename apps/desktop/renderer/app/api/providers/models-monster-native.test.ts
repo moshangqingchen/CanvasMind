@@ -208,7 +208,9 @@ describe("Monster C1 current native inventory", () => {
       const model = returned.find(model => model.id === id)!;
       expect(model.metadata?.monsterNativeModelName).toBe(`models/${id}`);
       expect(model.operations).toEqual(["image.generate", "image.edit"]);
-      expect(model.parameters?.find(parameter => parameter.key === "image_size")?.options?.map(option => option.value)).toEqual(["auto"]);
+      expect(model.parameters?.find(parameter => parameter.key === "image_size")?.options?.map(option => option.value)).toEqual(["auto", "1K", "2K", "4K"]);
+      expect(model.metadata?.imageUserNativeSizePresetSource).toBe("user-request");
+      expect(model.metadata?.resolutionVerification).toBe("user-presets-not-generation-tested");
     }
     expect(mocks.fetch).toHaveBeenCalledTimes(2);
     mocks.fetch.mockClear();

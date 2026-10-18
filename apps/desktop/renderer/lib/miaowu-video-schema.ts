@@ -1,4 +1,4 @@
-import type { ModelDescriptor, ModelParameterDescriptor } from "@super-canvas/providers";
+import type { ModelDescriptor, ModelParameterDescriptor, StructuredModelPricing } from "@super-canvas/providers";
 
 export interface MiaowuVideoSchemaContract {
   durations?: number[];
@@ -11,6 +11,10 @@ export interface MiaowuVideoSchemaContract {
   maxInputVideos: number;
   maxInputAudios: number;
   maxPromptCharacters?: number;
+  /** Already converted by the supplier for this exact account group. */
+  pricingDisplay?: { currency: "CNY" | "USD"; groups: Record<string, {
+    unit: "per_call" | "per_second"; rules: { resolution: string; price: number }[];
+  }> };
 }
 export interface MiaowuVideoSchemaReceipt {
   id: string;
@@ -28,6 +32,33 @@ const object = (value: unknown): Record<string, unknown> | undefined => value !=
 const positive = (value: unknown): number | undefined => typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined;
 const maximum = (value: unknown): number | undefined => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 const enumStrings = (value: unknown): string[] | undefined => Array.isArray(value) && value.length && value.every(item => typeof item === "string" && item.trim()) ? [...new Set(value)] as string[] : undefined;
+
+function displayPricing(response: Record<string, unknown>, contract: MiaowuVideoSchemaContract): MiaowuVideoSchemaContract["pricingDisplay"] {
+  const display = object(response.pricing_display), groups = object(display?.groups);
+  if (!groups || !["CNY", "USD"].includes(String(display?.currency))) return undefined;
+  const valid: NonNullable<MiaowuVideoSchemaContract["pricingDisplay"]>["groups"] = Object.create(null);
+  for (const [group, value] of Object.entries(groups)) {
+    const quote = object(value);
+    if (!quote || !["per_call", "per_second"].includes(String(quote.unit)) || !Array.isArray(quote.rules) || !quote.rules.length ||
+        Object.keys(quote).some(key => !["unit", "rules"].includes(key))) continue;
+    const rules: { resolution: string; price: number }[] = [];
+    let invalid = false;
+    for (const value of quote.rules) {
+      const rule = object(value);
+      const resolution = rule?.size;
+      if (!rule || Object.keys(rule).some(key => !["size", "price", "seconds_max"].includes(key)) ||
+          typeof resolution !== "string" || !contract.resolutions.includes(resolution) || rules.some(row => row.resolution === resolution) ||
+          typeof rule.price !== "number" || !Number.isFinite(rule.price) || rule.price < 0) { invalid = true; break; }
+      const maxDuration = contract.durationByResolution?.[resolution]?.max ?? (contract.durations ? Math.max(...contract.durations) : contract.maxSeconds);
+      const secondsMax = positive(rule.seconds_max);
+      if (rule.seconds_max !== undefined && (secondsMax === undefined || maxDuration === undefined || secondsMax < maxDuration)) { invalid = true; break; }
+      rules.push({ resolution, price: rule.price });
+    }
+    if (!invalid && contract.resolutions.every(resolution => rules.some(rule => rule.resolution === resolution)))
+      valid[group] = { unit: quote.unit as "per_call" | "per_second", rules };
+  }
+  return Object.keys(valid).length ? { currency: display!.currency as "CNY" | "USD", groups: valid } : undefined;
+}
 
 /** The authenticated exact-model schema is data; never execute its content. */
 export function parseMiaowuVideoSchema(id: string, payload: unknown): MiaowuVideoSchemaContract {
@@ -62,16 +93,19 @@ export function parseMiaowuVideoSchema(id: string, payload: unknown): MiaowuVide
   }
   const maxPromptCharacters = prompt.maxLength === undefined ? undefined : positive(prompt.maxLength);
   if (prompt.maxLength !== undefined && maxPromptCharacters === undefined) throw new Error("免费 schema 提示词长度上限无效");
-  return { ...(durations ? { durations } : { minSeconds, maxSeconds }), resolutions, ratios,
+  const contract: MiaowuVideoSchemaContract = { ...(durations ? { durations } : { minSeconds, maxSeconds }), resolutions, ratios,
     ...(Object.keys(durationByResolution).length ? { durationByResolution } : {}),
     maxInputImages: counts[0]!, maxInputVideos: counts[1]!, maxInputAudios: counts[2]!,
     ...(maxPromptCharacters === undefined ? {} : { maxPromptCharacters }) };
+  const pricingDisplay = displayPricing(response, contract);
+  return { ...contract, ...(pricingDisplay ? { pricingDisplay } : {}) };
 }
 
 /** Caller supplies only same-Key, same-source, same-group receipts for visible IDs. */
 export function applyMiaowuVideoSchema(model: ModelDescriptor, receipt: MiaowuVideoSchemaReceipt | undefined): ModelDescriptor {
-  if (!receipt || receipt.id !== model.id || !model.outputKinds?.includes("video")) return model;
-  if (model.metadata?.source === "manual" || model.metadata?.protocolEvidence === "paid-test" ||
+  if (!receipt || receipt.id !== model.id || !model.outputKinds?.includes("video") ||
+      receipt.sourceUrl !== `https://api.miaowuai.store/v1/dream/model_schema?model=${encodeURIComponent(model.id)}`) return model;
+  if (model.metadata?.source === "manual" || model.metadata?.source === "paid-test" || model.metadata?.protocolEvidence === "paid-test" ||
       /401|403|权限|未开通|拒绝|下架|停用|unauthorized|forbidden/iu.test(String(model.metadata?.canvasUnavailableReason ?? ""))) return model;
   const evidence = { videoSchemaStatus: receipt.status, videoSchemaCheckedAt: receipt.checkedAt, videoSchemaSourceUrl: receipt.sourceUrl,
     videoSchemaError: receipt.error ?? null, videoSchemaStale: receipt.stale === true,
@@ -95,7 +129,27 @@ export function applyMiaowuVideoSchema(model: ModelDescriptor, receipt: MiaowuVi
   const limits = { ...model.limits, maxInputImages: c.maxInputImages, maxInputVideos: c.maxInputVideos, maxInputAudios: c.maxInputAudios };
   delete limits.maxPromptCharacters;
   if (c.maxPromptCharacters !== undefined) limits.maxPromptCharacters = c.maxPromptCharacters;
-  return { ...model, operations: c.maxInputImages ? ["video.generate", "video.image-to-video"] : ["video.generate"], outputKinds: ["video"],
+  const group = model.metadata?.marketplaceGroup;
+  const display = typeof group === "string" ? c.pricingDisplay?.groups[group] : undefined;
+  let pricing: StructuredModelPricing | undefined = model.pricing;
+  let name = model.name;
+  if (display && c.pricingDisplay) {
+    const perSecond = display.unit === "per_second", currency = c.pricingDisplay.currency;
+    pricing = { kind: perSecond ? "per-second" : "per-request", currency, billingUnit: perSecond ? "second" : "request",
+      unitAmount: Math.max(...display.rules.map(rule => rule.price)),
+      tiers: display.rules.map(rule => ({ id: rule.resolution, label: rule.resolution, dimension: "resolution", value: rule.resolution, price: rule.price })),
+      sourceUrl: receipt.sourceUrl, checkedAt: receipt.lastSuccessfulCheckedAt ?? receipt.checkedAt, confidence: "exact" };
+    const amounts = [...new Set(display.rules.map(rule => rule.price))].sort((a, b) => a - b);
+    const number = (value: number) => String(Number(value.toPrecision(12)));
+    const range = amounts.length === 1 ? number(amounts[0]!) : `${number(amounts[0]!)}–${number(amounts.at(-1)!)}`;
+    metadata.priceLabel = `${currency === "CNY" ? "¥" : "$"}${range}/${perSecond ? "秒" : "次"}`;
+    metadata.billingLabel = perSecond ? "按秒计费" : "按次计费";
+    metadata.pricingCheckedAt = pricing.checkedAt;
+    metadata.pricingSource = "dream.video_schema.pricing_display";
+    name = `${name.replace(/（(?:价格以平台为准|[¥$][\d.]+(?:–[\d.]+)?\/(?:次|秒))）$/u, "")}（${metadata.priceLabel}）`;
+  }
+  return { ...model, name, operations: c.maxInputImages ? ["video.generate", "video.image-to-video"] : ["video.generate"], outputKinds: ["video"],
     inputKinds: ["text", ...(c.maxInputImages ? ["image" as const, "image[]" as const] : []), ...(c.maxInputVideos ? ["video" as const, "video[]" as const] : []), ...(c.maxInputAudios ? ["audio" as const, "audio[]" as const] : [])],
-    parameters: [duration, select("resolution", "输出分辨率", c.resolutions), select("aspect_ratio", "画面比例", c.ratios)], limits, metadata };
+    parameters: [duration, select("resolution", "输出分辨率", c.resolutions), select("aspect_ratio", "画面比例", c.ratios)], limits, metadata,
+    ...(pricing ? { pricing } : {}) };
 }

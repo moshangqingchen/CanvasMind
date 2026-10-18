@@ -1,0 +1,366 @@
+{
+  "checkedAt": "2026-10-18T00:33:29.698Z",
+  "sources": [
+    {
+      "id": "seedance-2.5-deal",
+      "url": "https://api.miaowuai.store/v1/dream/model_schema?model=seedance-2.5-deal",
+      "sha256": "7a388d387ca8cc7fa4998a3950edadcfd72f4e887a6821fdb20014caf49e2685"
+    },
+    {
+      "id": "gpt-image-2.5-flare",
+      "url": "https://api.miaowuai.store/v1/dream/model_schema?model=gpt-image-2.5-flare",
+      "sha256": "bb9fed66af12be279860b7c588360918859d2c8118ff9b6ad96c5ea4406e6ece"
+    },
+    {
+      "id": "gpt-image-2.5-sunburst",
+      "url": "https://api.miaowuai.store/v1/dream/model_schema?model=gpt-image-2.5-sunburst",
+      "sha256": "10f9eb5579fe982f2daee5d7bc555d6a0f226c993c41a1c86ebee90f92c69554"
+    }
+  ],
+  "schemas": {
+    "seedance-2.5-deal": {
+      "id": "seedance-2.5-deal",
+      "name": "seedance-2.5-deal",
+      "display_name": "seedance-2.5-deal",
+      "type": "video",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 10,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 30,
+                "minItems": 0,
+                "type": "array"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4",
+                  "1:1",
+                  "21:9"
+                ],
+                "type": "string"
+              },
+              "seconds": {
+                "pattern": "^[1-9][0-9]*$",
+                "type": "string",
+                "x-dream-integer-string-max": 30,
+                "x-dream-integer-string-min": 4
+              },
+              "size": {
+                "enum": [
+                  "720p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.0642857142857143,
+              "seconds_max": 30,
+              "size": "720p"
+            }
+          ],
+          "unit": "per_second"
+        },
+        "x-dream-schema-version": 1
+      },
+      "group_ratio": {
+        "default": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_second",
+            "rules": [
+              {
+                "size": "720p",
+                "seconds_max": 30,
+                "price": 0.45
+              }
+            ]
+          }
+        }
+      }
+    },
+    "gpt-image-2.5-flare": {
+      "id": "gpt-image-2.5-flare",
+      "name": "gpt-image-2.5-flare",
+      "display_name": "gpt-image-2.5-flare",
+      "type": "image",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 5,
+                "minItems": 0,
+                "type": "array"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "1:1",
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4"
+                ],
+                "type": "string"
+              },
+              "size": {
+                "enum": [
+                  "2K",
+                  "1080p",
+                  "4K"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.011428571428571429,
+              "size": "2K"
+            },
+            {
+              "price": 0.008571428571428572,
+              "size": "1080p"
+            },
+            {
+              "price": 0.017142857142857144,
+              "size": "4K"
+            }
+          ],
+          "unit": "per_call"
+        },
+        "x-dream-schema-version": 1
+      },
+      "group_ratio": {
+        "default": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "2K",
+                "price": 0.08
+              },
+              {
+                "size": "1080p",
+                "price": 0.06
+              },
+              {
+                "size": "4K",
+                "price": 0.12
+              }
+            ]
+          }
+        }
+      }
+    },
+    "gpt-image-2.5-sunburst": {
+      "id": "gpt-image-2.5-sunburst",
+      "name": "gpt-image-2.5-sunburst",
+      "display_name": "gpt-image-2.5-sunburst",
+      "type": "image",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 5,
+                "minItems": 0,
+                "type": "array"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4"
+                ],
+                "type": "string"
+              },
+              "size": {
+                "enum": [
+                  "2K",
+                  "1080p",
+                  "4K"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.011428571428571429,
+              "size": "2K"
+            },
+            {
+              "price": 0.008571428571428572,
+              "size": "1080p"
+            },
+            {
+              "price": 0.017142857142857144,
+              "size": "4K"
+            }
+          ],
+          "unit": "per_call"
+        },
+        "x-dream-schema-version": 1
+      },
+      "group_ratio": {
+        "default": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "2K",
+                "price": 0.08
+              },
+              {
+                "size": "1080p",
+                "price": 0.06
+              },
+              {
+                "size": "4K",
+                "price": 0.12
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

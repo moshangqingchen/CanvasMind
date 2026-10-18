@@ -290,6 +290,18 @@ describe("catalog snapshot and diff invariants", () => {
     expect(change.after).toContain("能力：image.generate");
     expect(change.after).toContain("可用于画布：否");
   });
+  it("an explicit default request unit does not report a supplier price change, actual units and rates do", async () => {
+    const f = await fixture(), row = await f.save();
+    const pricing = { kind: "per-request", currency: "USD", unitAmount: 1, checkedAt: "old", sourceUrl: "https://fixture.invalid", confidence: "exact" };
+    const before = { ...row, config: { modelCatalogModels: [{ ...model(), pricing, metadata: { priceLabel: "$1/请求" } }] } };
+    const after = { ...row, config: { modelCatalogModels: [{ ...model(), pricing: { ...pricing, billingUnit: "request", checkedAt: "new", sourceUrl: "https://fixture.invalid/api/pricing" }, metadata: { priceLabel: "$1.00 / 请求" } }] } };
+    expect(catalogChanges(before, after)).toEqual([]);
+    after.config.modelCatalogModels[0]!.pricing.billingUnit = "image";
+    expect(catalogChanges(before, after)).toContainEqual(expect.objectContaining({ kind: "price", modelId: "full-model-id" }));
+    after.config.modelCatalogModels[0]!.pricing.billingUnit = "request";
+    after.config.modelCatalogModels[0]!.pricing.unitAmount = 1.5;
+    expect(catalogChanges(before, after)).toContainEqual(expect.objectContaining({ kind: "price", modelId: "full-model-id" }));
+  });
   it("nested pricing source/sample timestamps never trigger a price change, conditions do", async () => {
     const f = await fixture(), row = await f.save();
     const pricing = { kind: "tiered", currency: "CNY", billingUnit: "image", sourceUrl: "https://fixture.invalid/pricing", checkedAt: "old",

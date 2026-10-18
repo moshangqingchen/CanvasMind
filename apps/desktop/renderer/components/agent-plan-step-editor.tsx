@@ -70,7 +70,7 @@ export function AgentPlanStepEditor({ call, route, connections, catalogConnectio
         {channelConnections.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
       </select></label>}
     </div>
-    <ModelPicker label={`${call.label} 执行模型`} connectionId={connectionId} models={models} value={selected?.model.id ?? ""} parameters={{ ...parameters, prompt: call.prompt }} allowAutomatic={false}
+    <ModelPicker label={`${call.label} 执行模型`} connectionId={connectionId} models={models} value={selected?.model.id ?? ""} allowAutomatic={false}
       onChange={id => choose(candidates.find(candidate => candidate.connectionId === connectionId && candidate.model.id === id))} />
     {notice && <p role="status" className={styles.parameterNotice}>{notice}</p>}
     {selected && <>

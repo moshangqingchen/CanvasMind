@@ -18,13 +18,13 @@ import { monsterImageEvidence } from "./monster-image-capabilities.js";
 import { cOpenImageRoute, cOpenImageParameters, cOpenImageParameterIssues, applyCOpenImageCapabilities } from "./c-open-image-contract.js";
 import type { ProviderRequestEvidence } from "./provider-request-evidence.js";
 import { isSecureSkillGptImage, secureSkillImageParameterIssues } from "./secure-skill-image-contract.js";
-import { applyHangImageCapabilities, hangImageBaseUrl } from "./hang-image-contract.js";
+import { applyHangImageCapabilities, hangImageBaseUrl, hangGptImageBaseUrl } from "./hang-image-contract.js";
 import { chuangxiangImageEvidence } from "./chuangxiang-image-capabilities.js";
 import { isSecureSkillImageConnection, isSecureSkillImageResult, isSecureSkillSeedreamConnection, SecureSkillImageAdapter } from "./secure-skill-image.js";
 import { isSecureSkillSeedreamResult, SecureSkillSeedreamAdapter } from "./secure-skill-seedream.js";
 import { applyPdogImageCapabilities, isPdogImageConnection, isPdogImageResult, pdogImageOrigin, PdogImageAdapter } from "./pdog-image.js";
 import { applyJiasuImageCapabilities, isJiasuImageConnection, isJiasuImageResult, JiasuImageAdapter } from "./jiasu-images.js";
-import { applyJijiuImageCapabilities, isJijiuGptImage, jijiuGptImageParameters, jijiuGptImageRequestIssues, jijiuImageOrigin } from "./jijiu-image-contract.js";
+import { applyJijiuImageCapabilities, isJijiuGptImage, isJijiuMultipartImageEdit, jijiuGptImageParameters, jijiuGptImageRequestIssues, jijiuImageOrigin } from "./jijiu-image-contract.js";
 import { applyChuangxiangCurrentImageCapabilities, isChuangxiangImageConnection, isChuangxiangImageResult, ChuangxiangImageAdapter } from "./chuangxiang-images-contract.js";
 import { applyChuangxiangMidjourneyCapabilities, isChuangxiangMidjourneyConnection, isChuangxiangMidjourneyResult, ChuangxiangMidjourneyAdapter } from "./chuangxiang-midjourney.js";
 import { applySupplierImageConstraints, isMikotoDocumentedImageSize, supplierImageParameterIssues, supplierImageSizeNominalRatio } from "./supplier-image-constraints.js";
@@ -3672,21 +3672,39 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       configuredImageModel(connection, this.defaultModel, this.profile);
     if (isJijiuGptImage(imageEditingConnection(connection).config, selectedModel)) {
       const origin = jijiuImageOrigin(connection.baseUrl)!;
-      const assets = request.assets?.length && referenceImageHostingEnabled(imageEditingConnection(connection).config)
+      const multipart = isJijiuMultipartImageEdit(selectedModel, request.operation);
+      const assets = !multipart && request.assets?.length && referenceImageHostingEnabled(imageEditingConnection(connection).config)
         ? await uploadTemporaryReferenceImages(request.assets, this.fetchImpl) : request.assets;
-      for (const asset of assets ?? []) await assertSafeProviderEndpoint(asset.url!);
+      const headers = mergeHeaders(connection.headers, { Authorization: `Bearer ${apiKey}` });
+      let body: BodyInit;
+      if (multipart) {
+        headers.delete("content-type");
+        const form = new FormData();
+        form.set("model", selectedModel);
+        form.set("prompt", request.prompt);
+        for (const [key, value] of Object.entries(jijiuGptImageParameters(request.parameters, selectedModel))) form.set(key, String(value));
+        for (const [index, image] of (assets ?? []).entries()) {
+          const blob = await assetToBlob(image, this.fetchImpl);
+          form.append("image", blob, filenameFor(index, image.filename, image.mimeType));
+        }
+        body = form;
+      } else {
+        for (const asset of assets ?? []) await assertSafeProviderEndpoint(asset.url!);
+        headers.set("content-type", "application/json");
+        body = JSON.stringify({ model: selectedModel, prompt: request.prompt, ...jijiuGptImageParameters(request.parameters, selectedModel),
+          ...(request.operation === "image.edit" ? { image: assets!.map(asset => asset.url!) } : {}) });
+      }
       const response = await fetchProviderJson<OpenAIImageResponse>(this.fetchImpl,
         `${origin}/v1/images/${request.operation === "image.edit" ? "edits" : "generations"}`, {
-          method: "POST", headers: mergeHeaders(connection.headers, { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }),
-          body: JSON.stringify({ model: selectedModel, prompt: request.prompt, ...jijiuGptImageParameters(request.parameters, selectedModel),
-            ...(request.operation === "image.edit" ? { image: assets!.map(asset => asset.url!) } : {}) }),
+          method: "POST", headers, body,
         }, { phase: "submit", onResponseEvidence: captureRequestEvidence, timeoutMs: configuredRequestTimeout(connection, this.submitTimeoutMs, "imageSubmitTimeoutMs"), maxResponseBytes: 128 * 1024 * 1024, idempotent: false });
       if (!(await this.extractOutputs({ response, protocol: "openai-images" })).length)
         throw new ProviderHttpError("极九已响应但没有返回图片；请核对原请求记录，避免重复提交。", { kind: "invalid_response", phase: "submit", retryable: false, submissionMayHaveOccurred: true, ...(upstreamRequestEvidence ? { upstreamRequestEvidence } : {}) });
       return { providerTaskId: `openai:${request.idempotencyKey}`, id: `openai:${request.idempotencyKey}`, status: "succeeded",
         result: { response, protocol: "openai-images", ...(upstreamRequestEvidence ? { upstreamRequestEvidence } : {}) } };
     }
-    const baseUrl = (this.profile === "openai" ? hangImageBaseUrl({ ...connection.settings, baseUrl: connection.baseUrl }, selectedModel) : undefined) ?? configuredBaseUrl(
+    const baseUrl = (this.profile === "openai" ? hangImageBaseUrl({ ...connection.settings, baseUrl: connection.baseUrl }, selectedModel) ??
+      hangGptImageBaseUrl({ ...connection.settings, baseUrl: connection.baseUrl }, selectedModel) : undefined) ?? configuredBaseUrl(
       connection,
       this.defaultBaseUrl,
       this.profile,

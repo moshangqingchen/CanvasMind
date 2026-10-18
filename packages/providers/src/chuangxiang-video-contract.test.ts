@@ -50,13 +50,13 @@ describe("current Chuangxiang video contract", () => {
       expect(isChuangxiangVideoConnection({ baseUrl: "https://vapi.chuangxiangai.asia", modelGroup: "视频" }, id)).toBe(true);
       expect(chuangxiangVideoModel(id).outputKinds).toEqual(["video"]);
     }
-    expect(chuangxiangVideoModel("mm3-minimax-h3-2k").parameters?.find(p => p.key === "duration")?.options).toBeUndefined();
+    expect(chuangxiangVideoModel("mm3-minimax-h3-2k").parameters?.find(p => p.key === "duration")?.options?.map(o => o.value)).toEqual([15]);
     expect(chuangxiangVideoModel("sd8-seedance-2.5").parameters?.find(p => p.key === "duration")?.options?.map(o => o.value)).toEqual([30]);
     expect(chuangxiangVideoModel("sd8-seedance-2.5").parameters?.some(p => p.key === "resolution")).toBe(false);
     expect(validateChuangxiangVideoRequest(request("sd8-seedance-2.5", { duration: 30, resolution: "720p" }))).not.toEqual([]);
     const video = { id: "v", kind: "video" as const, mimeType: "video/mp4", url: "https://assets.example/v.mp4", durationSeconds: 9.2 };
     expect(normalizeChuangxiangVideoParameters({ ...request("mm3-minimax-h3-2k"), assets: [video] }).reference_videos).toEqual([{ url: video.url, duration: 9.2 }]);
-    expect(validateChuangxiangVideoRequest({ ...request("mm3-minimax-h3-2k"), assets: [video] })).toEqual([]);
+    expect(validateChuangxiangVideoRequest({ ...request("mm3-minimax-h3-2k", { duration: 15 }), assets: [video] })).toEqual([]);
     expect(validateChuangxiangVideoRequest({ ...request("mm3-minimax-h3-2k"), assets: [{ ...video, durationSeconds: undefined }] })).not.toEqual([]);
     expect(validateChuangxiangVideoRequest({ ...request("mm3-minimax-h3-2k"), assets: [{ ...video, durationSeconds: 15.1 }] })).not.toEqual([]);
     expect(validateChuangxiangVideoRequest(request("sd11-seedance-2.0", { generate_audio: true, seed: 7 }))).not.toEqual([]);

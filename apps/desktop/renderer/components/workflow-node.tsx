@@ -918,7 +918,6 @@ export function GenerationNodeBody({
             <ModelPicker key={currentConnection} id={`node-inline-model-${nodeId}`} label={`${data.label} 模型`}
               connectionId={currentConnection} models={modelOptions} value={data.model ?? ""}
               capabilities={connectionAvailable ? data.modelImageCapabilities : undefined}
-              parameters={{ ...priceParameters, prompt: renderPromptParts(data.parts ?? []) }}
               onChange={id => data.onModelChange?.(id)} open={uiActive && modelMenuOpen} onOpenChange={setModelMenuOpen}
               loading={data.modelOptionsLoading} failed={data.modelOptionsError}
               authoritative={data.modelOptionsAuthoritative} allowManual={!data.modelOptionsAuthoritative}

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import type { ProviderConnectionRecord } from "@super-canvas/db";
 import { encryptSecret, type ModelDescriptor, type RestConnectorConfig } from "@super-canvas/providers";
+import { remainingVideoModel, remainingVideoTransport } from "@super-canvas/providers/remaining-video-contracts";
 import { loadMiaowuCatalog, miaowuUnparameterizedVideoDescriptor } from "./miaowu-catalog";
 import { MIAOWU_BASE_URL, MIAOWU_PRESET_ID, MIAOWU_CONNECTOR, MIAOWU_CHAT_VIDEO_OVERRIDE } from "./miaowu-presets";
 import { scanMiaowuConnection, scanMiaowuKeyModels, syncMiaowuConnection } from "./miaowu-server";
@@ -13,6 +14,7 @@ const AUTHENTICATED_DIRECTORIES = JSON.parse(readFileSync(new URL("./miaowu-serv
 const CURRENT_VIDEO_FIXTURE = JSON.parse(readFileSync(new URL("./miaowu-video-20261009.fixture.json", import.meta.url), "utf8"));
 const CURRENT_IMAGE_FIXTURE = JSON.parse(readFileSync(new URL("./miaowu-image-20261009.fixture.json", import.meta.url), "utf8"));
 const CURRENT_NATIVE_FIXTURE = JSON.parse(readFileSync(new URL("./miaowu-server-20261009.fixture.json", import.meta.url), "utf8"));
+const LATEST_NATIVE = JSON.parse(readFileSync(new URL("./miaowu-native-20261017.fixture.json", import.meta.url), "utf8"));
 const MASTER = "miaowu-test-master-key";
 const KEY = "miaowu-test-api-key";
 type NativeConnector = RestConnectorConfig & { models: ModelDescriptor[] };
@@ -158,6 +160,51 @@ describe("authenticated native Miaowu media directory", () => {
         expect(model.parameters?.find(parameter => parameter.key === "resolution")?.options?.map(option => option.value)).toEqual(schema.request_schema.properties.params.properties.size.enum);
         expect(model.pricing).toMatchObject({ kind: "per-request", currency: "CNY", unitAmount: Math.max(...schema.pricing_display.groups.default.rules.map(rule => rule.price)) });
         expect(connector.modelOverrides?.[id]?.submit?.path).toBe("/v1/images");
+      }
+    }
+  });
+
+  it.each(["automatic", "manual", "manual-protocol", "paid-source", "paid-evidence", "custom-endpoint", "binding"] as const)("refreshes an old native alias's automatic Chat fallback while preserving %s identity", async customization => {
+    const id = "seedance-2.5-deal", connection = authenticatedConnection();
+    const old = remainingVideoModel("miaowu", id)!;
+    old.metadata = { ...old.metadata, parameterSource: "dream.video_schema", videoSchemaStatus: "live", marketplaceGroup: "default",
+      ...(customization === "manual" ? { source: "manual" } : {}),
+      ...(customization === "paid-source" ? { source: "paid-test" } : {}),
+      ...(customization === "paid-evidence" ? { protocolEvidence: "paid-test" } : {}) };
+    old.parameters = [{ key: "duration", label: "old", control: "number", valueType: "integer", min: 5, max: 15, default: 5 }];
+    old.pricing = { kind: "per-request", currency: "CNY", unitAmount: 2, confidence: "exact", checkedAt: "old" };
+    const route = remainingVideoTransport("miaowu", id)!;
+    if (customization === "custom-endpoint") route.submit!.path = "/my-native-route";
+    connection.config.connector = { ...structuredClone(MIAOWU_CONNECTOR), models: [old], modelOverrides: { [id]: route } } as unknown as typeof connection.config.connector;
+    connection.config.modelCatalogModels = [old] as unknown as typeof connection.config.modelCatalogModels;
+    if (customization === "binding") connection.config.autoModelInterfaces = { [id]: { model: { id } } };
+    if (customization === "manual-protocol") connection.config.manualProtocol = true;
+    makeRepository(connection);
+    const transport = vi.fn<typeof fetch>(async (url, init) => {
+      const u = new URL(String(url));
+      if (u.pathname === "/api/pricing") return Response.json(PUBLIC_PRICING);
+      expect(init?.method).toBe("GET");
+      if (u.pathname === "/v1/models" || u.pathname === "/v1/dream/model_list") return Response.json({ data: [{ id, type: "video" }] });
+      if (u.pathname === "/v1/dream/model_schema") return Response.json(LATEST_NATIVE.schemas[id]);
+      throw new Error("unexpected endpoint");
+    });
+    const scanned = await scanMiaowuConnection(connection.id, { fetch: transport, forcePricing: true });
+    const synced = await syncMiaowuConnection(connection.id);
+    for (const current of [scanned.connection!, synced!]) {
+      const connector = current.config.connector as unknown as NativeConnector;
+      const model = connector.models.find(model => model.id === id)!;
+      expect(current.encryptedSecret).toBe(connection.encryptedSecret);
+      expect(current.config.defaultModel).toBe(connection.config.defaultModel);
+      if (customization === "automatic") {
+        expect(model.parameters?.find(p => p.key === "duration")).toMatchObject({ min: 4, max: 30 });
+        expect(model.metadata?.priceLabel).toBe("¥0.45/秒");
+        expect(model.pricing).toMatchObject({ kind: "per-second", billingUnit: "second", unitAmount: .45 });
+        expect(connector.modelOverrides?.[id]).toBeUndefined();
+        expect(connector.submit.path).toBe("/v1/videos");
+      } else {
+        expect(model.parameters).toEqual(old.parameters);
+        expect(model.pricing).toEqual(old.pricing);
+        expect(connector.modelOverrides?.[id]).toEqual(route);
       }
     }
   });

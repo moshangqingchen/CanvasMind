@@ -1,0 +1,1013 @@
+{
+  "sources": {
+    "models": {
+      "url": "https://vapi.chuangxiangai.asia/v1/models",
+      "sampledAt": "2026-10-18T00:28:15.223Z",
+      "sha256": "7fc1f7fd8f2544877aa52a877f646fff6c367160fb93ed2a126280fcaa04c02d"
+    },
+    "docs": {
+      "url": "https://vapi.chuangxiangai.asia/ui-price-20260922/assets/VideoApiDocsView-DUQJ-jyA.js",
+      "sampledAt": "2026-10-18T00:32:19.320Z",
+      "sha256": "d98a6a1ac468f6474e3bfc20a81f8ed91e3aada3c6b4f0842355588debe0a0f4"
+    },
+    "plaza": {
+      "url": "https://vapi.chuangxiangai.asia/api/v1/model-plaza",
+      "sampledAt": "2026-10-18T00:30:10.951Z"
+    }
+  },
+  "models": [
+    {
+      "id": "grok-imagine-video",
+      "object": "model",
+      "type": "model",
+      "owned_by": "xai",
+      "display_name": "Grok Imagine Video",
+      "max_images_per_prompt": 1,
+      "supported_resolutions": [
+        "480p",
+        "720p"
+      ],
+      "duration_seconds": {
+        "min": 1,
+        "max": 15
+      }
+    },
+    {
+      "id": "grok-imagine-video-1.5",
+      "object": "model",
+      "type": "model",
+      "owned_by": "xai",
+      "display_name": "Grok Imagine Video 1.5",
+      "max_images_per_prompt": 7,
+      "supported_resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "duration_seconds": {
+        "min": 1,
+        "max": 15
+      }
+    },
+    {
+      "id": "gv3-grok-video-1.5",
+      "object": "model",
+      "owned_by": "xai",
+      "display_name": "gv3-grok-video-1.5",
+      "max_images_per_prompt": 7,
+      "supported_resolutions": [
+        "720p"
+      ],
+      "duration_seconds": {
+        "min": 3,
+        "max": 15
+      }
+    },
+    {
+      "id": "gv4-grok-imagine-video-1.5",
+      "object": "model",
+      "owned_by": "xai",
+      "display_name": "gv4-grok-imagine-video-1.5",
+      "max_images_per_prompt": 7,
+      "supported_resolutions": [
+        "480p",
+        "720p"
+      ],
+      "duration_seconds": {
+        "min": 6,
+        "max": 15
+      }
+    },
+    {
+      "id": "happyhorse-1.1",
+      "object": "model",
+      "owned_by": "xai",
+      "display_name": "happyhorse-1.1",
+      "max_images_per_prompt": 9,
+      "supported_resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "duration_seconds": {
+        "min": 3,
+        "max": 15
+      }
+    },
+    {
+      "id": "kling-3.0",
+      "object": "model",
+      "owned_by": "xai",
+      "display_name": "kling-3.0",
+      "max_images_per_prompt": 1,
+      "supported_resolutions": [
+        "720p"
+      ],
+      "duration_seconds": {
+        "min": 3,
+        "max": 15
+      }
+    },
+    {
+      "id": "kling-3.0-pro",
+      "object": "model",
+      "owned_by": "xai",
+      "display_name": "kling-3.0-pro",
+      "max_images_per_prompt": 4,
+      "supported_resolutions": [
+        "720p"
+      ],
+      "duration_seconds": {
+        "min": 3,
+        "max": 15
+      }
+    },
+    {
+      "id": "mm3-minimax-h3-2k",
+      "object": "model",
+      "owned_by": "xai",
+      "display_name": "mm3-minimax-h3-2k",
+      "max_images_per_prompt": 9,
+      "max_videos_per_prompt": 3,
+      "max_audio_per_prompt": 3,
+      "max_audios_per_prompt": 3,
+      "supported_resolutions": [
+        "2k"
+      ],
+      "duration_seconds": {
+        "min": 15,
+        "max": 15
+      }
+    },
+    {
+      "id": "mm4-minimax-h3-2k",
+      "object": "model",
+      "owned_by": "xai",
+      "display_name": "mm4-minimax-h3-2k",
+      "max_images_per_prompt": 9,
+      "max_videos_per_prompt": 3,
+      "max_audio_per_prompt": 3,
+      "max_audios_per_prompt": 3,
+      "supported_resolutions": [
+        "2k"
+      ],
+      "duration_seconds": {
+        "min": 5,
+        "max": 15
+      }
+    },
+    {
+      "id": "niulai-pro",
+      "object": "model",
+      "owned_by": "xai",
+      "display_name": "niulai-pro",
+      "max_images_per_prompt": 9,
+      "max_videos_per_prompt": 3,
+      "max_audio_per_prompt": 3,
+      "max_audios_per_prompt": 3,
+      "supported_resolutions": [
+        "768p",
+        "2k"
+      ],
+      "duration_seconds": {
+        "min": 4,
+        "max": 15
+      }
+    },
+    {
+      "id": "omni-fast",
+      "object": "model",
+      "owned_by": "xai",
+      "display_name": "omni-fast",
+      "max_images_per_prompt": 5,
+      "supported_resolutions": [
+        "720p"
+      ],
+      "duration_seconds": {
+        "min": 1,
+        "max": 15
+      }
+    },
+    {
+      "id": "omni-fast-no-water",
+      "object": "model",
+      "owned_by": "xai",
+      "display_name": "omni-fast-no-water",
+      "max_images_per_prompt": 5,
+      "supported_resolutions": [
+        "720p"
+      ],
+      "duration_seconds": {
+        "min": 1,
+        "max": 15
+      }
+    },
+    {
+      "id": "omni-v2v",
+      "object": "model",
+      "owned_by": "xai",
+      "display_name": "omni-v2v",
+      "max_images_per_prompt": 5,
+      "max_videos_per_prompt": 2,
+      "supported_resolutions": [
+        "720p"
+      ],
+      "duration_seconds": {
+        "min": 1,
+        "max": 15
+      }
+    },
+    {
+      "id": "omni-v2v-no-water",
+      "object": "model",
+      "owned_by": "xai",
+      "display_name": "omni-v2v-no-water",
+      "max_images_per_prompt": 5,
+      "max_videos_per_prompt": 2,
+      "supported_resolutions": [
+        "720p"
+      ],
+      "duration_seconds": {
+        "min": 1,
+        "max": 15
+      }
+    },
+    {
+      "id": "sd10-seedance-2.5",
+      "object": "model",
+      "owned_by": "xai",
+      "display_name": "sd10-seedance-2.5",
+      "max_images_per_prompt": 30,
+      "supported_resolutions": [
+        "720p"
+      ],
+      "duration_seconds": {
+        "min": 30,
+        "max": 30
+      }
+    },
+    {
+      "id": "sd13-seedance-2.0",
+      "object": "model",
+      "owned_by": "xai",
+      "display_name": "sd13-seedance-2.0",
+      "max_images_per_prompt": 9,
+      "max_videos_per_prompt": 3,
+      "supported_resolutions": [
+        "480p",
+        "720p",
+        "1080p",
+        "4k"
+      ],
+      "duration_seconds": {
+        "min": 4,
+        "max": 15
+      }
+    },
+    {
+      "id": "sd13-seedance-2.0-fast",
+      "object": "model",
+      "owned_by": "xai",
+      "display_name": "sd13-seedance-2.0-fast",
+      "max_images_per_prompt": 9,
+      "max_videos_per_prompt": 3,
+      "supported_resolutions": [
+        "480p",
+        "720p"
+      ],
+      "duration_seconds": {
+        "min": 4,
+        "max": 15
+      }
+    },
+    {
+      "id": "sd13-seedance-2.0-mini",
+      "object": "model",
+      "owned_by": "xai",
+      "display_name": "sd13-seedance-2.0-mini",
+      "max_images_per_prompt": 9,
+      "max_videos_per_prompt": 3,
+      "supported_resolutions": [
+        "480p",
+        "720p"
+      ],
+      "duration_seconds": {
+        "min": 4,
+        "max": 15
+      }
+    },
+    {
+      "id": "sd13-seedance-2.5",
+      "object": "model",
+      "owned_by": "xai",
+      "display_name": "sd13-seedance-2.5",
+      "max_images_per_prompt": 30,
+      "max_videos_per_prompt": 10,
+      "supported_resolutions": [
+        "480p",
+        "720p"
+      ],
+      "duration_seconds": {
+        "min": 4,
+        "max": 30
+      }
+    },
+    {
+      "id": "sd14-seedance-2.0",
+      "object": "model",
+      "owned_by": "xai",
+      "display_name": "sd14-seedance-2.0",
+      "max_images_per_prompt": 9,
+      "max_videos_per_prompt": 3,
+      "max_audio_per_prompt": 3,
+      "max_audios_per_prompt": 3,
+      "supported_resolutions": [
+        "720p"
+      ],
+      "duration_seconds": {
+        "min": 4,
+        "max": 15
+      }
+    },
+    {
+      "id": "sd16-seedance-2.0",
+      "object": "model",
+      "owned_by": "xai",
+      "display_name": "sd16-seedance-2.0",
+      "max_images_per_prompt": 9,
+      "max_videos_per_prompt": 3,
+      "max_audio_per_prompt": 3,
+      "max_audios_per_prompt": 3,
+      "supported_resolutions": [
+        "480p",
+        "720p",
+        "1080p",
+        "4k"
+      ],
+      "duration_seconds": {
+        "min": 4,
+        "max": 15
+      }
+    },
+    {
+      "id": "sd16-seedance-2.0-fast",
+      "object": "model",
+      "owned_by": "xai",
+      "display_name": "sd16-seedance-2.0-fast",
+      "max_images_per_prompt": 9,
+      "max_videos_per_prompt": 3,
+      "max_audio_per_prompt": 3,
+      "max_audios_per_prompt": 3,
+      "supported_resolutions": [
+        "480p",
+        "720p"
+      ],
+      "duration_seconds": {
+        "min": 4,
+        "max": 15
+      }
+    },
+    {
+      "id": "sd16-seedance-2.0-mini",
+      "object": "model",
+      "owned_by": "xai",
+      "display_name": "sd16-seedance-2.0-mini",
+      "max_images_per_prompt": 9,
+      "max_videos_per_prompt": 3,
+      "max_audio_per_prompt": 3,
+      "max_audios_per_prompt": 3,
+      "supported_resolutions": [
+        "480p",
+        "720p"
+      ],
+      "duration_seconds": {
+        "min": 4,
+        "max": 15
+      }
+    },
+    {
+      "id": "sd17-seedance-2.0",
+      "object": "model",
+      "owned_by": "xai",
+      "display_name": "sd17-seedance-2.0",
+      "max_images_per_prompt": 9,
+      "max_audio_per_prompt": 3,
+      "max_audios_per_prompt": 3,
+      "supported_resolutions": [
+        "720p"
+      ],
+      "duration_seconds": {
+        "min": 5,
+        "max": 15
+      }
+    },
+    {
+      "id": "sd17-seedance-2.0-2",
+      "object": "model",
+      "owned_by": "xai",
+      "display_name": "sd17-seedance-2.0-2",
+      "max_images_per_prompt": 9,
+      "max_audio_per_prompt": 3,
+      "max_audios_per_prompt": 3,
+      "supported_resolutions": [
+        "720p"
+      ],
+      "duration_seconds": {
+        "min": 5,
+        "max": 15
+      }
+    },
+    {
+      "id": "sd17-seedance-2.0-3",
+      "object": "model",
+      "owned_by": "xai",
+      "display_name": "sd17-seedance-2.0-3",
+      "max_images_per_prompt": 9,
+      "supported_resolutions": [
+        "720p"
+      ],
+      "duration_seconds": {
+        "min": 5,
+        "max": 15
+      }
+    },
+    {
+      "id": "sd17-seedance-2.5",
+      "object": "model",
+      "owned_by": "xai",
+      "display_name": "sd17-seedance-2.5",
+      "max_images_per_prompt": 30,
+      "max_videos_per_prompt": 10,
+      "supported_resolutions": [
+        "720p"
+      ],
+      "duration_seconds": {
+        "min": 5,
+        "max": 30
+      }
+    },
+    {
+      "id": "sd17-seedance-2.5-2",
+      "object": "model",
+      "owned_by": "xai",
+      "display_name": "sd17-seedance-2.5-2",
+      "max_images_per_prompt": 30,
+      "max_videos_per_prompt": 10,
+      "max_audio_per_prompt": 10,
+      "max_audios_per_prompt": 10,
+      "supported_resolutions": [
+        "720p"
+      ],
+      "duration_seconds": {
+        "min": 10,
+        "max": 30
+      }
+    },
+    {
+      "id": "sd17-seedance-2.5-3",
+      "object": "model",
+      "owned_by": "xai",
+      "display_name": "sd17-seedance-2.5-3",
+      "max_images_per_prompt": 9,
+      "supported_resolutions": [
+        "720p"
+      ],
+      "duration_seconds": {
+        "min": 30,
+        "max": 30
+      }
+    },
+    {
+      "id": "sd8-seedance-2.5-s",
+      "object": "model",
+      "owned_by": "xai",
+      "display_name": "sd8-seedance-2.5-s",
+      "max_images_per_prompt": 30,
+      "max_videos_per_prompt": 10,
+      "max_audio_per_prompt": 10,
+      "max_audios_per_prompt": 10,
+      "supported_resolutions": [
+        "720p"
+      ],
+      "duration_seconds": {
+        "min": 30,
+        "max": 30
+      }
+    }
+  ],
+  "newModels": [
+    {
+      "name": "gv4-grok-imagine-video-1.5",
+      "pricing": {
+        "billing_mode": "video",
+        "input_price": null,
+        "output_price": null,
+        "cache_write_price": null,
+        "cache_write_1h_price": null,
+        "cache_read_price": null,
+        "image_input_price": null,
+        "image_output_price": null,
+        "per_request_price": 14.2,
+        "intervals": [
+          {
+            "min_tokens": 0,
+            "max_tokens": null,
+            "tier_label": "480p",
+            "input_price": null,
+            "output_price": null,
+            "cache_write_price": null,
+            "cache_write_1h_price": null,
+            "cache_read_price": null,
+            "input_multiplier": null,
+            "output_multiplier": null,
+            "cache_write_multiplier": null,
+            "cache_read_multiplier": null,
+            "per_request_price": 14.2
+          },
+          {
+            "min_tokens": 0,
+            "max_tokens": null,
+            "tier_label": "720p",
+            "input_price": null,
+            "output_price": null,
+            "cache_write_price": null,
+            "cache_write_1h_price": null,
+            "cache_read_price": null,
+            "input_multiplier": null,
+            "output_multiplier": null,
+            "cache_write_multiplier": null,
+            "cache_read_multiplier": null,
+            "per_request_price": 14.2
+          }
+        ]
+      },
+      "video_pricing": {
+        "billing_mode": "per_request",
+        "prices": {
+          "480p": 14.2,
+          "720p": 14.2
+        }
+      },
+      "effective_rate_multiplier": 0.1
+    },
+    {
+      "name": "mm4-minimax-h3-2k",
+      "pricing": {
+        "billing_mode": "video",
+        "input_price": null,
+        "output_price": null,
+        "cache_write_price": null,
+        "cache_write_1h_price": null,
+        "cache_read_price": null,
+        "image_input_price": null,
+        "image_output_price": null,
+        "per_request_price": 22.4,
+        "intervals": [
+          {
+            "min_tokens": 0,
+            "max_tokens": null,
+            "tier_label": "2k",
+            "input_price": null,
+            "output_price": null,
+            "cache_write_price": null,
+            "cache_write_1h_price": null,
+            "cache_read_price": null,
+            "input_multiplier": null,
+            "output_multiplier": null,
+            "cache_write_multiplier": null,
+            "cache_read_multiplier": null,
+            "per_request_price": 22.4
+          }
+        ]
+      },
+      "video_pricing": {
+        "billing_mode": "per_request",
+        "prices": {
+          "2k": 22.4
+        }
+      },
+      "effective_rate_multiplier": 0.1
+    },
+    {
+      "name": "sd16-seedance-2.0",
+      "pricing": {
+        "billing_mode": "video",
+        "input_price": null,
+        "output_price": null,
+        "cache_write_price": null,
+        "cache_write_1h_price": null,
+        "cache_read_price": null,
+        "image_input_price": null,
+        "image_output_price": null,
+        "per_request_price": 56.5,
+        "intervals": [
+          {
+            "min_tokens": 0,
+            "max_tokens": null,
+            "tier_label": "480p",
+            "input_price": null,
+            "output_price": null,
+            "cache_write_price": null,
+            "cache_write_1h_price": null,
+            "cache_read_price": null,
+            "input_multiplier": null,
+            "output_multiplier": null,
+            "cache_write_multiplier": null,
+            "cache_read_multiplier": null,
+            "per_request_price": 56.5
+          },
+          {
+            "min_tokens": 0,
+            "max_tokens": null,
+            "tier_label": "720p",
+            "input_price": null,
+            "output_price": null,
+            "cache_write_price": null,
+            "cache_write_1h_price": null,
+            "cache_read_price": null,
+            "input_multiplier": null,
+            "output_multiplier": null,
+            "cache_write_multiplier": null,
+            "cache_read_multiplier": null,
+            "per_request_price": 78.9
+          },
+          {
+            "min_tokens": 0,
+            "max_tokens": null,
+            "tier_label": "1080p",
+            "input_price": null,
+            "output_price": null,
+            "cache_write_price": null,
+            "cache_write_1h_price": null,
+            "cache_read_price": null,
+            "input_multiplier": null,
+            "output_multiplier": null,
+            "cache_write_multiplier": null,
+            "cache_read_multiplier": null,
+            "per_request_price": 123.6
+          },
+          {
+            "min_tokens": 0,
+            "max_tokens": null,
+            "tier_label": "4k",
+            "input_price": null,
+            "output_price": null,
+            "cache_write_price": null,
+            "cache_write_1h_price": null,
+            "cache_read_price": null,
+            "input_multiplier": null,
+            "output_multiplier": null,
+            "cache_write_multiplier": null,
+            "cache_read_multiplier": null,
+            "per_request_price": 341.2
+          }
+        ]
+      },
+      "video_pricing": {
+        "billing_mode": "per_request",
+        "prices": {
+          "1080p": 123.6,
+          "480p": 56.5,
+          "4k": 341.2,
+          "720p": 78.9
+        }
+      },
+      "effective_rate_multiplier": 0.1
+    },
+    {
+      "name": "sd16-seedance-2.0-fast",
+      "pricing": {
+        "billing_mode": "video",
+        "input_price": null,
+        "output_price": null,
+        "cache_write_price": null,
+        "cache_write_1h_price": null,
+        "cache_read_price": null,
+        "image_input_price": null,
+        "image_output_price": null,
+        "per_request_price": 45.9,
+        "intervals": [
+          {
+            "min_tokens": 0,
+            "max_tokens": null,
+            "tier_label": "480p",
+            "input_price": null,
+            "output_price": null,
+            "cache_write_price": null,
+            "cache_write_1h_price": null,
+            "cache_read_price": null,
+            "input_multiplier": null,
+            "output_multiplier": null,
+            "cache_write_multiplier": null,
+            "cache_read_multiplier": null,
+            "per_request_price": 45.9
+          },
+          {
+            "min_tokens": 0,
+            "max_tokens": null,
+            "tier_label": "720p",
+            "input_price": null,
+            "output_price": null,
+            "cache_write_price": null,
+            "cache_write_1h_price": null,
+            "cache_read_price": null,
+            "input_multiplier": null,
+            "output_multiplier": null,
+            "cache_write_multiplier": null,
+            "cache_read_multiplier": null,
+            "per_request_price": 63.6
+          }
+        ]
+      },
+      "video_pricing": {
+        "billing_mode": "per_request",
+        "prices": {
+          "480p": 45.9,
+          "720p": 63.6
+        }
+      },
+      "effective_rate_multiplier": 0.1
+    },
+    {
+      "name": "sd16-seedance-2.0-mini",
+      "pricing": {
+        "billing_mode": "video",
+        "input_price": null,
+        "output_price": null,
+        "cache_write_price": null,
+        "cache_write_1h_price": null,
+        "cache_read_price": null,
+        "image_input_price": null,
+        "image_output_price": null,
+        "per_request_price": 34.2,
+        "intervals": [
+          {
+            "min_tokens": 0,
+            "max_tokens": null,
+            "tier_label": "480p",
+            "input_price": null,
+            "output_price": null,
+            "cache_write_price": null,
+            "cache_write_1h_price": null,
+            "cache_read_price": null,
+            "input_multiplier": null,
+            "output_multiplier": null,
+            "cache_write_multiplier": null,
+            "cache_read_multiplier": null,
+            "per_request_price": 34.2
+          },
+          {
+            "min_tokens": 0,
+            "max_tokens": null,
+            "tier_label": "720p",
+            "input_price": null,
+            "output_price": null,
+            "cache_write_price": null,
+            "cache_write_1h_price": null,
+            "cache_read_price": null,
+            "input_multiplier": null,
+            "output_multiplier": null,
+            "cache_write_multiplier": null,
+            "cache_read_multiplier": null,
+            "per_request_price": 49.5
+          }
+        ]
+      },
+      "video_pricing": {
+        "billing_mode": "per_request",
+        "prices": {
+          "480p": 34.2,
+          "720p": 49.5
+        }
+      },
+      "effective_rate_multiplier": 0.1
+    },
+    {
+      "name": "sd17-seedance-2.0",
+      "pricing": {
+        "billing_mode": "video",
+        "input_price": null,
+        "output_price": null,
+        "cache_write_price": null,
+        "cache_write_1h_price": null,
+        "cache_read_price": null,
+        "image_input_price": null,
+        "image_output_price": null,
+        "per_request_price": 44.2,
+        "intervals": [
+          {
+            "min_tokens": 0,
+            "max_tokens": null,
+            "tier_label": "720p",
+            "input_price": null,
+            "output_price": null,
+            "cache_write_price": null,
+            "cache_write_1h_price": null,
+            "cache_read_price": null,
+            "input_multiplier": null,
+            "output_multiplier": null,
+            "cache_write_multiplier": null,
+            "cache_read_multiplier": null,
+            "per_request_price": 44.2
+          }
+        ]
+      },
+      "video_pricing": {
+        "billing_mode": "per_request",
+        "prices": {
+          "720p": 44.2
+        }
+      },
+      "effective_rate_multiplier": 0.1
+    },
+    {
+      "name": "sd17-seedance-2.0-2",
+      "pricing": {
+        "billing_mode": "video",
+        "input_price": null,
+        "output_price": null,
+        "cache_write_price": null,
+        "cache_write_1h_price": null,
+        "cache_read_price": null,
+        "image_input_price": null,
+        "image_output_price": null,
+        "per_request_price": 53,
+        "intervals": [
+          {
+            "min_tokens": 0,
+            "max_tokens": null,
+            "tier_label": "720p",
+            "input_price": null,
+            "output_price": null,
+            "cache_write_price": null,
+            "cache_write_1h_price": null,
+            "cache_read_price": null,
+            "input_multiplier": null,
+            "output_multiplier": null,
+            "cache_write_multiplier": null,
+            "cache_read_multiplier": null,
+            "per_request_price": 53
+          }
+        ]
+      },
+      "video_pricing": {
+        "billing_mode": "per_request",
+        "prices": {
+          "720p": 53
+        }
+      },
+      "effective_rate_multiplier": 0.1
+    },
+    {
+      "name": "sd17-seedance-2.0-3",
+      "pricing": {
+        "billing_mode": "video",
+        "input_price": null,
+        "output_price": null,
+        "cache_write_price": null,
+        "cache_write_1h_price": null,
+        "cache_read_price": null,
+        "image_input_price": null,
+        "image_output_price": null,
+        "per_request_price": 34.2,
+        "intervals": [
+          {
+            "min_tokens": 0,
+            "max_tokens": null,
+            "tier_label": "720p",
+            "input_price": null,
+            "output_price": null,
+            "cache_write_price": null,
+            "cache_write_1h_price": null,
+            "cache_read_price": null,
+            "input_multiplier": null,
+            "output_multiplier": null,
+            "cache_write_multiplier": null,
+            "cache_read_multiplier": null,
+            "per_request_price": 34.2
+          }
+        ]
+      },
+      "video_pricing": {
+        "billing_mode": "per_request",
+        "prices": {
+          "720p": 34.2
+        }
+      },
+      "effective_rate_multiplier": 0.1
+    },
+    {
+      "name": "sd17-seedance-2.5",
+      "pricing": {
+        "billing_mode": "video",
+        "input_price": null,
+        "output_price": null,
+        "cache_write_price": null,
+        "cache_write_1h_price": null,
+        "cache_read_price": null,
+        "image_input_price": null,
+        "image_output_price": null,
+        "per_request_price": 88.3,
+        "intervals": [
+          {
+            "min_tokens": 0,
+            "max_tokens": null,
+            "tier_label": "720p",
+            "input_price": null,
+            "output_price": null,
+            "cache_write_price": null,
+            "cache_write_1h_price": null,
+            "cache_read_price": null,
+            "input_multiplier": null,
+            "output_multiplier": null,
+            "cache_write_multiplier": null,
+            "cache_read_multiplier": null,
+            "per_request_price": 88.3
+          }
+        ]
+      },
+      "video_pricing": {
+        "billing_mode": "per_request",
+        "prices": {
+          "720p": 88.3
+        }
+      },
+      "effective_rate_multiplier": 0.1
+    },
+    {
+      "name": "sd17-seedance-2.5-2",
+      "pricing": {
+        "billing_mode": "video",
+        "input_price": null,
+        "output_price": null,
+        "cache_write_price": null,
+        "cache_write_1h_price": null,
+        "cache_read_price": null,
+        "image_input_price": null,
+        "image_output_price": null,
+        "per_request_price": 88.3,
+        "intervals": [
+          {
+            "min_tokens": 0,
+            "max_tokens": null,
+            "tier_label": "720p",
+            "input_price": null,
+            "output_price": null,
+            "cache_write_price": null,
+            "cache_write_1h_price": null,
+            "cache_read_price": null,
+            "input_multiplier": null,
+            "output_multiplier": null,
+            "cache_write_multiplier": null,
+            "cache_read_multiplier": null,
+            "per_request_price": 88.3
+          }
+        ]
+      },
+      "video_pricing": {
+        "billing_mode": "per_request",
+        "prices": {
+          "720p": 88.3
+        }
+      },
+      "effective_rate_multiplier": 0.1
+    },
+    {
+      "name": "sd17-seedance-2.5-3",
+      "pricing": {
+        "billing_mode": "video",
+        "input_price": null,
+        "output_price": null,
+        "cache_write_price": null,
+        "cache_write_1h_price": null,
+        "cache_read_price": null,
+        "image_input_price": null,
+        "image_output_price": null,
+        "per_request_price": 34.2,
+        "intervals": [
+          {
+            "min_tokens": 0,
+            "max_tokens": null,
+            "tier_label": "720p",
+            "input_price": null,
+            "output_price": null,
+            "cache_write_price": null,
+            "cache_write_1h_price": null,
+            "cache_read_price": null,
+            "input_multiplier": null,
+            "output_multiplier": null,
+            "cache_write_multiplier": null,
+            "cache_read_multiplier": null,
+            "per_request_price": 34.2
+          }
+        ]
+      },
+      "video_pricing": {
+        "billing_mode": "per_request",
+        "prices": {
+          "720p": 34.2
+        }
+      },
+      "effective_rate_multiplier": 0.1
+    }
+  ]
+}

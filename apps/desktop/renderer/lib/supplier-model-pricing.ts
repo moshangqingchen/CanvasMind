@@ -12,6 +12,7 @@ import {
   parseProviderModelFacts,
   isJiasuApiUrl,
   latestJiasuVideoApiExampleContract,
+  chuangxiangRejectedRequestFeeNotice,
 } from "@super-canvas/providers";
 import { isCyberAfeiUnpricedCatalogVideo } from "@super-canvas/providers/cyberafei-catalog-evidence";
 import { modelGenerationMediaKinds } from "@super-canvas/providers/model-media";
@@ -549,6 +550,15 @@ export function applySupplierCatalogPrices(
   sourceUrl?: string,
   options: CatalogPriceOptions = {},
 ): ModelDescriptor[] {
+  // Preserve every success quote and actual charge independently of this
+  // source-scoped announcement, including pipeline/manual early returns.
+  models = models.map(model => {
+    const notice = chuangxiangRejectedRequestFeeNotice(sourceUrl, model.id);
+    if (notice) return { ...model, metadata: { ...model.metadata, chuangxiangRejectedRequestFeeNotice: notice } };
+    if (model.metadata?.chuangxiangRejectedRequestFeeNotice === undefined) return model;
+    const metadata = { ...model.metadata }; delete metadata.chuangxiangRejectedRequestFeeNotice;
+    return { ...model, metadata };
+  });
   const renamedGroup = provenJijiuPriceGroup(group, catalog, sourceUrl, options);
   const observedIds = new Set(["SD2.5特价30-10-10-线路三", "SD2.5特价30-10线路二", "SD2.5特价900线路一"]);
   if (renamedGroup) return models.map(model => {

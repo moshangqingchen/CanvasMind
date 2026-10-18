@@ -894,6 +894,7 @@ export function miaowuConnectorForModels(
   const connector = structuredClone(MIAOWU_CONNECTOR);
   const connectedModels: ModelDescriptor[] = models.map(model => {
     const copy = structuredClone(model);
+    if (["dream.video_schema", "pricing.video_api"].includes(String(model.metadata?.parameterSource))) return copy;
     if ((model.metadata?.marketplaceGroup ?? "default") !== "default" || modelGenerationMediaKinds(model).join("+") !== "video" ||
         model.metadata?.autoInterfaceStatus === "incomplete" || model.metadata?.canvasRunnable === false &&
         ![MIAOWU_VIDEO_CONTRACT_PENDING_REASON, "当前分组列出此型号，但尚未提供其参数与调用合同"].includes(String(model.metadata.canvasUnavailableReason))) return copy;
@@ -913,6 +914,8 @@ export function miaowuConnectorForModels(
         ? []
         : model.outputKinds?.includes("image")
         ? [[model.id, structuredClone(MIAOWU_IMAGE_OVERRIDE)]]
+        : ["dream.video_schema", "pricing.video_api"].includes(String(model.metadata?.parameterSource))
+        ? []
         : (model.metadata?.marketplaceGroup ?? "default") === "default" && modelGenerationMediaKinds(model).join("+") === "video" &&
           remainingVideoTransport("miaowu", model.id, { model })
         ? [[model.id, remainingVideoTransport("miaowu", model.id, { model })!]]

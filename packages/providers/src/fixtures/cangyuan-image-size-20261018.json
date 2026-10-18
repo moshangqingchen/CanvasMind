@@ -1,0 +1,4854 @@
+{
+  "scope": "17 exact current model schemas and15 same-account pricing UI bounds. Public fields only. No generation/permission assertion.",
+  "schemaSource": "b-document-fresh/reading-ledger.json",
+  "pricingSource": {
+    "url": "https://ai.cangyuansuanli.cn/api/pricing",
+    "checkedAt": "2026-10-18T00:39:46.527Z",
+    "sha256": "06e55007bb28289e9551b5920294d259eeaebda97a2321d6cbb0311e3138376e"
+  },
+  "schemas": [
+    {
+      "id": "gpt-image-2-1k",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2-1k.json",
+      "checkedAt": "2026-10-18T00:34:31.871Z",
+      "sha256": "fa8d9de65b41d98888582347794b0c994d5817b6b73e30efd4fc3ab03d7141ca",
+      "etag": "\"fa8d9de65b41d98888582347794b0c994d5817b6b73e30efd4fc3ab03d7141ca\"",
+      "lastModified": null,
+      "schema": {
+        "schemaVersion": 1,
+        "publicModel": "gpt-image-2-1k",
+        "capabilityRefs": [
+          "image"
+        ],
+        "supportedModes": [
+          "sync",
+          "async"
+        ],
+        "warnings": [
+          "本页公共名就是请求里要传的名字。",
+          "未列出的字段不要发送。"
+        ],
+        "params": [
+          {
+            "name": "model",
+            "description": "固定传 gpt-image-2-1k。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "prompt",
+            "description": "生成内容的描述。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "n",
+            "description": "生成张数。最小 1。最大 1。",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1
+          },
+          {
+            "name": "size",
+            "description": "画面比例或 WIDTHxHEIGHT 尺寸。宽高步长 16。最长边 3840。像素尺寸最大宽高比 3。最少像素 655360。最多像素 1048576。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+            "type": "string",
+            "suggestions": [
+              "1:1",
+              "5:4",
+              "7:6",
+              "9:16",
+              "21:9",
+              "16:9",
+              "3:2",
+              "4:3",
+              "4:5",
+              "3:4",
+              "2:3"
+            ]
+          },
+          {
+            "name": "quality",
+            "description": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
+            "type": "string",
+            "enum": [
+              "medium",
+              "low",
+              "high",
+              "xhigh",
+              "max"
+            ]
+          },
+          {
+            "name": "background",
+            "description": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+            "type": "string",
+            "enum": [
+              "auto",
+              "opaque",
+              "transparent"
+            ]
+          },
+          {
+            "name": "output_format",
+            "description": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
+            "type": "string",
+            "enum": [
+              "png",
+              "jpeg",
+              "webp"
+            ]
+          },
+          {
+            "name": "response_format",
+            "description": "url 返回结果地址，b64_json 返回 Base64。",
+            "type": "string",
+            "enum": [
+              "url",
+              "b64_json"
+            ]
+          },
+          {
+            "name": "async",
+            "description": "true 创建异步任务；省略或 false 为同步等待。",
+            "type": "boolean"
+          },
+          {
+            "name": "images",
+            "role": "referenceImage",
+            "description": "参考图 HTTPS URL 数组，最多 9 个。",
+            "type": "array",
+            "maxItems": 9
+          },
+          {
+            "name": "mask",
+            "description": "编辑请求的蒙版 HTTPS URL，最多 1 张。",
+            "type": "string",
+            "maxItems": 1
+          }
+        ],
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/v1/images/generations",
+            "description": "文生图。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/generations/{task_id}",
+            "description": "查询异步生成任务。"
+          },
+          {
+            "method": "POST",
+            "path": "/v1/images/edits",
+            "description": "参考图编辑。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/edits/{task_id}",
+            "description": "查询异步编辑任务。"
+          }
+        ],
+        "examples": [
+          {
+            "title": "最小请求",
+            "request": {
+              "model": "gpt-image-2-1k",
+              "prompt": "温暖的午后，阳光洒在窗台上。"
+            }
+          }
+        ],
+        "status": "current",
+        "source": "capabilities/image",
+        "lastReviewed": "2026-09-15"
+      }
+    },
+    {
+      "id": "gpt-image-2-2k",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2-2k.json",
+      "checkedAt": "2026-10-18T00:34:31.915Z",
+      "sha256": "3b43de71d2696eab78ebcb76e092faf68446ce59e86c8f856204d34bdf08c0ec",
+      "etag": "\"3b43de71d2696eab78ebcb76e092faf68446ce59e86c8f856204d34bdf08c0ec\"",
+      "lastModified": null,
+      "schema": {
+        "schemaVersion": 1,
+        "publicModel": "gpt-image-2-2k",
+        "capabilityRefs": [
+          "image"
+        ],
+        "supportedModes": [
+          "sync",
+          "async"
+        ],
+        "warnings": [
+          "本页公共名就是请求里要传的名字。",
+          "未列出的字段不要发送。"
+        ],
+        "params": [
+          {
+            "name": "model",
+            "description": "固定传 gpt-image-2-2k。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "prompt",
+            "description": "生成内容的描述。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "n",
+            "description": "生成张数。最小 1。最大 1。",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1
+          },
+          {
+            "name": "size",
+            "description": "画面比例或 WIDTHxHEIGHT 尺寸。宽高步长 16。最长边 3840。像素尺寸最大宽高比 3。最少像素 655360。最多像素 4194304。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+            "type": "string",
+            "suggestions": [
+              "1:1",
+              "5:4",
+              "7:6",
+              "9:16",
+              "21:9",
+              "16:9",
+              "3:2",
+              "4:3",
+              "4:5",
+              "3:4",
+              "2:3"
+            ]
+          },
+          {
+            "name": "quality",
+            "description": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
+            "type": "string",
+            "enum": [
+              "medium",
+              "low",
+              "high",
+              "xhigh",
+              "max"
+            ]
+          },
+          {
+            "name": "background",
+            "description": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+            "type": "string",
+            "enum": [
+              "auto",
+              "opaque",
+              "transparent"
+            ]
+          },
+          {
+            "name": "output_format",
+            "description": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
+            "type": "string",
+            "enum": [
+              "png",
+              "jpeg",
+              "webp"
+            ]
+          },
+          {
+            "name": "response_format",
+            "description": "url 返回结果地址，b64_json 返回 Base64。",
+            "type": "string",
+            "enum": [
+              "url",
+              "b64_json"
+            ]
+          },
+          {
+            "name": "async",
+            "description": "true 创建异步任务；省略或 false 为同步等待。",
+            "type": "boolean"
+          },
+          {
+            "name": "images",
+            "role": "referenceImage",
+            "description": "参考图 HTTPS URL 数组，最多 9 个。",
+            "type": "array",
+            "maxItems": 9
+          },
+          {
+            "name": "mask",
+            "description": "编辑请求的蒙版 HTTPS URL，最多 1 张。",
+            "type": "string",
+            "maxItems": 1
+          }
+        ],
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/v1/images/generations",
+            "description": "文生图。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/generations/{task_id}",
+            "description": "查询异步生成任务。"
+          },
+          {
+            "method": "POST",
+            "path": "/v1/images/edits",
+            "description": "参考图编辑。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/edits/{task_id}",
+            "description": "查询异步编辑任务。"
+          }
+        ],
+        "examples": [
+          {
+            "title": "最小请求",
+            "request": {
+              "model": "gpt-image-2-2k",
+              "prompt": "温暖的午后，阳光洒在窗台上。"
+            }
+          }
+        ],
+        "status": "current",
+        "source": "capabilities/image",
+        "lastReviewed": "2026-09-15"
+      }
+    },
+    {
+      "id": "gpt-image-2-4k",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2-4k.json",
+      "checkedAt": "2026-10-18T00:34:31.965Z",
+      "sha256": "b52f38f59b80e7b12a4eda5b84f5e17917c3733d806c51fb120dd4894d7a4e63",
+      "etag": "\"b52f38f59b80e7b12a4eda5b84f5e17917c3733d806c51fb120dd4894d7a4e63\"",
+      "lastModified": null,
+      "schema": {
+        "schemaVersion": 1,
+        "publicModel": "gpt-image-2-4k",
+        "capabilityRefs": [
+          "image"
+        ],
+        "supportedModes": [
+          "sync",
+          "async"
+        ],
+        "warnings": [
+          "本页公共名就是请求里要传的名字。",
+          "未列出的字段不要发送。"
+        ],
+        "params": [
+          {
+            "name": "model",
+            "description": "固定传 gpt-image-2-4k。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "prompt",
+            "description": "生成内容的描述。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "n",
+            "description": "生成张数。最小 1。最大 1。",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1
+          },
+          {
+            "name": "size",
+            "description": "画面比例或 WIDTHxHEIGHT 尺寸。宽高步长 16。最长边 3840。像素尺寸最大宽高比 3。最少像素 655360。最多像素 8294400。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+            "type": "string",
+            "suggestions": [
+              "1:1",
+              "5:4",
+              "7:6",
+              "9:16",
+              "21:9",
+              "16:9",
+              "3:2",
+              "4:3",
+              "4:5",
+              "3:4",
+              "2:3"
+            ]
+          },
+          {
+            "name": "quality",
+            "description": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
+            "type": "string",
+            "enum": [
+              "medium",
+              "low",
+              "high",
+              "xhigh",
+              "max"
+            ]
+          },
+          {
+            "name": "background",
+            "description": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+            "type": "string",
+            "enum": [
+              "auto",
+              "opaque",
+              "transparent"
+            ]
+          },
+          {
+            "name": "output_format",
+            "description": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
+            "type": "string",
+            "enum": [
+              "png",
+              "jpeg",
+              "webp"
+            ]
+          },
+          {
+            "name": "response_format",
+            "description": "url 返回结果地址，b64_json 返回 Base64。",
+            "type": "string",
+            "enum": [
+              "url",
+              "b64_json"
+            ]
+          },
+          {
+            "name": "async",
+            "description": "true 创建异步任务；省略或 false 为同步等待。",
+            "type": "boolean"
+          },
+          {
+            "name": "images",
+            "role": "referenceImage",
+            "description": "参考图 HTTPS URL 数组，最多 9 个。",
+            "type": "array",
+            "maxItems": 9
+          },
+          {
+            "name": "mask",
+            "description": "编辑请求的蒙版 HTTPS URL，最多 1 张。",
+            "type": "string",
+            "maxItems": 1
+          }
+        ],
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/v1/images/generations",
+            "description": "文生图。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/generations/{task_id}",
+            "description": "查询异步生成任务。"
+          },
+          {
+            "method": "POST",
+            "path": "/v1/images/edits",
+            "description": "参考图编辑。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/edits/{task_id}",
+            "description": "查询异步编辑任务。"
+          }
+        ],
+        "examples": [
+          {
+            "title": "最小请求",
+            "request": {
+              "model": "gpt-image-2-4k",
+              "prompt": "温暖的午后，阳光洒在窗台上。"
+            }
+          }
+        ],
+        "status": "current",
+        "source": "capabilities/image",
+        "lastReviewed": "2026-09-15"
+      }
+    },
+    {
+      "id": "gpt-image-2.5-flare-1k",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-flare-1k.json",
+      "checkedAt": "2026-10-18T00:34:32.203Z",
+      "sha256": "37c268a2e55daf66c204603e2a5dcacb9b77d1b8e53fa96157b2b475dbddcecd",
+      "etag": "\"37c268a2e55daf66c204603e2a5dcacb9b77d1b8e53fa96157b2b475dbddcecd\"",
+      "lastModified": null,
+      "schema": {
+        "schemaVersion": 1,
+        "publicModel": "gpt-image-2.5-flare-1k",
+        "capabilityRefs": [
+          "image"
+        ],
+        "supportedModes": [
+          "sync",
+          "async"
+        ],
+        "warnings": [
+          "本页公共名就是请求里要传的名字。",
+          "未列出的字段不要发送。"
+        ],
+        "params": [
+          {
+            "name": "model",
+            "description": "固定传 gpt-image-2.5-flare-1k。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "prompt",
+            "description": "生成内容的描述。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "n",
+            "description": "生成张数。最小 1。最大 1。",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1
+          },
+          {
+            "name": "size",
+            "description": "画面比例或 WIDTHxHEIGHT 尺寸。宽高步长 16。最长边 3840。像素尺寸最大宽高比 3。最少像素 655360。最多像素 1048576。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+            "type": "string",
+            "suggestions": [
+              "1:1",
+              "5:4",
+              "7:6",
+              "9:16",
+              "21:9",
+              "16:9",
+              "3:2",
+              "4:3",
+              "4:5",
+              "3:4",
+              "2:3"
+            ]
+          },
+          {
+            "name": "quality",
+            "description": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
+            "type": "string",
+            "enum": [
+              "medium",
+              "low",
+              "high",
+              "xhigh",
+              "max"
+            ]
+          },
+          {
+            "name": "background",
+            "description": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+            "type": "string",
+            "enum": [
+              "auto",
+              "opaque",
+              "transparent"
+            ]
+          },
+          {
+            "name": "output_format",
+            "description": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
+            "type": "string",
+            "enum": [
+              "png",
+              "jpeg",
+              "webp"
+            ]
+          },
+          {
+            "name": "response_format",
+            "description": "url 返回结果地址，b64_json 返回 Base64。",
+            "type": "string",
+            "enum": [
+              "url",
+              "b64_json"
+            ]
+          },
+          {
+            "name": "async",
+            "description": "true 创建异步任务；省略或 false 为同步等待。",
+            "type": "boolean"
+          },
+          {
+            "name": "images",
+            "role": "referenceImage",
+            "description": "参考图 HTTPS URL 数组，最多 16 个。",
+            "type": "array",
+            "maxItems": 16
+          }
+        ],
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/v1/images/generations",
+            "description": "文生图。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/generations/{task_id}",
+            "description": "查询异步生成任务。"
+          },
+          {
+            "method": "POST",
+            "path": "/v1/images/edits",
+            "description": "参考图编辑。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/edits/{task_id}",
+            "description": "查询异步编辑任务。"
+          }
+        ],
+        "examples": [
+          {
+            "title": "最小请求",
+            "request": {
+              "model": "gpt-image-2.5-flare-1k",
+              "prompt": "温暖的午后，阳光洒在窗台上。"
+            }
+          }
+        ],
+        "status": "current",
+        "source": "capabilities/image",
+        "lastReviewed": "2026-09-29"
+      }
+    },
+    {
+      "id": "gpt-image-2.5-flare-2k",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-flare-2k.json",
+      "checkedAt": "2026-10-18T00:34:32.309Z",
+      "sha256": "f88459c5793f8cb501749eead8a0832b1aaf3a57d5ffce58995e621f91f13daa",
+      "etag": "\"f88459c5793f8cb501749eead8a0832b1aaf3a57d5ffce58995e621f91f13daa\"",
+      "lastModified": null,
+      "schema": {
+        "schemaVersion": 1,
+        "publicModel": "gpt-image-2.5-flare-2k",
+        "capabilityRefs": [
+          "image"
+        ],
+        "supportedModes": [
+          "sync",
+          "async"
+        ],
+        "warnings": [
+          "本页公共名就是请求里要传的名字。",
+          "未列出的字段不要发送。"
+        ],
+        "params": [
+          {
+            "name": "model",
+            "description": "固定传 gpt-image-2.5-flare-2k。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "prompt",
+            "description": "生成内容的描述。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "n",
+            "description": "生成张数。最小 1。最大 1。",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1
+          },
+          {
+            "name": "size",
+            "description": "画面比例或 WIDTHxHEIGHT 尺寸。宽高步长 16。最长边 3840。像素尺寸最大宽高比 3。最少像素 655360。最多像素 4194304。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+            "type": "string",
+            "suggestions": [
+              "1:1",
+              "5:4",
+              "7:6",
+              "9:16",
+              "21:9",
+              "16:9",
+              "3:2",
+              "4:3",
+              "4:5",
+              "3:4",
+              "2:3"
+            ]
+          },
+          {
+            "name": "quality",
+            "description": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
+            "type": "string",
+            "enum": [
+              "medium",
+              "low",
+              "high",
+              "xhigh",
+              "max"
+            ]
+          },
+          {
+            "name": "background",
+            "description": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+            "type": "string",
+            "enum": [
+              "auto",
+              "opaque",
+              "transparent"
+            ]
+          },
+          {
+            "name": "output_format",
+            "description": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
+            "type": "string",
+            "enum": [
+              "png",
+              "jpeg",
+              "webp"
+            ]
+          },
+          {
+            "name": "response_format",
+            "description": "url 返回结果地址，b64_json 返回 Base64。",
+            "type": "string",
+            "enum": [
+              "url",
+              "b64_json"
+            ]
+          },
+          {
+            "name": "async",
+            "description": "true 创建异步任务；省略或 false 为同步等待。",
+            "type": "boolean"
+          },
+          {
+            "name": "images",
+            "role": "referenceImage",
+            "description": "参考图 HTTPS URL 数组，最多 16 个。",
+            "type": "array",
+            "maxItems": 16
+          }
+        ],
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/v1/images/generations",
+            "description": "文生图。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/generations/{task_id}",
+            "description": "查询异步生成任务。"
+          },
+          {
+            "method": "POST",
+            "path": "/v1/images/edits",
+            "description": "参考图编辑。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/edits/{task_id}",
+            "description": "查询异步编辑任务。"
+          }
+        ],
+        "examples": [
+          {
+            "title": "最小请求",
+            "request": {
+              "model": "gpt-image-2.5-flare-2k",
+              "prompt": "温暖的午后，阳光洒在窗台上。"
+            }
+          }
+        ],
+        "status": "current",
+        "source": "capabilities/image",
+        "lastReviewed": "2026-09-29"
+      }
+    },
+    {
+      "id": "gpt-image-2.5-flare-4k",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-flare-4k.json",
+      "checkedAt": "2026-10-18T00:34:32.348Z",
+      "sha256": "d6ab9fb4cf3df064dfd05984aff71d10393d18908b0dbef0132350b15e616ad7",
+      "etag": "\"d6ab9fb4cf3df064dfd05984aff71d10393d18908b0dbef0132350b15e616ad7\"",
+      "lastModified": null,
+      "schema": {
+        "schemaVersion": 1,
+        "publicModel": "gpt-image-2.5-flare-4k",
+        "capabilityRefs": [
+          "image"
+        ],
+        "supportedModes": [
+          "sync",
+          "async"
+        ],
+        "warnings": [
+          "本页公共名就是请求里要传的名字。",
+          "未列出的字段不要发送。"
+        ],
+        "params": [
+          {
+            "name": "model",
+            "description": "固定传 gpt-image-2.5-flare-4k。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "prompt",
+            "description": "生成内容的描述。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "n",
+            "description": "生成张数。最小 1。最大 1。",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1
+          },
+          {
+            "name": "size",
+            "description": "画面比例或 WIDTHxHEIGHT 尺寸。宽高步长 16。最长边 3840。像素尺寸最大宽高比 3。最少像素 655360。最多像素 8294400。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+            "type": "string",
+            "suggestions": [
+              "1:1",
+              "5:4",
+              "7:6",
+              "9:16",
+              "21:9",
+              "16:9",
+              "3:2",
+              "4:3",
+              "4:5",
+              "3:4",
+              "2:3"
+            ]
+          },
+          {
+            "name": "quality",
+            "description": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
+            "type": "string",
+            "enum": [
+              "medium",
+              "low",
+              "high",
+              "xhigh",
+              "max"
+            ]
+          },
+          {
+            "name": "background",
+            "description": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+            "type": "string",
+            "enum": [
+              "auto",
+              "opaque",
+              "transparent"
+            ]
+          },
+          {
+            "name": "output_format",
+            "description": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
+            "type": "string",
+            "enum": [
+              "png",
+              "jpeg",
+              "webp"
+            ]
+          },
+          {
+            "name": "response_format",
+            "description": "url 返回结果地址，b64_json 返回 Base64。",
+            "type": "string",
+            "enum": [
+              "url",
+              "b64_json"
+            ]
+          },
+          {
+            "name": "async",
+            "description": "true 创建异步任务；省略或 false 为同步等待。",
+            "type": "boolean"
+          },
+          {
+            "name": "images",
+            "role": "referenceImage",
+            "description": "参考图 HTTPS URL 数组，最多 16 个。",
+            "type": "array",
+            "maxItems": 16
+          }
+        ],
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/v1/images/generations",
+            "description": "文生图。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/generations/{task_id}",
+            "description": "查询异步生成任务。"
+          },
+          {
+            "method": "POST",
+            "path": "/v1/images/edits",
+            "description": "参考图编辑。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/edits/{task_id}",
+            "description": "查询异步编辑任务。"
+          }
+        ],
+        "examples": [
+          {
+            "title": "最小请求",
+            "request": {
+              "model": "gpt-image-2.5-flare-4k",
+              "prompt": "温暖的午后，阳光洒在窗台上。"
+            }
+          }
+        ],
+        "status": "current",
+        "source": "capabilities/image",
+        "lastReviewed": "2026-09-29"
+      }
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-1k",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-sunburst-1k.json",
+      "checkedAt": "2026-10-18T00:34:32.433Z",
+      "sha256": "20b0c438c8d9d658765fdf1a31f643f70f5e8b174eba44f9e2d0b517112682d8",
+      "etag": "\"20b0c438c8d9d658765fdf1a31f643f70f5e8b174eba44f9e2d0b517112682d8\"",
+      "lastModified": null,
+      "schema": {
+        "schemaVersion": 1,
+        "publicModel": "gpt-image-2.5-sunburst-1k",
+        "capabilityRefs": [
+          "image"
+        ],
+        "supportedModes": [
+          "sync",
+          "async"
+        ],
+        "warnings": [
+          "本页公共名就是请求里要传的名字。",
+          "未列出的字段不要发送。"
+        ],
+        "params": [
+          {
+            "name": "model",
+            "description": "固定传 gpt-image-2.5-sunburst-1k。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "prompt",
+            "description": "生成内容的描述。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "n",
+            "description": "生成张数。最小 1。最大 1。",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1
+          },
+          {
+            "name": "size",
+            "description": "画面比例或 WIDTHxHEIGHT 尺寸。宽高步长 16。最长边 3840。像素尺寸最大宽高比 3。最少像素 655360。最多像素 1048576。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+            "type": "string",
+            "suggestions": [
+              "1:1",
+              "5:4",
+              "7:6",
+              "9:16",
+              "21:9",
+              "16:9",
+              "3:2",
+              "4:3",
+              "4:5",
+              "3:4",
+              "2:3"
+            ]
+          },
+          {
+            "name": "quality",
+            "description": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
+            "type": "string",
+            "enum": [
+              "medium",
+              "low",
+              "high",
+              "xhigh",
+              "max"
+            ]
+          },
+          {
+            "name": "background",
+            "description": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+            "type": "string",
+            "enum": [
+              "auto",
+              "opaque",
+              "transparent"
+            ]
+          },
+          {
+            "name": "output_format",
+            "description": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
+            "type": "string",
+            "enum": [
+              "png",
+              "jpeg",
+              "webp"
+            ]
+          },
+          {
+            "name": "response_format",
+            "description": "url 返回结果地址，b64_json 返回 Base64。",
+            "type": "string",
+            "enum": [
+              "url",
+              "b64_json"
+            ]
+          },
+          {
+            "name": "async",
+            "description": "true 创建异步任务；省略或 false 为同步等待。",
+            "type": "boolean"
+          },
+          {
+            "name": "images",
+            "role": "referenceImage",
+            "description": "参考图 HTTPS URL 数组，最多 16 个。",
+            "type": "array",
+            "maxItems": 16
+          }
+        ],
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/v1/images/generations",
+            "description": "文生图。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/generations/{task_id}",
+            "description": "查询异步生成任务。"
+          },
+          {
+            "method": "POST",
+            "path": "/v1/images/edits",
+            "description": "参考图编辑。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/edits/{task_id}",
+            "description": "查询异步编辑任务。"
+          }
+        ],
+        "examples": [
+          {
+            "title": "最小请求",
+            "request": {
+              "model": "gpt-image-2.5-sunburst-1k",
+              "prompt": "温暖的午后，阳光洒在窗台上。"
+            }
+          }
+        ],
+        "status": "current",
+        "source": "capabilities/image",
+        "lastReviewed": "2026-09-29"
+      }
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-2k",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-sunburst-2k.json",
+      "checkedAt": "2026-10-18T00:34:32.535Z",
+      "sha256": "55971f3195b10db5105f87e9bb994e93685bbbd7ce4e95455084ddf6033a4ca8",
+      "etag": "\"55971f3195b10db5105f87e9bb994e93685bbbd7ce4e95455084ddf6033a4ca8\"",
+      "lastModified": null,
+      "schema": {
+        "schemaVersion": 1,
+        "publicModel": "gpt-image-2.5-sunburst-2k",
+        "capabilityRefs": [
+          "image"
+        ],
+        "supportedModes": [
+          "sync",
+          "async"
+        ],
+        "warnings": [
+          "本页公共名就是请求里要传的名字。",
+          "未列出的字段不要发送。"
+        ],
+        "params": [
+          {
+            "name": "model",
+            "description": "固定传 gpt-image-2.5-sunburst-2k。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "prompt",
+            "description": "生成内容的描述。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "n",
+            "description": "生成张数。最小 1。最大 1。",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1
+          },
+          {
+            "name": "size",
+            "description": "画面比例或 WIDTHxHEIGHT 尺寸。宽高步长 16。最长边 3840。像素尺寸最大宽高比 3。最少像素 655360。最多像素 4194304。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+            "type": "string",
+            "suggestions": [
+              "1:1",
+              "5:4",
+              "7:6",
+              "9:16",
+              "21:9",
+              "16:9",
+              "3:2",
+              "4:3",
+              "4:5",
+              "3:4",
+              "2:3"
+            ]
+          },
+          {
+            "name": "quality",
+            "description": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
+            "type": "string",
+            "enum": [
+              "medium",
+              "low",
+              "high",
+              "xhigh",
+              "max"
+            ]
+          },
+          {
+            "name": "background",
+            "description": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+            "type": "string",
+            "enum": [
+              "auto",
+              "opaque",
+              "transparent"
+            ]
+          },
+          {
+            "name": "output_format",
+            "description": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
+            "type": "string",
+            "enum": [
+              "png",
+              "jpeg",
+              "webp"
+            ]
+          },
+          {
+            "name": "response_format",
+            "description": "url 返回结果地址，b64_json 返回 Base64。",
+            "type": "string",
+            "enum": [
+              "url",
+              "b64_json"
+            ]
+          },
+          {
+            "name": "async",
+            "description": "true 创建异步任务；省略或 false 为同步等待。",
+            "type": "boolean"
+          },
+          {
+            "name": "images",
+            "role": "referenceImage",
+            "description": "参考图 HTTPS URL 数组，最多 16 个。",
+            "type": "array",
+            "maxItems": 16
+          }
+        ],
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/v1/images/generations",
+            "description": "文生图。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/generations/{task_id}",
+            "description": "查询异步生成任务。"
+          },
+          {
+            "method": "POST",
+            "path": "/v1/images/edits",
+            "description": "参考图编辑。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/edits/{task_id}",
+            "description": "查询异步编辑任务。"
+          }
+        ],
+        "examples": [
+          {
+            "title": "最小请求",
+            "request": {
+              "model": "gpt-image-2.5-sunburst-2k",
+              "prompt": "温暖的午后，阳光洒在窗台上。"
+            }
+          }
+        ],
+        "status": "current",
+        "source": "capabilities/image",
+        "lastReviewed": "2026-09-29"
+      }
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-4k",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-sunburst-4k.json",
+      "checkedAt": "2026-10-18T00:34:32.582Z",
+      "sha256": "b1eae3b2df44861eb71ba45f9fcf6097ce3db4c541a256ea980083fed1cce25e",
+      "etag": "\"b1eae3b2df44861eb71ba45f9fcf6097ce3db4c541a256ea980083fed1cce25e\"",
+      "lastModified": null,
+      "schema": {
+        "schemaVersion": 1,
+        "publicModel": "gpt-image-2.5-sunburst-4k",
+        "capabilityRefs": [
+          "image"
+        ],
+        "supportedModes": [
+          "sync",
+          "async"
+        ],
+        "warnings": [
+          "本页公共名就是请求里要传的名字。",
+          "未列出的字段不要发送。"
+        ],
+        "params": [
+          {
+            "name": "model",
+            "description": "固定传 gpt-image-2.5-sunburst-4k。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "prompt",
+            "description": "生成内容的描述。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "n",
+            "description": "生成张数。最小 1。最大 1。",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1
+          },
+          {
+            "name": "size",
+            "description": "画面比例或 WIDTHxHEIGHT 尺寸。宽高步长 16。最长边 3840。像素尺寸最大宽高比 3。最少像素 655360。最多像素 8294400。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+            "type": "string",
+            "suggestions": [
+              "1:1",
+              "5:4",
+              "7:6",
+              "9:16",
+              "21:9",
+              "16:9",
+              "3:2",
+              "4:3",
+              "4:5",
+              "3:4",
+              "2:3"
+            ]
+          },
+          {
+            "name": "quality",
+            "description": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
+            "type": "string",
+            "enum": [
+              "medium",
+              "low",
+              "high",
+              "xhigh",
+              "max"
+            ]
+          },
+          {
+            "name": "background",
+            "description": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+            "type": "string",
+            "enum": [
+              "auto",
+              "opaque",
+              "transparent"
+            ]
+          },
+          {
+            "name": "output_format",
+            "description": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
+            "type": "string",
+            "enum": [
+              "png",
+              "jpeg",
+              "webp"
+            ]
+          },
+          {
+            "name": "response_format",
+            "description": "url 返回结果地址，b64_json 返回 Base64。",
+            "type": "string",
+            "enum": [
+              "url",
+              "b64_json"
+            ]
+          },
+          {
+            "name": "async",
+            "description": "true 创建异步任务；省略或 false 为同步等待。",
+            "type": "boolean"
+          },
+          {
+            "name": "images",
+            "role": "referenceImage",
+            "description": "参考图 HTTPS URL 数组，最多 16 个。",
+            "type": "array",
+            "maxItems": 16
+          }
+        ],
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/v1/images/generations",
+            "description": "文生图。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/generations/{task_id}",
+            "description": "查询异步生成任务。"
+          },
+          {
+            "method": "POST",
+            "path": "/v1/images/edits",
+            "description": "参考图编辑。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/edits/{task_id}",
+            "description": "查询异步编辑任务。"
+          }
+        ],
+        "examples": [
+          {
+            "title": "最小请求",
+            "request": {
+              "model": "gpt-image-2.5-sunburst-4k",
+              "prompt": "温暖的午后，阳光洒在窗台上。"
+            }
+          }
+        ],
+        "status": "current",
+        "source": "capabilities/image",
+        "lastReviewed": "2026-09-29"
+      }
+    },
+    {
+      "id": "midjourney-1k",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/midjourney-1k.json",
+      "checkedAt": "2026-10-18T00:34:32.865Z",
+      "sha256": "0bc506c6af9878c8ef57714e26aee9ee25dc5e0b893120175530b3f5f5909198",
+      "etag": "\"0bc506c6af9878c8ef57714e26aee9ee25dc5e0b893120175530b3f5f5909198\"",
+      "lastModified": null,
+      "schema": {
+        "schemaVersion": 1,
+        "publicModel": "midjourney-1k",
+        "capabilityRefs": [
+          "image"
+        ],
+        "supportedModes": [
+          "sync",
+          "async"
+        ],
+        "warnings": [
+          "本页公共名就是请求里要传的名字。",
+          "未列出的字段不要发送。"
+        ],
+        "params": [
+          {
+            "name": "model",
+            "description": "固定传 midjourney-1k。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "prompt",
+            "description": "生成内容的描述。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "n",
+            "description": "生成张数。最小 1。最大 1。",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1
+          },
+          {
+            "name": "size",
+            "description": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:2 / 1:2 / 6:11 / 6:11 / 9:16 / 9:16 / 2:3 / 2:3 / 3:4 / 3:4 / 4:5 / 4:5 / 5:6 / 5:6 / 1:1 / 1:1 / 2:1 / 2:1 / 11:6 / 11:6 / 16:9 / 16:9 / 3:2 / 3:2 / 4:3 / 4:3 / 5:4 / 5:4 / 6:5 / 6:5；推荐值不代表完整允许集合。",
+            "type": "string",
+            "suggestions": [
+              "1:2",
+              "1:2",
+              "6:11",
+              "6:11",
+              "9:16",
+              "9:16",
+              "2:3",
+              "2:3",
+              "3:4",
+              "3:4",
+              "4:5",
+              "4:5",
+              "5:6",
+              "5:6",
+              "1:1",
+              "1:1",
+              "2:1",
+              "2:1",
+              "11:6",
+              "11:6",
+              "16:9",
+              "16:9",
+              "3:2",
+              "3:2",
+              "4:3",
+              "4:3",
+              "5:4",
+              "5:4",
+              "6:5",
+              "6:5"
+            ]
+          },
+          {
+            "name": "speed",
+            "description": "生成速度。支持值：relax / fast。无法识别的值按未传处理。",
+            "type": "string",
+            "enum": [
+              "relax",
+              "fast"
+            ],
+            "suggestedDefault": "relax"
+          },
+          {
+            "name": "reference",
+            "description": "参考方式。支持值：image / style / edit / moodboard / editor。无法识别的值按未传处理。",
+            "type": "string",
+            "enum": [
+              "image",
+              "style",
+              "edit",
+              "moodboard",
+              "editor"
+            ],
+            "suggestedDefault": "image"
+          },
+          {
+            "name": "response_format",
+            "description": "url 返回结果地址，b64_json 返回 Base64。",
+            "type": "string",
+            "enum": [
+              "url",
+              "b64_json"
+            ]
+          },
+          {
+            "name": "async",
+            "description": "true 创建异步任务；省略或 false 为同步等待。",
+            "type": "boolean"
+          },
+          {
+            "name": "images",
+            "role": "referenceImage",
+            "description": "参考图 HTTPS URL 数组，最多 4 个。",
+            "type": "array",
+            "maxItems": 4
+          },
+          {
+            "name": "mask",
+            "description": "编辑请求的蒙版 HTTPS URL，最多 1 张。",
+            "type": "string",
+            "maxItems": 1
+          }
+        ],
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/v1/images/generations",
+            "description": "文生图。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/generations/{task_id}",
+            "description": "查询异步生成任务。"
+          },
+          {
+            "method": "POST",
+            "path": "/v1/images/edits",
+            "description": "参考图编辑。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/edits/{task_id}",
+            "description": "查询异步编辑任务。"
+          }
+        ],
+        "examples": [
+          {
+            "title": "最小请求",
+            "request": {
+              "model": "midjourney-1k",
+              "prompt": "温暖的午后，阳光洒在窗台上。"
+            }
+          }
+        ],
+        "status": "current",
+        "source": "capabilities/image",
+        "lastReviewed": "2026-09-29"
+      }
+    },
+    {
+      "id": "midjourney-2k",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/midjourney-2k.json",
+      "checkedAt": "2026-10-18T00:34:32.897Z",
+      "sha256": "8ae99ab62b1243b9951bcc2693ef6f5e61e86b85fd4c9c222f1c6002eb42a56c",
+      "etag": "\"8ae99ab62b1243b9951bcc2693ef6f5e61e86b85fd4c9c222f1c6002eb42a56c\"",
+      "lastModified": null,
+      "schema": {
+        "schemaVersion": 1,
+        "publicModel": "midjourney-2k",
+        "capabilityRefs": [
+          "image"
+        ],
+        "supportedModes": [
+          "sync",
+          "async"
+        ],
+        "warnings": [
+          "本页公共名就是请求里要传的名字。",
+          "未列出的字段不要发送。"
+        ],
+        "params": [
+          {
+            "name": "model",
+            "description": "固定传 midjourney-2k。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "prompt",
+            "description": "生成内容的描述。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "n",
+            "description": "生成张数。最小 1。最大 1。",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1
+          },
+          {
+            "name": "size",
+            "description": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:2 / 1:2 / 6:11 / 6:11 / 9:16 / 9:16 / 2:3 / 2:3 / 3:4 / 3:4 / 4:5 / 4:5 / 5:6 / 5:6 / 1:1 / 1:1 / 2:1 / 2:1 / 11:6 / 11:6 / 16:9 / 16:9 / 3:2 / 3:2 / 4:3 / 4:3 / 5:4 / 5:4 / 6:5 / 6:5；推荐值不代表完整允许集合。",
+            "type": "string",
+            "suggestions": [
+              "1:2",
+              "1:2",
+              "6:11",
+              "6:11",
+              "9:16",
+              "9:16",
+              "2:3",
+              "2:3",
+              "3:4",
+              "3:4",
+              "4:5",
+              "4:5",
+              "5:6",
+              "5:6",
+              "1:1",
+              "1:1",
+              "2:1",
+              "2:1",
+              "11:6",
+              "11:6",
+              "16:9",
+              "16:9",
+              "3:2",
+              "3:2",
+              "4:3",
+              "4:3",
+              "5:4",
+              "5:4",
+              "6:5",
+              "6:5"
+            ]
+          },
+          {
+            "name": "speed",
+            "description": "生成速度。支持值：relax / fast。无法识别的值按未传处理。",
+            "type": "string",
+            "enum": [
+              "relax",
+              "fast"
+            ],
+            "suggestedDefault": "relax"
+          },
+          {
+            "name": "reference",
+            "description": "参考方式。支持值：image / style / edit / moodboard / editor。无法识别的值按未传处理。",
+            "type": "string",
+            "enum": [
+              "image",
+              "style",
+              "edit",
+              "moodboard",
+              "editor"
+            ],
+            "suggestedDefault": "image"
+          },
+          {
+            "name": "response_format",
+            "description": "url 返回结果地址，b64_json 返回 Base64。",
+            "type": "string",
+            "enum": [
+              "url",
+              "b64_json"
+            ]
+          },
+          {
+            "name": "async",
+            "description": "true 创建异步任务；省略或 false 为同步等待。",
+            "type": "boolean"
+          },
+          {
+            "name": "images",
+            "role": "referenceImage",
+            "description": "参考图 HTTPS URL 数组，最多 4 个。",
+            "type": "array",
+            "maxItems": 4
+          },
+          {
+            "name": "mask",
+            "description": "编辑请求的蒙版 HTTPS URL，最多 1 张。",
+            "type": "string",
+            "maxItems": 1
+          }
+        ],
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/v1/images/generations",
+            "description": "文生图。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/generations/{task_id}",
+            "description": "查询异步生成任务。"
+          },
+          {
+            "method": "POST",
+            "path": "/v1/images/edits",
+            "description": "参考图编辑。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/edits/{task_id}",
+            "description": "查询异步编辑任务。"
+          }
+        ],
+        "examples": [
+          {
+            "title": "最小请求",
+            "request": {
+              "model": "midjourney-2k",
+              "prompt": "温暖的午后，阳光洒在窗台上。"
+            }
+          }
+        ],
+        "status": "current",
+        "source": "capabilities/image",
+        "lastReviewed": "2026-09-29"
+      }
+    },
+    {
+      "id": "nano-banana-pro-1k",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/nano-banana-pro-1k.json",
+      "checkedAt": "2026-10-18T00:34:32.988Z",
+      "sha256": "c6cf61d30cf4e3d082ff35213660ae71781946b7bf3c21c3f15918b823470a63",
+      "etag": "\"c6cf61d30cf4e3d082ff35213660ae71781946b7bf3c21c3f15918b823470a63\"",
+      "lastModified": null,
+      "schema": {
+        "schemaVersion": 1,
+        "publicModel": "nano-banana-pro-1k",
+        "capabilityRefs": [
+          "image"
+        ],
+        "supportedModes": [
+          "sync",
+          "async"
+        ],
+        "warnings": [
+          "本页公共名就是请求里要传的名字。",
+          "未列出的字段不要发送。"
+        ],
+        "params": [
+          {
+            "name": "model",
+            "description": "固定传 nano-banana-pro-1k。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "prompt",
+            "description": "生成内容的描述。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "n",
+            "description": "生成张数。最小 1。最大 1。",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1
+          },
+          {
+            "name": "size",
+            "description": "画面比例或 WIDTHxHEIGHT 尺寸。最长边 1024。推荐值：1:1 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+            "type": "string",
+            "suggestions": [
+              "1:1",
+              "9:16",
+              "21:9",
+              "16:9",
+              "3:2",
+              "4:3",
+              "3:4",
+              "2:3"
+            ]
+          },
+          {
+            "name": "response_format",
+            "description": "url 返回结果地址，b64_json 返回 Base64。",
+            "type": "string",
+            "enum": [
+              "url",
+              "b64_json"
+            ]
+          },
+          {
+            "name": "async",
+            "description": "true 创建异步任务；省略或 false 为同步等待。",
+            "type": "boolean"
+          },
+          {
+            "name": "images",
+            "role": "referenceImage",
+            "description": "参考图 HTTPS URL 数组，最多 9 个。",
+            "type": "array",
+            "maxItems": 9
+          },
+          {
+            "name": "mask",
+            "description": "编辑请求的蒙版 HTTPS URL，最多 1 张。",
+            "type": "string",
+            "maxItems": 1
+          }
+        ],
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/v1/images/generations",
+            "description": "文生图。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/generations/{task_id}",
+            "description": "查询异步生成任务。"
+          },
+          {
+            "method": "POST",
+            "path": "/v1/images/edits",
+            "description": "参考图编辑。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/edits/{task_id}",
+            "description": "查询异步编辑任务。"
+          }
+        ],
+        "examples": [
+          {
+            "title": "最小请求",
+            "request": {
+              "model": "nano-banana-pro-1k",
+              "prompt": "温暖的午后，阳光洒在窗台上。"
+            }
+          }
+        ],
+        "status": "current",
+        "source": "capabilities/image",
+        "lastReviewed": "2026-09-26"
+      }
+    },
+    {
+      "id": "nano-banana-pro-2k",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/nano-banana-pro-2k.json",
+      "checkedAt": "2026-10-18T00:34:33.016Z",
+      "sha256": "0ba285b859475ce8f51dbfa2dbcea33f0762c1ece95ad8fd49c8a4ce1bcfb044",
+      "etag": "\"0ba285b859475ce8f51dbfa2dbcea33f0762c1ece95ad8fd49c8a4ce1bcfb044\"",
+      "lastModified": null,
+      "schema": {
+        "schemaVersion": 1,
+        "publicModel": "nano-banana-pro-2k",
+        "capabilityRefs": [
+          "image"
+        ],
+        "supportedModes": [
+          "sync",
+          "async"
+        ],
+        "warnings": [
+          "本页公共名就是请求里要传的名字。",
+          "未列出的字段不要发送。"
+        ],
+        "params": [
+          {
+            "name": "model",
+            "description": "固定传 nano-banana-pro-2k。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "prompt",
+            "description": "生成内容的描述。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "n",
+            "description": "生成张数。最小 1。最大 1。",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1
+          },
+          {
+            "name": "size",
+            "description": "画面比例或 WIDTHxHEIGHT 尺寸。最长边 2048。最长边至少 1025。推荐值：1:1 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+            "type": "string",
+            "suggestions": [
+              "1:1",
+              "9:16",
+              "21:9",
+              "16:9",
+              "3:2",
+              "4:3",
+              "3:4",
+              "2:3"
+            ]
+          },
+          {
+            "name": "response_format",
+            "description": "url 返回结果地址，b64_json 返回 Base64。",
+            "type": "string",
+            "enum": [
+              "url",
+              "b64_json"
+            ]
+          },
+          {
+            "name": "async",
+            "description": "true 创建异步任务；省略或 false 为同步等待。",
+            "type": "boolean"
+          },
+          {
+            "name": "images",
+            "role": "referenceImage",
+            "description": "参考图 HTTPS URL 数组，最多 9 个。",
+            "type": "array",
+            "maxItems": 9
+          },
+          {
+            "name": "mask",
+            "description": "编辑请求的蒙版 HTTPS URL，最多 1 张。",
+            "type": "string",
+            "maxItems": 1
+          }
+        ],
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/v1/images/generations",
+            "description": "文生图。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/generations/{task_id}",
+            "description": "查询异步生成任务。"
+          },
+          {
+            "method": "POST",
+            "path": "/v1/images/edits",
+            "description": "参考图编辑。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/edits/{task_id}",
+            "description": "查询异步编辑任务。"
+          }
+        ],
+        "examples": [
+          {
+            "title": "最小请求",
+            "request": {
+              "model": "nano-banana-pro-2k",
+              "prompt": "温暖的午后，阳光洒在窗台上。"
+            }
+          }
+        ],
+        "status": "current",
+        "source": "capabilities/image",
+        "lastReviewed": "2026-09-26"
+      }
+    },
+    {
+      "id": "nano-banana-pro-4k",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/nano-banana-pro-4k.json",
+      "checkedAt": "2026-10-18T00:34:33.114Z",
+      "sha256": "5607e23d19f367602187dde74de7bf9efa6a3ceb9cf4aa7bd204e5ce3bb41b94",
+      "etag": "\"5607e23d19f367602187dde74de7bf9efa6a3ceb9cf4aa7bd204e5ce3bb41b94\"",
+      "lastModified": null,
+      "schema": {
+        "schemaVersion": 1,
+        "publicModel": "nano-banana-pro-4k",
+        "capabilityRefs": [
+          "image"
+        ],
+        "supportedModes": [
+          "sync",
+          "async"
+        ],
+        "warnings": [
+          "本页公共名就是请求里要传的名字。",
+          "未列出的字段不要发送。"
+        ],
+        "params": [
+          {
+            "name": "model",
+            "description": "固定传 nano-banana-pro-4k。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "prompt",
+            "description": "生成内容的描述。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "n",
+            "description": "生成张数。最小 1。最大 1。",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1
+          },
+          {
+            "name": "size",
+            "description": "画面比例或 WIDTHxHEIGHT 尺寸。最长边至少 2049。推荐值：1:1 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+            "type": "string",
+            "suggestions": [
+              "1:1",
+              "9:16",
+              "21:9",
+              "16:9",
+              "3:2",
+              "4:3",
+              "3:4",
+              "2:3"
+            ]
+          },
+          {
+            "name": "response_format",
+            "description": "url 返回结果地址，b64_json 返回 Base64。",
+            "type": "string",
+            "enum": [
+              "url",
+              "b64_json"
+            ]
+          },
+          {
+            "name": "async",
+            "description": "true 创建异步任务；省略或 false 为同步等待。",
+            "type": "boolean"
+          },
+          {
+            "name": "images",
+            "role": "referenceImage",
+            "description": "参考图 HTTPS URL 数组，最多 9 个。",
+            "type": "array",
+            "maxItems": 9
+          },
+          {
+            "name": "mask",
+            "description": "编辑请求的蒙版 HTTPS URL，最多 1 张。",
+            "type": "string",
+            "maxItems": 1
+          }
+        ],
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/v1/images/generations",
+            "description": "文生图。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/generations/{task_id}",
+            "description": "查询异步生成任务。"
+          },
+          {
+            "method": "POST",
+            "path": "/v1/images/edits",
+            "description": "参考图编辑。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/edits/{task_id}",
+            "description": "查询异步编辑任务。"
+          }
+        ],
+        "examples": [
+          {
+            "title": "最小请求",
+            "request": {
+              "model": "nano-banana-pro-4k",
+              "prompt": "温暖的午后，阳光洒在窗台上。"
+            }
+          }
+        ],
+        "status": "current",
+        "source": "capabilities/image",
+        "lastReviewed": "2026-09-26"
+      }
+    },
+    {
+      "id": "nano-banana2-1k",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/nano-banana2-1k.json",
+      "checkedAt": "2026-10-18T00:34:33.128Z",
+      "sha256": "4713d4ddb277528c34758e064217251bc39a02b00eb9697f2fe949fc3184f1db",
+      "etag": "\"4713d4ddb277528c34758e064217251bc39a02b00eb9697f2fe949fc3184f1db\"",
+      "lastModified": null,
+      "schema": {
+        "schemaVersion": 1,
+        "publicModel": "nano-banana2-1k",
+        "capabilityRefs": [
+          "image"
+        ],
+        "supportedModes": [
+          "sync",
+          "async"
+        ],
+        "warnings": [
+          "本页公共名就是请求里要传的名字。",
+          "未列出的字段不要发送。"
+        ],
+        "params": [
+          {
+            "name": "model",
+            "description": "固定传 nano-banana2-1k。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "prompt",
+            "description": "生成内容的描述。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "n",
+            "description": "生成张数。最小 1。最大 1。",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1
+          },
+          {
+            "name": "size",
+            "description": "画面比例或 WIDTHxHEIGHT 尺寸。最长边 1024。推荐值：1:1 / 4:3 / 3:4 / 16:9 / 9:16 / 3:2 / 2:3 / 21:9；推荐值不代表完整允许集合。",
+            "type": "string",
+            "suggestions": [
+              "1:1",
+              "4:3",
+              "3:4",
+              "16:9",
+              "9:16",
+              "3:2",
+              "2:3",
+              "21:9"
+            ]
+          },
+          {
+            "name": "response_format",
+            "description": "url 返回结果地址，b64_json 返回 Base64。",
+            "type": "string",
+            "enum": [
+              "url",
+              "b64_json"
+            ]
+          },
+          {
+            "name": "async",
+            "description": "true 创建异步任务；省略或 false 为同步等待。",
+            "type": "boolean"
+          },
+          {
+            "name": "images",
+            "role": "referenceImage",
+            "description": "参考图 HTTPS URL 数组，最多 9 个。",
+            "type": "array",
+            "maxItems": 9
+          },
+          {
+            "name": "mask",
+            "description": "编辑请求的蒙版 HTTPS URL，最多 1 张。",
+            "type": "string",
+            "maxItems": 1
+          }
+        ],
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/v1/images/generations",
+            "description": "文生图。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/generations/{task_id}",
+            "description": "查询异步生成任务。"
+          },
+          {
+            "method": "POST",
+            "path": "/v1/images/edits",
+            "description": "参考图编辑。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/edits/{task_id}",
+            "description": "查询异步编辑任务。"
+          }
+        ],
+        "examples": [
+          {
+            "title": "最小请求",
+            "request": {
+              "model": "nano-banana2-1k",
+              "prompt": "温暖的午后，阳光洒在窗台上。"
+            }
+          }
+        ],
+        "status": "current",
+        "source": "capabilities/image",
+        "lastReviewed": "2026-09-26"
+      }
+    },
+    {
+      "id": "nano-banana2-2k",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/nano-banana2-2k.json",
+      "checkedAt": "2026-10-18T00:34:33.214Z",
+      "sha256": "5242f3c66aefe5fe73be647bb098f9f6ac62b0eafa87d43e0a38f99e4b067778",
+      "etag": "\"5242f3c66aefe5fe73be647bb098f9f6ac62b0eafa87d43e0a38f99e4b067778\"",
+      "lastModified": null,
+      "schema": {
+        "schemaVersion": 1,
+        "publicModel": "nano-banana2-2k",
+        "capabilityRefs": [
+          "image"
+        ],
+        "supportedModes": [
+          "sync",
+          "async"
+        ],
+        "warnings": [
+          "本页公共名就是请求里要传的名字。",
+          "未列出的字段不要发送。"
+        ],
+        "params": [
+          {
+            "name": "model",
+            "description": "固定传 nano-banana2-2k。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "prompt",
+            "description": "生成内容的描述。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "n",
+            "description": "生成张数。最小 1。最大 1。",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1
+          },
+          {
+            "name": "size",
+            "description": "画面比例或 WIDTHxHEIGHT 尺寸。最长边 2048。最长边至少 1025。推荐值：1:1 / 4:3 / 3:4 / 16:9 / 9:16 / 3:2 / 2:3 / 21:9；推荐值不代表完整允许集合。",
+            "type": "string",
+            "suggestions": [
+              "1:1",
+              "4:3",
+              "3:4",
+              "16:9",
+              "9:16",
+              "3:2",
+              "2:3",
+              "21:9"
+            ]
+          },
+          {
+            "name": "response_format",
+            "description": "url 返回结果地址，b64_json 返回 Base64。",
+            "type": "string",
+            "enum": [
+              "url",
+              "b64_json"
+            ]
+          },
+          {
+            "name": "async",
+            "description": "true 创建异步任务；省略或 false 为同步等待。",
+            "type": "boolean"
+          },
+          {
+            "name": "images",
+            "role": "referenceImage",
+            "description": "参考图 HTTPS URL 数组，最多 9 个。",
+            "type": "array",
+            "maxItems": 9
+          },
+          {
+            "name": "mask",
+            "description": "编辑请求的蒙版 HTTPS URL，最多 1 张。",
+            "type": "string",
+            "maxItems": 1
+          }
+        ],
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/v1/images/generations",
+            "description": "文生图。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/generations/{task_id}",
+            "description": "查询异步生成任务。"
+          },
+          {
+            "method": "POST",
+            "path": "/v1/images/edits",
+            "description": "参考图编辑。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/edits/{task_id}",
+            "description": "查询异步编辑任务。"
+          }
+        ],
+        "examples": [
+          {
+            "title": "最小请求",
+            "request": {
+              "model": "nano-banana2-2k",
+              "prompt": "温暖的午后，阳光洒在窗台上。"
+            }
+          }
+        ],
+        "status": "current",
+        "source": "capabilities/image",
+        "lastReviewed": "2026-09-26"
+      }
+    },
+    {
+      "id": "nano-banana2-4k",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/nano-banana2-4k.json",
+      "checkedAt": "2026-10-18T00:34:33.234Z",
+      "sha256": "1287cfe2d5521e171dff2be8421fcaa67aec8463296f14348988369b56911f6c",
+      "etag": "\"1287cfe2d5521e171dff2be8421fcaa67aec8463296f14348988369b56911f6c\"",
+      "lastModified": null,
+      "schema": {
+        "schemaVersion": 1,
+        "publicModel": "nano-banana2-4k",
+        "capabilityRefs": [
+          "image"
+        ],
+        "supportedModes": [
+          "sync",
+          "async"
+        ],
+        "warnings": [
+          "本页公共名就是请求里要传的名字。",
+          "未列出的字段不要发送。"
+        ],
+        "params": [
+          {
+            "name": "model",
+            "description": "固定传 nano-banana2-4k。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "prompt",
+            "description": "生成内容的描述。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "n",
+            "description": "生成张数。最小 1。最大 1。",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1
+          },
+          {
+            "name": "size",
+            "description": "画面比例或 WIDTHxHEIGHT 尺寸。最长边至少 2049。推荐值：1:1 / 4:3 / 3:4 / 16:9 / 9:16 / 3:2 / 2:3 / 21:9；推荐值不代表完整允许集合。",
+            "type": "string",
+            "suggestions": [
+              "1:1",
+              "4:3",
+              "3:4",
+              "16:9",
+              "9:16",
+              "3:2",
+              "2:3",
+              "21:9"
+            ]
+          },
+          {
+            "name": "response_format",
+            "description": "url 返回结果地址，b64_json 返回 Base64。",
+            "type": "string",
+            "enum": [
+              "url",
+              "b64_json"
+            ]
+          },
+          {
+            "name": "async",
+            "description": "true 创建异步任务；省略或 false 为同步等待。",
+            "type": "boolean"
+          },
+          {
+            "name": "images",
+            "role": "referenceImage",
+            "description": "参考图 HTTPS URL 数组，最多 16 个。",
+            "type": "array",
+            "maxItems": 16
+          },
+          {
+            "name": "mask",
+            "description": "编辑请求的蒙版 HTTPS URL，最多 1 张。",
+            "type": "string",
+            "maxItems": 1
+          }
+        ],
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/v1/images/generations",
+            "description": "文生图。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/generations/{task_id}",
+            "description": "查询异步生成任务。"
+          },
+          {
+            "method": "POST",
+            "path": "/v1/images/edits",
+            "description": "参考图编辑。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/edits/{task_id}",
+            "description": "查询异步编辑任务。"
+          }
+        ],
+        "examples": [
+          {
+            "title": "最小请求",
+            "request": {
+              "model": "nano-banana2-4k",
+              "prompt": "温暖的午后，阳光洒在窗台上。"
+            }
+          }
+        ],
+        "status": "current",
+        "source": "capabilities/image",
+        "lastReviewed": "2026-09-26"
+      }
+    }
+  ],
+  "prices": [
+    {
+      "id": "gpt-image-2-4k",
+      "groups": [
+        "IMAGE",
+        "全模型-无claude/gpt"
+      ],
+      "customDimensions": {
+        "enabled": true,
+        "maxAspectRatio": 3,
+        "maxEdge": 3840,
+        "maxPixels": 8294400,
+        "minPixels": 655360,
+        "step": 16
+      },
+      "record": {
+        "model_name": "gpt-image-2-4k",
+        "description": "GPT Image 2 4K 固定档位。",
+        "vendor_id": 2,
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 0.08,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "IMAGE",
+          "全模型-无claude/gpt"
+        ],
+        "supported_endpoint_types": [
+          "openai-image"
+        ],
+        "billing_mode": "per_request",
+        "request_unit": "image",
+        "image_ui_params": {
+          "hints": [
+            {
+              "text": "适合用途｜4K 档图片创作与参考编辑；一次 1 张；最多 9 张参考图；支持 1 张蒙版。"
+            },
+            {
+              "text": "使用注意｜公共型号决定 4K 像素预算；quality 控制质量，费用按该公共型号的实时价格结算；精确宽高须 16px 对齐，最长边不超过 3840px、比例不超过 3:1，像素范围见请求参数。"
+            }
+          ],
+          "id": "gpt-image-2-4k",
+          "params": {
+            "aspectRatio": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "1:1",
+                  "value": "1:1"
+                },
+                {
+                  "label": "5:4",
+                  "value": "5:4"
+                },
+                {
+                  "label": "7:6",
+                  "value": "7:6"
+                },
+                {
+                  "label": "9:16",
+                  "value": "9:16"
+                },
+                {
+                  "label": "21:9",
+                  "value": "21:9"
+                },
+                {
+                  "label": "16:9",
+                  "value": "16:9"
+                },
+                {
+                  "label": "3:2",
+                  "value": "3:2"
+                },
+                {
+                  "label": "4:3",
+                  "value": "4:3"
+                },
+                {
+                  "label": "4:5",
+                  "value": "4:5"
+                },
+                {
+                  "label": "3:4",
+                  "value": "3:4"
+                },
+                {
+                  "label": "2:3",
+                  "value": "2:3"
+                }
+              ]
+            },
+            "background": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "自动",
+                  "value": "auto"
+                },
+                {
+                  "label": "不透明",
+                  "value": "opaque"
+                },
+                {
+                  "label": "透明",
+                  "value": "transparent"
+                }
+              ]
+            },
+            "count": {
+              "enabled": true,
+              "max": 1,
+              "min": 1,
+              "quickCount": 1
+            },
+            "customDimensions": {
+              "enabled": true,
+              "maxAspectRatio": 3,
+              "maxEdge": 3840,
+              "maxPixels": 8294400,
+              "minPixels": 655360,
+              "step": 16
+            },
+            "moderation": {
+              "enabled": false,
+              "options": []
+            },
+            "outputCompression": {
+              "default": 100,
+              "enabled": false,
+              "max": 100,
+              "min": 0
+            },
+            "outputFormat": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "PNG",
+                  "value": "png"
+                },
+                {
+                  "label": "JPEG",
+                  "value": "jpeg"
+                },
+                {
+                  "label": "WEBP",
+                  "value": "webp"
+                }
+              ]
+            },
+            "quality": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "中（默认）",
+                  "value": "medium"
+                },
+                {
+                  "label": "低",
+                  "value": "low"
+                },
+                {
+                  "label": "高",
+                  "value": "high"
+                },
+                {
+                  "label": "超高",
+                  "value": "xhigh"
+                },
+                {
+                  "label": "最高",
+                  "value": "max"
+                }
+              ]
+            }
+          },
+          "referenceLimits": {
+            "audios": 0,
+            "images": 9,
+            "mask": 1,
+            "videos": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-4k",
+      "groups": [
+        "IMAGE",
+        "全模型-无claude/gpt"
+      ],
+      "customDimensions": {
+        "enabled": true,
+        "maxAspectRatio": 3,
+        "maxEdge": 3840,
+        "maxPixels": 8294400,
+        "minPixels": 655360,
+        "step": 16
+      },
+      "record": {
+        "model_name": "gpt-image-2.5-sunburst-4k",
+        "description": "GPT Image 2.5 Sunburst 4K 固定档位。",
+        "vendor_id": 2,
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 0.22,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "IMAGE",
+          "全模型-无claude/gpt"
+        ],
+        "supported_endpoint_types": [
+          "openai-image"
+        ],
+        "billing_mode": "tiered_expr",
+        "billing_expr": "(param(\"quality\") == \"xhigh\" || param(\"quality\") == \"max\") ? tier(\"xhigh\", n * 0.44) : tier(\"std\", n * 0.22)",
+        "billing_capability": "image",
+        "request_unit": "image",
+        "image_ui_params": {
+          "hints": [
+            {
+              "text": "适合用途｜4K 档图片创作与参考编辑；一次 1 张；最多 16 张参考图；不支持蒙版。"
+            },
+            {
+              "text": "使用注意｜公共型号决定 4K 像素预算；quality 控制质量，费用随质量档位变化，读取实时价格；精确宽高须 16px 对齐，最长边不超过 3840px、比例不超过 3:1，像素范围见请求参数。"
+            }
+          ],
+          "id": "gpt-image-2.5-sunburst-4k",
+          "params": {
+            "aspectRatio": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "1:1",
+                  "value": "1:1"
+                },
+                {
+                  "label": "5:4",
+                  "value": "5:4"
+                },
+                {
+                  "label": "7:6",
+                  "value": "7:6"
+                },
+                {
+                  "label": "9:16",
+                  "value": "9:16"
+                },
+                {
+                  "label": "21:9",
+                  "value": "21:9"
+                },
+                {
+                  "label": "16:9",
+                  "value": "16:9"
+                },
+                {
+                  "label": "3:2",
+                  "value": "3:2"
+                },
+                {
+                  "label": "4:3",
+                  "value": "4:3"
+                },
+                {
+                  "label": "4:5",
+                  "value": "4:5"
+                },
+                {
+                  "label": "3:4",
+                  "value": "3:4"
+                },
+                {
+                  "label": "2:3",
+                  "value": "2:3"
+                }
+              ]
+            },
+            "background": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "自动",
+                  "value": "auto"
+                },
+                {
+                  "label": "不透明",
+                  "value": "opaque"
+                },
+                {
+                  "label": "透明",
+                  "value": "transparent"
+                }
+              ]
+            },
+            "count": {
+              "enabled": true,
+              "max": 1,
+              "min": 1,
+              "quickCount": 1
+            },
+            "customDimensions": {
+              "enabled": true,
+              "maxAspectRatio": 3,
+              "maxEdge": 3840,
+              "maxPixels": 8294400,
+              "minPixels": 655360,
+              "step": 16
+            },
+            "moderation": {
+              "enabled": false,
+              "options": []
+            },
+            "outputCompression": {
+              "default": 100,
+              "enabled": false,
+              "max": 100,
+              "min": 0
+            },
+            "outputFormat": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "PNG",
+                  "value": "png"
+                },
+                {
+                  "label": "JPEG",
+                  "value": "jpeg"
+                },
+                {
+                  "label": "WEBP",
+                  "value": "webp"
+                }
+              ]
+            },
+            "quality": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "中（默认）",
+                  "value": "medium"
+                },
+                {
+                  "label": "低",
+                  "value": "low"
+                },
+                {
+                  "label": "高",
+                  "value": "high"
+                },
+                {
+                  "label": "超高",
+                  "value": "xhigh"
+                },
+                {
+                  "label": "最高",
+                  "value": "max"
+                }
+              ]
+            }
+          },
+          "referenceLimits": {
+            "audios": 0,
+            "images": 16,
+            "mask": 0,
+            "videos": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "gpt-image-2-2k",
+      "groups": [
+        "IMAGE",
+        "全模型-无claude/gpt"
+      ],
+      "customDimensions": {
+        "enabled": true,
+        "maxAspectRatio": 3,
+        "maxEdge": 3840,
+        "maxPixels": 4194304,
+        "minPixels": 655360,
+        "step": 16
+      },
+      "record": {
+        "model_name": "gpt-image-2-2k",
+        "description": "GPT Image 2 2K 固定档位。",
+        "vendor_id": 2,
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 0.07,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "IMAGE",
+          "全模型-无claude/gpt"
+        ],
+        "supported_endpoint_types": [
+          "openai-image"
+        ],
+        "billing_mode": "per_request",
+        "request_unit": "image",
+        "image_ui_params": {
+          "hints": [
+            {
+              "text": "适合用途｜2K 档图片创作与参考编辑；一次 1 张；最多 9 张参考图；支持 1 张蒙版。"
+            },
+            {
+              "text": "使用注意｜公共型号决定 2K 像素预算；quality 控制质量，费用按该公共型号的实时价格结算；精确宽高须 16px 对齐，最长边不超过 3840px、比例不超过 3:1，像素范围见请求参数。"
+            }
+          ],
+          "id": "gpt-image-2-2k",
+          "params": {
+            "aspectRatio": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "1:1",
+                  "value": "1:1"
+                },
+                {
+                  "label": "5:4",
+                  "value": "5:4"
+                },
+                {
+                  "label": "7:6",
+                  "value": "7:6"
+                },
+                {
+                  "label": "9:16",
+                  "value": "9:16"
+                },
+                {
+                  "label": "21:9",
+                  "value": "21:9"
+                },
+                {
+                  "label": "16:9",
+                  "value": "16:9"
+                },
+                {
+                  "label": "3:2",
+                  "value": "3:2"
+                },
+                {
+                  "label": "4:3",
+                  "value": "4:3"
+                },
+                {
+                  "label": "4:5",
+                  "value": "4:5"
+                },
+                {
+                  "label": "3:4",
+                  "value": "3:4"
+                },
+                {
+                  "label": "2:3",
+                  "value": "2:3"
+                }
+              ]
+            },
+            "background": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "自动",
+                  "value": "auto"
+                },
+                {
+                  "label": "不透明",
+                  "value": "opaque"
+                },
+                {
+                  "label": "透明",
+                  "value": "transparent"
+                }
+              ]
+            },
+            "count": {
+              "enabled": true,
+              "max": 1,
+              "min": 1,
+              "quickCount": 1
+            },
+            "customDimensions": {
+              "enabled": true,
+              "maxAspectRatio": 3,
+              "maxEdge": 3840,
+              "maxPixels": 4194304,
+              "minPixels": 655360,
+              "step": 16
+            },
+            "moderation": {
+              "enabled": false,
+              "options": []
+            },
+            "outputCompression": {
+              "default": 100,
+              "enabled": false,
+              "max": 100,
+              "min": 0
+            },
+            "outputFormat": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "PNG",
+                  "value": "png"
+                },
+                {
+                  "label": "JPEG",
+                  "value": "jpeg"
+                },
+                {
+                  "label": "WEBP",
+                  "value": "webp"
+                }
+              ]
+            },
+            "quality": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "中（默认）",
+                  "value": "medium"
+                },
+                {
+                  "label": "低",
+                  "value": "low"
+                },
+                {
+                  "label": "高",
+                  "value": "high"
+                },
+                {
+                  "label": "超高",
+                  "value": "xhigh"
+                },
+                {
+                  "label": "最高",
+                  "value": "max"
+                }
+              ]
+            }
+          },
+          "referenceLimits": {
+            "audios": 0,
+            "images": 9,
+            "mask": 1,
+            "videos": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "nano-banana-pro-2k",
+      "groups": [
+        "IMAGE",
+        "全模型-无claude/gpt"
+      ],
+      "customDimensions": {
+        "enabled": true,
+        "maxEdge": 2048,
+        "minLongestEdge": 1025
+      },
+      "record": {
+        "model_name": "nano-banana-pro-2k",
+        "description": "Nano Banana Pro 2K 固定档位。",
+        "vendor_id": 6,
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 0.09,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "IMAGE",
+          "全模型-无claude/gpt"
+        ],
+        "supported_endpoint_types": [
+          "openai-image"
+        ],
+        "billing_mode": "per_request",
+        "request_unit": "image",
+        "image_ui_params": {
+          "hints": [
+            {
+              "text": "适合用途｜2K 档高清图片创作；一次 1 张；最多 9 张参考图；支持比例与自定义宽高。"
+            },
+            {
+              "text": "使用注意｜公共型号决定 2K 档位，不用再传 quality；蒙版与素材要求见请求参数。"
+            }
+          ],
+          "id": "nano-banana-pro-2k",
+          "params": {
+            "aspectRatio": {
+              "enabled": true,
+              "options": [
+                {
+                  "height": 2048,
+                  "label": "1:1",
+                  "value": "1:1",
+                  "width": 2048
+                },
+                {
+                  "height": 2752,
+                  "label": "9:16",
+                  "value": "9:16",
+                  "width": 1536
+                },
+                {
+                  "height": 1248,
+                  "label": "21:9",
+                  "value": "21:9",
+                  "width": 2912
+                },
+                {
+                  "height": 1536,
+                  "label": "16:9",
+                  "value": "16:9",
+                  "width": 2752
+                },
+                {
+                  "height": 1664,
+                  "label": "3:2",
+                  "value": "3:2",
+                  "width": 2496
+                },
+                {
+                  "height": 1536,
+                  "label": "4:3",
+                  "value": "4:3",
+                  "width": 2048
+                },
+                {
+                  "height": 2048,
+                  "label": "3:4",
+                  "value": "3:4",
+                  "width": 1536
+                },
+                {
+                  "height": 2496,
+                  "label": "2:3",
+                  "value": "2:3",
+                  "width": 1664
+                }
+              ]
+            },
+            "background": {
+              "enabled": false,
+              "options": []
+            },
+            "count": {
+              "enabled": true,
+              "max": 1,
+              "min": 1,
+              "quickCount": 1
+            },
+            "customDimensions": {
+              "enabled": true,
+              "maxEdge": 2048,
+              "minLongestEdge": 1025
+            },
+            "moderation": {
+              "enabled": false,
+              "options": []
+            },
+            "outputCompression": {
+              "default": 100,
+              "enabled": false,
+              "max": 100,
+              "min": 0
+            },
+            "outputFormat": {
+              "enabled": false,
+              "options": []
+            },
+            "quality": {
+              "enabled": false,
+              "options": []
+            }
+          },
+          "referenceLimits": {
+            "audios": 0,
+            "images": 9,
+            "mask": 1,
+            "videos": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "nano-banana-pro-4k",
+      "groups": [
+        "IMAGE",
+        "全模型-无claude/gpt"
+      ],
+      "customDimensions": {
+        "enabled": true,
+        "minLongestEdge": 2049
+      },
+      "record": {
+        "model_name": "nano-banana-pro-4k",
+        "description": "Nano Banana Pro 4K 固定档位。",
+        "vendor_id": 6,
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 0.11,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "IMAGE",
+          "全模型-无claude/gpt"
+        ],
+        "supported_endpoint_types": [
+          "openai-image"
+        ],
+        "billing_mode": "per_request",
+        "request_unit": "image",
+        "image_ui_params": {
+          "hints": [
+            {
+              "text": "适合用途｜4K 档高清图片创作；一次 1 张；最多 9 张参考图；支持比例与自定义宽高。"
+            },
+            {
+              "text": "使用注意｜公共型号决定 4K 档位，不用再传 quality；蒙版与素材要求见请求参数。"
+            }
+          ],
+          "id": "nano-banana-pro-4k",
+          "params": {
+            "aspectRatio": {
+              "enabled": true,
+              "options": [
+                {
+                  "height": 4096,
+                  "label": "1:1",
+                  "value": "1:1",
+                  "width": 4096
+                },
+                {
+                  "height": 5504,
+                  "label": "9:16",
+                  "value": "9:16",
+                  "width": 3072
+                },
+                {
+                  "height": 2496,
+                  "label": "21:9",
+                  "value": "21:9",
+                  "width": 5824
+                },
+                {
+                  "height": 3072,
+                  "label": "16:9",
+                  "value": "16:9",
+                  "width": 5504
+                },
+                {
+                  "height": 3328,
+                  "label": "3:2",
+                  "value": "3:2",
+                  "width": 4992
+                },
+                {
+                  "height": 3072,
+                  "label": "4:3",
+                  "value": "4:3",
+                  "width": 4096
+                },
+                {
+                  "height": 4096,
+                  "label": "3:4",
+                  "value": "3:4",
+                  "width": 3072
+                },
+                {
+                  "height": 4992,
+                  "label": "2:3",
+                  "value": "2:3",
+                  "width": 3328
+                }
+              ]
+            },
+            "background": {
+              "enabled": false,
+              "options": []
+            },
+            "count": {
+              "enabled": true,
+              "max": 1,
+              "min": 1,
+              "quickCount": 1
+            },
+            "customDimensions": {
+              "enabled": true,
+              "minLongestEdge": 2049
+            },
+            "moderation": {
+              "enabled": false,
+              "options": []
+            },
+            "outputCompression": {
+              "default": 100,
+              "enabled": false,
+              "max": 100,
+              "min": 0
+            },
+            "outputFormat": {
+              "enabled": false,
+              "options": []
+            },
+            "quality": {
+              "enabled": false,
+              "options": []
+            }
+          },
+          "referenceLimits": {
+            "audios": 0,
+            "images": 9,
+            "mask": 1,
+            "videos": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "gpt-image-2.5-flare-4k",
+      "groups": [
+        "IMAGE",
+        "全模型-无claude/gpt"
+      ],
+      "customDimensions": {
+        "enabled": true,
+        "maxAspectRatio": 3,
+        "maxEdge": 3840,
+        "maxPixels": 8294400,
+        "minPixels": 655360,
+        "step": 16
+      },
+      "record": {
+        "model_name": "gpt-image-2.5-flare-4k",
+        "description": "GPT Image 2.5 Flare 4K 固定档位。",
+        "vendor_id": 2,
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 0.2,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "IMAGE",
+          "全模型-无claude/gpt"
+        ],
+        "supported_endpoint_types": [
+          "openai-image"
+        ],
+        "billing_mode": "tiered_expr",
+        "billing_expr": "(param(\"quality\") == \"xhigh\" || param(\"quality\") == \"max\") ? tier(\"xhigh\", n * 0.40) : tier(\"std\", n * 0.20)",
+        "billing_capability": "image",
+        "request_unit": "image",
+        "image_ui_params": {
+          "hints": [
+            {
+              "text": "适合用途｜4K 档图片创作与参考编辑；一次 1 张；最多 16 张参考图；不支持蒙版。"
+            },
+            {
+              "text": "使用注意｜公共型号决定 4K 像素预算；quality 控制质量，费用随质量档位变化，读取实时价格；精确宽高须 16px 对齐，最长边不超过 3840px、比例不超过 3:1，像素范围见请求参数。"
+            }
+          ],
+          "id": "gpt-image-2.5-flare-4k",
+          "params": {
+            "aspectRatio": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "1:1",
+                  "value": "1:1"
+                },
+                {
+                  "label": "5:4",
+                  "value": "5:4"
+                },
+                {
+                  "label": "7:6",
+                  "value": "7:6"
+                },
+                {
+                  "label": "9:16",
+                  "value": "9:16"
+                },
+                {
+                  "label": "21:9",
+                  "value": "21:9"
+                },
+                {
+                  "label": "16:9",
+                  "value": "16:9"
+                },
+                {
+                  "label": "3:2",
+                  "value": "3:2"
+                },
+                {
+                  "label": "4:3",
+                  "value": "4:3"
+                },
+                {
+                  "label": "4:5",
+                  "value": "4:5"
+                },
+                {
+                  "label": "3:4",
+                  "value": "3:4"
+                },
+                {
+                  "label": "2:3",
+                  "value": "2:3"
+                }
+              ]
+            },
+            "background": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "自动",
+                  "value": "auto"
+                },
+                {
+                  "label": "不透明",
+                  "value": "opaque"
+                },
+                {
+                  "label": "透明",
+                  "value": "transparent"
+                }
+              ]
+            },
+            "count": {
+              "enabled": true,
+              "max": 1,
+              "min": 1,
+              "quickCount": 1
+            },
+            "customDimensions": {
+              "enabled": true,
+              "maxAspectRatio": 3,
+              "maxEdge": 3840,
+              "maxPixels": 8294400,
+              "minPixels": 655360,
+              "step": 16
+            },
+            "moderation": {
+              "enabled": false,
+              "options": []
+            },
+            "outputCompression": {
+              "default": 100,
+              "enabled": false,
+              "max": 100,
+              "min": 0
+            },
+            "outputFormat": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "PNG",
+                  "value": "png"
+                },
+                {
+                  "label": "JPEG",
+                  "value": "jpeg"
+                },
+                {
+                  "label": "WEBP",
+                  "value": "webp"
+                }
+              ]
+            },
+            "quality": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "中（默认）",
+                  "value": "medium"
+                },
+                {
+                  "label": "低",
+                  "value": "low"
+                },
+                {
+                  "label": "高",
+                  "value": "high"
+                },
+                {
+                  "label": "超高",
+                  "value": "xhigh"
+                },
+                {
+                  "label": "最高",
+                  "value": "max"
+                }
+              ]
+            }
+          },
+          "referenceLimits": {
+            "audios": 0,
+            "images": 16,
+            "mask": 0,
+            "videos": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "gpt-image-2.5-flare-2k",
+      "groups": [
+        "IMAGE",
+        "全模型-无claude/gpt"
+      ],
+      "customDimensions": {
+        "enabled": true,
+        "maxAspectRatio": 3,
+        "maxEdge": 3840,
+        "maxPixels": 4194304,
+        "minPixels": 655360,
+        "step": 16
+      },
+      "record": {
+        "model_name": "gpt-image-2.5-flare-2k",
+        "description": "GPT Image 2.5 Flare 2K 固定档位。",
+        "vendor_id": 2,
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 0.18,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "IMAGE",
+          "全模型-无claude/gpt"
+        ],
+        "supported_endpoint_types": [
+          "openai-image"
+        ],
+        "billing_mode": "tiered_expr",
+        "billing_expr": "(param(\"quality\") == \"xhigh\" || param(\"quality\") == \"max\") ? tier(\"xhigh\", n * 0.36) : tier(\"std\", n * 0.18)",
+        "billing_capability": "image",
+        "request_unit": "image",
+        "image_ui_params": {
+          "hints": [
+            {
+              "text": "适合用途｜2K 档图片创作与参考编辑；一次 1 张；最多 16 张参考图；不支持蒙版。"
+            },
+            {
+              "text": "使用注意｜公共型号决定 2K 像素预算；quality 控制质量，费用随质量档位变化，读取实时价格；精确宽高须 16px 对齐，最长边不超过 3840px、比例不超过 3:1，像素范围见请求参数。"
+            }
+          ],
+          "id": "gpt-image-2.5-flare-2k",
+          "params": {
+            "aspectRatio": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "1:1",
+                  "value": "1:1"
+                },
+                {
+                  "label": "5:4",
+                  "value": "5:4"
+                },
+                {
+                  "label": "7:6",
+                  "value": "7:6"
+                },
+                {
+                  "label": "9:16",
+                  "value": "9:16"
+                },
+                {
+                  "label": "21:9",
+                  "value": "21:9"
+                },
+                {
+                  "label": "16:9",
+                  "value": "16:9"
+                },
+                {
+                  "label": "3:2",
+                  "value": "3:2"
+                },
+                {
+                  "label": "4:3",
+                  "value": "4:3"
+                },
+                {
+                  "label": "4:5",
+                  "value": "4:5"
+                },
+                {
+                  "label": "3:4",
+                  "value": "3:4"
+                },
+                {
+                  "label": "2:3",
+                  "value": "2:3"
+                }
+              ]
+            },
+            "background": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "自动",
+                  "value": "auto"
+                },
+                {
+                  "label": "不透明",
+                  "value": "opaque"
+                },
+                {
+                  "label": "透明",
+                  "value": "transparent"
+                }
+              ]
+            },
+            "count": {
+              "enabled": true,
+              "max": 1,
+              "min": 1,
+              "quickCount": 1
+            },
+            "customDimensions": {
+              "enabled": true,
+              "maxAspectRatio": 3,
+              "maxEdge": 3840,
+              "maxPixels": 4194304,
+              "minPixels": 655360,
+              "step": 16
+            },
+            "moderation": {
+              "enabled": false,
+              "options": []
+            },
+            "outputCompression": {
+              "default": 100,
+              "enabled": false,
+              "max": 100,
+              "min": 0
+            },
+            "outputFormat": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "PNG",
+                  "value": "png"
+                },
+                {
+                  "label": "JPEG",
+                  "value": "jpeg"
+                },
+                {
+                  "label": "WEBP",
+                  "value": "webp"
+                }
+              ]
+            },
+            "quality": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "中（默认）",
+                  "value": "medium"
+                },
+                {
+                  "label": "低",
+                  "value": "low"
+                },
+                {
+                  "label": "高",
+                  "value": "high"
+                },
+                {
+                  "label": "超高",
+                  "value": "xhigh"
+                },
+                {
+                  "label": "最高",
+                  "value": "max"
+                }
+              ]
+            }
+          },
+          "referenceLimits": {
+            "audios": 0,
+            "images": 16,
+            "mask": 0,
+            "videos": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-2k",
+      "groups": [
+        "IMAGE",
+        "全模型-无claude/gpt"
+      ],
+      "customDimensions": {
+        "enabled": true,
+        "maxAspectRatio": 3,
+        "maxEdge": 3840,
+        "maxPixels": 4194304,
+        "minPixels": 655360,
+        "step": 16
+      },
+      "record": {
+        "model_name": "gpt-image-2.5-sunburst-2k",
+        "description": "GPT Image 2.5 Sunburst 2K 固定档位。",
+        "vendor_id": 2,
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 0.2,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "IMAGE",
+          "全模型-无claude/gpt"
+        ],
+        "supported_endpoint_types": [
+          "openai-image"
+        ],
+        "billing_mode": "tiered_expr",
+        "billing_expr": "(param(\"quality\") == \"xhigh\" || param(\"quality\") == \"max\") ? tier(\"xhigh\", n * 0.40) : tier(\"std\", n * 0.20)",
+        "billing_capability": "image",
+        "request_unit": "image",
+        "image_ui_params": {
+          "hints": [
+            {
+              "text": "适合用途｜2K 档图片创作与参考编辑；一次 1 张；最多 16 张参考图；不支持蒙版。"
+            },
+            {
+              "text": "使用注意｜公共型号决定 2K 像素预算；quality 控制质量，费用随质量档位变化，读取实时价格；精确宽高须 16px 对齐，最长边不超过 3840px、比例不超过 3:1，像素范围见请求参数。"
+            }
+          ],
+          "id": "gpt-image-2.5-sunburst-2k",
+          "params": {
+            "aspectRatio": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "1:1",
+                  "value": "1:1"
+                },
+                {
+                  "label": "5:4",
+                  "value": "5:4"
+                },
+                {
+                  "label": "7:6",
+                  "value": "7:6"
+                },
+                {
+                  "label": "9:16",
+                  "value": "9:16"
+                },
+                {
+                  "label": "21:9",
+                  "value": "21:9"
+                },
+                {
+                  "label": "16:9",
+                  "value": "16:9"
+                },
+                {
+                  "label": "3:2",
+                  "value": "3:2"
+                },
+                {
+                  "label": "4:3",
+                  "value": "4:3"
+                },
+                {
+                  "label": "4:5",
+                  "value": "4:5"
+                },
+                {
+                  "label": "3:4",
+                  "value": "3:4"
+                },
+                {
+                  "label": "2:3",
+                  "value": "2:3"
+                }
+              ]
+            },
+            "background": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "自动",
+                  "value": "auto"
+                },
+                {
+                  "label": "不透明",
+                  "value": "opaque"
+                },
+                {
+                  "label": "透明",
+                  "value": "transparent"
+                }
+              ]
+            },
+            "count": {
+              "enabled": true,
+              "max": 1,
+              "min": 1,
+              "quickCount": 1
+            },
+            "customDimensions": {
+              "enabled": true,
+              "maxAspectRatio": 3,
+              "maxEdge": 3840,
+              "maxPixels": 4194304,
+              "minPixels": 655360,
+              "step": 16
+            },
+            "moderation": {
+              "enabled": false,
+              "options": []
+            },
+            "outputCompression": {
+              "default": 100,
+              "enabled": false,
+              "max": 100,
+              "min": 0
+            },
+            "outputFormat": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "PNG",
+                  "value": "png"
+                },
+                {
+                  "label": "JPEG",
+                  "value": "jpeg"
+                },
+                {
+                  "label": "WEBP",
+                  "value": "webp"
+                }
+              ]
+            },
+            "quality": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "中（默认）",
+                  "value": "medium"
+                },
+                {
+                  "label": "低",
+                  "value": "low"
+                },
+                {
+                  "label": "高",
+                  "value": "high"
+                },
+                {
+                  "label": "超高",
+                  "value": "xhigh"
+                },
+                {
+                  "label": "最高",
+                  "value": "max"
+                }
+              ]
+            }
+          },
+          "referenceLimits": {
+            "audios": 0,
+            "images": 16,
+            "mask": 0,
+            "videos": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "nano-banana2-2k",
+      "groups": [
+        "IMAGE",
+        "全模型-无claude/gpt"
+      ],
+      "customDimensions": {
+        "enabled": true,
+        "maxEdge": 2048,
+        "minLongestEdge": 1025
+      },
+      "record": {
+        "model_name": "nano-banana2-2k",
+        "description": "Nano Banana 2 2K 固定档位。",
+        "vendor_id": 6,
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 0.08,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "IMAGE",
+          "全模型-无claude/gpt"
+        ],
+        "supported_endpoint_types": [
+          "openai-image"
+        ],
+        "billing_mode": "per_request",
+        "request_unit": "image",
+        "image_ui_params": {
+          "hints": [
+            {
+              "text": "适合用途｜2K 档高清图片创作；一次 1 张；最多 9 张参考图；支持比例与自定义宽高。"
+            },
+            {
+              "text": "使用注意｜公共型号决定 2K 档位，不用再传 quality；蒙版与素材要求见请求参数。"
+            }
+          ],
+          "id": "nano-banana2-2k",
+          "params": {
+            "aspectRatio": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "1:1",
+                  "value": "1:1"
+                },
+                {
+                  "label": "4:3",
+                  "value": "4:3"
+                },
+                {
+                  "label": "3:4",
+                  "value": "3:4"
+                },
+                {
+                  "label": "16:9",
+                  "value": "16:9"
+                },
+                {
+                  "label": "9:16",
+                  "value": "9:16"
+                },
+                {
+                  "label": "3:2",
+                  "value": "3:2"
+                },
+                {
+                  "label": "2:3",
+                  "value": "2:3"
+                },
+                {
+                  "label": "21:9",
+                  "value": "21:9"
+                }
+              ]
+            },
+            "background": {
+              "enabled": false,
+              "options": []
+            },
+            "count": {
+              "enabled": true,
+              "max": 1,
+              "min": 1,
+              "quickCount": 1
+            },
+            "customDimensions": {
+              "enabled": true,
+              "maxEdge": 2048,
+              "minLongestEdge": 1025
+            },
+            "moderation": {
+              "enabled": false,
+              "options": []
+            },
+            "outputCompression": {
+              "default": 100,
+              "enabled": false,
+              "max": 100,
+              "min": 0
+            },
+            "outputFormat": {
+              "enabled": false,
+              "options": []
+            },
+            "quality": {
+              "enabled": false,
+              "options": []
+            }
+          },
+          "referenceLimits": {
+            "audios": 0,
+            "images": 9,
+            "mask": 1,
+            "videos": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "gpt-image-2.5-flare-1k",
+      "groups": [
+        "全模型-无claude/gpt",
+        "IMAGE"
+      ],
+      "customDimensions": {
+        "enabled": true,
+        "maxAspectRatio": 3,
+        "maxEdge": 3840,
+        "maxPixels": 1048576,
+        "minPixels": 655360,
+        "step": 16
+      },
+      "record": {
+        "model_name": "gpt-image-2.5-flare-1k",
+        "description": "GPT Image 2.5 Flare 1K 固定档位。",
+        "vendor_id": 2,
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 0.16,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "全模型-无claude/gpt",
+          "IMAGE"
+        ],
+        "supported_endpoint_types": [
+          "openai-image"
+        ],
+        "billing_mode": "tiered_expr",
+        "billing_expr": "(param(\"quality\") == \"xhigh\" || param(\"quality\") == \"max\") ? tier(\"xhigh\", n * 0.32) : tier(\"std\", n * 0.16)",
+        "billing_capability": "image",
+        "image_ui_params": {
+          "hints": [
+            {
+              "text": "适合用途｜1K 档图片创作与参考编辑；一次 1 张；最多 16 张参考图；不支持蒙版。"
+            },
+            {
+              "text": "使用注意｜公共型号决定 1K 像素预算；quality 控制质量，费用随质量档位变化，读取实时价格；精确宽高须 16px 对齐，最长边不超过 3840px、比例不超过 3:1，像素范围见请求参数。"
+            }
+          ],
+          "id": "gpt-image-2.5-flare-1k",
+          "params": {
+            "aspectRatio": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "1:1",
+                  "value": "1:1"
+                },
+                {
+                  "label": "5:4",
+                  "value": "5:4"
+                },
+                {
+                  "label": "7:6",
+                  "value": "7:6"
+                },
+                {
+                  "label": "9:16",
+                  "value": "9:16"
+                },
+                {
+                  "label": "21:9",
+                  "value": "21:9"
+                },
+                {
+                  "label": "16:9",
+                  "value": "16:9"
+                },
+                {
+                  "label": "3:2",
+                  "value": "3:2"
+                },
+                {
+                  "label": "4:3",
+                  "value": "4:3"
+                },
+                {
+                  "label": "4:5",
+                  "value": "4:5"
+                },
+                {
+                  "label": "3:4",
+                  "value": "3:4"
+                },
+                {
+                  "label": "2:3",
+                  "value": "2:3"
+                }
+              ]
+            },
+            "background": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "自动",
+                  "value": "auto"
+                },
+                {
+                  "label": "不透明",
+                  "value": "opaque"
+                },
+                {
+                  "label": "透明",
+                  "value": "transparent"
+                }
+              ]
+            },
+            "count": {
+              "enabled": true,
+              "max": 1,
+              "min": 1,
+              "quickCount": 1
+            },
+            "customDimensions": {
+              "enabled": true,
+              "maxAspectRatio": 3,
+              "maxEdge": 3840,
+              "maxPixels": 1048576,
+              "minPixels": 655360,
+              "step": 16
+            },
+            "moderation": {
+              "enabled": false,
+              "options": []
+            },
+            "outputCompression": {
+              "default": 100,
+              "enabled": false,
+              "max": 100,
+              "min": 0
+            },
+            "outputFormat": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "PNG",
+                  "value": "png"
+                },
+                {
+                  "label": "JPEG",
+                  "value": "jpeg"
+                },
+                {
+                  "label": "WEBP",
+                  "value": "webp"
+                }
+              ]
+            },
+            "quality": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "中（默认）",
+                  "value": "medium"
+                },
+                {
+                  "label": "低",
+                  "value": "low"
+                },
+                {
+                  "label": "高",
+                  "value": "high"
+                },
+                {
+                  "label": "超高",
+                  "value": "xhigh"
+                },
+                {
+                  "label": "最高",
+                  "value": "max"
+                }
+              ]
+            }
+          },
+          "referenceLimits": {
+            "audios": 0,
+            "images": 16,
+            "mask": 0,
+            "videos": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "gpt-image-2-1k",
+      "groups": [
+        "IMAGE",
+        "全模型-无claude/gpt"
+      ],
+      "customDimensions": {
+        "enabled": true,
+        "maxAspectRatio": 3,
+        "maxEdge": 3840,
+        "maxPixels": 1048576,
+        "minPixels": 655360,
+        "step": 16
+      },
+      "record": {
+        "model_name": "gpt-image-2-1k",
+        "description": "GPT Image 2 1K 固定档位。",
+        "vendor_id": 2,
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 0.055,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "IMAGE",
+          "全模型-无claude/gpt"
+        ],
+        "supported_endpoint_types": [
+          "openai-image"
+        ],
+        "billing_mode": "per_request",
+        "request_unit": "image",
+        "image_ui_params": {
+          "hints": [
+            {
+              "text": "适合用途｜1K 档图片创作与参考编辑；一次 1 张；最多 9 张参考图；支持 1 张蒙版。"
+            },
+            {
+              "text": "使用注意｜公共型号决定 1K 像素预算；quality 控制质量，费用按该公共型号的实时价格结算；精确宽高须 16px 对齐，最长边不超过 3840px、比例不超过 3:1，像素范围见请求参数。"
+            }
+          ],
+          "id": "gpt-image-2-1k",
+          "params": {
+            "aspectRatio": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "1:1",
+                  "value": "1:1"
+                },
+                {
+                  "label": "5:4",
+                  "value": "5:4"
+                },
+                {
+                  "label": "7:6",
+                  "value": "7:6"
+                },
+                {
+                  "label": "9:16",
+                  "value": "9:16"
+                },
+                {
+                  "label": "21:9",
+                  "value": "21:9"
+                },
+                {
+                  "label": "16:9",
+                  "value": "16:9"
+                },
+                {
+                  "label": "3:2",
+                  "value": "3:2"
+                },
+                {
+                  "label": "4:3",
+                  "value": "4:3"
+                },
+                {
+                  "label": "4:5",
+                  "value": "4:5"
+                },
+                {
+                  "label": "3:4",
+                  "value": "3:4"
+                },
+                {
+                  "label": "2:3",
+                  "value": "2:3"
+                }
+              ]
+            },
+            "background": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "自动",
+                  "value": "auto"
+                },
+                {
+                  "label": "不透明",
+                  "value": "opaque"
+                },
+                {
+                  "label": "透明",
+                  "value": "transparent"
+                }
+              ]
+            },
+            "count": {
+              "enabled": true,
+              "max": 1,
+              "min": 1,
+              "quickCount": 1
+            },
+            "customDimensions": {
+              "enabled": true,
+              "maxAspectRatio": 3,
+              "maxEdge": 3840,
+              "maxPixels": 1048576,
+              "minPixels": 655360,
+              "step": 16
+            },
+            "moderation": {
+              "enabled": false,
+              "options": []
+            },
+            "outputCompression": {
+              "default": 100,
+              "enabled": false,
+              "max": 100,
+              "min": 0
+            },
+            "outputFormat": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "PNG",
+                  "value": "png"
+                },
+                {
+                  "label": "JPEG",
+                  "value": "jpeg"
+                },
+                {
+                  "label": "WEBP",
+                  "value": "webp"
+                }
+              ]
+            },
+            "quality": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "中（默认）",
+                  "value": "medium"
+                },
+                {
+                  "label": "低",
+                  "value": "low"
+                },
+                {
+                  "label": "高",
+                  "value": "high"
+                },
+                {
+                  "label": "超高",
+                  "value": "xhigh"
+                },
+                {
+                  "label": "最高",
+                  "value": "max"
+                }
+              ]
+            }
+          },
+          "referenceLimits": {
+            "audios": 0,
+            "images": 9,
+            "mask": 1,
+            "videos": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-1k",
+      "groups": [
+        "全模型-无claude/gpt",
+        "IMAGE"
+      ],
+      "customDimensions": {
+        "enabled": true,
+        "maxAspectRatio": 3,
+        "maxEdge": 3840,
+        "maxPixels": 1048576,
+        "minPixels": 655360,
+        "step": 16
+      },
+      "record": {
+        "model_name": "gpt-image-2.5-sunburst-1k",
+        "description": "GPT Image 2.5 Sunburst 1K 固定档位。",
+        "vendor_id": 2,
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 0.18,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "全模型-无claude/gpt",
+          "IMAGE"
+        ],
+        "supported_endpoint_types": [
+          "openai-image"
+        ],
+        "billing_mode": "tiered_expr",
+        "billing_expr": "(param(\"quality\") == \"xhigh\" || param(\"quality\") == \"max\") ? tier(\"xhigh\", n * 0.36) : tier(\"std\", n * 0.18)",
+        "billing_capability": "image",
+        "request_unit": "image",
+        "image_ui_params": {
+          "hints": [
+            {
+              "text": "适合用途｜1K 档图片创作与参考编辑；一次 1 张；最多 16 张参考图；不支持蒙版。"
+            },
+            {
+              "text": "使用注意｜公共型号决定 1K 像素预算；quality 控制质量，费用随质量档位变化，读取实时价格；精确宽高须 16px 对齐，最长边不超过 3840px、比例不超过 3:1，像素范围见请求参数。"
+            }
+          ],
+          "id": "gpt-image-2.5-sunburst-1k",
+          "params": {
+            "aspectRatio": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "1:1",
+                  "value": "1:1"
+                },
+                {
+                  "label": "5:4",
+                  "value": "5:4"
+                },
+                {
+                  "label": "7:6",
+                  "value": "7:6"
+                },
+                {
+                  "label": "9:16",
+                  "value": "9:16"
+                },
+                {
+                  "label": "21:9",
+                  "value": "21:9"
+                },
+                {
+                  "label": "16:9",
+                  "value": "16:9"
+                },
+                {
+                  "label": "3:2",
+                  "value": "3:2"
+                },
+                {
+                  "label": "4:3",
+                  "value": "4:3"
+                },
+                {
+                  "label": "4:5",
+                  "value": "4:5"
+                },
+                {
+                  "label": "3:4",
+                  "value": "3:4"
+                },
+                {
+                  "label": "2:3",
+                  "value": "2:3"
+                }
+              ]
+            },
+            "background": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "自动",
+                  "value": "auto"
+                },
+                {
+                  "label": "不透明",
+                  "value": "opaque"
+                },
+                {
+                  "label": "透明",
+                  "value": "transparent"
+                }
+              ]
+            },
+            "count": {
+              "enabled": true,
+              "max": 1,
+              "min": 1,
+              "quickCount": 1
+            },
+            "customDimensions": {
+              "enabled": true,
+              "maxAspectRatio": 3,
+              "maxEdge": 3840,
+              "maxPixels": 1048576,
+              "minPixels": 655360,
+              "step": 16
+            },
+            "moderation": {
+              "enabled": false,
+              "options": []
+            },
+            "outputCompression": {
+              "default": 100,
+              "enabled": false,
+              "max": 100,
+              "min": 0
+            },
+            "outputFormat": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "PNG",
+                  "value": "png"
+                },
+                {
+                  "label": "JPEG",
+                  "value": "jpeg"
+                },
+                {
+                  "label": "WEBP",
+                  "value": "webp"
+                }
+              ]
+            },
+            "quality": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "中（默认）",
+                  "value": "medium"
+                },
+                {
+                  "label": "低",
+                  "value": "low"
+                },
+                {
+                  "label": "高",
+                  "value": "high"
+                },
+                {
+                  "label": "超高",
+                  "value": "xhigh"
+                },
+                {
+                  "label": "最高",
+                  "value": "max"
+                }
+              ]
+            }
+          },
+          "referenceLimits": {
+            "audios": 0,
+            "images": 16,
+            "mask": 0,
+            "videos": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "nano-banana2-1k",
+      "groups": [
+        "IMAGE",
+        "全模型-无claude/gpt"
+      ],
+      "customDimensions": {
+        "enabled": true,
+        "maxEdge": 1024
+      },
+      "record": {
+        "model_name": "nano-banana2-1k",
+        "description": "Nano Banana 2 1K 固定档位。",
+        "vendor_id": 6,
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 0.06,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "IMAGE",
+          "全模型-无claude/gpt"
+        ],
+        "supported_endpoint_types": [
+          "openai-image"
+        ],
+        "billing_mode": "per_request",
+        "request_unit": "image",
+        "image_ui_params": {
+          "hints": [
+            {
+              "text": "适合用途｜1K 档高清图片创作；一次 1 张；最多 9 张参考图；支持比例与自定义宽高。"
+            },
+            {
+              "text": "使用注意｜公共型号决定 1K 档位，不用再传 quality；蒙版与素材要求见请求参数。"
+            }
+          ],
+          "id": "nano-banana2-1k",
+          "params": {
+            "aspectRatio": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "1:1",
+                  "value": "1:1"
+                },
+                {
+                  "label": "4:3",
+                  "value": "4:3"
+                },
+                {
+                  "label": "3:4",
+                  "value": "3:4"
+                },
+                {
+                  "label": "16:9",
+                  "value": "16:9"
+                },
+                {
+                  "label": "9:16",
+                  "value": "9:16"
+                },
+                {
+                  "label": "3:2",
+                  "value": "3:2"
+                },
+                {
+                  "label": "2:3",
+                  "value": "2:3"
+                },
+                {
+                  "label": "21:9",
+                  "value": "21:9"
+                }
+              ]
+            },
+            "background": {
+              "enabled": false,
+              "options": []
+            },
+            "count": {
+              "enabled": true,
+              "max": 1,
+              "min": 1,
+              "quickCount": 1
+            },
+            "customDimensions": {
+              "enabled": true,
+              "maxEdge": 1024
+            },
+            "moderation": {
+              "enabled": false,
+              "options": []
+            },
+            "outputCompression": {
+              "default": 100,
+              "enabled": false,
+              "max": 100,
+              "min": 0
+            },
+            "outputFormat": {
+              "enabled": false,
+              "options": []
+            },
+            "quality": {
+              "enabled": false,
+              "options": []
+            }
+          },
+          "referenceLimits": {
+            "audios": 0,
+            "images": 9,
+            "mask": 1,
+            "videos": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "nano-banana2-4k",
+      "groups": [
+        "IMAGE",
+        "全模型-无claude/gpt"
+      ],
+      "customDimensions": {
+        "enabled": true,
+        "minLongestEdge": 2049
+      },
+      "record": {
+        "model_name": "nano-banana2-4k",
+        "description": "Nano Banana 2 4K 固定档位。",
+        "vendor_id": 6,
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 0.1,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "IMAGE",
+          "全模型-无claude/gpt"
+        ],
+        "supported_endpoint_types": [
+          "openai-image"
+        ],
+        "billing_mode": "per_request",
+        "request_unit": "image",
+        "image_ui_params": {
+          "apiMode": "images-json-async",
+          "hints": [
+            {
+              "text": "适合用途｜4K 档高清图片创作；一次 1 张；最多 16 张参考图；支持比例与自定义宽高。"
+            },
+            {
+              "text": "使用注意｜公共型号决定 4K 档位，不用再传 quality；蒙版与素材要求见请求参数。"
+            }
+          ],
+          "id": "nano-banana2-4k",
+          "params": {
+            "aspectRatio": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "1:1",
+                  "value": "1:1"
+                },
+                {
+                  "label": "4:3",
+                  "value": "4:3"
+                },
+                {
+                  "label": "3:4",
+                  "value": "3:4"
+                },
+                {
+                  "label": "16:9",
+                  "value": "16:9"
+                },
+                {
+                  "label": "9:16",
+                  "value": "9:16"
+                },
+                {
+                  "label": "3:2",
+                  "value": "3:2"
+                },
+                {
+                  "label": "2:3",
+                  "value": "2:3"
+                },
+                {
+                  "label": "21:9",
+                  "value": "21:9"
+                }
+              ]
+            },
+            "background": {
+              "enabled": false
+            },
+            "count": {
+              "enabled": true,
+              "max": 1,
+              "min": 1,
+              "quickCount": 1
+            },
+            "customDimensions": {
+              "enabled": true,
+              "minLongestEdge": 2049
+            },
+            "moderation": {
+              "enabled": false
+            },
+            "outputCompression": {
+              "enabled": false
+            },
+            "outputFormat": {
+              "enabled": false
+            },
+            "quality": {
+              "enabled": false
+            }
+          },
+          "poll": {
+            "delayMs": 5000,
+            "maxAttempts": 72
+          },
+          "referenceLimits": {
+            "images": 16,
+            "mask": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "nano-banana-pro-1k",
+      "groups": [
+        "IMAGE",
+        "全模型-无claude/gpt"
+      ],
+      "customDimensions": {
+        "enabled": true,
+        "maxEdge": 1024
+      },
+      "record": {
+        "model_name": "nano-banana-pro-1k",
+        "description": "Nano Banana Pro 1K 固定档位。",
+        "vendor_id": 6,
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 0.07,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "IMAGE",
+          "全模型-无claude/gpt"
+        ],
+        "supported_endpoint_types": [
+          "openai-image"
+        ],
+        "billing_mode": "per_request",
+        "request_unit": "image",
+        "image_ui_params": {
+          "hints": [
+            {
+              "text": "适合用途｜1K 档高清图片创作；一次 1 张；最多 9 张参考图；支持比例与自定义宽高。"
+            },
+            {
+              "text": "使用注意｜公共型号决定 1K 档位，不用再传 quality；蒙版与素材要求见请求参数。"
+            }
+          ],
+          "id": "nano-banana-pro-1k",
+          "params": {
+            "aspectRatio": {
+              "enabled": true,
+              "options": [
+                {
+                  "height": 1024,
+                  "label": "1:1",
+                  "value": "1:1",
+                  "width": 1024
+                },
+                {
+                  "height": 1360,
+                  "label": "9:16",
+                  "value": "9:16",
+                  "width": 768
+                },
+                {
+                  "height": 624,
+                  "label": "21:9",
+                  "value": "21:9",
+                  "width": 1456
+                },
+                {
+                  "height": 768,
+                  "label": "16:9",
+                  "value": "16:9",
+                  "width": 1360
+                },
+                {
+                  "height": 832,
+                  "label": "3:2",
+                  "value": "3:2",
+                  "width": 1248
+                },
+                {
+                  "height": 864,
+                  "label": "4:3",
+                  "value": "4:3",
+                  "width": 1152
+                },
+                {
+                  "height": 1152,
+                  "label": "3:4",
+                  "value": "3:4",
+                  "width": 864
+                },
+                {
+                  "height": 1248,
+                  "label": "2:3",
+                  "value": "2:3",
+                  "width": 832
+                }
+              ]
+            },
+            "background": {
+              "enabled": false,
+              "options": []
+            },
+            "count": {
+              "enabled": true,
+              "max": 1,
+              "min": 1,
+              "quickCount": 1
+            },
+            "customDimensions": {
+              "enabled": true,
+              "maxEdge": 1024
+            },
+            "moderation": {
+              "enabled": false,
+              "options": []
+            },
+            "outputCompression": {
+              "default": 100,
+              "enabled": false,
+              "max": 100,
+              "min": 0
+            },
+            "outputFormat": {
+              "enabled": false,
+              "options": []
+            },
+            "quality": {
+              "enabled": false,
+              "options": []
+            }
+          },
+          "referenceLimits": {
+            "audios": 0,
+            "images": 9,
+            "mask": 1,
+            "videos": 0
+          }
+        }
+      }
+    }
+  ]
+}

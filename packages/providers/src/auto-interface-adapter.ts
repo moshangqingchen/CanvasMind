@@ -22,6 +22,7 @@ import { OpenAIImageAdapter } from "./openai.js";
 import { isGenimageImageConnection } from "./genimage-image-capabilities.js";
 import { cOpenImageRoute } from "./c-open-image-contract.js";
 import { validateModelParameters } from "./cli-contracts.js";
+import { isSecureSkillImageConnection } from "./secure-skill-image.js";
 
 export function savedModelInterfaces(settings: Readonly<Record<string, unknown>> | undefined): Record<string, DocumentedModelInterface> {
   const value = settings?.autoModelInterfaces;
@@ -205,6 +206,18 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
       if (current?.metadata?.canvasRunnable === false || (Array.isArray(ids) && !ids.includes(request.model)))
         throw new Error("当前创想分组没有此图片模型的可用权限或接口");
       return new ChuangxiangImageAdapter(this.connections, this.options);
+    }
+    // Secure's documented reference route is native JSON image:URL[], with its
+    // own async lifecycle. A measured transparent edit must not be rejected
+    // merely because the generic Images guard expects multipart. The fallback
+    // OpenAI adapter already delegates this exact origin/model to that route.
+    if (connection.provider === "openai" && request.operation.startsWith("image.") &&
+        isSecureSkillImageConnection(source.config, request.model) && !explicitImageContract(binding?.model)) {
+      const ids = connection.settings?.scannedModelIds;
+      if (["empty", "unauthorized"].includes(String(config.modelScanStatus)) || current?.metadata?.canvasRunnable === false ||
+          current?.metadata?.autoInterfaceStatus === "incomplete" || (Array.isArray(ids) && !ids.includes(request.model)))
+        throw new Error("当前分组没有此图片型号的可用权限或完整接口");
+      return this.fallback;
     }
     // These contracts are implemented by the dedicated Images adapter. A saved
     // generic mapping must not silently omit a newly selected background/mask.

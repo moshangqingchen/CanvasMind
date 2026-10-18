@@ -57,21 +57,57 @@ describe("Jijiu exact image contract", () => {
     expect(model?.metadata?.qualitySupport).toBe("user-requested");
     expect(f.fetch.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(true);
   });
-  it.each(["1K", "2K", "4K"])("passes the requested %s tier and real high quality through generation and JSON editing", async size => {
+  it.each(["1K", "2K", "4K"])("passes the requested %s tier and high quality through generation and official multipart editing", async size => {
     const id = "gpt-image-2-2K/4K";
     for (const operation of ["image.generate", "image.edit"] as const) {
       const f = fixture(id), parameters = Object.freeze({ size, quality: "high", n: 1 });
-      const assets = operation === "image.edit" ? [{ id: "reference", kind: "image" as const, url: "https://assets.example/original.png" }] : undefined;
+      const assets = operation === "image.edit" ? [{ id: "reference", kind: "image" as const, mimeType: "image/png", filename: "original.png",
+        data: new Uint8Array(Buffer.from(png, "base64")) }] : undefined;
       const input = { ...request(id), operation, parameters, ...(assets ? { assets } : {}) };
       expect(await f.adapter.validate(input)).toEqual({ valid: true, issues: [] });
       await f.adapter.submit(input);
       expect(f.fetch).toHaveBeenCalledOnce();
       const [url, init] = f.fetch.mock.calls[0]!;
       expect(url).toBe(`${baseUrl}/images/${operation === "image.edit" ? "edits" : "generations"}`);
-      expect(JSON.parse(String(init?.body))).toEqual({ model: id, prompt: "A cup", size, quality: "high", n: 1,
-        ...(assets ? { image: [assets[0]!.url] } : {}) });
+      if (assets) {
+        const form = init?.body as FormData;
+        expect([...form.keys()].sort()).toEqual(["image", "model", "n", "prompt", "quality", "size"]);
+        expect(form.get("size")).toBe(size); expect(form.get("quality")).toBe("high"); expect(form.get("n")).toBe("1");
+        expect((form.get("image") as File).name).toBe("original.png");
+        expect(new Uint8Array(await (form.get("image") as File).arrayBuffer())).toEqual(assets[0]!.data);
+        expect(new Headers(init?.headers).has("content-type")).toBe(false);
+      } else expect(JSON.parse(String(init?.body))).toEqual({ model: id, prompt: "A cup", size, quality: "high", n: 1 });
       expect(parameters).toEqual({ size, quality: "high", n: 1 });
     }
+  });
+  it("downloads an existing URL-only high-tier reference once and uploads its unchanged original bytes as image", async () => {
+    const id = "gpt-image-2-2K/4K", original = new Uint8Array(Buffer.from(png, "base64")), reference = "https://assets.example/original.png";
+    const f = fixture(id, async (url, init) => {
+      if (String(url) === reference) { expect(init?.method ?? "GET").toBe("GET"); return new Response(original, { headers: { "content-type": "image/png" } }); }
+      expect(init?.method).toBe("POST"); return Response.json({ data: [{ b64_json: png }] });
+    });
+    const input = { ...request(id), operation: "image.edit" as const, parameters: { size: "4K", quality: "high", n: 1 },
+      assets: [{ id: "ref", kind: "image" as const, mimeType: "image/png", filename: "original.png", url: reference }] };
+    expect(await f.adapter.validate(input)).toEqual({ valid: true, issues: [] }); expect(f.fetch).not.toHaveBeenCalled();
+    await f.adapter.submit(input);
+    expect(f.fetch).toHaveBeenCalledTimes(2);
+    const posts = f.fetch.mock.calls.filter(([, init]) => init?.method === "POST"); expect(posts).toHaveLength(1);
+    const form = posts[0]![1]!.body as FormData;
+    expect(new Uint8Array(await (form.get("image") as File).arrayBuffer())).toEqual(original);
+    expect(form.has("images")).toBe(false); expect(form.has("image_url")).toBe(false);
+    expect(input.assets[0]!.url).toBe(reference);
+  });
+  it("allows original high-tier bytes without hosting but retains low-tier URL requirements and forbids masks", async () => {
+    const original = new Uint8Array(Buffer.from(png, "base64"));
+    const high = "gpt-image-2-2K/4K", f = fixture(high);
+    const input = { ...request(high), operation: "image.edit" as const, parameters: { size: "4K", quality: "high" },
+      assets: [{ id: "ref", kind: "image" as const, mimeType: "image/png", data: original }] };
+    expect((await f.adapter.validate(input)).valid).toBe(true);
+    expect((await f.adapter.validate({ ...input, assets: [{ ...input.assets[0]!, data: new Uint8Array() }] })).valid).toBe(false);
+    expect((await f.adapter.validate({ ...input, assets: [{ ...input.assets[0]!, role: "mask" as const }] })).valid).toBe(false);
+    const low = fixture("gpt-image-2");
+    expect((await low.adapter.validate({ ...input, model: "gpt-image-2", parameters: { size: "1024x1024" } })).valid).toBe(false);
+    expect(f.fetch).not.toHaveBeenCalled(); expect(low.fetch).not.toHaveBeenCalled();
   });
   it.each(["size", "resolution", "image_size", "imageSize", "size_tier"])("preserves a saved 4K %s alias without downgrading or sending extra fields", async key => {
     const id = "gpt-image-2-2K/4K", f = fixture(id), parameters = Object.freeze({ [key]: "4K", quality: "high" });

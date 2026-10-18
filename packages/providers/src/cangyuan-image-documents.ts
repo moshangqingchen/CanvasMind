@@ -1,6 +1,7 @@
-/** Exact supplier model documents fetched on 2026-10-12 (America/Los_Angeles).
+/** Exact supplier model documents, each retaining its own checkedAt and SHA.
+ *17 size descriptions updated18Oct; other rows retain their original sample.
  * Values and pixel examples remain model-specific; no generic K-to-pixel mapping. */
-export interface CangyuanImageDocument { sourceLastReviewed?: string; sizeSuggestionsOnly?: boolean; parameterRules?: Record<string,{type?: string; description?: string; required?: boolean; enum?: Array<string | number>; suggestions?: Array<string | number>; min?: number; max?: number; default?: string | number | boolean; suggestedDefault?: string | number | boolean}>; dimensionRules?: {step:number;maxSide:number;maxAspectRatio:number;minPixels:number;maxPixels:number}; sourceUrl: string; checkedAt: string; sha256: string; intro: string; fields: Record<string,string>; ratios: string[]; pixelOptions: string[]; customPixels: boolean; autoSize: boolean; omitSizeAutomatic: boolean; qualityOptions: string[]; maxReferences?: number; editing: boolean; referenceDimensions?: Array<{resolution:string;aspectRatio:string;width:number;height:number}>; }
+export interface CangyuanImageDocument { sourceLastReviewed?: string; sizeSuggestionsOnly?: boolean; parameterRules?: Record<string,{type?: string; description?: string; required?: boolean; enum?: Array<string | number>; suggestions?: Array<string | number>; min?: number; max?: number; default?: string | number | boolean; suggestedDefault?: string | number | boolean}>; dimensionRules?: {step?:number;maxSide?:number;minLongestEdge?:number;maxAspectRatio?:number;minPixels?:number;maxPixels?:number}; sourceUrl: string; checkedAt: string; sha256: string; intro: string; fields: Record<string,string>; ratios: string[]; pixelOptions: string[]; customPixels: boolean; autoSize: boolean; omitSizeAutomatic: boolean; qualityOptions: string[]; maxReferences?: number; editing: boolean; referenceDimensions?: Array<{resolution:string;aspectRatio:string;width:number;height:number}>; }
 export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocument>> = {
   "gpt-image-2": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.json",
@@ -112,14 +113,14 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
   },
   "gpt-image-2-1k": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2-1k.json",
-    "checkedAt": "2026-10-13T00:53:27.712Z",
-    "sha256": "372c1c869260edcf1838669a262ac17ac93aa5a55be80562be18fdd38622cf4b",
+    "checkedAt": "2026-10-18T00:34:31.871Z",
+    "sha256": "fa8d9de65b41d98888582347794b0c994d5817b6b73e30efd4fc3ab03d7141ca",
     "intro": "gpt-image-2-1k",
     "fields": {
       "model": "固定传 gpt-image-2-1k。",
       "prompt": "生成内容的描述。",
       "n": "生成张数。最小 1。最大 1。",
-      "size": "画面比例或 WIDTHxHEIGHT 尺寸。固定 1K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–1048576。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。宽高步长 16。最长边 3840。像素尺寸最大宽高比 3。最少像素 655360。最多像素 1048576。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
       "quality": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
       "background": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
       "output_format": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
@@ -166,7 +167,7 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
       },
       "size": {
         "type": "string",
-        "description": "画面比例或 WIDTHxHEIGHT 尺寸。固定 1K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–1048576。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。宽高步长 16。最长边 3840。像素尺寸最大宽高比 3。最少像素 655360。最多像素 1048576。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
         "required": false,
         "suggestions": [
           "1:1",
@@ -239,14 +240,14 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
   },
   "gpt-image-2-2k": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2-2k.json",
-    "checkedAt": "2026-10-13T00:53:26.180Z",
-    "sha256": "7fc8b00e0f86b7a09646684a34e8db51f32485b669515a7feabf889572574406",
+    "checkedAt": "2026-10-18T00:34:31.915Z",
+    "sha256": "3b43de71d2696eab78ebcb76e092faf68446ce59e86c8f856204d34bdf08c0ec",
     "intro": "gpt-image-2-2k",
     "fields": {
       "model": "固定传 gpt-image-2-2k。",
       "prompt": "生成内容的描述。",
       "n": "生成张数。最小 1。最大 1。",
-      "size": "画面比例或 WIDTHxHEIGHT 尺寸。固定 2K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–4194304。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。宽高步长 16。最长边 3840。像素尺寸最大宽高比 3。最少像素 655360。最多像素 4194304。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
       "quality": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
       "background": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
       "output_format": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
@@ -293,7 +294,7 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
       },
       "size": {
         "type": "string",
-        "description": "画面比例或 WIDTHxHEIGHT 尺寸。固定 2K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–4194304。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。宽高步长 16。最长边 3840。像素尺寸最大宽高比 3。最少像素 655360。最多像素 4194304。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
         "required": false,
         "suggestions": [
           "1:1",
@@ -366,14 +367,14 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
   },
   "gpt-image-2-4k": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2-4k.json",
-    "checkedAt": "2026-10-13T00:53:29.251Z",
-    "sha256": "3a152d59362144cfb9a4e20f96dff4d84e0eb31f1ae696e88b69733e2d7b35d0",
+    "checkedAt": "2026-10-18T00:34:31.965Z",
+    "sha256": "b52f38f59b80e7b12a4eda5b84f5e17917c3733d806c51fb120dd4894d7a4e63",
     "intro": "gpt-image-2-4k",
     "fields": {
       "model": "固定传 gpt-image-2-4k。",
       "prompt": "生成内容的描述。",
       "n": "生成张数。最小 1。最大 1。",
-      "size": "画面比例或 WIDTHxHEIGHT 尺寸。固定 4K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–8294400。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。宽高步长 16。最长边 3840。像素尺寸最大宽高比 3。最少像素 655360。最多像素 8294400。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
       "quality": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
       "background": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
       "output_format": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
@@ -420,7 +421,7 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
       },
       "size": {
         "type": "string",
-        "description": "画面比例或 WIDTHxHEIGHT 尺寸。固定 4K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–8294400。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。宽高步长 16。最长边 3840。像素尺寸最大宽高比 3。最少像素 655360。最多像素 8294400。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
         "required": false,
         "suggestions": [
           "1:1",
@@ -848,14 +849,14 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
   },
   "gpt-image-2.5-flare-1k": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-flare-1k.json",
-    "checkedAt": "2026-10-13T00:53:38.458Z",
-    "sha256": "2acbff6c86f335a93f5fc29cd261bfd06f66fb9156724b9871648d53d4adfe2d",
+    "checkedAt": "2026-10-18T00:34:32.203Z",
+    "sha256": "37c268a2e55daf66c204603e2a5dcacb9b77d1b8e53fa96157b2b475dbddcecd",
     "intro": "gpt-image-2.5-flare-1k",
     "fields": {
       "model": "固定传 gpt-image-2.5-flare-1k。",
       "prompt": "生成内容的描述。",
       "n": "生成张数。最小 1。最大 1。",
-      "size": "画面比例或 WIDTHxHEIGHT 尺寸。固定 1K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–1048576。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。宽高步长 16。最长边 3840。像素尺寸最大宽高比 3。最少像素 655360。最多像素 1048576。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
       "quality": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
       "background": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
       "output_format": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
@@ -901,7 +902,7 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
       },
       "size": {
         "type": "string",
-        "description": "画面比例或 WIDTHxHEIGHT 尺寸。固定 1K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–1048576。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。宽高步长 16。最长边 3840。像素尺寸最大宽高比 3。最少像素 655360。最多像素 1048576。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
         "required": false,
         "suggestions": [
           "1:1",
@@ -974,14 +975,14 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
   },
   "gpt-image-2.5-flare-2k": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-flare-2k.json",
-    "checkedAt": "2026-10-13T00:53:32.323Z",
-    "sha256": "7fdc1b4783dc9db9b48a6b2c6a160dfa6910c168fe0c07b83b1b9ee80e7dd1c8",
+    "checkedAt": "2026-10-18T00:34:32.309Z",
+    "sha256": "f88459c5793f8cb501749eead8a0832b1aaf3a57d5ffce58995e621f91f13daa",
     "intro": "gpt-image-2.5-flare-2k",
     "fields": {
       "model": "固定传 gpt-image-2.5-flare-2k。",
       "prompt": "生成内容的描述。",
       "n": "生成张数。最小 1。最大 1。",
-      "size": "画面比例或 WIDTHxHEIGHT 尺寸。固定 2K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–4194304。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。宽高步长 16。最长边 3840。像素尺寸最大宽高比 3。最少像素 655360。最多像素 4194304。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
       "quality": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
       "background": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
       "output_format": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
@@ -1027,7 +1028,7 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
       },
       "size": {
         "type": "string",
-        "description": "画面比例或 WIDTHxHEIGHT 尺寸。固定 2K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–4194304。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。宽高步长 16。最长边 3840。像素尺寸最大宽高比 3。最少像素 655360。最多像素 4194304。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
         "required": false,
         "suggestions": [
           "1:1",
@@ -1100,14 +1101,14 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
   },
   "gpt-image-2.5-flare-4k": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-flare-4k.json",
-    "checkedAt": "2026-10-13T00:53:35.389Z",
-    "sha256": "4f76c934a9c74869b095417a6c5fb933cdc74cf5231f70a2ead11913e1450a2d",
+    "checkedAt": "2026-10-18T00:34:32.348Z",
+    "sha256": "d6ab9fb4cf3df064dfd05984aff71d10393d18908b0dbef0132350b15e616ad7",
     "intro": "gpt-image-2.5-flare-4k",
     "fields": {
       "model": "固定传 gpt-image-2.5-flare-4k。",
       "prompt": "生成内容的描述。",
       "n": "生成张数。最小 1。最大 1。",
-      "size": "画面比例或 WIDTHxHEIGHT 尺寸。固定 4K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–8294400。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。宽高步长 16。最长边 3840。像素尺寸最大宽高比 3。最少像素 655360。最多像素 8294400。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
       "quality": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
       "background": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
       "output_format": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
@@ -1153,7 +1154,7 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
       },
       "size": {
         "type": "string",
-        "description": "画面比例或 WIDTHxHEIGHT 尺寸。固定 4K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–8294400。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。宽高步长 16。最长边 3840。像素尺寸最大宽高比 3。最少像素 655360。最多像素 8294400。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
         "required": false,
         "suggestions": [
           "1:1",
@@ -1334,14 +1335,14 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
   },
   "gpt-image-2.5-sunburst-1k": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-sunburst-1k.json",
-    "checkedAt": "2026-10-13T00:53:40.004Z",
-    "sha256": "cd72d84f8b4de0d74c2a7b6f3b7a8ea89222ca463d8619f396a33321261650a3",
+    "checkedAt": "2026-10-18T00:34:32.433Z",
+    "sha256": "20b0c438c8d9d658765fdf1a31f643f70f5e8b174eba44f9e2d0b517112682d8",
     "intro": "gpt-image-2.5-sunburst-1k",
     "fields": {
       "model": "固定传 gpt-image-2.5-sunburst-1k。",
       "prompt": "生成内容的描述。",
       "n": "生成张数。最小 1。最大 1。",
-      "size": "画面比例或 WIDTHxHEIGHT 尺寸。固定 1K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–1048576。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。宽高步长 16。最长边 3840。像素尺寸最大宽高比 3。最少像素 655360。最多像素 1048576。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
       "quality": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
       "background": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
       "output_format": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
@@ -1387,7 +1388,7 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
       },
       "size": {
         "type": "string",
-        "description": "画面比例或 WIDTHxHEIGHT 尺寸。固定 1K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–1048576。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。宽高步长 16。最长边 3840。像素尺寸最大宽高比 3。最少像素 655360。最多像素 1048576。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
         "required": false,
         "suggestions": [
           "1:1",
@@ -1460,14 +1461,14 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
   },
   "gpt-image-2.5-sunburst-2k": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-sunburst-2k.json",
-    "checkedAt": "2026-10-13T00:53:41.529Z",
-    "sha256": "21cd0e103d83749671de329eb7a9ecd00da94a010ff2e316e6a65f06cabdab93",
+    "checkedAt": "2026-10-18T00:34:32.535Z",
+    "sha256": "55971f3195b10db5105f87e9bb994e93685bbbd7ce4e95455084ddf6033a4ca8",
     "intro": "gpt-image-2.5-sunburst-2k",
     "fields": {
       "model": "固定传 gpt-image-2.5-sunburst-2k。",
       "prompt": "生成内容的描述。",
       "n": "生成张数。最小 1。最大 1。",
-      "size": "画面比例或 WIDTHxHEIGHT 尺寸。固定 2K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–4194304。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。宽高步长 16。最长边 3840。像素尺寸最大宽高比 3。最少像素 655360。最多像素 4194304。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
       "quality": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
       "background": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
       "output_format": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
@@ -1513,7 +1514,7 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
       },
       "size": {
         "type": "string",
-        "description": "画面比例或 WIDTHxHEIGHT 尺寸。固定 2K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–4194304。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。宽高步长 16。最长边 3840。像素尺寸最大宽高比 3。最少像素 655360。最多像素 4194304。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
         "required": false,
         "suggestions": [
           "1:1",
@@ -1586,14 +1587,14 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
   },
   "gpt-image-2.5-sunburst-4k": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-sunburst-4k.json",
-    "checkedAt": "2026-10-13T00:53:43.072Z",
-    "sha256": "2a6d92cc834e145c68b45855e6c704d58f25fd233a9d830a440ef7a02e5ae725",
+    "checkedAt": "2026-10-18T00:34:32.582Z",
+    "sha256": "b1eae3b2df44861eb71ba45f9fcf6097ce3db4c541a256ea980083fed1cce25e",
     "intro": "gpt-image-2.5-sunburst-4k",
     "fields": {
       "model": "固定传 gpt-image-2.5-sunburst-4k。",
       "prompt": "生成内容的描述。",
       "n": "生成张数。最小 1。最大 1。",
-      "size": "画面比例或 WIDTHxHEIGHT 尺寸。固定 4K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–8294400。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。宽高步长 16。最长边 3840。像素尺寸最大宽高比 3。最少像素 655360。最多像素 8294400。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
       "quality": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
       "background": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
       "output_format": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
@@ -1639,7 +1640,7 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
       },
       "size": {
         "type": "string",
-        "description": "画面比例或 WIDTHxHEIGHT 尺寸。固定 4K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–8294400。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。宽高步长 16。最长边 3840。像素尺寸最大宽高比 3。最少像素 655360。最多像素 8294400。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
         "required": false,
         "suggestions": [
           "1:1",
@@ -2286,14 +2287,14 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
   },
   "nano-banana-pro-1k": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/nano-banana-pro-1k.json",
-    "checkedAt": "2026-10-13T00:53:49.214Z",
-    "sha256": "18f36a7bfa83a4b79c9aae544cf98cfb6c32bdc0bf9607211f2fb18811058f27",
+    "checkedAt": "2026-10-18T00:34:32.988Z",
+    "sha256": "c6cf61d30cf4e3d082ff35213660ae71781946b7bf3c21c3f15918b823470a63",
     "intro": "nano-banana-pro-1k",
     "fields": {
       "model": "固定传 nano-banana-pro-1k。",
       "prompt": "生成内容的描述。",
       "n": "生成张数。最小 1。最大 1。",
-      "size": "画面比例或 WIDTHxHEIGHT 尺寸。固定 1K 档位，不能请求其他分辨率档位。推荐值：1:1 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。最长边 1024。推荐值：1:1 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 3:4 / 2:3；推荐值不代表完整允许集合。",
       "response_format": "url 返回结果地址，b64_json 返回 Base64。",
       "async": "true 创建异步任务；省略或 false 为同步等待。",
       "images": "参考图 HTTPS URL 数组，最多 9 个。",
@@ -2328,7 +2329,7 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
       },
       "size": {
         "type": "string",
-        "description": "画面比例或 WIDTHxHEIGHT 尺寸。固定 1K 档位，不能请求其他分辨率档位。推荐值：1:1 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。最长边 1024。推荐值：1:1 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 3:4 / 2:3；推荐值不代表完整允许集合。",
         "required": false,
         "suggestions": [
           "1:1",
@@ -2355,18 +2356,21 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
         "description": "true 创建异步任务；省略或 false 为同步等待。",
         "required": false
       }
+    },
+    "dimensionRules": {
+      "maxSide": 1024
     }
   },
   "nano-banana-pro-2k": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/nano-banana-pro-2k.json",
-    "checkedAt": "2026-10-13T00:53:52.272Z",
-    "sha256": "c8b25188fa24072bd9cb76be63b56840290d115071beaa132d5cef65adcf0f04",
+    "checkedAt": "2026-10-18T00:34:33.016Z",
+    "sha256": "0ba285b859475ce8f51dbfa2dbcea33f0762c1ece95ad8fd49c8a4ce1bcfb044",
     "intro": "nano-banana-pro-2k",
     "fields": {
       "model": "固定传 nano-banana-pro-2k。",
       "prompt": "生成内容的描述。",
       "n": "生成张数。最小 1。最大 1。",
-      "size": "画面比例或 WIDTHxHEIGHT 尺寸。固定 2K 档位，不能请求其他分辨率档位。推荐值：1:1 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。最长边 2048。最长边至少 1025。推荐值：1:1 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 3:4 / 2:3；推荐值不代表完整允许集合。",
       "response_format": "url 返回结果地址，b64_json 返回 Base64。",
       "async": "true 创建异步任务；省略或 false 为同步等待。",
       "images": "参考图 HTTPS URL 数组，最多 9 个。",
@@ -2401,7 +2405,7 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
       },
       "size": {
         "type": "string",
-        "description": "画面比例或 WIDTHxHEIGHT 尺寸。固定 2K 档位，不能请求其他分辨率档位。推荐值：1:1 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。最长边 2048。最长边至少 1025。推荐值：1:1 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 3:4 / 2:3；推荐值不代表完整允许集合。",
         "required": false,
         "suggestions": [
           "1:1",
@@ -2428,18 +2432,22 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
         "description": "true 创建异步任务；省略或 false 为同步等待。",
         "required": false
       }
+    },
+    "dimensionRules": {
+      "maxSide": 2048,
+      "minLongestEdge": 1025
     }
   },
   "nano-banana-pro-4k": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/nano-banana-pro-4k.json",
-    "checkedAt": "2026-10-13T00:53:55.334Z",
-    "sha256": "cdec2e29463325d125523003d36e14194df8277c00faec3fc9eda1a5032b90b4",
+    "checkedAt": "2026-10-18T00:34:33.114Z",
+    "sha256": "5607e23d19f367602187dde74de7bf9efa6a3ceb9cf4aa7bd204e5ce3bb41b94",
     "intro": "nano-banana-pro-4k",
     "fields": {
       "model": "固定传 nano-banana-pro-4k。",
       "prompt": "生成内容的描述。",
       "n": "生成张数。最小 1。最大 1。",
-      "size": "画面比例或 WIDTHxHEIGHT 尺寸。固定 4K 档位，不能请求其他分辨率档位。推荐值：1:1 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。最长边至少 2049。推荐值：1:1 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 3:4 / 2:3；推荐值不代表完整允许集合。",
       "response_format": "url 返回结果地址，b64_json 返回 Base64。",
       "async": "true 创建异步任务；省略或 false 为同步等待。",
       "images": "参考图 HTTPS URL 数组，最多 9 个。",
@@ -2474,7 +2482,7 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
       },
       "size": {
         "type": "string",
-        "description": "画面比例或 WIDTHxHEIGHT 尺寸。固定 4K 档位，不能请求其他分辨率档位。推荐值：1:1 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。最长边至少 2049。推荐值：1:1 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 3:4 / 2:3；推荐值不代表完整允许集合。",
         "required": false,
         "suggestions": [
           "1:1",
@@ -2501,6 +2509,9 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
         "description": "true 创建异步任务；省略或 false 为同步等待。",
         "required": false
       }
+    },
+    "dimensionRules": {
+      "minLongestEdge": 2049
     }
   },
   "gemini-3-pro-image-preview": {
@@ -2598,14 +2609,14 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
   },
   "nano-banana2-1k": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/nano-banana2-1k.json",
-    "checkedAt": "2026-10-13T00:53:59.953Z",
-    "sha256": "d1b22d88a31411c8e4029a60672d42ced0ec57d6a142a5568733d75056f5172a",
+    "checkedAt": "2026-10-18T00:34:33.128Z",
+    "sha256": "4713d4ddb277528c34758e064217251bc39a02b00eb9697f2fe949fc3184f1db",
     "intro": "nano-banana2-1k",
     "fields": {
       "model": "固定传 nano-banana2-1k。",
       "prompt": "生成内容的描述。",
       "n": "生成张数。最小 1。最大 1。",
-      "size": "画面比例或 WIDTHxHEIGHT 尺寸。固定 1K 档位，不能请求其他分辨率档位。推荐值：1:1 / 4:3 / 3:4 / 16:9 / 9:16 / 3:2 / 2:3 / 21:9；推荐值不代表完整允许集合。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。最长边 1024。推荐值：1:1 / 4:3 / 3:4 / 16:9 / 9:16 / 3:2 / 2:3 / 21:9；推荐值不代表完整允许集合。",
       "response_format": "url 返回结果地址，b64_json 返回 Base64。",
       "async": "true 创建异步任务；省略或 false 为同步等待。",
       "images": "参考图 HTTPS URL 数组，最多 9 个。",
@@ -2640,7 +2651,7 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
       },
       "size": {
         "type": "string",
-        "description": "画面比例或 WIDTHxHEIGHT 尺寸。固定 1K 档位，不能请求其他分辨率档位。推荐值：1:1 / 4:3 / 3:4 / 16:9 / 9:16 / 3:2 / 2:3 / 21:9；推荐值不代表完整允许集合。",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。最长边 1024。推荐值：1:1 / 4:3 / 3:4 / 16:9 / 9:16 / 3:2 / 2:3 / 21:9；推荐值不代表完整允许集合。",
         "required": false,
         "suggestions": [
           "1:1",
@@ -2667,18 +2678,21 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
         "description": "true 创建异步任务；省略或 false 为同步等待。",
         "required": false
       }
+    },
+    "dimensionRules": {
+      "maxSide": 1024
     }
   },
   "nano-banana2-2k": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/nano-banana2-2k.json",
-    "checkedAt": "2026-10-13T00:53:58.414Z",
-    "sha256": "2d1f4d70122f677e73911558e109c5487814d9e5df372a06a850c8b12ea2bc68",
+    "checkedAt": "2026-10-18T00:34:33.214Z",
+    "sha256": "5242f3c66aefe5fe73be647bb098f9f6ac62b0eafa87d43e0a38f99e4b067778",
     "intro": "nano-banana2-2k",
     "fields": {
       "model": "固定传 nano-banana2-2k。",
       "prompt": "生成内容的描述。",
       "n": "生成张数。最小 1。最大 1。",
-      "size": "画面比例或 WIDTHxHEIGHT 尺寸。固定 2K 档位，不能请求其他分辨率档位。推荐值：1:1 / 4:3 / 3:4 / 16:9 / 9:16 / 3:2 / 2:3 / 21:9；推荐值不代表完整允许集合。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。最长边 2048。最长边至少 1025。推荐值：1:1 / 4:3 / 3:4 / 16:9 / 9:16 / 3:2 / 2:3 / 21:9；推荐值不代表完整允许集合。",
       "response_format": "url 返回结果地址，b64_json 返回 Base64。",
       "async": "true 创建异步任务；省略或 false 为同步等待。",
       "images": "参考图 HTTPS URL 数组，最多 9 个。",
@@ -2713,7 +2727,7 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
       },
       "size": {
         "type": "string",
-        "description": "画面比例或 WIDTHxHEIGHT 尺寸。固定 2K 档位，不能请求其他分辨率档位。推荐值：1:1 / 4:3 / 3:4 / 16:9 / 9:16 / 3:2 / 2:3 / 21:9；推荐值不代表完整允许集合。",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。最长边 2048。最长边至少 1025。推荐值：1:1 / 4:3 / 3:4 / 16:9 / 9:16 / 3:2 / 2:3 / 21:9；推荐值不代表完整允许集合。",
         "required": false,
         "suggestions": [
           "1:1",
@@ -2740,18 +2754,22 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
         "description": "true 创建异步任务；省略或 false 为同步等待。",
         "required": false
       }
+    },
+    "dimensionRules": {
+      "maxSide": 2048,
+      "minLongestEdge": 1025
     }
   },
   "nano-banana2-4k": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/nano-banana2-4k.json",
-    "checkedAt": "2026-10-13T00:54:03.014Z",
-    "sha256": "1d6c5e676c76b7354bd0d5832129db83af8123ec77328be5e7557531c0db0d7a",
+    "checkedAt": "2026-10-18T00:34:33.234Z",
+    "sha256": "1287cfe2d5521e171dff2be8421fcaa67aec8463296f14348988369b56911f6c",
     "intro": "nano-banana2-4k",
     "fields": {
       "model": "固定传 nano-banana2-4k。",
       "prompt": "生成内容的描述。",
       "n": "生成张数。最小 1。最大 1。",
-      "size": "画面比例或 WIDTHxHEIGHT 尺寸。固定 4K 档位，不能请求其他分辨率档位。推荐值：1:1 / 4:3 / 3:4 / 16:9 / 9:16 / 3:2 / 2:3 / 21:9；推荐值不代表完整允许集合。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。最长边至少 2049。推荐值：1:1 / 4:3 / 3:4 / 16:9 / 9:16 / 3:2 / 2:3 / 21:9；推荐值不代表完整允许集合。",
       "response_format": "url 返回结果地址，b64_json 返回 Base64。",
       "async": "true 创建异步任务；省略或 false 为同步等待。",
       "images": "参考图 HTTPS URL 数组，最多 16 个。",
@@ -2786,7 +2804,7 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
       },
       "size": {
         "type": "string",
-        "description": "画面比例或 WIDTHxHEIGHT 尺寸。固定 4K 档位，不能请求其他分辨率档位。推荐值：1:1 / 4:3 / 3:4 / 16:9 / 9:16 / 3:2 / 2:3 / 21:9；推荐值不代表完整允许集合。",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。最长边至少 2049。推荐值：1:1 / 4:3 / 3:4 / 16:9 / 9:16 / 3:2 / 2:3 / 21:9；推荐值不代表完整允许集合。",
         "required": false,
         "suggestions": [
           "1:1",
@@ -2813,6 +2831,9 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
         "description": "true 创建异步任务；省略或 false 为同步等待。",
         "required": false
       }
+    },
+    "dimensionRules": {
+      "minLongestEdge": 2049
     }
   },
   "gemini-3.1-flash-image-preview": {
@@ -3268,14 +3289,14 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
   },
   "midjourney-1k": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/midjourney-1k.json",
-    "checkedAt": "2026-10-13T00:54:15.286Z",
-    "sha256": "739f9bcda4de01fc48e5987c49f9c4f581766f1c19e08c23c543ed9ae5e5a193",
+    "checkedAt": "2026-10-18T00:34:32.865Z",
+    "sha256": "0bc506c6af9878c8ef57714e26aee9ee25dc5e0b893120175530b3f5f5909198",
     "intro": "midjourney-1k",
     "fields": {
       "model": "固定传 midjourney-1k。",
       "prompt": "生成内容的描述。",
       "n": "生成张数。最小 1。最大 1。",
-      "size": "画面比例或 WIDTHxHEIGHT 尺寸。固定 1K 档位，不能请求其他分辨率档位。推荐值：1:2 / 1:2 / 6:11 / 6:11 / 9:16 / 9:16 / 2:3 / 2:3 / 3:4 / 3:4 / 4:5 / 4:5 / 5:6 / 5:6 / 1:1 / 1:1 / 2:1 / 2:1 / 11:6 / 11:6 / 16:9 / 16:9 / 3:2 / 3:2 / 4:3 / 4:3 / 5:4 / 5:4 / 6:5 / 6:5；推荐值不代表完整允许集合。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:2 / 1:2 / 6:11 / 6:11 / 9:16 / 9:16 / 2:3 / 2:3 / 3:4 / 3:4 / 4:5 / 4:5 / 5:6 / 5:6 / 1:1 / 1:1 / 2:1 / 2:1 / 11:6 / 11:6 / 16:9 / 16:9 / 3:2 / 3:2 / 4:3 / 4:3 / 5:4 / 5:4 / 6:5 / 6:5；推荐值不代表完整允许集合。",
       "speed": "生成速度。支持值：relax / fast。无法识别的值按未传处理。",
       "reference": "参考方式。支持值：image / style / edit / moodboard / editor。无法识别的值按未传处理。",
       "response_format": "url 返回结果地址，b64_json 返回 Base64。",
@@ -3319,7 +3340,7 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
       },
       "size": {
         "type": "string",
-        "description": "画面比例或 WIDTHxHEIGHT 尺寸。固定 1K 档位，不能请求其他分辨率档位。推荐值：1:2 / 1:2 / 6:11 / 6:11 / 9:16 / 9:16 / 2:3 / 2:3 / 3:4 / 3:4 / 4:5 / 4:5 / 5:6 / 5:6 / 1:1 / 1:1 / 2:1 / 2:1 / 11:6 / 11:6 / 16:9 / 16:9 / 3:2 / 3:2 / 4:3 / 4:3 / 5:4 / 5:4 / 6:5 / 6:5；推荐值不代表完整允许集合。",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:2 / 1:2 / 6:11 / 6:11 / 9:16 / 9:16 / 2:3 / 2:3 / 3:4 / 3:4 / 4:5 / 4:5 / 5:6 / 5:6 / 1:1 / 1:1 / 2:1 / 2:1 / 11:6 / 11:6 / 16:9 / 16:9 / 3:2 / 3:2 / 4:3 / 4:3 / 5:4 / 5:4 / 6:5 / 6:5；推荐值不代表完整允许集合。",
         "required": false,
         "suggestions": [
           "1:2",
@@ -3380,14 +3401,14 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
   },
   "midjourney-2k": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/midjourney-2k.json",
-    "checkedAt": "2026-10-13T00:54:09.163Z",
-    "sha256": "175123121f8181f5824a84f8aedfe7a2accc15186c57863f513f9566151ce149",
+    "checkedAt": "2026-10-18T00:34:32.897Z",
+    "sha256": "8ae99ab62b1243b9951bcc2693ef6f5e61e86b85fd4c9c222f1c6002eb42a56c",
     "intro": "midjourney-2k",
     "fields": {
       "model": "固定传 midjourney-2k。",
       "prompt": "生成内容的描述。",
       "n": "生成张数。最小 1。最大 1。",
-      "size": "画面比例或 WIDTHxHEIGHT 尺寸。固定 2K 档位，不能请求其他分辨率档位。推荐值：1:2 / 1:2 / 6:11 / 6:11 / 9:16 / 9:16 / 2:3 / 2:3 / 3:4 / 3:4 / 4:5 / 4:5 / 5:6 / 5:6 / 1:1 / 1:1 / 2:1 / 2:1 / 11:6 / 11:6 / 16:9 / 16:9 / 3:2 / 3:2 / 4:3 / 4:3 / 5:4 / 5:4 / 6:5 / 6:5；推荐值不代表完整允许集合。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:2 / 1:2 / 6:11 / 6:11 / 9:16 / 9:16 / 2:3 / 2:3 / 3:4 / 3:4 / 4:5 / 4:5 / 5:6 / 5:6 / 1:1 / 1:1 / 2:1 / 2:1 / 11:6 / 11:6 / 16:9 / 16:9 / 3:2 / 3:2 / 4:3 / 4:3 / 5:4 / 5:4 / 6:5 / 6:5；推荐值不代表完整允许集合。",
       "speed": "生成速度。支持值：relax / fast。无法识别的值按未传处理。",
       "reference": "参考方式。支持值：image / style / edit / moodboard / editor。无法识别的值按未传处理。",
       "response_format": "url 返回结果地址，b64_json 返回 Base64。",
@@ -3431,7 +3452,7 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
       },
       "size": {
         "type": "string",
-        "description": "画面比例或 WIDTHxHEIGHT 尺寸。固定 2K 档位，不能请求其他分辨率档位。推荐值：1:2 / 1:2 / 6:11 / 6:11 / 9:16 / 9:16 / 2:3 / 2:3 / 3:4 / 3:4 / 4:5 / 4:5 / 5:6 / 5:6 / 1:1 / 1:1 / 2:1 / 2:1 / 11:6 / 11:6 / 16:9 / 16:9 / 3:2 / 3:2 / 4:3 / 4:3 / 5:4 / 5:4 / 6:5 / 6:5；推荐值不代表完整允许集合。",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:2 / 1:2 / 6:11 / 6:11 / 9:16 / 9:16 / 2:3 / 2:3 / 3:4 / 3:4 / 4:5 / 4:5 / 5:6 / 5:6 / 1:1 / 1:1 / 2:1 / 2:1 / 11:6 / 11:6 / 16:9 / 16:9 / 3:2 / 3:2 / 4:3 / 4:3 / 5:4 / 5:4 / 6:5 / 6:5；推荐值不代表完整允许集合。",
         "required": false,
         "suggestions": [
           "1:2",

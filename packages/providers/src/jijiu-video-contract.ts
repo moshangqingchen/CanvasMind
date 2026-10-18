@@ -5,8 +5,8 @@ export const JIJIU_VIDEO_DOCS = "https://newapi.jijiucanvas.com/docs/api-docs.md
 interface Contract {
   group: string; min: number; max: number; resolutions?: readonly string[]; durations?: readonly number[];
   images?: number; videos?: number; audios?: number; inputDurationBilling?: boolean;
-  wan?: boolean; wanJson?: boolean; minimax?: boolean; openDuration?: boolean; note?: string;
-  referenceOnly?: boolean; httpsOnly?: boolean; ratios?: readonly string[]; mediaMinSeconds?: number; mediaTotalSeconds?: number; totalAssets?: number;
+  wan?: boolean; wanJson?: boolean; minimax?: boolean; openDuration?: boolean; note?: string; commonTextOnly?: boolean;
+  referenceOnly?: boolean; httpsOnly?: boolean; ratios?: readonly string[]; adaptiveRatio?: boolean; mediaMinSeconds?: number; mediaTotalSeconds?: number; totalAssets?: number;
   fields?: readonly [string, string | undefined, string | undefined];
 }
 /** Exact IDs from the current pricing directory; bounds from the same site's guide §4.5. */
@@ -15,17 +15,22 @@ const contracts: Readonly<Record<string, Contract>> = {
   "Minimax漫剧优化版": { group: "视频-MnimaxH3", min: 4, max: 15, openDuration: true, resolutions: ["480p", "768p", "2k-upscale", "4k-upscale"], images: 9, videos: 3, audios: 3, minimax: true,
     note: "1080p 未开放；官网说明该输入会按 768p 出片并计费，当前不提供伪 1080p 选项。" },
   "MinimaxH3特价版": { group: "视频-MnimaxH3", min: 4, max: 15, fields: ["reference_images", "reference_videos", "reference_audios"], note: "固定 2K 出片；resolution 使用供应商声明的字符串字段，未公布此线路完整输入枚举。" },
-  "SD2.0满血稳定933-线路一": { group: "视频SD2.0", min: 4, max: 15, resolutions: ["720p"], images: 9, videos: 3, audios: 3, fields: ["images", "videos", "audios"] },
+  "SD2.0满血稳定933-线路一": { group: "视频SD2.0", min: 4, max: 15, resolutions: ["720p"], images: 9, videos: 3, fields: ["images", "videos", "audios"] },
   "SD2.0满血稳定933-线路二": { group: "视频SD2.0", min: 5, max: 15, resolutions: ["720p"], images: 9, videos: 3, audios: 3, fields: ["images", "videos", "audios"] },
   "SD2.0满血稳定933-线路三": { group: "视频SD2.0", min: 5, max: 15, resolutions: ["720p"], images: 9, videos: 3, audios: 3, httpsOnly: true, fields: ["images", "video_refs", "audio_refs"] },
-  "SD2.0满血稳定933-线路四": { group: "视频SD2.0", min: 4, max: 15, resolutions: ["720p"], images: 9, videos: 3, audios: 3, httpsOnly: true, fields: ["imageUrls", "videoUrls", "audioUrls"], note: "供应商说明此线路带数字水印，按次计费。" },
+  "SD2.0满血稳定933-线路四": { group: "视频SD2.0", min: 4, max: 15, resolutions: ["480p", "720p"], images: 9, videos: 3, audios: 3, httpsOnly: true, fields: ["imageUrls", "videoUrls", "audioUrls"], note: "2026-10-17 官网专属指南 §5.4 声明 480p / 720p，按输出秒数和档位计费；价格以当前精确型号目录为准。" },
   "SD2.0fast稳定903A": { group: "视频SD2.0", min: 4, max: 15, resolutions: ["720p"], images: 9, videos: 0, audios: 3 },
+  // This new exact ID has no model-specific row in the guide. Only the guide's
+  // common in-sale video JSON fields apply. Never inherit 900D's media contract.
+  "SD2.0fast900": { group: "视频SD2.0", min: 1, max: 15, images: 0, videos: 0, audios: 0, commonTextOnly: true,
+    note: "2026-10-17 当前完整型号已上架；统一在售视频协议仅确认文本模式的 model / prompt / seconds / resolution / aspect_ratio。分辨率为开放字符串；时长 1–15 秒是用户指定的 Seedance 2.0 兜底。专属素材字段与范围尚未公布，当前文本模式不传素材。" },
   "SD2.0fast稳定900D": { group: "视频SD2.0", min: 5, max: 15, durations: [5, 10, 15], ratios: ["9:16"], resolutions: ["720p"], images: 9, videos: 0, audios: 0, fields: ["reference_images", undefined, undefined] },
   "SD2.0mini稳定900B": { group: "视频SD2.0", min: 5, max: 15, resolutions: ["720p"], images: 9, videos: 0, audios: 0, fields: ["image_urls", undefined, undefined] },
   "SD2.0mini稳定903C": { group: "视频SD2.0", min: 5, max: 10, resolutions: ["480p"], images: 9, videos: 0, audios: 3, fields: ["image_urls", undefined, "audio_urls"] },
   "SD2.5特价30-10-10-线路一": { group: "视频SD2.5", min: 5, max: 30, resolutions: ["720p"], images: 30, videos: 10, audios: 10, fields: ["images", "videos", "audios"] },
   "SD2.5特价30-10-10-线路二": { group: "视频SD2.5", min: 4, max: 30, resolutions: ["720p"], images: 30, videos: 10, audios: 10, httpsOnly: true, fields: ["image_urls", "video_urls", "audio_urls"] },
   "SD2.5特价30-10-10-线路三": { group: "视频SD2.5", min: 4, max: 30, resolutions: ["720p"], images: 30, videos: 10, audios: 10, fields: ["images", "video_refs", "audio_refs"] },
+  "SD2.5特价30-10-10-线路四": { group: "视频SD2.5", min: 4, max: 30, resolutions: ["720p"], images: 30, videos: 10, audios: 10, fields: ["images", "videos", "audios"] },
   "SD2.5特价30-10线路一": { group: "视频SD2.5", min: 4, max: 30, resolutions: ["720p"], images: 30, videos: 0, audios: 10, fields: ["image_urls", undefined, "audio_urls"], note: "专属文档固定 720p；价格 schema 同时列出 480p/720p。报价保留原始档位，生成按专属文档使用 720p；480p 生成能力未实测。" },
   "SD2.5特价30-10线路二": { group: "视频SD2.5", min: 5, max: 30, resolutions: ["720p"], images: 30, videos: 10, audios: 10, fields: ["images", "videos", "audios"] },
   "SD2.5特价900线路一": { group: "视频SD2.5", min: 5, max: 30, resolutions: ["720p"], images: 9, videos: 0, audios: 0, fields: ["images", undefined, "audios"] },
@@ -34,10 +39,12 @@ const contracts: Readonly<Record<string, Contract>> = {
   "满血seedance-2.5全参C": { group: "稳定满血视频模型", min: 4, max: 30, resolutions: ["720p"], images: 30, videos: 10, audios: 10, fields: ["images", "video_refs", "audio_refs"],
     referenceOnly: true, httpsOnly: true, ratios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"], mediaMinSeconds: 2, mediaTotalSeconds: 30, totalAssets: 50,
     note: "仅支持文生视频与参考生成；参考素材 HTTPS 链接，合计最多 50 个；视频与音频每段至少 2 秒，各类型总时长最多 30 秒。" },
-  "稳定seedance-2.5全参D": { group: "稳定满血视频模型", min: 5, max: 30, resolutions: ["720p"], images: 30, videos: 10, audios: 10, fields: ["images", "videos", "audios"] },
+  "稳定seedance-2.5全参D": { group: "稳定满血视频模型", min: 4, max: 30, resolutions: ["480p", "720p"], images: 30, videos: 0, audios: 0, referenceOnly: true, httpsOnly: true, adaptiveRatio: true, fields: ["image_refs", undefined, undefined],
+    note: "2026-10-17 官网专属指南 §5.4 明确仅支持最多 30 张 HTTPS 参考图，不支持参考音频或视频；480p / 720p，aspect_ratio 支持 adaptive，按输出秒数与档位计费。" },
   "稳定seedance-2.5全参E": { group: "稳定满血视频模型", min: 4, max: 30, resolutions: ["480p", "720p"], images: 30, videos: 0, audios: 10, fields: ["image_refs", undefined, "audio_refs"],
     note: "2026-10-14 官网专属指南 §5.4 明确不支持参考视频；支持 30 图 / 10 音频，480p / 720p，按输出秒数计费。" },
-  "稳定seedance-2.5参图参音F": { group: "稳定满血视频模型", min: 4, max: 29, resolutions: ["720p"], images: 30, videos: 0, audios: 10, fields: ["images", undefined, "audios"] },
+  "稳定seedance-2.5参图参音F": { group: "稳定满血视频模型", min: 4, max: 30, resolutions: ["480p"], images: 30, videos: 0, audios: 10, fields: ["images", undefined, "audios"],
+    note: "2026-10-17 官网专属指南 §5.1/§5.4 与当前型号描述均明确固定 480p、4–30 秒，不支持参考视频。" },
   "wan3.0-video": { group: "视频WAN3", min: 2, max: 30, resolutions: ["480p", "720p", "1080p"], images: 10, videos: 5, audios: 5, wan: true },
   "wan3.0-video-prime": { group: "视频WAN3", min: 2, max: 30, resolutions: ["480p", "720p", "1080p"], images: 10, videos: 5, audios: 5, wan: true },
   // Guide §5.2 gives these exact URL fields. §5.3's multipart and input-duration
@@ -76,7 +83,7 @@ export function jijiuVideoModel(id: string, current?: ModelDescriptor, group?: s
     { key: "duration", label: "视频时长", control: c.wan || c.durations || min === max ? "select" : "number", valueType: "integer", step: 1,
       ...(c.wan || c.durations ? { min, max, options: (c.durations ?? Array.from({ length: max - min + 1 }, (_, i) => min + i)).map(value => ({ label: `${value} 秒`, value })) }
         : c.openDuration ? { min: 1, allowCustomValue: true } : { ...(min === max ? { default: min, options: [{ label: `${min} 秒`, value: min }] } : {}), min, max }),
-      description: c.openDuration ? "官网画布提供 4–15 秒选择，API真实上下限未确认；按用户填写的正整数发送，保留旧值。" : c.wan ? "供应商当前仅接受 2–30 秒正整数，不接受 -1 自动时长；旧值保留，请改选。按实际输入与输出时长结算。" : "留空采用供应商线路默认时长；超范围或旧值请改选，不静默裁剪。" },
+      description: c.commonTextOnly ? "供应商未公布此完整型号时长范围，按用户指定 Seedance 2.0 兜底使用 1–15 秒；这不是供应商官方范围。" : c.openDuration ? "官网画布提供 4–15 秒选择，API真实上下限未确认；按用户填写的正整数发送，保留旧值。" : c.wan ? "供应商当前仅接受 2–30 秒正整数，不接受 -1 自动时长；旧值保留，请改选。按实际输入与输出时长结算。" : "留空采用供应商线路默认时长；超范围或旧值请改选，不静默裁剪。" },
     { key: "resolution", label: "输出分辨率", control: c.resolutions?.length ? "select" : "text", valueType: "string",
       ...(c.resolutions?.length ? { options: c.resolutions.map(value => ({ label: value, value })) }
         : { allowCustomValue: true, placeholder: "供应商默认（留空）", description: c.note ?? "供应商声明 resolution 字符串字段；按填写值发送，由当前分组与型号校验。留空不发送。" }) },
@@ -84,7 +91,7 @@ export function jijiuVideoModel(id: string, current?: ModelDescriptor, group?: s
       description: "供应商声明的 WIDTHxHEIGHT 字段，服务端换算到对应分辨率档；留空不发送，输入范围由当前分组与型号处理。" },
     { key: "aspect_ratio", label: "画面比例", control: c.ratios ? "select" : "text", valueType: "string", placeholder: "供应商默认（留空）",
       ...(c.ratios ? { options: c.ratios.map(value => ({ label: value, value })) } : {}),
-      description: c.ratios ? "供应商声明的比例；留空不发送，按画面自适应。" : "快捷比例来自供应商官方示例，也可填写自定义正数宽高比；留空不发送比例，由供应商决定，官方未公布具体默认比例。" },
+      description: c.ratios ? "供应商声明的比例；留空不发送，按画面自适应。" : c.adaptiveRatio ? "可填写 adaptive 或自定义正数宽高比；留空不发送，保留用户原值。" : "快捷比例来自供应商官方示例，也可填写自定义正数宽高比；留空不发送比例，由供应商决定，官方未公布具体默认比例。" },
     { key: "seed", label: "随机种子", control: "number", valueType: "integer" },
     ...(c.inputDurationBilling ? [{ key: "reference_video_seconds", label: "参考视频总时长", control: "number" as const, valueType: "number" as const, min: 0, description: "带参考视频时必填真实总秒数，参与上游计费；不按素材条数估算。" }] : []),
     ...(!c.wan && !c.wanJson ? [{ key: "negative_prompt", label: "负面提示词", control: "text" as const, valueType: "string" as const }] : []),
@@ -94,15 +101,17 @@ export function jijiuVideoModel(id: string, current?: ModelDescriptor, group?: s
       { key: "callback_url", label: "完成回调地址", control: "text" as const, valueType: "string" as const, placeholder: "公网 HTTP(S) URL", description: "官网仅为 MinimaxH3 标准/漫剧线路声明此字段；留空不发送。" },
     ] : []),
   ];
-  return { ...current, id, name: current?.name ?? id, operations: ["video.generate", "video.image-to-video"], inputKinds: ["text", "image", "image[]", ...(c.videos !== 0 ? ["video" as const, "video[]" as const] : []), ...(c.audios !== 0 ? ["audio" as const, "audio[]" as const] : [])], outputKinds: ["video"], parameters,
+  return { ...current, id, name: current?.name ?? id, operations: c.commonTextOnly ? ["video.generate"] : ["video.generate", "video.image-to-video"], inputKinds: c.commonTextOnly ? ["text"] : ["text", "image", "image[]", ...(c.videos !== 0 ? ["video" as const, "video[]" as const] : []), ...(c.audios !== 0 ? ["audio" as const, "audio[]" as const] : [])], outputKinds: ["video"], parameters: c.commonTextOnly ? parameters.filter(parameter => ["duration", "resolution", "aspect_ratio"].includes(parameter.key)) : parameters,
     limits: { ...(c.images === undefined ? {} : { maxInputImages: c.images }), ...(c.videos === undefined ? {} : { maxInputVideos: c.videos }), ...(c.audios === undefined ? {} : { maxInputAudios: c.audios }), ...(c.wan ? { maxInputVideoDurationSeconds: 15 } : {}) },
     metadata: { ...metadata, supplier: "jijiu", modality: "video", catalogCapability: "video", operationsSource: "declared", outputKindsSource: "declared", protocol: "openai-videos", documentationUrl: JIJIU_VIDEO_DOCS,
-      endpointPath: "/v1/videos", endpointMethod: "POST", parameterSource: "supplier-documented-contract", protocolEvidence: "supplier-documentation", generationVerified: false, videoContractCheckedAt: "2026-10-14",
+      endpointPath: "/v1/videos", endpointMethod: "POST", parameterSource: "supplier-documented-contract", protocolEvidence: "supplier-documentation", generationVerified: false, videoContractCheckedAt: "2026-10-17",
       videoMinDuration: c.openDuration ? undefined : min, videoMaxDuration: c.openDuration ? undefined : max, ...(c.durations ? { videoDurationValues: [...c.durations] } : min === max ? { videoDurationValues: [min], videoParameterConfirmedDefaults: { duration: min } } : {}), videoSupportedResolutions: [...(c.resolutions ?? [])],
       videoParameterAliases: { duration: ["seconds", "duration_seconds"], aspect_ratio: ["ratio"] },
+      ...(c.commonTextOnly ? { durationRangeSource: "user-fallback", durationRangeFallbackFamily: "seedance-2.0", userFallbackDurationRange: { min: 1, max: 15 },
+        videoReferenceCapabilitiesUnpublished: true } : {}),
       ...(!c.resolutions?.length ? { resolutionRangeUnverified: true, videoResolutionAllowsCustom: true } : {}),
-      videoAspectRatioPresets: c.ratios ? c.ratios.map(value => ({ label: value, value })) : [{ label: "16:9（横屏）", value: "16:9" }, { label: "9:16（竖屏）", value: "9:16" }, { label: "1:1（方形）", value: "1:1" }],
-      remoteMediaUrlsOnly: !c.wan, supportsFirstLastFrames: !c.wan && !c.referenceOnly, videoSupportsFirstLastFrames: !c.wan && !c.referenceOnly, allowFrameMediaMix: !c.wan && !c.referenceOnly, videoReferenceImageLimit: c.images, videoReferenceVideoLimit: c.videos, videoReferenceAudioLimit: c.audios,
+      videoAspectRatioPresets: c.ratios ? c.ratios.map(value => ({ label: value, value })) : [...(c.adaptiveRatio ? [{ label: "自适应（adaptive）", value: "adaptive" }] : []), { label: "16:9（横屏）", value: "16:9" }, { label: "9:16（竖屏）", value: "9:16" }, { label: "1:1（方形）", value: "1:1" }],
+      remoteMediaUrlsOnly: !c.wan, supportsFirstLastFrames: !c.wan && !c.referenceOnly && !c.commonTextOnly, videoSupportsFirstLastFrames: !c.wan && !c.referenceOnly && !c.commonTextOnly, allowFrameMediaMix: !c.wan && !c.referenceOnly && !c.commonTextOnly, videoReferenceImageLimit: c.images, videoReferenceVideoLimit: c.videos, videoReferenceAudioLimit: c.audios,
       ...(c.wan ? { videoDurationValues: Array.from({ length: max - min + 1 }, (_, i) => min + i), videoMediaTransport: "multipart-files", videoReferenceAudioRequiresVisual: true, videoSupportsAutomaticDuration: false } : {}),
       ...(c.wanJson ? { videoMediaTransport: "json-urls", videoSupportsAutomaticDuration: false } : {}),
       parameterControlsUnavailable: false, jijiuVideoContract: true, ...(group ? { jijiuContractGroup: group } : {}), ...(c.note ? { videoContractNote: c.note } : {}), ...(c.wan ? { videoContractNote: "参考视频总时长最多 15 秒；参考视频与输出合计最多 30 秒，输入与输出秒数分别向上取整后合计计费。" } : {}),
@@ -128,6 +137,10 @@ export function normalizeJijiuVideoParameters(request: NormalizedRequest): Recor
   const seconds = s.duration ?? s.seconds ?? s.duration_seconds ?? (fixed?.min !== undefined && fixed.min === fixed.max ? fixed.min : undefined), ratio = s.aspect_ratio ?? s.ratio;
   if (seconds !== undefined && seconds !== "") p.seconds = seconds;
   if (ratio !== undefined && ratio !== "") p.aspect_ratio = ratio;
+  if (fixed?.commonTextOnly) {
+    if (s.resolution !== undefined && s.resolution !== "") p.resolution = s.resolution;
+    return p;
+  }
   for (const key of ["resolution", "size", "seed", "negative_prompt", "watermark", "prompt_optimizer", "callback_url", "metadata", "reference_video_seconds"])
     if (s[key] !== undefined && s[key] !== "" && !(request.model === "稳定seedance-2.5全参E" && key === "reference_video_seconds")) p[key] = s[key];
   const fields = materialFields(fixed);
@@ -149,8 +162,13 @@ function publicUrl(value: unknown): boolean {
 }
 export function jijiuVideoRequestIssues(request: NormalizedRequest, current?: ModelDescriptor, group?: string): ValidationIssue[] {
   const c = contract(request.model ?? "", current); if (!c) return [];
-  const descriptor = jijiuVideoModel(request.model!, current)!, p = normalizeJijiuVideoParameters(request), source = request.parameters ?? {};
+  const p = normalizeJijiuVideoParameters(request), source = request.parameters ?? {};
   const issues: ValidationIssue[] = [], add = (path: string, message: string) => issues.push({ path, code: "invalid_parameter", message });
+  if (c.commonTextOnly) {
+    for (const key of Object.keys(source)) if (!["duration", "seconds", "duration_seconds", "aspect_ratio", "ratio", "resolution"].includes(key) && source[key] !== undefined && source[key] !== "")
+      add(`parameters.${key}`, "此完整型号当前仅接入官方统一文本视频字段；未声明的参数原值已保留，请移除后提交。");
+    if (request.assets?.length || request.operation !== "video.generate") add("assets", "此完整型号尚未公布专属素材字段；当前接入文本生成模式，已保存素材保持不变。");
+  }
   if (request.model === "稳定seedance-2.5全参E" && source.reference_video_seconds !== undefined && source.reference_video_seconds !== "")
     add("parameters.reference_video_seconds", "此线路已取消参考视频，按输出秒数计费；已保存的参考视频时长保留，请移除后提交。");
   if (!groupAllowed(request.model!, c, group)) add("model", "当前极九分组未上架此完整型号。");
@@ -160,7 +178,7 @@ export function jijiuVideoRequestIssues(request: NormalizedRequest, current?: Mo
   if (source.aspect_ratio !== undefined && source.ratio !== undefined && source.aspect_ratio !== source.ratio) add("parameters.aspect_ratio", "aspect_ratio 与 ratio 不能冲突。");
   if (p.resolution !== undefined && (typeof p.resolution !== "string" || c.resolutions?.length && !c.resolutions.includes(p.resolution)))
     add("parameters.resolution", c.resolutions?.length ? `此型号分辨率仅支持 ${c.resolutions.join(" / ")}。` : "resolution 必须为字符串。");
-  if (p.aspect_ratio !== undefined && (typeof p.aspect_ratio !== "string" || !/^\d+(?:\.\d+)?:\d+(?:\.\d+)?$/u.test(p.aspect_ratio) || !p.aspect_ratio.split(":").every(v => Number(v) > 0))) add("parameters.aspect_ratio", "画面比例必须为正数宽高比。");
+  if (p.aspect_ratio !== undefined && !(c.adaptiveRatio && p.aspect_ratio === "adaptive") && (typeof p.aspect_ratio !== "string" || !/^\d+(?:\.\d+)?:\d+(?:\.\d+)?$/u.test(p.aspect_ratio) || !p.aspect_ratio.split(":").every(v => Number(v) > 0))) add("parameters.aspect_ratio", c.adaptiveRatio ? "画面比例必须为 adaptive 或正数宽高比。" : "画面比例必须为正数宽高比。");
   if (c.ratios && p.aspect_ratio !== undefined && !c.ratios.includes(String(p.aspect_ratio))) add("parameters.aspect_ratio", `此型号画面比例仅支持 ${c.ratios.join(" / ")}。`);
   if (p.size !== undefined && (typeof p.size !== "string" || !/^\d+x\d+$/u.test(p.size) || !p.size.split("x").every(value => Number.isSafeInteger(Number(value)) && Number(value) > 0)))
     add("parameters.size", "输出像素尺寸必须为正整数 WIDTHxHEIGHT，例如 1280x720。");
@@ -216,12 +234,13 @@ function wanReferenceAsset(value: unknown, kind: keyof typeof aliases): boolean 
 export function jijiuVideoTransport(id?: string, request?: NormalizedRequest): RestModelConnectorOverride {
   const wan = isJijiuWanVideoModel(id);
   const wanJson = Boolean(id && contracts[id]?.wanJson);
+  const commonTextOnly = Boolean(id && contracts[id]?.commonTextOnly);
   const fields = materialFields(id ? contracts[id] : undefined).filter((field): field is string => Boolean(field));
   const multipart = wan && Boolean(request && ["images", "videos", "audios"].some(field => list(request.parameters?.[field]).length));
   const response = { taskIdPath: "$.id", statusPath: "$.status", progressPath: "$.progress", errorPath: "$.error.message" };
   return { auth: { type: "bearer" }, submit: { path: "/v1/videos", method: "POST", bodyMode: multipart ? "multipart" : "json", idempotent: false,
     mappings: [{ target: "/model", source: { kind: "request", path: "$.model" } }, { target: "/prompt", source: { kind: "request", path: "$.prompt" } },
-      ...["seconds", "resolution", "size", "aspect_ratio", ...fields, ...(wan || wanJson ? [] : ["first_frame_image", "last_frame_image", "negative_prompt", "watermark", "prompt_optimizer", "callback_url", "metadata", "reference_video_seconds"]), "seed"].map(field => ({ target: `/${field}`, source: { kind: "request" as const, path: `$.parameters.${field}` }, omitIfUndefined: true, omitIfEmpty: true }))], response },
+      ...(commonTextOnly ? ["seconds", "resolution", "aspect_ratio"] : ["seconds", "resolution", "size", "aspect_ratio", ...fields, ...(wan || wanJson ? [] : ["first_frame_image", "last_frame_image", "negative_prompt", "watermark", "prompt_optimizer", "callback_url", "metadata", "reference_video_seconds"]), "seed"]).map(field => ({ target: `/${field}`, source: { kind: "request" as const, path: `$.parameters.${field}` }, omitIfUndefined: true, omitIfEmpty: true }))], response },
     poll: { path: "/v1/videos/{taskId}", method: "GET", bodyMode: "none", response }, pollIntervalMs: 5000,
     statusMap: { queued: "queued", in_progress: "running", unknown: "running", completed: "succeeded", failed: "failed" },
     output: { path: "$.content_url", fallbackPaths: ["$.video_url", "$.download_url", "$.result_url", "$.url", "$.video.url"], kind: "video", defaultMimeType: "video/mp4",

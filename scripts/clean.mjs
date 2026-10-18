@@ -85,7 +85,9 @@ export async function planCleanup(
     }
   };
   await inspectOutputs("");
-  await add(".codex-logs", "历史开发日志");
+  // These trees contain original requests, billing and installation/CAS evidence,
+  // not just disposable logs. Neither normal nor deep cleanup may remove them.
+  // Keep output/ as well: it includes original generated images and audit sources.
   // Keep source snapshots, databases and media in old deployment fixtures.
   for (const entry of await entries(path.join(canonicalRoot, ".codex-temp"))) {
     if (!entry.isDirectory() || !/^deploy-web-test-\d+$/u.test(entry.name))

@@ -9,15 +9,47 @@ const kTiers = ["1k", "2k", "4k"];
 const options = (values: readonly string[]) => values.map(value => ({ label: value, value }));
 const fixedTier = (id: string) => /-([124]k)$/u.exec(id)?.[1];
 export const hasCangyuanImageDocument = (id: string): boolean => Object.hasOwn(CANGYUAN_IMAGE_DOCUMENTS, id);
+export interface CangyuanCatalogDimensionEvidence {
+  modelId: string;
+  sourceUrl: string;
+  checkedAt: string;
+  customDimensions: unknown;
+}
+
+/** The price row's UI bounds are evidence for that exact fullID, not wire fields.
+ * A newer contradictory UI value must not silently override the model schema. */
+function catalogDimensionEvidence(id: string, expected: Record<string, unknown>, source?: CangyuanCatalogDimensionEvidence): Record<string, unknown> | undefined {
+  const value = source?.customDimensions;
+  if (!source || source.modelId !== id || source.sourceUrl !== "https://ai.cangyuansuanli.cn/api/pricing" ||
+      !value || typeof value !== "object" || Array.isArray(value) || !("enabled" in value) || value.enabled !== true) return;
+  const raw = value as Record<string, unknown>;
+  const names = { step: "alignment", maxEdge: "maximumEdge", minLongestEdge: "minimumLongestEdge",
+    maxAspectRatio: "maximumAspectRatio", minPixels: "minimumPixels", maxPixels: "maximumPixels" };
+  const normalizedBounds = Object.fromEntries(Object.entries(names).flatMap(([key, target]) => {
+    const number = raw[key];
+    return typeof number === "number" && Number.isFinite(number) && number > 0 && (key === "maxAspectRatio" || Number.isSafeInteger(number)) ? [[target, number]] : [];
+  }));
+  if (!Object.keys(normalizedBounds).length) return;
+  const conflictKeys = Object.keys(normalizedBounds).filter(key => normalizedBounds[key] !== expected[key]);
+  return { modelId: id, sourceUrl: source.sourceUrl, checkedAt: source.checkedAt, normalizedBounds, conflictKeys,
+    status: conflictKeys.length ? "conflicts-with-exact-schema" : "matches-exact-schema" };
+}
 
 /** Public size is a ratio, an explicit pixel value, or omission, as this SKU declares. */
 export function cangyuanDocumentedImageModel(model: ModelDescriptor): ModelDescriptor {
+  return cangyuanDocumentedImageModelWithCatalogDimensions(model);
+}
+
+export function cangyuanDocumentedImageModelWithCatalogDimensions(model: ModelDescriptor, catalogDimensions?: CangyuanCatalogDimensionEvidence): ModelDescriptor {
   const doc = CANGYUAN_IMAGE_DOCUMENTS[model.id];
   if (!doc) return model;
   const operations = doc.editing ? ["image.generate", "image.edit"] as const : ["image.generate"] as const;
   const x = model.id === "gpt-image-2-x" || model.id === "gpt-image-2.5-x";
   const nano = model.id === "gemini-nano-banana-2.1";
   const mj = /^midjourney-[12]k$/u.test(model.id);
+  // A suffix identifies the billed public SKU. Only an explicit current
+  // restriction can turn that name into a fixed resolution selector.
+  const declaredFixedTier = /固定\s+([124]K)\s+档位，不能请求其他分辨率档位/u.exec(doc.fields.size ?? "")?.[1];
   const rules = doc.parameterRules ?? {};
   const parameters: ModelParameterDescriptor[] = [];
   if (doc.ratios.length) parameters.push({ key: "aspect_ratio", label: "画面比例", control: "select", valueType: "string",
@@ -60,25 +92,36 @@ export function cangyuanDocumentedImageModel(model: ModelDescriptor): ModelDescr
   const metadata = { ...model.metadata };
   if (cangyuanQualityParameterUnsupported(model.id)) for (const key of ["imageUserQualityPresets", "imageUserQualityPresetSource", "imageUserQualitySourceParameter", "imageApplicationQualityDefault"]) delete metadata[key];
   // Discard inherited family pixel presets before installing this exact SKU.
-  for (const key of ["imageNativeResolutionParameter", "imageNativeResolutionOptions", "imageOutputDimensions", "imageApproximateResolutions", "imageUnsupportedResolutions", "imageNativeQualityOptions"])
+  for (const key of ["imageNativeResolutionParameter", "imageNativeResolutionOptions", "imageOutputDimensions", "imageApproximateResolutions", "imageUnsupportedResolutions", "imageNativeQualityOptions", "imageFixedResolution", "imageCustomDimensionRules"])
     delete metadata[key];
   const denied = /401|403|权限|未开通|拒绝|下架|停用|未返回|unauthorized|forbidden|not.?returned|unavailable|disabled/iu.test(String(metadata.canvasUnavailableReason ?? ""));
   if (!denied) { delete metadata.canvasUnavailableReason; delete metadata.pendingLiveScan; delete metadata.protocolSourceModel; if (metadata.autoInterfaceStatus === "incomplete") delete metadata.autoInterfaceStatus; }
   const nativeQuality = parameters.find(p => p.key === "quality")?.options?.some(o => String(o.value) === "4k");
-  const supported = x || nativeQuality ? ["1K", "2K", "4K"] : fixedTier(model.id) ? [fixedTier(model.id)!.toUpperCase()] : model.id === "seedream-5.0-pro-x" ? ["1K", "2K"] : [];
+  const supported = x || nativeQuality ? ["1K", "2K", "4K"] : declaredFixedTier ? [declaredFixedTier] : model.id === "seedream-5.0-pro-x" ? ["1K", "2K"] : [];
   const { maxInputImages: _oldMax, supportedMimeTypes: _oldMime, ...oldLimits } = model.limits ?? {};
+  const dimensionRules = {
+    ...(doc.dimensionRules?.step !== undefined ? { alignment: doc.dimensionRules.step } : {}),
+    ...(doc.dimensionRules?.maxSide !== undefined ? { maximumEdge: doc.dimensionRules.maxSide } : {}),
+    ...(doc.dimensionRules?.minLongestEdge !== undefined ? { minimumLongestEdge: doc.dimensionRules.minLongestEdge } : {}),
+    ...(doc.dimensionRules?.maxAspectRatio !== undefined ? { maximumAspectRatio: doc.dimensionRules.maxAspectRatio } : {}),
+    ...(doc.dimensionRules?.minPixels !== undefined ? { minimumPixels: doc.dimensionRules.minPixels } : {}),
+    ...(doc.dimensionRules?.maxPixels !== undefined ? { maximumPixels: doc.dimensionRules.maxPixels } : {}),
+  };
+  const catalogBounds = catalogDimensionEvidence(model.id, dimensionRules, catalogDimensions);
   return { ...model, operations, parameters, description: doc.intro, inputKinds: doc.editing ? ["text", "image", "image[]"] : ["text"], outputKinds: ["image", "image[]"],
     limits: { ...oldLimits, ...(doc.maxReferences !== undefined ? { maxInputImages: doc.maxReferences } : {}), ...(nano ? { supportedMimeTypes: ["image/png", "image/jpeg", "image/webp"] } : {}) },
     metadata: { ...metadata, canvasRunnable: !denied, protocol: "rest", cangyuanCurrentContract: model.id, imageNativeParameterContract: true,
       operationsSource: "declared", outputKindsSource: "declared", catalogCapability: "image", documentationUrl: doc.sourceUrl, contractCheckedAt: doc.checkedAt, imageContractDocumentSha256: doc.sha256, imageContractSourceLastReviewed: doc.sourceLastReviewed,
-      imageSupportedResolutions: supported, imageRequestResolutions: x || nativeQuality || fixedTier(model.id) ? supported : [],
-      ...(x || nativeQuality ? { imageNativeResolutionParameter: x ? "tier" : "quality", imageNativeResolutionOptions: true, imageNativeQualityOptions: true } : { imageResolutionMode: fixedTier(model.id) ? "fixed-model-tier" : "provider-decided" }),
-      ...(fixedTier(model.id) ? { imageFixedResolution: fixedTier(model.id)!.toUpperCase() } : {}),
-      imagePixelBudgetPublished: Boolean(doc.dimensionRules), imageQualityOptionsCompleteEnum: Boolean(rules.quality?.enum),
+      imageSupportedResolutions: supported, imageRequestResolutions: x || nativeQuality || declaredFixedTier ? supported : [],
+      ...(x || nativeQuality ? { imageNativeResolutionParameter: x ? "tier" : "quality", imageNativeResolutionOptions: true, imageNativeQualityOptions: true } : { imageResolutionMode: declaredFixedTier ? "fixed-model-tier" : doc.dimensionRules ? "model-dimension-bounds" : "provider-decided" }),
+      ...(declaredFixedTier ? { imageFixedResolution: declaredFixedTier } : {}),
+      ...(fixedTier(model.id) ? { imageNominalResolution: fixedTier(model.id)!.toUpperCase() } : {}),
+      imagePixelBudgetPublished: doc.dimensionRules?.minPixels !== undefined || doc.dimensionRules?.maxPixels !== undefined, imageQualityOptionsCompleteEnum: Boolean(rules.quality?.enum),
       ...(!doc.fields.quality && !cangyuanQualityParameterUnsupported(model.id) && userImageQualityOptions(model.id).length ? { imageUserQualityPresetSource: "user-request", imageApplicationQualityDefault: model.id.startsWith("gpt-image-2.5") ? "max" : "high" } : {}),
       ...(cangyuanQualityParameterUnsupported(model.id) ? { imageQualityParameterUnsupported: true, imageQualityRestrictionSource: CANGYUAN_QUALITY_RESTRICTION_SOURCE } : {}),
       resultRetention: cangyuanResultRetention("https://ai.cangyuansuanli.cn", "image"),
-      ...(doc.dimensionRules ? { imageCustomDimensionRules: { alignment: doc.dimensionRules.step, maximumEdge: doc.dimensionRules.maxSide, maximumAspectRatio: doc.dimensionRules.maxAspectRatio, minimumPixels: doc.dimensionRules.minPixels, maximumPixels: doc.dimensionRules.maxPixels } } : {}),
+      ...(doc.dimensionRules ? { imageCustomDimensionRules: dimensionRules } : {}),
+      ...(catalogBounds ? { cangyuanCatalogDimensionEvidence: catalogBounds } : {}),
       imageCustomPixels: doc.customPixels, imageOutputEncodingFields: doc.fields.output_format ? ["output_format"] : [],
       imageSizeOptionsCompleteEnum: doc.pixelOptions.length > 0 && !doc.customPixels,
       ...(doc.referenceDimensions ? { imageOutputReferenceDimensions: doc.referenceDimensions } : {}),
@@ -90,7 +133,6 @@ export function cangyuanDocumentedImageModel(model: ModelDescriptor): ModelDescr
 
 export function cangyuanDocumentedImageTransport(id: string, parameters?: Readonly<Record<string, unknown>>): RestModelConnectorOverride | undefined {
   const doc = CANGYUAN_IMAGE_DOCUMENTS[id]; if (!doc) return undefined;
-  const x = id === "gpt-image-2-x" || id === "gpt-image-2.5-x";
   const mj = /^midjourney-[12]k$/u.test(id);
   const mappings: RestRequestMapping[] = [
     { target: "/model", source: { kind: "request", path: "$.model" } },
@@ -119,7 +161,6 @@ export function cangyuanDocumentedImageIssues(request: NormalizedRequest): Valid
   const model = cangyuanDocumentedImageModel({ id: request.model!, name: request.model!, operations: [] });
   const p = request.parameters ?? {}, issues: ValidationIssue[] = [];
   const add = (path: string, message: string) => issues.push({ path, code: "invalid_parameter", message });
-  const x = request.model === "gpt-image-2-x" || request.model === "gpt-image-2.5-x";
   const allowed = new Set((model.parameters ?? []).map(row => row.key));
   for (const key of Object.keys(p)) if (!allowed.has(key) && key !== "size_tier") add(`parameters.${key}`, `${request.model} 官网 Images 合同未声明 ${key}，请重新选择当前参数。`);
   for (const parameter of model.parameters ?? []) {
@@ -139,7 +180,11 @@ export function cangyuanDocumentedImageIssues(request: NormalizedRequest): Valid
   if (!doc.parameterRules && p.n !== undefined && p.n !== 1) add("parameters.n", "一次请求只能 n=1。");
   if (doc.dimensionRules && /^\d+x\d+$/u.test(String(p.size))) {
     const [width, height] = String(p.size).split("x").map(Number) as [number, number], d = doc.dimensionRules;
-    if (width % d.step || height % d.step || Math.max(width, height) > d.maxSide || Math.max(width / height, height / width) > d.maxAspectRatio || width * height < d.minPixels || width * height > d.maxPixels)
+    if (d.step !== undefined && (width % d.step || height % d.step) ||
+        d.maxSide !== undefined && Math.max(width, height) > d.maxSide ||
+        d.minLongestEdge !== undefined && Math.max(width, height) < d.minLongestEdge ||
+        d.maxAspectRatio !== undefined && Math.max(width / height, height / width) > d.maxAspectRatio ||
+        d.minPixels !== undefined && width * height < d.minPixels || d.maxPixels !== undefined && width * height > d.maxPixels)
       add("parameters.size", "尺寸须满足该型号的对齐、边长、比例及总像素限制。");
   }
   if (!doc.editing && request.operation === "image.edit") add("operation", "该完整型号只支持文生图。");

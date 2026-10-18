@@ -44,6 +44,14 @@ interface MonsterHealthObservation {
   samplesEndAt?: string;
   healthWindow?: { clamped?: boolean; errorRetentionDays?: number };
 }
+interface CyberAfeiHealthObservation {
+  serviceName: string;
+  status: string;
+  availabilityPercent: number | null;
+  latencySeconds: number | null;
+  buckets: Array<{ status: string; label: string }>;
+  lastLabel: string;
+}
 export type CatalogSupplementEvidence =
   | { kind: "ledger-samples"; samples: SupplierLedgerPrice[]; coverage: "first-page"; pageSize: 100 }
   | { kind: "announcement-links"; notices: Array<{ modelId: string; supplierGroupId: "115"; publishedAt: string; sourceUrl: string }>; coverage: "matching-models" }
@@ -51,7 +59,10 @@ export type CatalogSupplementEvidence =
   | { kind: "published-chat-prices"; rows: ReturnType<typeof parseHangChatPrices>["rows"]; coverage: "declared-chat-prices" }
   | { kind: "jiasu-script-index"; scriptCount: number }
   | { kind: "jiasu-video-template"; template: JiasuVideoApiExampleTemplate }
-  | { kind: "monster-health"; categories?: Array<{ id: string; name?: string; count?: number }>; range?: string; observations: MonsterHealthObservation[] };
+  | { kind: "monster-health"; categories?: Array<{ id: string; name?: string; count?: number }>; range?: string; observations: MonsterHealthObservation[] }
+  | { kind: "cyberafei-health"; generatedAt: number; generatedAtUnit: "unix-seconds"; statisticsScope: "service-categories";
+      window: { seconds: 7200; sourceUrl: "https://api.3365api.cn/channel-status/"; source: "published-page-label" };
+      observations: CyberAfeiHealthObservation[] };
 export interface CatalogSupplementReadResult {
   sourceUrl: string;
   checkedAt: string;
@@ -83,6 +94,7 @@ function checkedUrl(input: CatalogSupplementReadInput): URL {
     : kind === "jiasu-index" ? exact("https://ai.jiasuapi.com/")
     : kind === "jiasu-script" ? url.origin === "https://ai.jiasuapi.com" && /^\/static\/js\/index\.[a-f\d]+\.js$/u.test(url.pathname) && !url.search
     : kind === "monster-categories" ? exact("https://api.eaheng.com/api/v1/plaza/categories")
+    : kind === "cyberafei-health" ? exact("https://api.3365api.cn/channel-status/api/overview")
     : kind === "monster-range" ? url.origin === "https://api.eaheng.com" && url.pathname === "/api/v1/plaza" && /^\?range=(?:90m|24h|7d|30d)$/u.test(url.search) : false;
   if (!allowed) throw invalid();
   return url;
@@ -116,8 +128,32 @@ export async function collectCatalogSupplementRead(input: CatalogSupplementReadI
     return result({ kind: "jiasu-script-index", scriptCount: entries.length }, true, entries);
   }
 
-  const publicRead = ["hang-pricing"].includes(kind);
+  const publicRead = ["hang-pricing", "cyberafei-health"].includes(kind);
   const payload = await readCatalogLoaderJson(sourceUrl, publicRead ? anonymous(options) : options);
+  if (kind === "cyberafei-health") {
+    const body = record(payload);
+    if (!body || !Number.isSafeInteger(body.generatedAt) || Number(body.generatedAt) <= 0 || !Array.isArray(body.services)) throw invalid();
+    const observations: CyberAfeiHealthObservation[] = [];
+    for (const value of body.services) {
+      const row = record(value);
+      if (!row || !text(row.name) || !text(row.state) || !Array.isArray(row.buckets) || typeof row.lastLabel !== "string" || row.lastLabel.length > 256 ||
+          row.availability !== null && (!finite(row.availability) || row.availability < 0 || row.availability > 100) ||
+          row.latency !== null && (!finite(row.latency) || row.latency < 0)) throw invalid();
+      const buckets: CyberAfeiHealthObservation["buckets"] = [];
+      for (const value of row.buckets) {
+        const bucket = record(value);
+        if (!bucket || !text(bucket.state) || typeof bucket.label !== "string" || bucket.label.length > 256) throw invalid();
+        buckets.push({ status: bucket.state, label: bucket.label });
+      }
+      observations.push({ serviceName: row.name, status: row.state, availabilityPercent: row.availability as number | null,
+        latencySeconds: row.latency as number | null, buckets, lastLabel: row.lastLabel });
+    }
+    // The page labels a two-hour window. It does not publish bucket timestamps,
+    // model/Key permissions, or stable supplier-group identifiers.
+    return { ...result({ kind: "cyberafei-health", generatedAt: Number(body.generatedAt), generatedAtUnit: "unix-seconds",
+      statisticsScope: "service-categories", window: { seconds: 7200, sourceUrl: "https://api.3365api.cn/channel-status/", source: "published-page-label" },
+      observations }, true), status: observations.length ? "live" : "empty" };
+  }
   if (kind === "synora-usage") {
     const rows = envelopeRows(payload);
     if (rows.some(value => {

@@ -49,14 +49,22 @@ describe.each(["openai", "rest"] as const)("Jijiu native images over obsolete au
     for (const size of ["2K", "4K"]) for (const operation of ["image.generate", "image.edit"] as const) {
       const f = fixture(provider, mode), original = structuredClone(f.connection);
       const request = { ...f.request({ size, quality: "high", n: 1 }), operation,
-        ...(operation === "image.edit" ? { assets: [{ id: "reference", kind: "image" as const, url: imageUrl }] } : {}) };
+        ...(operation === "image.edit" ? { assets: [{ id: "reference", kind: "image" as const, url: imageUrl,
+          mimeType: "image/png", filename: "original.png", data: new Uint8Array(Buffer.from(png, "base64")) }] } : {}) };
       expect(await f.adapter.validate(request)).toEqual({ valid: true, issues: [] });
       expect(f.fetcher).not.toHaveBeenCalled();
       const task = await f.adapter.submit(request);
       expect(f.fetcher).toHaveBeenCalledOnce();
       expect(f.fetcher.mock.calls[0]![0]).toBe(`${baseUrl}/images/${operation === "image.edit" ? "edits" : "generations"}`);
-      expect(JSON.parse(String(f.fetcher.mock.calls[0]![1]?.body))).toEqual({ model: id, prompt: request.prompt, size, quality: "high", n: 1,
-        ...(operation === "image.edit" ? { image: [imageUrl] } : {}) });
+      const sent = f.fetcher.mock.calls[0]![1];
+      if (operation === "image.edit") {
+        const form = sent?.body as FormData;
+        expect([...form.keys()].sort()).toEqual(["image", "model", "n", "prompt", "quality", "size"]);
+        expect(Object.fromEntries(["model", "prompt", "size", "quality", "n"].map(key => [key, form.get(key)])))
+          .toEqual({ model: id, prompt: request.prompt, size, quality: "high", n: "1" });
+        expect(new Uint8Array(await (form.get("image") as File).arrayBuffer())).toEqual(request.assets![0]!.data);
+        expect(new Headers(sent?.headers).has("content-type")).toBe(false);
+      } else expect(JSON.parse(String(sent?.body))).toEqual({ model: id, prompt: request.prompt, size, quality: "high", n: 1 });
       expect(task).toMatchObject({ status: "succeeded", result: { autoInterface: true, autoInterfaceTransport: "jijiu-native-images" } });
       expect(await f.adapter.extractOutputs(task.result)).toEqual([{ kind: "image", data: new Uint8Array(Buffer.from(png, "base64")), mimeType: "image/png", filename: "openai-1.png" }]);
       expect(f.connection).toEqual(original); expect(f.fallback.submit).not.toHaveBeenCalled(); expect(f.fallback.extractOutputs).not.toHaveBeenCalled();

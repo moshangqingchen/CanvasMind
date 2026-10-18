@@ -64,7 +64,10 @@ export function catalogSourcePlan(connection: ProviderConnectionRecord, supplier
   } else if (officialRoot && host === "tu.988236.xyz") {
     add("chentu-pricing", "https://tu.988236.xyz/api/pricing", "catalog-offer");
     add("chentu-image-capabilities", "https://tu.988236.xyz/v1/image/model-capabilities", "schema", scopes.key);
-  } else if (officialRoot && host === "api.3365api.cn") add("cyberafei-pricing", "https://api.3365api.cn/api/pricing", "catalog-offer");
+  } else if (officialRoot && host === "api.3365api.cn") {
+    add("cyberafei-pricing", "https://api.3365api.cn/api/pricing", "catalog-offer");
+    add("supplement:cyberafei-health", "https://api.3365api.cn/channel-status/api/overview", "health");
+  }
   else if (officialRoot && host === "api.miaowuai.store") {
     add("miaowu-pricing", "https://api.miaowuai.store/api/pricing", "catalog-offer");
     add("miaowu-media", "https://api.miaowuai.store/v1/dream/model_list", "key-membership", scopes.key, true);

@@ -6,6 +6,7 @@ import { applyMiaowuImageSchema, parseMiaowuImageSchema, type MiaowuImageSchemaR
 
 const fixture = JSON.parse(readFileSync(new URL("./miaowu-image-20261009.fixture.json", import.meta.url), "utf8"));
 const currentFixture = JSON.parse(readFileSync(new URL("./miaowu-image-20261010.fixture.json", import.meta.url), "utf8"));
+const latest = JSON.parse(readFileSync(new URL("./miaowu-native-20261017.fixture.json", import.meta.url), "utf8"));
 const imageIds = Object.keys(fixture.schemas);
 function receipt(id: string): MiaowuImageSchemaReceipt {
   return { id, sourceUrl: `https://api.miaowuai.store/v1/dream/model_schema?model=${encodeURIComponent(id)}`,
@@ -20,6 +21,24 @@ function adapterFor(model: ModelDescriptor, fetcher: typeof fetch) {
 }
 
 describe("exact Miaowu image schemas", () => {
+  it.each(["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"])("refreshes automatic %s with its own current tiers, ratios, price and reference wire", async id => {
+    const source = latest.schemas[id], contract = parseMiaowuImageSchema(id, source);
+    const current: MiaowuImageSchemaReceipt = { id, sourceUrl: `https://api.miaowuai.store/v1/dream/model_schema?model=${encodeURIComponent(id)}`,
+      status: "live", checkedAt: latest.checkedAt, contract };
+    const base = publicModels().find(model => model.id === id) ?? { ...publicModels().find(model => model.id === "gpt-image-2.5-flare")!, id, name: id };
+    const model = applyMiaowuImageSchema(base, current);
+    expect(contract.modes).toEqual(["text-to-image", "image-to-image"]);
+    expect(model.parameters?.find(p => p.key === "resolution")?.options?.map(o => o.value)).toEqual(source.request_schema.properties.params.properties.size.enum);
+    expect(model.parameters?.find(p => p.key === "aspect_ratio")?.options?.map(o => o.value)).toEqual(source.request_schema.properties.params.properties.ratio.enum);
+    for (const [resolution, price] of [["1080p", .06], ["2K", .08], ["4K", .12]] as const)
+      expect(modelPriceAmount(model.pricing!, { resolution })).toBe(price);
+    const fetcher = vi.fn<typeof fetch>(async () => Response.json({ id: "exact-task", status: "queued" }));
+    await adapterFor(model, fetcher).submit({ connectionId: "same-key", idempotencyKey: "offline", model: id, operation: "image.edit", prompt: "reference",
+      parameters: { resolution: "4K", aspect_ratio: "16:9", n: 1 }, assets: [{ id: "original", kind: "image", mimeType: "image/png", url: "https://media.example/original.png" }] });
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({ model: id, prompt: "reference", resolution: "4K", ratio: "16:9", image_urls: ["https://media.example/original.png"] });
+    const required = structuredClone(source); required.request_schema.properties.params.required.push("mode");
+    expect(() => parseMiaowuImageSchema(id, required)).toThrow("图片模式");
+  });
   it.each(Object.keys(currentFixture.schemas))("reads the current exact image schema %s, including automatic Midjourney reference routes", id => {
     const payload = currentFixture.schemas[id];
     const contract = parseMiaowuImageSchema(id, payload);
@@ -106,7 +125,7 @@ describe("exact Miaowu image schemas", () => {
 
   it("preserves explicit manual/paid/denied contracts and cannot use unauthorized or cross-source schema as permission", () => {
     const model = publicModels().find(model => model.id === "GPT-image-2")!;
-    for (const metadata of [{ source: "manual" }, { protocolEvidence: "paid-test" }, { canvasRunnable: false, canvasUnavailableReason: "403 权限不足" }]) {
+    for (const metadata of [{ source: "manual" }, { source: "paid-test" }, { protocolEvidence: "paid-test" }, { canvasRunnable: false, canvasUnavailableReason: "403 权限不足" }]) {
       const protectedModel = { ...model, metadata: { ...model.metadata, ...metadata } };
       expect(applyMiaowuImageSchema(protectedModel, receipt(model.id))).toBe(protectedModel);
     }

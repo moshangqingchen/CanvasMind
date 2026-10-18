@@ -37,8 +37,10 @@ function assertR6SourceContract(model: ModelDescriptor, origin: string, group: s
       const tier = model.id.match(/-([124])k$/u)![1]! + "K", image25 = model.id.includes("2.5-");
       expect(model.metadata?.imageSupportedResolutions).toEqual([tier]);
       expect(values("aspect_ratio")).toEqual(["auto", ...ratios]);
-      expect(parameter("quality")?.default).toBe(image25 ? "max" : "high");
-      expect(values("quality")).toEqual(image25 ? ["auto", "medium", "max"] : ["auto", "low", "medium", "high"]);
+      // Current exact GPT2 guide explicitly includes xhigh/max. The captured
+      // source already contains all five; common user presets must retain them.
+      expect(parameter("quality")?.default).toBe("max");
+      expect(values("quality")).toEqual(image25 ? ["auto", "medium", "max"] : ["auto", "low", "medium", "high", "xhigh", "max"]);
       expect(parameter("n")).toMatchObject({ default: 1, min: 1, max: 1 });
       expect(model.limits).toMatchObject({ maxInputImages: 9, maxOutputImages: 1 });
       expect(parameter("size")?.allowCustomValue).toBe(true);
@@ -145,7 +147,7 @@ function maskAndVerify(before: ProviderConnectionRecord, after: ProviderConnecti
         /^gpt-image-2(?:\.5-(?:flare|sunburst))?-[124]k$/u.test(source.fullModelId);
       const sourceWithPresets = applyUserImageSizePresets({ ...(b[i] as unknown as ModelDescriptor),
         parameters: source.parameters as ModelDescriptor["parameters"], metadata: { ...sourceMetadata,
-          ...(exactChuangxiangQuality ? { imageQualityOptionsCompleteEnum: source.fullModelId.includes("2.5-"),
+          ...(exactChuangxiangQuality ? { imageQualityOptionsCompleteEnum: true,
             imageFixedResolution: source.fullModelId.match(/-([124])k$/u)![1]! + "K" } : {}),
           ...(sourceMetadata?.imageResolutionMode === "fixed-model-tier" && Array.isArray(sourceMetadata.imageSupportedResolutions)
             ? { imageFixedResolution: sourceMetadata.imageSupportedResolutions[0] } : {}),

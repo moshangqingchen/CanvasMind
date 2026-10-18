@@ -863,6 +863,7 @@ export async function scanSupplierRecord(
       const previous = supplier.catalog.groups.find(group => group.id === groupId);
       if (previous?.source === "manual") continue;
       result.groups.push({ id: groupId, label: previous?.label ?? groupId, source: "catalog",
+        ...(previous?.supplierGroupId !== undefined ? { supplierGroupId: previous.supplierGroupId } : {}),
         models: (previous?.models ?? []).map(model => ({ ...model, protocol: model.protocol === "rest" ? "unknown" : model.protocol, metadata: { ...model.metadata,
           supplierCatalogModelStale: true, supplierCatalogPriceCheckedAt: model.metadata?.supplierCatalogPriceCheckedAt ?? supplier.scanLastSuccessAt ?? supplier.scannedAt ?? "" } })),
         details: { ...previous?.details, source: "key-groups", stale: true } });

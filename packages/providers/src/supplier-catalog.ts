@@ -352,7 +352,7 @@ export function parseSupplierCatalog(
       const group = record(raw);
       if (!group) { complete = false; continue; }
       const id = text(group.name ?? group.id);
-      const label = text(group.label ?? group.description ?? group.name) || id;
+      const label = text(group.label) || text(group.name) || text(group.description) || id;
       const officialId = supplierGroupId(group.id);
       add(id, label, undefined, officialId);
       const saved = byGroup.get(officialId ? `site-id:${officialId}` : `name:${id}`);

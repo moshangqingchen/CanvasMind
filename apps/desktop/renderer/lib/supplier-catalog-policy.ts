@@ -26,8 +26,16 @@ function priceValue(value: unknown): unknown {
 }
 function structuredPrice(row: Record<string, unknown>): unknown {
   const metadata = object(row.metadata);
-  return row.pricing ?? metadata.secureSkillCatalogPricing ?? metadata.chuangxiangCatalogPricing ?? metadata.tk1688Pricing ??
+  const pricing = row.pricing ?? metadata.secureSkillCatalogPricing ?? metadata.chuangxiangCatalogPricing ?? metadata.tk1688Pricing ??
     metadata.weaiLegacyPricing ?? metadata.sub2apiPlazaPricing ?? metadata.miaowuCatalogPricing ?? metadata.hangCatalogPricing ?? metadata.officialCatalogPricing;
+  // A per-request tariff already uses requests when the optional unit is absent.
+  // Recording that same unit explicitly is source normalization, not a rate change.
+  if (object(pricing).kind === "per-request" && object(pricing).billingUnit === "request") {
+    const normalized = { ...object(pricing) };
+    delete normalized.billingUnit;
+    return normalized;
+  }
+  return pricing;
 }
 function priceText(value: unknown): string {
   return modelPickerPriceData(catalogPriceDescriptor(value));

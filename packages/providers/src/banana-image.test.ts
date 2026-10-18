@@ -90,7 +90,9 @@ describe("supplier banana image protocols", () => {
       const f = fixture("https://api.eaheng.com/v1", { model: selected, group: "C1-Gemini（香蕉生图）", settings: { accountKeyGroupId: "11" } });
       const descriptor = applyBananaImageCapabilities({ provider: "openai", config: f.config }, { id: selected, name: selected, operations: ["image.generate"] });
       expect(descriptor.operations).toEqual(["image.generate", "image.edit"]);
-      expect(descriptor.parameters?.find(p => p.key === "image_size")?.options?.map(o => o.value)).toEqual(["auto"]);
+      expect(descriptor.parameters?.find(p => p.key === "image_size")?.options?.map(o => o.value)).toEqual(["auto", "1K", "2K", "4K"]);
+      expect(descriptor.metadata?.imageUserNativeSizePresetSource).toBe("user-request");
+      expect(descriptor.parameters?.find(p => p.key === "image_size")?.description).toContain("用户指定的应用预设");
       expect(descriptor.metadata?.imageOutputDimensions).toBeUndefined();
       for (const operation of ["image.generate", "image.edit"] as const) {
         f.fetch.mockClear();
@@ -107,7 +109,7 @@ describe("supplier banana image protocols", () => {
         expect(await f.adapter.extractOutputs(task.result)).toHaveLength(1);
       }
       f.fetch.mockClear();
-      for (const parameters of [{ image_size: "4K" }, { aspect_ratio: "16:9" }, { quality: "max" }]) {
+      for (const parameters of [{ image_size: "8K" }, { aspect_ratio: "not-a-ratio" }, { quality: "max" }]) {
         expect(normalizeBananaParameters(bananaImageRoute({ provider: "openai", config: f.config }, selected)!, parameters)).toMatchObject(parameters);
         await expect(f.adapter.submit({ ...request, model: selected, parameters })).rejects.toThrow();
       }
@@ -159,10 +161,12 @@ describe("supplier banana image protocols", () => {
       id: selected, name: selected, operations: [], metadata: { canvasRunnable: false, canvasUnavailableReason: "尚未验证该模型的画布调用协议", imageOutputDimensions: [{ resolution: "4K", width: 4096, height: 4096, ratio: "1:1" }] },
     });
     expect(descriptor.operations).toEqual(["image.generate", "image.edit"]);
-    expect(descriptor.parameters?.find(p => p.key === "image_size")).toMatchObject({ default: "auto", options: [{ value: "auto", label: "模型默认（不指定档位）" }] });
-    expect(descriptor.parameters?.find(p => p.key === "aspect_ratio")?.options?.map(o => o.value)).toEqual(["auto"]);
+    expect(descriptor.parameters?.find(p => p.key === "image_size")).toMatchObject({ default: "auto" });
+    expect(descriptor.parameters?.find(p => p.key === "image_size")?.options?.map(o => o.value)).toEqual(["auto", "1K", "2K", "4K"]);
+    expect(descriptor.parameters?.find(p => p.key === "aspect_ratio")?.options?.map(o => o.value)).toContain("16:9");
     expect(descriptor.metadata?.imageOutputDimensions).toBeUndefined();
-    expect(descriptor.metadata?.imageSupportedResolutions).toEqual([]);
+    expect(descriptor.metadata?.imageSupportedResolutions).toEqual(["1K", "2K", "4K"]);
+    expect(descriptor.metadata?.resolutionVerification).toBe("user-presets-not-generation-tested");
     const restored = applyBananaImageCapabilities({ provider: "openai", config: f.config }, JSON.parse(JSON.stringify(descriptor)));
     expect(restored).toEqual(descriptor);
     const task = await f.adapter.submit({ ...request, model: selected, parameters: { image_size: "auto", aspect_ratio: "auto", n: 1 } });
@@ -172,7 +176,7 @@ describe("supplier banana image protocols", () => {
     expect(JSON.parse(String(init?.body))).toEqual({ contents: [{ role: "user", parts: [{ text: request.prompt }] }], generationConfig: { responseModalities: ["IMAGE"] } });
     expect(await f.adapter.extractOutputs(task.result)).toHaveLength(1);
   });
-  it.each([{ image_size: "4K" }, { size: "2880x2880" }, { aspect_ratio: "9:21" }, { thinking_level: "high" }, { quality: "max" }, { background: "transparent" }])(
+  it.each([{ image_size: "8K" }, { size: "2880x2880" }, { aspect_ratio: "9:21" }, { thinking_level: "high" }, { quality: "max" }, { background: "transparent" }])(
     "preserves and rejects unpublished Synora saved parameters %j before charging", async parameters => {
       const f = fixture("https://synoralink.com/v1", { group: "香蕉pro专线" });
       const route = bananaImageRoute({ provider: "openai", config: f.config }, model)!;
@@ -181,6 +185,24 @@ describe("supplier banana image protocols", () => {
       await expect(f.adapter.submit({ ...request, parameters })).rejects.toThrow();
       expect(f.fetch).not.toHaveBeenCalled();
     });
+  it.each([
+    ["https://api.eaheng.com/v1", "11", "C1-Gemini（香蕉生图）", "gemini-3-pro-image-preview"],
+    ["https://synoralink.com/v1", "117", "香蕉pro专线", "gemini-3-pro-image-preview"],
+  ])("preserves explicit user size/ratio presets through native %s reference requests without claiming output pixels", async (baseUrl, groupId, group, selected) => {
+    const f = fixture(baseUrl!, { model: selected, group, settings: { accountKeyGroupId: groupId } });
+    const parameters = { image_size: "4K", aspect_ratio: "16:9", n: 1 };
+    const original = structuredClone(parameters);
+    await f.adapter.submit({ ...request, model: selected, parameters, operation: "image.edit",
+      assets: [{ id: "reference", kind: "image", mimeType: "image/png", data: new Uint8Array(Buffer.from(png, "base64")) }] });
+    const body = JSON.parse(String(f.fetch.mock.calls[0]?.[1]?.body));
+    expect(body.generationConfig.imageConfig).toEqual({ imageSize: "4K", aspectRatio: "16:9" });
+    expect(body.contents[0].parts[1]).toEqual({ inlineData: { mimeType: "image/png", data: png } });
+    expect(parameters).toEqual(original);
+    const descriptor = applyBananaImageCapabilities({ provider: "openai", config: f.config }, { id: selected!, name: selected!, operations: ["image.generate"] });
+    expect(applyBananaImageCapabilities({ provider: "openai", config: f.config }, JSON.parse(JSON.stringify(descriptor)))).toEqual(descriptor);
+    expect(descriptor.metadata?.image4KVerifiedAt).toBeUndefined();
+  });
+
   it("sends Synora reference bytes inline, repairs REST routes, and preserves real permission denials", async () => {
     const f = fixture("https://synoralink.com/v1", { group: "香蕉pro专线", provider: "rest" });
     await f.adapter.submit({ ...request, parameters: {}, operation: "image.edit", assets: [{ id: "ref", kind: "image", mimeType: "image/png", data: new Uint8Array(Buffer.from(png, "base64")) }] });

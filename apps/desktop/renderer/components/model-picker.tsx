@@ -4,20 +4,20 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type Keyb
 import { Check, ChevronDown } from "lucide-react";
 import type { ModelDescriptor } from "@super-canvas/providers";
 import type { ImageEditingCapabilities } from "@super-canvas/providers/image-editing-capabilities";
-import { cleanModelDisplayName, modelPickerPriceSummary } from "../lib/model-display";
+import { cleanModelDisplayName } from "../lib/model-display";
 import { modelCanvasUnavailableReason } from "../lib/graph-ui";
 import { displayPickerModels, filterPickerModels, MODEL_PICKER_PAGE_SIZE, readRecentModels, RECENT_MODELS_KEY, rememberModel,
   type ModelKindFilter, type ModelStatusFilter } from "../lib/model-picker";
 import styles from "./model-picker.module.css";
 import { groupTk1688Models, tk1688ModelFamily, tk1688RouteLabel, tk1688RouteSummary } from "../lib/tk1688-model-display";
 import type { CatalogPickerDirectory } from "../lib/supplier-model-directory-diff";
-import { modelPickerDirectoryFact } from "../lib/model-picker-data";
+import { modelPickerDirectoryFact, modelPickerPriceData } from "../lib/model-picker-data";
 import { imageTransparencyEvidenceNote } from "../lib/image-transparency-presentation";
 import { WindowedModelList, type ModelListMeasurements } from "./model-picker-window";
 
 type PickerOption = { id: string; model?: ModelDescriptor; label: string; reason: string | null; family?: string; merchants?: number };
 
-function ModelIdentity({ model, parameters, capabilities, price = false, selected = true, detailsId, route = false, keyConfirmed = false }: { model: ModelDescriptor; parameters: Record<string, unknown>; capabilities?: ImageEditingCapabilities; price?: boolean; selected?: boolean; detailsId?: string; route?: boolean; keyConfirmed?: boolean }) {
+function ModelIdentity({ model, capabilities, price = false, detailsId, route = false, keyConfirmed = false }: { model: ModelDescriptor; capabilities?: ImageEditingCapabilities; price?: boolean; detailsId?: string; route?: boolean; keyConfirmed?: boolean }) {
   const family = tk1688ModelFamily(model);
   const directory = modelPickerDirectoryFact(model, keyConfirmed);
   return <span className={styles.identity}>
@@ -31,16 +31,16 @@ function ModelIdentity({ model, parameters, capabilities, price = false, selecte
     {family && !route && <span id={detailsId ? `${detailsId}-route` : undefined} className={styles.route}>{tk1688RouteLabel(model)}</span>}
     <span id={detailsId ? `${detailsId}-id` : undefined} className={styles.id} title={model.id}>ID: {model.id}</span>
     {route && <span id={detailsId ? `${detailsId}-summary` : undefined} className={styles.summary}>{tk1688RouteSummary(model)}</span>}
-    {price && <span id={detailsId ? `${detailsId}-price` : undefined} className={styles.price}>{modelPickerPriceSummary(model, parameters, selected)}</span>}
+    {price && <span id={detailsId ? `${detailsId}-price` : undefined} className={styles.price}>{modelPickerPriceData(model)}</span>}
     {directory && <span id={detailsId ? `${detailsId}-directory` : undefined} className={styles.summary}>{directory}</span>}
   </span>;
 }
 
-export function ModelPicker({ id, label, connectionId, models, value, onChange, parameters = {}, capabilities = {},
+export function ModelPicker({ id, label, connectionId, models, value, onChange, capabilities = {},
   open: controlledOpen, onOpenChange, anchorKey, loading = false, failed = false, authoritative = true, allowManual = false, badge, catalogDirectory, allowAutomatic = true,
 }: {
   id?: string; label: string; connectionId: string; models: readonly ModelDescriptor[]; value: string;
-  onChange: (modelId: string) => void; parameters?: Record<string, unknown>; open?: boolean;
+  onChange: (modelId: string) => void; open?: boolean;
   onOpenChange?: (open: boolean) => void; anchorKey?: string; loading?: boolean; failed?: boolean;
   authoritative?: boolean; allowManual?: boolean; badge?: (model: ModelDescriptor) => ReactNode;
   capabilities?: Readonly<Record<string, ImageEditingCapabilities>>;
@@ -246,7 +246,7 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
       aria-describedby={selected ? `${listId}-selected-name ${listId}-selected-id${tk1688ModelFamily(selected) ? ` ${listId}-selected-route` : ""}${capabilities[selected.id]?.transparent || capabilities[selected.id]?.mask ? ` ${listId}-selected-capabilities` : ""}` : undefined}
       title={selected ? `${cleanModelDisplayName(selected.name, selected.metadata?.priceLabel)} · ${selected.id}` : value || "自动模型"}
       onClick={() => setOpen(!open)}>
-      {selected ? <ModelIdentity model={selected} parameters={parameters} capabilities={capabilities[selected.id]} detailsId={`${listId}-selected`} /> : <span>{value || "自动模型"}</span>}
+      {selected ? <ModelIdentity model={selected} capabilities={capabilities[selected.id]} detailsId={`${listId}-selected`} /> : <span>{value || "自动模型"}</span>}
       {selected && badge?.(selected)}<ChevronDown size={15} />
     </button>
     {value && !selected && <p className={styles.note} role="status">保留当前模型 {value}：{loading ? "正在扫描模型…" : failed ? "本次模型扫描失败" : authoritative ? "本次目录返回：0 条匹配" : "本次目录响应：—"}。请选择后才会更换。</p>}
@@ -282,7 +282,7 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
           title={option.family ? "查看此模型的自动路由与商家渠道" : option.id || "使用连接默认模型"} tabIndex={-1}
           onMouseDown={event => event.preventDefault()} onClick={() => activate(option)}>
           {option.family ? <span className={styles.identity}><strong>{option.label}</strong><span className={styles.summary}>{option.merchants} 条商家渠道 · 查看线路与报价</span></span>
-            : option.model ? <ModelIdentity model={option.model} parameters={parameters} capabilities={capabilities[option.model.id]} detailsId={`${listId}-${index}`} price selected={option.id === value} route={Boolean(family)} keyConfirmed={catalogDirectory?.keyConfirmed} /> : <span>{option.label}</span>}
+            : option.model ? <ModelIdentity model={option.model} capabilities={capabilities[option.model.id]} detailsId={`${listId}-${index}`} price route={Boolean(family)} keyConfirmed={catalogDirectory?.keyConfirmed} /> : <span>{option.label}</span>}
           {option.model && badge?.(option.model)}
           {(option.family ? tk1688ModelFamily(selected ?? { id: value }) === option.family : value === option.id) && <Check className={styles.currentCheck} size={14} aria-hidden="true" />}
         </button>} />

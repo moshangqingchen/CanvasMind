@@ -102,7 +102,9 @@ it("preserves Banana 4K documented pixels above the GPT edge limit", () => {
   }).groups.IMAGE[0]!;
   expect(model.parameters?.find((p) => p.key === "size")).toMatchObject({ control: "dimensions", allowCustomValue: true });
   expect(model.metadata?.imageOutputDimensions).toBeUndefined();
-  expect(model.metadata?.imageFixedResolution).toBe("4K");
+  expect(model.metadata?.imageFixedResolution).toBeUndefined();
+  expect(model.metadata?.imageNominalResolution).toBe("4K");
+  expect(model.metadata?.imageCustomDimensionRules).toEqual({ minimumLongestEdge: 2049 });
   expect(model.parameters?.find(p => p.key === "aspect_ratio")?.options?.map(o => o.value)).toContain("16:9");
   expect(model.parameters?.some((p) => p.key === "quality")).toBe(false);
 });

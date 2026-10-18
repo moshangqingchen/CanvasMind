@@ -1,11 +1,11 @@
 import { matchesSupplierTemplate } from "./supplier-template-source";
 import { catalogScopedValue } from "./catalog-scope-cache";
+import { cangyuanCurrentCatalogModel } from "@super-canvas/providers/cangyuan-current-models";
 import { readCatalogLoaderJson, readCatalogLoaderText, type CatalogLoaderReadOptions } from "./catalog-loader-http";
 import {
   providerFetch,
   mediaExpressionPricing,
   mediaPricingLabel,
-  cangyuanCurrentModel,
   cangyuanCurrentPricing,
   isCangyuanCurrentModel,
   cangyuanMusicModel,
@@ -901,12 +901,18 @@ function videoDescriptorForRecord(
 function imageDescriptorForRecord(
   record: PricingRecord,
   knownModels: ReadonlyMap<string, ModelDescriptor>,
+  checkedAt = "",
 ): ModelDescriptor | null {
   if (typeof record.model_name !== "string" || !record.model_name.trim())
     return null;
   const id = record.model_name.trim();
-  if (isCangyuanCurrentModel(id)) return cangyuanCurrentModel({ id, name: id, operations: IMAGE_OPERATIONS,
-    ...(typeof record.description === "string" ? { description: record.description } : {}) });
+  if (isCangyuanCurrentModel(id)) {
+    const ui = isRecord(record.image_ui_params) ? record.image_ui_params : {};
+    const params = isRecord(ui.params) ? ui.params : {};
+    return cangyuanCurrentCatalogModel({ id, name: id, operations: IMAGE_OPERATIONS,
+      ...(typeof record.description === "string" ? { description: record.description } : {}) },
+    { modelId: id, sourceUrl: "https://ai.cangyuansuanli.cn/api/pricing", checkedAt, customDimensions: params.customDimensions });
+  }
   const known = knownModels.get(id);
   const supportsReferences = supportsImageReferences(record);
   const maxInputImages = imageReferenceLimit(record);
@@ -987,7 +993,7 @@ export function cangyuanCatalogFromPricing(
       : isVideoPricingRecord(record)
       ? videoDescriptorForRecord(record)
       : isImagePricingRecord(record)
-        ? imageDescriptorForRecord(record, knownModels)
+        ? imageDescriptorForRecord(record, knownModels, checkedAt)
         : null;
     if (!descriptor) continue;
     for (const rawGroup of stringArray(record.enable_groups)) {

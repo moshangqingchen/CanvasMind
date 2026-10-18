@@ -118,9 +118,12 @@ function sizeFitsParameter(value: string, parameter: ModelParameterDescriptor, m
     const constraint = rules as Record<string, unknown>;
     const min = Number(constraint.minimumEdge), max = Number(constraint.maximumEdge), alignment = Number(constraint.alignment);
     const minPixels = Number(constraint.minimumPixels), maxPixels = Number(constraint.maximumPixels);
+    const minLongestEdge = Number(constraint.minimumLongestEdge), maxAspectRatio = Number(constraint.maximumAspectRatio);
     if (Number.isFinite(min) && Math.min(width, height) < min || Number.isFinite(max) && Math.max(width, height) > max ||
         Number.isFinite(alignment) && alignment > 1 && (width % alignment !== 0 || height % alignment !== 0) ||
-        Number.isFinite(minPixels) && width * height < minPixels || Number.isFinite(maxPixels) && width * height > maxPixels) return false;
+        Number.isFinite(minPixels) && width * height < minPixels || Number.isFinite(maxPixels) && width * height > maxPixels ||
+        Number.isFinite(minLongestEdge) && minLongestEdge > 0 && Math.max(width, height) < minLongestEdge ||
+        Number.isFinite(maxAspectRatio) && maxAspectRatio > 0 && Math.max(width / height, height / width) > maxAspectRatio) return false;
   }
   return true;
 }

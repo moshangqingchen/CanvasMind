@@ -4,17 +4,18 @@
 
 ## 目录用途
 
-| 目录                                                   | 用途与保留规则                                                           |
-| ------------------------------------------------------ | ------------------------------------------------------------------------ |
-| `apps/desktop/src`、`apps/desktop/renderer`、`packages`             | 当前功能源码与测试                                                       |
-| `apps/cloud-generation`                                | 可选 Cloudflare 图像生成网关源码；供桌面云端生图设置使用，不是独立网页应用，也不随桌面安装包启动 |
-| `apps/desktop/stage`、`apps/desktop/dist`              | 已准备的桌面运行资源；普通清理保留                                       |
-| `apps/desktop/renderer/.next-desktop`                               | 最近的桌面界面构建；普通清理保留                                         |
-| `apps/desktop/release`                                 | 当前版本安装包、更新文件与打包验证产物；旧包核对版本后单独清理             |
-| `%LOCALAPPDATA%/Programs/SuperCanvas`                  | 本机正式安装目录；日常使用与 Dock 指向这里，不在仓库中维护安装副本        |
-| `.codex-temp`                                          | 历史诊断、测试和素材验证；只自动清理已知测试部署中的构建、日志和重复依赖 |
-| `backups`、`项目`、`apps/desktop/renderer/data`、`apps/desktop/renderer/storage` | 历史数据与恢复资料；不列入构建清理                                       |
-| `%LOCALAPPDATA%/SuperCanvasDesktop/profile`            | 当前 App 的画布、素材、连接和历史；不在仓库清理范围内                    |
+| 目录                                                                             | 用途与保留规则                                                                                           |
+| -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `apps/desktop/src`、`apps/desktop/renderer`、`packages`                          | 当前功能源码与测试                                                                                       |
+| `apps/cloud-generation`                                                          | 可选 Cloudflare 图像生成网关源码；供桌面云端生图设置使用，不是独立网页应用，也不随桌面安装包启动         |
+| `apps/desktop/stage`、`apps/desktop/dist`                                        | 已准备的桌面运行资源；普通清理保留                                                                       |
+| `apps/desktop/renderer/.next-desktop`                                            | 最近的桌面界面构建；普通清理保留                                                                         |
+| `apps/desktop/release`                                                           | 当前版本安装包、更新文件与打包验证产物；旧包核对版本后单独清理                                           |
+| `%LOCALAPPDATA%/Programs/SuperCanvas`                                            | 本机正式安装目录；日常使用与 Dock 指向这里，不在仓库中维护安装副本                                       |
+| `.codex-temp`                                                                    | 历史诊断、测试和素材验证；只自动清理已知测试部署中的构建、日志和重复依赖                                 |
+| `.codex-logs`、`output`                                                          | 原请求、账单、安装与目录读回、修复事务和原始生成素材；普通及深度清理均保留，不按日志或临时输出整目录删除 |
+| `backups`、`项目`、`apps/desktop/renderer/data`、`apps/desktop/renderer/storage` | 历史数据与恢复资料；不列入构建清理                                                                       |
+| `%LOCALAPPDATA%/SuperCanvasDesktop/profile`                                      | 当前 App 的画布、素材、连接和历史；不在仓库清理范围内                                                    |
 
 ## 日常清理
 
@@ -36,6 +37,8 @@ pnpm dev
 ```
 
 清理仅操作工作区内的可重建路径。它逐层检查路径边界，拒绝穿过符号链接或 Windows junction，删除构建目录时也不跟随内部链接。`pnpm test:maintenance` 验证素材、备份、安装副本和目录链接的保护边界，CI 同样运行这些测试。
+
+`.codex-logs` 虽然名称含 logs，也包含不可重建的原始请求、未知扣费追查、安装器身份与数据库修复计划/回执；`output/imagegen` 保存供应商返回的原文件。两者不属于可直接删除的开发日志，普通清理和 `--deep` 都不会删除，也没有跳过这条保护的清理参数。需要整理其中真正可重建的文件时，先逐项核实来源、引用和独立保留副本，再单独处理；不要使用 `git clean -fdx` 代替项目清理。Git 忽略规则只防误提交，不是删除授权。
 
 普通清理也包含 `.ui-*-results` 形式的历史界面测试输出；只识别这个明确的产物命名，不处理其他 `.ui-*` 隐藏目录。
 

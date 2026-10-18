@@ -324,7 +324,7 @@ test("极九高档GPT的原生K档与独立最高质量保存、刷新和切组�
   } finally { f.safe(); }
 });
 
-test("极九5–30、4–29与mini5–10边界选择和刷新保存，错误分组型号不可运行", async ({ page, request }, testInfo) => {
+test("极九5–30、F4–30与mini5–10边界选择和刷新保存，错误分组型号不可运行", async ({ page, request }, testInfo) => {
   const f = await setup(page, request, "video", "视频SD2.0", { wrongGroup: true });
   try {
     await f.menu(); await expect(f.summary).toContainText("Key 6");
@@ -342,15 +342,15 @@ test("极九5–30、4–29与mini5–10边界选择和刷新保存，错误分�
     await page.reload(); await f.open(); await expect(slider).toHaveValue("10");
     await f.selectGroup("稳定满血视频模型"); await f.choose("稳定seedance-2.5参图参音F");
     await expect(slider).toHaveAttribute("min", "4");
-    await expect(slider).toHaveAttribute("max", "29");
-    await slider.press("End"); await expect(slider).toHaveValue("29");
-    await f.panel.getByRole("combobox", { name: "输出分辨率", exact: true }).selectOption("720p");
-    await expect.poll(async () => (await f.saved()).parameters).toMatchObject({ duration: 29, resolution: "720p" });
+    await expect(slider).toHaveAttribute("max", "30");
+    await slider.press("End"); await expect(slider).toHaveValue("30");
+    await f.panel.getByRole("combobox", { name: "输出分辨率", exact: true }).selectOption("480p");
+    await expect.poll(async () => (await f.saved()).parameters).toMatchObject({ duration: 30, resolution: "480p" });
     await page.reload(); await f.open("稳定满血视频模型");
     await expect(f.picker).toContainText("稳定seedance-2.5参图参音F");
-    await expect(slider).toHaveValue("29");
-    await expect.poll(async () => (await f.saved()).parameters).toMatchObject({ duration: 29, resolution: "720p" });
-    await f.panel.screenshot({ path: testInfo.outputPath("jijiu-f-29-seconds.png") });
+    await expect(slider).toHaveValue("30");
+    await expect.poll(async () => (await f.saved()).parameters).toMatchObject({ duration: 30, resolution: "480p" });
+    await f.panel.screenshot({ path: testInfo.outputPath("jijiu-f-30-seconds-480p.png") });
     await f.selectGroup("视频SD.2.5"); await f.choose("SD2.5特价30-10-10-线路一");
     // Video connection switches use the new contract's defaults; only image
     // selections currently restore per-connection history. This 5–30 contract
@@ -414,6 +414,28 @@ test("极九视频比例快捷选择、自定义原值与供应商默认保存�
     await expect.poll(async () => (await f.saved()).parameters.aspect_ratio).toBe("2.39:1");
     expect(writtenRatios.length).toBeGreaterThan(0);
     expect(writtenRatios.every(value => value === undefined || typeof value === "string" && /^\d+(?:\.\d+)?:\d+(?:\.\d+)?$/u.test(value))).toBe(true);
+  } finally { f.safe(); }
+});
+
+test("极九F旧720p保留并提示，用户明确选480p与30秒后保存刷新", async ({ page, request }, testInfo) => {
+  const f = await setup(page, request, "video", "稳定满血视频模型", {
+    initialModelId: "稳定seedance-2.5参图参音F", initialParameters: { duration: 29, resolution: "720p" },
+  });
+  try {
+    const resolution = f.panel.getByRole("combobox", { name: "输出分辨率", exact: true });
+    await expect.poll(async () => (await f.saved()).parameters).toMatchObject({ duration: 29, resolution: "720p" });
+    await expect(resolution).toHaveValue("720p");
+    await expect(resolution).toHaveAttribute("aria-invalid", "true");
+    await page.reload(); await f.open();
+    await expect.poll(async () => (await f.saved()).parameters).toMatchObject({ duration: 29, resolution: "720p" });
+    await resolution.selectOption("480p");
+    const duration = f.panel.getByRole("slider", { name: "视频时长", exact: true });
+    await expect(duration).toHaveAttribute("max", "30");
+    await duration.press("End");
+    await expect.poll(async () => (await f.saved()).parameters).toMatchObject({ duration: 30, resolution: "480p" });
+    await page.reload(); await f.open();
+    await expect(resolution).toHaveValue("480p"); await expect(duration).toHaveValue("30");
+    await f.panel.screenshot({ path: testInfo.outputPath("jijiu-f-old-720p-explicitly-updated.png") });
   } finally { f.safe(); }
 });
 

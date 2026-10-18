@@ -57,6 +57,7 @@ export * from "./provider-asset-token.js";
 export * from "./registry.js";
 export * from "./runway.js";
 export * from "./chuangxiang-video-contract.js";
+export { chuangxiangRejectedRequestFeeNotice } from "./chuangxiang-catalog-pricing.js";
 export { hangImageBaseUrl, applyHangImageCapabilities } from "./hang-image-contract.js";
 export * from "./c-open-image-contract.js";
 export * from "./provider-request-evidence.js";

@@ -71,15 +71,15 @@ export function parseMiaowuImageSchema(id: string, payload: unknown): MiaowuImag
   const known = ["mode", "prompt", "size", "ratio", "image_urls", "video_urls", "audio_urls"];
   if (Object.keys(fields).some(key => !known.includes(key))) throw new Error("免费图片 schema 含尚未接入的参数");
   const mode = object(fields.mode), prompt = object(fields.prompt), size = object(fields.size), ratio = object(fields.ratio);
-  // These exact current Midjourney schemas describe one automatic image route:
+  // These exact schemas describe one automatic image route:
   // mode is absent, prompt is required, and optional image_urls are references.
   // The supplier guide permits omitting mode for a single route; /v1/images
   // selects text/reference generation without sending an invented mode field.
-  const automaticMidjourney = ["midjourney-mj-v8.2", "midjourney-niji-v7"].includes(id) && mode === undefined &&
+  const automaticMode = ["midjourney-mj-v8.2", "midjourney-niji-v7", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"].includes(id) && mode === undefined &&
     !Object.hasOwn(fields, "mode") && Array.isArray(params?.required) && !params.required.includes("mode");
-  const modes = automaticMidjourney ? ["text-to-image", "image-to-image"] : enumStrings(mode?.enum);
+  const modes = automaticMode ? ["text-to-image", "image-to-image"] : enumStrings(mode?.enum);
   const resolutions = enumStrings(size?.enum), ratios = enumStrings(ratio?.enum);
-  if (!automaticMidjourney && mode?.type !== "string" || prompt?.type !== "string" || size?.type !== "string" || ratio?.type !== "string" ||
+  if (!automaticMode && mode?.type !== "string" || prompt?.type !== "string" || size?.type !== "string" || ratio?.type !== "string" ||
       !modes || modes.some(value => !["text-to-image", "image-to-image"].includes(value)) || !resolutions || !ratios) {
     throw new Error("免费 schema 缺少明确的图片模式、分辨率或比例定义");
   }
@@ -104,7 +104,7 @@ export function parseMiaowuImageSchema(id: string, payload: unknown): MiaowuImag
 export function applyMiaowuImageSchema(model: ModelDescriptor, receipt: MiaowuImageSchemaReceipt | undefined): ModelDescriptor {
   if (!receipt || receipt.id !== model.id || !model.outputKinds?.includes("image") ||
       receipt.sourceUrl !== `${origin}/v1/dream/model_schema?model=${encodeURIComponent(model.id)}`) return model;
-  if (model.metadata?.source === "manual" || model.metadata?.protocolEvidence === "paid-test" ||
+  if (model.metadata?.source === "manual" || model.metadata?.source === "paid-test" || model.metadata?.protocolEvidence === "paid-test" ||
       /401|403|权限|未开通|拒绝|下架|停用|unauthorized|forbidden/iu.test(String(model.metadata?.canvasUnavailableReason ?? ""))) return model;
   const evidence = { imageSchemaStatus: receipt.status, imageSchemaCheckedAt: receipt.checkedAt, imageSchemaSourceUrl: receipt.sourceUrl,
     imageSchemaError: receipt.error ?? null, imageSchemaStale: receipt.stale === true,

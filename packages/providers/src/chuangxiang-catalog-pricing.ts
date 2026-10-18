@@ -27,6 +27,31 @@ export function isChuangxiangCatalogSource(siteUrl: string | undefined): boolean
   try { return new URL(siteUrl ?? "").origin === "https://vapi.chuangxiangai.asia"; } catch { return false; }
 }
 
+const announcedGrokModelIds = new Set([
+  "grok-4.5", "grok-4.6", "grok-4.7", "grok-imagine-video", "grok-imagine-video-1.5", "gv3-grok-video-1.5",
+]);
+/** Announcement 38 is a conditional rejected-request fee, never a success
+ * tariff or evidence that a particular request was charged. */
+export function chuangxiangRejectedRequestFeeNotice(sourceUrl: string | undefined, modelId: string) {
+  try {
+    const url = new URL(sourceUrl ?? "");
+    if (url.origin !== "https://vapi.chuangxiangai.asia" || url.username || url.password || url.search || url.hash ||
+      !/^(?:\/v1)?\/?$/u.test(url.pathname) || !announcedGrokModelIds.has(modelId)) return undefined;
+  } catch { return undefined; }
+  return {
+    supplierSiteUrl: "https://vapi.chuangxiangai.asia",
+    announcementId: 38,
+    condition: "upstream-security-policy-rejection",
+    amount: 0.05,
+    currency: "CNY",
+    unit: "request",
+    text: "供应商公告：Grok 请求因触发上游安全策略被拒绝时，固定收费 ¥0.05/次。此项仅适用于该拒绝条件，未计入本次成功请求报价；具体请求实扣须核对账单。",
+    sourceUrl: "https://vapi.chuangxiangai.asia/api/v1/announcements",
+    publishedAt: "2026-10-17T20:57:41.883805+08:00",
+    sampledAt: "2026-10-17T14:57:32.294Z",
+  } as const;
+}
+
 /** The public plaza supplies raw CNY prices and each model's final effective multiplier.
  * Do not multiply the group's displayed multiplier again. Unknown modes stay unknown.
  */

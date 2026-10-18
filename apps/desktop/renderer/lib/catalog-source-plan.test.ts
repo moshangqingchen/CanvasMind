@@ -11,6 +11,17 @@ const connection = (id: string, group: string): ProviderConnectionRecord => ({ i
     baseUrl: supplier.apiUrl, accountKeyGroupId: group }, createdAt: supplier.createdAt, updatedAt: supplier.updatedAt });
 
 describe("catalog read-plan sharing and scope", () => {
+  it("adds only the exact official anonymous Cyber Afei health read, independent of membership", () => {
+    const original = connection("afei", "image");
+    const row = { ...original, config: { ...original.config, baseUrl: "https://api.3365api.cn/v1" } };
+    const health = catalogSourcePlan(row).find(spec => spec.entryId === "supplement:cyberafei-health");
+    expect(health).toMatchObject({ sourceUrl: "https://api.3365api.cn/channel-status/api/overview", role: "health",
+      authScope: { kind: "anonymous" }, requiredForMembership: false });
+    expect(catalogSourcePlan({ ...row, config: { ...row.config, baseUrl: "https://api.3365api.cn/custom/v1" } })
+      .some(spec => spec.entryId === "supplement:cyberafei-health")).toBe(false);
+    expect(catalogSourcePlan({ ...row, config: { ...row.config, baseUrl: "https://api.3365api.cn.evil.invalid/v1" } })
+      .some(spec => spec.entryId === "supplement:cyberafei-health")).toBe(false);
+  });
   it("shares a whole public/account read across apply groups while Key identities remain independent", () => {
     const first = catalogSourcePlan(connection("a", "7"), supplier), second = catalogSourcePlan(connection("b", "9"), supplier);
     for (const id of ["supplier:plaza:anonymous", "supplier:sub2api-groups:site-account", "supplier:pricing-channels:site-account"]) {

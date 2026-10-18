@@ -1,6 +1,22 @@
 import type { ModelDescriptor } from "./contracts.js";
 
 const ids = new Set(["grok-imagine-image", "grok-imagine-image-2.0", "grok-imagine-image-quality"]);
+const gptIds = new Set(["gpt-image-2", "gpt-image-2.5", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"]);
+
+/** Ordinary GPT Images use the documented /v1 root; measured pins remain separate. */
+export function hangGptImageBaseUrl(config: Readonly<Record<string, unknown>>, modelId: string): string | undefined {
+  const stable = config.accountKeyGroupId != null ? String(config.accountKeyGroupId) : undefined;
+  const group = String(config.accountKeyGroup ?? config.modelGroup ?? "");
+  if (!(stable ? stable === "21" : group === "Image2生图专用分组") || modelId !== "gpt-image-2") {
+    if (!(stable ? stable === "75" : group === "Image - 1k") || !gptIds.has(modelId)) return;
+  }
+  try {
+    const url = new URL(String(config.baseUrl ?? ""));
+    if (url.origin !== "https://api.hangzhale.com" || url.username || url.password || url.search || url.hash ||
+        !/^(?:\/v1)?\/?$/u.test(url.pathname)) return;
+    return `${url.origin}/v1`;
+  } catch { return; }
+}
 
 /** The group number and complete ID are part of the measured contract. */
 export function hangImageBaseUrl(config: Readonly<Record<string, unknown>>, modelId: string): string | undefined {

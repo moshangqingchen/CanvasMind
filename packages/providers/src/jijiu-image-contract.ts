@@ -3,6 +3,7 @@ import type { ImageEditingConnection } from "./image-editing-capabilities.js";
 
 export const JIJIU_IMAGE_DOCS = "https://newapi.jijiucanvas.com/docs/api-docs.md";
 const JIJIU_HIGH_TIER_GPT_IMAGE = "gpt-image-2-2K/4K";
+export const isJijiuMultipartImageEdit = (id: string, operation: string): boolean => id === JIJIU_HIGH_TIER_GPT_IMAGE && operation === "image.edit";
 const JIJIU_GPT_NATIVE_TIERS = ["1K", "2K", "4K"] as const;
 const GPT_TIER_KEYS = ["size", "resolution", "image_size", "imageSize", "size_tier"] as const;
 export const JIJIU_GPT_IMAGE_IDS = ["gpt-image-2", "gpt-image-2.5", "gpt-image-2.5-sunburst", "gpt-image-2-2K/4K"] as const;
@@ -60,6 +61,8 @@ export function applyJijiuImageCapabilities(connection: ImageEditingConnection, 
     // The user explicitly requested these published tiers despite the absent
     // pixel schema. Keep the request-profile evidence separate from paid proof.
     Object.assign(metadata, { imageNativeQualityParameter: "quality", qualitySupport: "user-requested",
+      remoteMediaUrlsOnly: false, referenceEditEndpoint: "/v1/images/edits", imageReferenceBodyMode: "multipart",
+      contractCheckedAt: "2026-10-18T00:27:51.352Z",
       imageQualitySource: "openai-compatible-user-request", imageTierSource: "supplier-model-card",
       imageTierRequestSource: "user-requested-native-size", imageParameterPresetSource: "jijiu-high-tier-user-request",
       imageAllTierRequestsVerified: false,
@@ -125,8 +128,13 @@ export function jijiuGptImageRequestIssues(connection: ImageEditingConnection, r
   if (request.operation === "image.generate" && assets.length) add("operation", "reference_operation", "带参考图时请选择图片编辑");
   for (const asset of assets) {
     if (asset.kind !== "image" || asset.role === "mask") add("assets", "unsupported_asset", "该供应商只声明参考图片，未声明蒙版编辑");
+    if (highTier && asset.data !== undefined) {
+      if (!asset.data.byteLength) add("assets", "invalid_image", "参考图片原文件不能为空");
+      continue;
+    }
+    if (highTier && asset.url?.startsWith("data:image/")) continue;
     try { const u = new URL(asset.url ?? ""); if (!["https:", "http:"].includes(u.protocol) || u.username || u.password || /^(localhost|127\.|0\.|\[?::1)/iu.test(u.hostname)) throw Error(); }
-    catch { if (!(asset.data?.length && connection.config.referenceImageHosting === "litterbox-24h")) add("assets", "public_reference_required", "极九图片编辑要求公网图片 URL，请先配置素材托管"); }
+    catch { if (!(asset.data?.length && connection.config.referenceImageHosting === "litterbox-24h")) add("assets", "public_reference_required", highTier ? "极九此型号编辑需要图片原文件或公网图片 URL" : "极九图片编辑要求公网图片 URL，请先配置素材托管"); }
   }
   return issues;
 }

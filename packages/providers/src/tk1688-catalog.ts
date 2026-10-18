@@ -119,7 +119,7 @@ function skuModel(row: Row, checkedAt: string, status: Row | undefined): ModelDe
   const image = row.charge_type === "per_request";
   const description = text(row.description);
   const facts = tk1688DescriptionFacts(description);
-  const input = number(row.input_price_usd), output = number(row.output_price_usd);
+  const input = number(row.input_price_usd);
   const fx = number(status?.payment_fx_rate_cny_per_usd);
   const markup = number(status?.platform_markup_percent);
   const tokenFields = [

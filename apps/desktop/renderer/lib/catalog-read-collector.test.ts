@@ -34,6 +34,18 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("catalog read-cycle integration", () => {
+  it("retains complete Cyber Afei Key membership when the independent anonymous health read fails", async () => {
+    const result = await collectCatalogReadCycle(connection("https://api.3365api.cn/v1"), undefined, dependencies(spec =>
+      vi.fn<typeof fetch>(async (_url, init) => {
+        if (spec.entryId === "supplement:cyberafei-health") expect(init).toMatchObject({ credentials: "omit", headers: {} });
+        return spec.entryId === "key-models" ? keyList("current-key-model") : new Response(null, { status: 503 });
+      }), { documentBudget: 0 }));
+    expect(result.keyVisibleModels.map(model => model.id)).toEqual(["current-key-model"]);
+    expect(result.manifest.complete).toBe(true);
+    expect(result.observations.find(row => row.receipt.spec.entryId === "supplement:cyberafei-health")?.receipt)
+      .toMatchObject({ status: "failed", complete: false, httpStatus: 503, spec: { role: "health", requiredForMembership: false } });
+    expect(result.catalogOffers).toEqual([]); expect(guards.implicit).not.toHaveBeenCalled();
+  });
   it("limits per-model schemas without losing or discrediting the complete Key list", async () => {
     let schemaRequests = 0;
     const result = await collectCatalogReadCycle(connection("https://api.miaowuai.store/v1"), undefined, dependencies(spec =>

@@ -7,6 +7,7 @@ import type {
   RestRequestMapping,
 } from "@super-canvas/providers";
 import { imageSizeOptions } from "@super-canvas/providers/image-size-presets";
+import { applySupplierImageConstraints } from "@super-canvas/providers/supplier-image-constraints";
 
 export const MIKOTO_PRESET_ID = "mikoto-pro";
 export const MIKOTO_SUPPLIER_KEY = "mikoto";
@@ -615,6 +616,22 @@ const MIKOTO_IMAGE_1K_MODELS: readonly ModelDescriptor[] = [
     "MikotoPro 生图（1k）分组；提供 1K 比例请求预设，实际像素由渠道调整。",
     0.02,
   ),
+  // These complete IDs have independent group5 reference receipts, H091 and
+  // H092, and use the site's image-api-guide async lifecycle. They were absent
+  // from the built-in contract index, so fresh directory members stayed pending.
+  // Prices remain owned by the current account/catalog; do not clone GPT2's
+  // snapshot tariff or claim a requested4K input produced a4K original.
+  ...(["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"] as const).map(id => {
+    const caseId = id.endsWith("flare") ? "H091" : "H092";
+    return applySupplierImageConstraints({ provider: "rest", config: { baseUrl: MIKOTO_BASE_URL,
+      accountKeyGroupId: "5", accountKeyGroup: MIKOTO_IMAGE_1K_GROUP, modelGroup: MIKOTO_IMAGE_1K_GROUP } }, {
+      id, name: id, operations: IMAGE_OPERATIONS, inputKinds: ["text", "image", "image[]"], outputKinds: ["image"],
+      parameters: imageParameters, limits: { supportedMimeTypes: IMAGE_MIME_TYPES },
+      metadata: { fixedOutputCount: 1, modality: "image", documentationUrl: "https://api.mikoto.vip/image-api-guide.html",
+        imageReferenceContractCaseId: caseId, imageReferenceContractSource: `output/imagegen/透明参考复测-20261014/结果.json#${caseId}`,
+        imageReferenceContractGroupId: "5" },
+    });
+  }),
 ];
 
 const MIKOTO_IMAGE_4K_MODELS: readonly ModelDescriptor[] = [

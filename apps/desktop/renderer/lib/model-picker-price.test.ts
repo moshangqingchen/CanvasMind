@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { remainingVideoModel, type ModelDescriptor } from "@super-canvas/providers";
-import { modelEstimatedCost, modelPickerPriceSummary, modelPriceSummary } from "./model-display";
+import { modelEstimatedCost, modelPriceSummary } from "./model-display";
 import { modelPickerDirectoryFact, modelPickerInventoryFact, modelPickerPriceData } from "./model-picker-data";
 
 const bounded: ModelDescriptor = {
@@ -17,7 +17,7 @@ const bounded: ModelDescriptor = {
 describe("model picker directory facts and tariff data", () => {
   it("shows each model's full tariff independent of the selected model's 30-second parameters", () => {
     const current = Object.freeze({ duration: 30, resolution: "720p" });
-    for (const selected of [true, false]) expect(modelPickerPriceSummary(bounded, current, selected))
+    expect(modelPickerPriceData(bounded))
       .toBe("分辨率=480p · 0.1 CNY / 秒；分辨率=720p · 0.2 CNY / 秒");
     // A display change must not allow an invalid request or silently clip it.
     expect(modelPriceSummary(bounded, current)).toBe("当前参数不支持，请重新选择");
@@ -32,7 +32,7 @@ describe("model picker directory facts and tariff data", () => {
       pricing: { kind: "per-request", unitAmount: 1.1, currency: "CNY", checkedAt: "now", confidence: "exact" },
     }, { group: "vip" })!;
     const current = { duration: 30, resolution: "720p" };
-    for (const selected of [true, false]) expect(modelPickerPriceSummary(model, current, selected)).toBe("1.1 CNY / 次");
+    expect(modelPickerPriceData(model)).toBe("1.1 CNY / 次");
     expect(modelEstimatedCost(model, current)).toBe("1.1 CNY");
     expect(modelEstimatedCost(model, { ...current, duration: 31 })).toBeUndefined();
     expect(current).toEqual({ duration: 30, resolution: "720p" });
@@ -66,7 +66,7 @@ describe("model picker directory facts and tariff data", () => {
       priceSource: "generated-result", priceLabel: label,
       measuredPrice: { parameterScope: "exact", parameters: { duration: 10, resolution: "720p", video_input: "none", reference_video_count: 0, reference_video_duration_seconds: 0 } },
     } };
-    for (const selected of [true, false]) expect(modelPickerPriceSummary(measured, { duration: 30, resolution: "480p" }, selected))
+    expect(modelPickerPriceData(measured))
       .toBe(`${label} · 实测参数：时长=10，分辨率=720p，视频输入=none，参考视频数量=0，参考视频总秒数=0`);
     expect(modelPickerPriceData(measured)).not.toMatch(/当前组合|未确认|不支持/u);
     expect(modelEstimatedCost(measured, {})).toBeUndefined();
@@ -87,9 +87,9 @@ describe("model picker directory facts and tariff data", () => {
       pricing: { kind: "tiered", currency: "CNY", checkedAt: "now", confidence: "exact",
         tiers: [{ id: "1k", label: "1K", dimension: "resolution", value: "1K", price: .1 },
           { id: "4k", label: "4K", dimension: "resolution", value: "4K", price: .4 }] } };
-    for (const selected of [true, false]) expect(modelPickerPriceSummary(image, { size_tier: "4K" }, selected))
+    expect(modelPickerPriceData(image))
       .toBe("分辨率=1K · 0.1 CNY / 张；分辨率=4K · 0.4 CNY / 张");
-    expect(modelPickerPriceSummary(undefined, {}, false)).toBe("—");
+    expect(modelPickerPriceData(undefined)).toBe("—");
   });
 
   it("preserves a supplier group's Chinese per-image price without inventing a currency", () => {

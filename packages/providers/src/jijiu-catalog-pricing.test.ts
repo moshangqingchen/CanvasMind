@@ -16,6 +16,26 @@ const quote = (id: string, multiplier = 1) => jijiuCatalogMediaPricing(row(id), 
 const day = new Date("2026-10-10T04:00:00Z");
 
 describe("Jijiu official billing grammar and exact group identity", () => {
+  it("keeps the October 17 directory rates independent from conflicting prose and other similarly named lines", () => {
+    const current = JSON.parse(readFileSync(new URL("./fixtures/jijiu-contract-update-20261017.json", import.meta.url), "utf8")) as typeof frozen;
+    const expected = [
+      ["稳定seedance-2.5全参D", "稳定满血视频模型", "second", "480p", .38],
+      ["稳定seedance-2.5全参D", "稳定满血视频模型", "second", "720p", .85],
+      ["稳定seedance-2.5参图参音F", "稳定满血视频模型", "second", "480p", .3],
+      ["SD2.5特价30-10-10-线路四", "视频SD2.5", "request", "720p", 4.5],
+      ["SD2.0fast900", "视频SD2.0", "request", "", 1.2],
+    ] as const;
+    for (const [id, group, unit, resolution, rate] of expected) {
+      const raw = current.data.find(value => value.model_name === id)!;
+      expect(raw.enable_groups, id).toEqual([group]);
+      const parsed = jijiuCatalogMediaPricing(raw, { supplierSiteUrl: source, group, groupMultiplier: current.group_ratio[group], checkedAt: "2026-10-17" });
+      expect(parsed?.pricing, id).toMatchObject({ currency: "CNY", billingUnit: unit, sourceUrl: JIJIU_PRICING_URL });
+      expect(modelPriceAmount(parsed!.pricing, { resolution }, day), `${id} ${resolution}`).toBe(rate);
+      const discounted = jijiuCatalogMediaPricing(raw, { supplierSiteUrl: source, group, groupMultiplier: .5 });
+      expect(modelPriceAmount(discounted!.pricing, { resolution }, day), `${id} ${resolution} multiplier`).toBe(rate * .5);
+      expect(jijiuCatalogMediaPricing(raw, { supplierSiteUrl: source, group: "different-line", groupMultiplier: 1 }), id).toBeUndefined();
+    }
+  });
   it("reads the October 12 directory's new exact IDs, changed rates and zero H3 rates", () => {
     const current = JSON.parse(readFileSync(new URL("./fixtures/jijiu-billing-20261012.json", import.meta.url), "utf8")) as typeof frozen;
     const expected: Record<string, { group: string; unit: string; rate: number; resolution?: string }> = {

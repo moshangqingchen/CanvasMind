@@ -610,6 +610,20 @@ describe("supplier discovery", () => {
     expect(parseSupplierCatalog({ data: [] }).recognized).toBe(true);
     expect(parseSupplierCatalog({ message: "sign in first" }).recognized).toBe(false);
   });
+  it("keeps official group names concise while retaining descriptions and stable identities", () => {
+    const description = "支持 1K / 2K / 4K、完整比例与最高质量；分组说明和价格条件需要单独保存。";
+    for (const supplierSiteUrl of ["https://api.eaheng.com", "https://vapi.chuangxiangai.asia"]) {
+      const parsed = parseSupplierCatalog({ data: { groups: [
+        { id: 18, name: "原生图片", description, models: [{ id: "gpt-image-2" }] },
+        { id: 43, name: "官方组名", label: "官方短标签", description, models: [] },
+        { id: 44, name: "空标签组", label: "", description, models: [] },
+      ] } }, { supplierSiteUrl });
+      expect(parsed.groups.map(group => [group.supplierGroupId, group.id, group.label])).toEqual([
+        ["18", "原生图片", "原生图片"], ["43", "官方组名", "官方短标签"], ["44", "空标签组", "空标签组"],
+      ]);
+      expect(parsed.groups[0]?.details?.description).toBe(description);
+    }
+  });
   it("normalizes API endpoints without duplicate v1 and rejects embedded credentials", () => {
     expect(supplierModelUrls("https://api.example.com/v1/")).toEqual(["https://api.example.com/v1/models"]);
     expect(supplierModelUrls("https://api.example.com/v1/models")).toContain("https://api.example.com/v1/models");

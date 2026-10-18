@@ -66,6 +66,11 @@
       "import": "./dist/chuangxiang-video-contract.js",
       "default": "./dist/chuangxiang-video-contract.js"
     },
+    "./chuangxiang-catalog-pricing": {
+      "types": "./src/chuangxiang-catalog-pricing.ts",
+      "import": "./dist/chuangxiang-catalog-pricing.js",
+      "default": "./dist/chuangxiang-catalog-pricing.js"
+    },
     "./image-editing-capabilities": {
       "types": "./src/image-editing-capabilities.ts",
       "import": "./dist/image-editing-capabilities.js",
