@@ -13,6 +13,7 @@ describe("public schemas", () => {
       CreateRunRequestSchema.safeParse({
         canvasId: "canvas",
         clientRequestId: "client-idempotency-key",
+        expectedRevision: 1,
         scope: "node",
       }).success,
     ).toBe(false);
@@ -20,9 +21,16 @@ describe("public schemas", () => {
       CreateRunRequestSchema.safeParse({
         canvasId: "canvas",
         clientRequestId: "client-idempotency-key",
+        expectedRevision: 1,
         scope: "all",
       }).success,
     ).toBe(true);
+  });
+
+  it.each([undefined, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, "1"])("rejects unbound or invalid run revision %s", expectedRevision => {
+    expect(CreateRunRequestSchema.safeParse({
+      canvasId: "canvas", clientRequestId: "request", scope: "all", expectedRevision,
+    }).success).toBe(false);
   });
 
   it("rejects malformed prompt references", () => {

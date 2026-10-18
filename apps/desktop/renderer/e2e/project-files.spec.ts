@@ -52,9 +52,9 @@ async function fixture(page: Page, request: APIRequestContext, withFinished = fa
   if (withFinished) {
     // The only allowed run is this fixed in-process fake provider. Page-origin
     // generation remains blocked, and no live supplier is configured here.
-    const graph = (await (await request.get(`/api/canvas/${a}`)).json()).graph;
-    expect(graph.nodes[0].data).toMatchObject({ provider: "fake", connectionId: "fake-default", model: "fake-image-v1" });
-    const submitted = await request.post("/api/runs", { data: { canvasId: a, clientRequestId: `project-files-${suffix}`, scope: "node", nodeId: "fake-source" } });
+    const canvas = await (await request.get(`/api/canvas/${a}`)).json();
+    expect(canvas.graph.nodes[0].data).toMatchObject({ provider: "fake", connectionId: "fake-default", model: "fake-image-v1" });
+    const submitted = await request.post("/api/runs", { data: { canvasId: a, expectedRevision: canvas.revision, clientRequestId: `project-files-${suffix}`, scope: "node", nodeId: "fake-source" } });
     expect(submitted.status()).toBe(201);
     const runId = (await submitted.json()).run.id;
     await expect.poll(async () => (await (await request.get(`/api/runs/${runId}`)).json()).run.status).toBe("succeeded");

@@ -725,6 +725,7 @@ export async function importDroppedMediaSources(
 export async function createRun(input: {
   canvasId: string;
   clientRequestId: string;
+  expectedRevision: number;
   scope: "node" | "downstream" | "all";
   nodeId?: string;
 }): Promise<RunSnapshot> {

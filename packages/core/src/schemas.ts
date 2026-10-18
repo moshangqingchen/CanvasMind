@@ -343,6 +343,7 @@ export const CreateRunRequestSchema = z
   .object({
     canvasId: identifier,
     clientRequestId: identifier,
+    expectedRevision: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
     scope: RunScopeSchema,
     nodeId: identifier.optional(),
     nodeIds: z.array(identifier).min(1).max(100).optional(),

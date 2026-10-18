@@ -3,6 +3,18 @@ import { MemoryRepository } from "../src/memory.js";
 import { CanvasRevisionConflictError } from "../src/types.js";
 
 describe("MemoryRepository", () => {
+  it("checks the revision on the same immutable record returned to a run", async () => {
+    const repository = new MemoryRepository();
+    const first = await repository.saveCanvas({ id: "paid", graph: { model: "P1" } });
+    const read = repository.getCanvas(first.id, first.revision);
+    const second = await repository.saveCanvas({ id: first.id, graph: { model: "P2" } });
+    expect(await read).toEqual(first);
+    await expect(repository.getCanvas(first.id, first.revision)).rejects.toMatchObject({
+      code: "CANVAS_REVISION_CONFLICT", expectedRevision: first.revision, currentRevision: second.revision,
+    });
+    expect(await repository.getCanvas(first.id, second.revision)).toEqual(second);
+  });
+
   it("does not create a revision for an equivalent autosave, including reordered object keys", async () => {
     const repository = new MemoryRepository();
     const canvas = await repository.saveCanvas({ id: "view-only", title: "查看画布", reason: "manual",

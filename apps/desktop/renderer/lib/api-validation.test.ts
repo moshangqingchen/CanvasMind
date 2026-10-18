@@ -218,6 +218,7 @@ describe("run API validation", () => {
       CreateRunRequestSchema.safeParse({
         canvasId: "canvas",
         clientRequestId: "request",
+        expectedRevision: 1,
         scope: "branch",
       }).success,
     ).toBe(false);
@@ -225,6 +226,7 @@ describe("run API validation", () => {
       CreateRunRequestSchema.safeParse({
         canvasId: "canvas",
         clientRequestId: "request",
+        expectedRevision: 1,
         scope: "node",
       }).success,
     ).toBe(false);
@@ -232,6 +234,7 @@ describe("run API validation", () => {
       CreateRunRequestSchema.safeParse({
         canvasId: "canvas",
         clientRequestId: "request",
+        expectedRevision: 1,
         scope: "all",
         extra: true,
       }).success,

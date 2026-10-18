@@ -1298,6 +1298,8 @@ export class RunService {
   async createRun(input: {
     canvasId: string;
     clientRequestId: string;
+    /** Required by the public run API; internal callers can prepare their own snapshots. */
+    expectedRevision?: number;
     scope: RunScope;
     nodeId?: string;
     nodeIds?: readonly string[];
@@ -1307,7 +1309,9 @@ export class RunService {
       input.clientRequestId,
     );
     if (!run) {
-      const canvas = await this.repository.getCanvas(input.canvasId);
+      // This single repository read checks and clones the same record, after
+      // route preflight. Never check a revision then fetch the latest graph again.
+      const canvas = await this.repository.getCanvas(input.canvasId, input.expectedRevision);
       if (!canvas) throw new Error("Canvas not found");
       const graph = await this.freezeModels(asGraph(canvas.graph));
       const validation = validateGraph(graph, {

@@ -28,7 +28,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllEnvs());
 const request = () => new Request("http://localhost/api/runs", { method: "POST", headers: { "content-type": "application/json" },
-  body: JSON.stringify({ canvasId: "canvas", clientRequestId: "request", nodeId: "image", scope: "node" }) });
+  body: JSON.stringify({ canvasId: "canvas", clientRequestId: "request", expectedRevision: 1, nodeId: "image", scope: "node" }) });
 describe("saved model inventory before paid canvas runs", () => {
   it("rejects a video model kept in a saved image node before any paid submission", async () => {
     mocks.repository.getConnection.mockResolvedValue({ id: "genimage-gemini", provider: "rest", config: {

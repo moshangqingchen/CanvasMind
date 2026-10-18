@@ -1,6 +1,7 @@
 import { imageCapabilityRequestError } from "../../../lib/supplier-capabilities";
 import { savedModelAvailabilityError, savedModelMediaError } from "../../../lib/model-availability";
 import type { ModelDescriptor } from "@super-canvas/providers";
+import { CanvasRevisionConflictError } from "@super-canvas/db";
 import { assertCurrentSupplierConnection } from "../../../lib/supplier-service";
 import { matchesSupplierTemplate } from "../../../lib/supplier-template-source";
 import { existsSync } from "node:fs";
@@ -358,6 +359,17 @@ export async function POST(request: Request) {
       return uncertainRunSubmission();
     }
     if (created) return uncertainRunSubmission();
+    if (error instanceof CanvasRevisionConflictError) {
+      // Recover the same request identity first: a concurrent copy may already
+      // have queued it. Otherwise this atomic read rejected before submission.
+      return Response.json({
+        error: "提交前画布已修改（模型或参数有变化），本次未提交、未产生费用，请确认后重新运行",
+        code: error.code,
+        submissionPhase: "not_started",
+        expectedRevision: error.expectedRevision,
+        currentRevision: error.currentRevision,
+      }, { status: 409 });
+    }
     if (error instanceof Error && "code" in error && error.code === "DESKTOP_PUBLIC_ASSETS_UNAVAILABLE") return jsonError(error.message, 422);
     return jsonError("无法创建运行，请检查画布、节点和输入配置", 422);
   }

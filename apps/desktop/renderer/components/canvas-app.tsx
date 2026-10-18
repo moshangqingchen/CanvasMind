@@ -210,6 +210,7 @@ import {
   providerSupplierLabel,
 } from "../lib/provider-connection-options";
 import { LatestTaskQueue } from "../lib/latest-task-queue";
+import { canvasChangedBeforeRunMessage, saveCanvasForRun } from "../lib/canvas-run-save";
 import {
   applyPendingNodeConfigurations,
   clearPersistedNodeConfigurations,
@@ -477,6 +478,7 @@ interface CanvasSaveRequest {
   expectedRevision?: number;
   pendingNodeConfigurations?: PendingNodeConfiguration[];
   draftVersion?: number;
+  onSavedRevision?: (revision: number) => void;
 }
 
 interface CanvasGeometryCheckpoint {
@@ -3091,6 +3093,7 @@ function CanvasShell({
             .catch(() => setDraftStorageError(true));
         }
         clearPersistedNodeConfigurations(request.pendingNodeConfigurations);
+        request.onSavedRevision?.(saved.revision);
       } catch (error) {
         if (error instanceof CanvasSaveConflictError) {
           const conflict: CanvasSaveConflictState = {
@@ -6313,8 +6316,8 @@ function CanvasShell({
     async (
       nodeId: string | undefined,
       scope: "node" | "downstream" | "all",
+      state: { nodes: CanvasNode[]; edges: CanvasEdge[] },
     ): Promise<string | null> => {
-      const state = useCanvasStore.getState();
       const candidates = generationNodesForRun(
         state.nodes,
         state.edges,
@@ -6469,11 +6472,18 @@ function CanvasShell({
       retryResultNodeId?: string,
     ) => {
       if (!canvasId) return;
+      flushPendingEditorEdits();
       const runRequest: RunRequestKey = {
         nodeId,
         scope,
       };
       const currentState = useCanvasStore.getState();
+      const clickedGraph = JSON.stringify(serializableGraph(
+        currentState.nodes,
+        currentState.edges,
+        currentState.viewport,
+        currentState.drawings,
+      ));
       const sourceIds = new Set(
         generationNodesForRun(
           currentState.nodes,
@@ -6553,9 +6563,20 @@ function CanvasShell({
         const mediaValidationError = await validateRunMediaInputs(
           nodeId,
           scope,
+          currentState,
         );
         if (!instanceActive.current) return;
         flushPendingEditorEdits();
+        const latestState = useCanvasStore.getState();
+        if (clickedGraph !== JSON.stringify(serializableGraph(
+          latestState.nodes,
+          latestState.edges,
+          latestState.viewport,
+          latestState.drawings,
+        ))) {
+          showToast(canvasChangedBeforeRunMessage);
+          return;
+        }
         if (mediaValidationError) {
           showToast(mediaValidationError);
           return;
@@ -6583,7 +6604,7 @@ function CanvasShell({
             normalizedNodes,
             state.edges,
           );
-          const savePromise = saveRequest(
+          const savePromise = saveCanvasForRun((onSavedRevision) => saveRequest(
             {
               canvasId,
               graph: serializableGraph(
@@ -6593,9 +6614,10 @@ function CanvasShell({
                 state.drawings,
               ),
               title: state.title,
+              onSavedRevision,
             },
             false,
-          );
+          ));
           const pendingNodes = createPendingGeneratedResults(
             normalizedNodes,
             normalizedEdges,
@@ -6615,12 +6637,13 @@ function CanvasShell({
             });
             graphRef.current = { nodes: pendingNodes, edges: pendingEdges };
           }
-          await savePromise;
+          const expectedRevision = await savePromise;
           if (!instanceActive.current) return;
           rememberSubmission(canvasId, requestId, pendingNodes.map(serializableNode));
           submissionAttempted = true;
           const snapshot = await createRun({
             canvasId,
+            expectedRevision,
             clientRequestId: requestId,
             ...(nodeId ? { nodeId } : {}),
             scope,
