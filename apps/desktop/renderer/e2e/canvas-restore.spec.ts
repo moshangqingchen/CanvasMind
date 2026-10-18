@@ -44,7 +44,27 @@ async function rect(element: Locator) {
   return element.evaluate(element => { const r = element.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height, right: r.right, bottom: r.bottom }; });
 }
 
-test("恢复画布配色：同一隔离素材与六场景双尺寸截图及回归", async ({ page, request }) => {
+function isWebGlReadPixelsPerformanceWarning(type: string, text: string): boolean {
+  return type === "warning" && !/[\r\n\u2028\u2029]/u.test(text) &&
+    /^\[\.WebGL-0x[0-9a-fA-F]+\]GL Driver Message \(OpenGL, Performance, GL_CLOSE_PATH_NV, High\): GPU stall due to ReadPixels(?: \(this message will no longer repeat\))?$/u.test(text);
+}
+
+test("仅单独记录精确 WebGL ReadPixels 性能警告，错误与其他警告仍须失败", () => {
+  const warning = "[.WebGL-0x3f5c0012f400]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels";
+  for (const text of [warning, `${warning} (this message will no longer repeat)`]) {
+    expect(isWebGlReadPixelsPerformanceWarning("warning", text)).toBe(true);
+    expect(isWebGlReadPixelsPerformanceWarning("error", text)).toBe(false);
+  }
+  for (const text of [
+    "GPU stall due to ReadPixels", "WebGL context lost",
+    warning.replace("Performance", "Error"), warning.replace("GL_CLOSE_PATH_NV", "GL_INVALID_OPERATION"),
+    warning.replace("High", "Low"), warning.replace("0x3f5c0012f400", "0xnot-hex"),
+    `prefix ${warning}`, `${warning} suffix`, `${warning}\n`, `${warning}\r`, `${warning}\u2028`, `${warning}\u2029`,
+  ]) expect(isWebGlReadPixelsPerformanceWarning("warning", text)).toBe(false);
+  expect(isWebGlReadPixelsPerformanceWarning("log", warning)).toBe(false);
+});
+
+test("恢复画布配色：同一隔离素材与六场景双尺寸截图及回归", async ({ page, request }, info) => {
   test.setTimeout(180_000);
   await page.emulateMedia({ colorScheme: theme });
   await page.addInitScript(value => {
@@ -56,8 +76,15 @@ test("恢复画布配色：同一隔离素材与六场景双尺寸截图及回�
   let submitted = 0, outbound = 0;
   const errors: string[] = [];
   const consoleMessages: string[] = [];
+  const driverPerformanceWarnings: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
-  page.on("console", message => { if (["warning", "error"].includes(message.type())) consoleMessages.push(`${message.type()}: ${message.text()}`); });
+  page.on("console", message => {
+    const type = message.type(), text = message.text();
+    // Preserve this exact browser driver diagnostic as evidence; application
+    // errors and every other warning still reach the original empty-array gate.
+    if (isWebGlReadPixelsPerformanceWarning(type, text)) driverPerformanceWarnings.push(`${type}: ${text}`);
+    else if (["warning", "error"].includes(type)) consoleMessages.push(`${type}: ${text}`);
+  });
   await page.route("**/*", route => {
     const url = new URL(route.request().url());
     if (["http:", "https:"].includes(url.protocol) && !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) { outbound++; return route.abort(); }
@@ -149,7 +176,7 @@ test("恢复画布配色：同一隔离素材与六场景双尺寸截图及回�
         icon: style(card.querySelector(".node-icon")), handles: [...card.querySelectorAll(".react-flow__handle")].map(handle => ({ kind: handle.getAttribute("data-port-kind"), ...style(handle) })),
         tokens: Object.fromEntries(tokens.map(name => [name, getComputedStyle(canvas).getPropertyValue(name).trim()])), nodes: [...document.querySelectorAll<HTMLElement>(".react-flow__node")].map(element => ({ id: element.dataset.id, width: element.offsetWidth, height: element.offsetHeight })) };
     });
-    if (output) await writeFile(join(output, arm, "computed-palette.json"), JSON.stringify({ at: new Date().toISOString(), metrics, visual: visual?.evidence, video: videoEvidence, errors, consoleMessages, submitted, outbound }, null, 2));
+    if (output) await writeFile(join(output, arm, "computed-palette.json"), JSON.stringify({ at: new Date().toISOString(), metrics, visual: visual?.evidence, video: videoEvidence, errors, consoleMessages, driverPerformanceWarnings, submitted, outbound }, null, 2));
     await capture(size, "01-ordinary");
     await node(page, "prompt").locator(".node-head").click();
     if (!reference) {
@@ -299,6 +326,7 @@ test("恢复画布配色：同一隔离素材与六场景双尺寸截图及回�
     // Preserve the real hover for this capture instead of moving to blank space.
     if (output) await page.screenshot({ path: join(output, arm, `${size}-06-hover-ports.png`) });
   }
-  if (output) await writeFile(join(output, arm, "computed-palette.json"), JSON.stringify({ at: new Date().toISOString(), metrics, visual: visual?.evidence, video: videoEvidence, errors, consoleMessages, submitted, outbound }, null, 2));
+  if (output) await writeFile(join(output, arm, "computed-palette.json"), JSON.stringify({ at: new Date().toISOString(), metrics, visual: visual?.evidence, video: videoEvidence, errors, consoleMessages, driverPerformanceWarnings, submitted, outbound }, null, 2));
+  await info.attach("webgl-driver-performance-warnings", { body: JSON.stringify({ driverPerformanceWarnings }, null, 2), contentType: "application/json" });
   expect(errors).toEqual([]); expect(consoleMessages).toEqual([]); expect(submitted).toBe(0); expect(outbound).toBe(0);
 });

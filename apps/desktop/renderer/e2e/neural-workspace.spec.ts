@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { installNeuralFixture, neuralProjects } from "./helpers/neural-fixture";
 import { neuralScaleFixture } from "./helpers/neural-scale-fixture";
+import { clickWorkspaceModule } from "./helpers/workspace-navigation";
 
 const repository = fileURLToPath(new URL("../../../..", import.meta.url));
 const output = resolve(
@@ -67,7 +68,7 @@ async function openHome(page: Page) {
   await expect(scene(page)).toHaveAttribute("data-avatars", "4");
 }
 async function canvasPanel(page: Page) {
-  await moduleButton(page, "canvases").click();
+  await clickWorkspaceModule(page, "canvases");
   await item(page, "neural-autumn").click();
   await expect(inspector(page)).toContainText("秋日品牌视觉");
 }
@@ -207,7 +208,7 @@ test("条目管理真正定位到供应商和个人连接，打开设置不发�
 }) => {
   const fixture = await installNeuralFixture(page);
   await openHome(page);
-  await moduleButton(page, "suppliers").click();
+  await clickWorkspaceModule(page, "suppliers");
   await item(page, "neural-supplier-1").click();
   await inspector(page)
     .getByRole("button", { name: "管理连接", exact: true })
@@ -221,7 +222,7 @@ test("条目管理真正定位到供应商和个人连接，打开设置不发�
     "纸月模型",
   );
   await settings.getByRole("button", { name: "关闭设置", exact: true }).click();
-  await moduleButton(page, "accounts").click();
+  await clickWorkspaceModule(page, "accounts");
   await item(page, "neural-account-1").click();
   await inspector(page)
     .getByRole("button", { name: "打开设置", exact: true })
@@ -446,7 +447,7 @@ async function recordFlow(
     await moduleButton(page, "canvases").hover({ force: true });
     await page.waitForTimeout(500);
     if (theme === "dark") await capture(page, "dark-hover-satellite");
-    await moduleButton(page, "canvases").click({ force: true });
+    await clickWorkspaceModule(page, "canvases");
     await page.waitForTimeout(800);
     await capture(page, `${theme}-canvases-module`);
     await item(page, neuralProjects[0]!.id).hover();
@@ -455,13 +456,13 @@ async function recordFlow(
     await page.waitForTimeout(800);
     await capture(page, `${theme}-canvas-inspector`);
     if (theme === "dark") {
-      await moduleButton(page, "suppliers").click({ force: true });
+      await clickWorkspaceModule(page, "suppliers");
       await page.waitForTimeout(750);
       await capture(page, "dark-suppliers-module");
       await item(page, "neural-supplier-0").click();
       await page.waitForTimeout(750);
       await capture(page, "dark-supplier-inspector");
-      await moduleButton(page, "accounts").click({ force: true });
+      await clickWorkspaceModule(page, "accounts");
       await page.waitForTimeout(750);
       await capture(page, "dark-accounts-module");
       await page.keyboard.press("Escape");
@@ -625,7 +626,9 @@ async function installContextProbe(page: Page) {
 test("1440×900 记录真实 GPU 与帧时间，持续慢帧依次降低画质", async ({
   page,
 }) => {
-  test.setTimeout(45_000);
+  // Four real 120-rAF phases exceed 45s in the Linux CI traces;
+  // keep every sample and the GPU/quality assertions within an execution budget.
+  test.setTimeout(180_000);
   const fixture = await installNeuralFixture(page);
   await openHome(page);
   await page.bringToFront();
@@ -683,7 +686,7 @@ test("1440×900 记录真实 GPU 与帧时间，持续慢帧依次降低画质",
     phases.push({ phase, samples });
   };
   await sample("idle");
-  await moduleButton(page, "canvases").click({ force: true });
+  await clickWorkspaceModule(page, "canvases");
   await item(page, "neural-autumn").click();
   await sample("module-and-inspector");
   await page.getByTestId("workspace-settings").click();
@@ -768,7 +771,7 @@ for (const theme of ["dark", "light"] as const) for (const extreme of [false, tr
     await capture(page, `v2-${theme}-${extreme ? "extreme" : "real"}-hover`);
     await page.mouse.move(660, 650); await page.mouse.move(680, 638, { steps: 4 }); await page.mouse.move(705, 632, { steps: 4 });
     await capture(page, `v2-${theme}-${extreme ? "extreme" : "real"}-trail`);
-    await moduleButton(page, "canvases").click();
+    await clickWorkspaceModule(page, "canvases");
     await expect(item(page, "scale-canvas-0")).toBeVisible();
     await page.keyboard.press("Escape");
     await expectNoOverflow(page);
