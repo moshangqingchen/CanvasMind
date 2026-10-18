@@ -2780,10 +2780,16 @@ export class RunService {
         return await adapter.submit(request);
       } catch (error) {
         if (error instanceof ProviderHttpError) {
-          if (error.details.submissionMayHaveOccurred) {
+          const beforeSubmission = error.details.phase === "connect" || error.details.phase === "submit";
+          if (error.details.submissionMayHaveOccurred || !beforeSubmission) {
+            if (error.details.providerTaskId)
+              await this.repository.updateNodeRun(nodeRun.id, { providerTaskId: error.details.providerTaskId });
             throw new NeedsAttentionError(error.message, { cause: error });
           }
-          if (!error.details.retryable || attempt === maximumAttempts)
+          // Retry only with positive evidence that the paid request was never sent.
+          // retryable also describes free polling/downloads and is not such evidence.
+          if (!error.details.requestNotSent || error.details.status !== undefined || error.details.transport?.stage === "reading_body" ||
+              !error.details.retryable || attempt === maximumAttempts)
             throw error;
           await this.repository.updateNodeRun(nodeRun.id, {
             attempt: nodeRun.attempt + attempt,

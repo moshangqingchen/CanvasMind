@@ -1972,67 +1972,83 @@ export class GenericRestAdapter implements ProviderAdapter {
       config.output.kind === "video" ? body => { videoOutputParameters = videoOutputParametersFromBody(body); } : undefined,
       request.operation.startsWith("image.") ? evidence => { upstreamRequestEvidence = evidence; } : undefined,
     );
-    const cloudTask = isRecord(received) && typeof received.__superCanvasCloudPoll === "string" ? received.__superCanvasCloudPoll : undefined;
-    const remote = cloudTask ? (received as Record<string, unknown>).remote : received;
-    const mapping = cloudTask ? config.poll?.response : config.submit.response;
-    const rawTaskId = mapping
-      ? responseValue(remote, mapping.taskIdPath, mapping.taskIdFallbackPaths)
-      : undefined;
-    if (!this.fixedConfig && isCangyuanMusicRequest(request.model, connection.baseUrl) && !cloudTask &&
-        !(typeof rawTaskId === "string" && rawTaskId.trim() || typeof rawTaskId === "number" && Number.isFinite(rawTaskId))) {
-      throw Object.assign(new ProviderHttpError("沧元已响应音乐提交但没有返回任务 ID；任务可能已受理，请核对供应商记录，禁止自动重复提交。", {
-        kind: "invalid_response", phase: "submit", retryable: false, submissionMayHaveOccurred: true, responseBody: remote,
-      }), { code: "music_submit_missing_id" });
-    }
-    if (config.output.format !== "openai-chat-videos" && (videoRequest || !this.fixedConfig && (isCangyuanVideoRequest(request.model, connection.baseUrl) || remainingSupplier && isRemainingVideoModel(remainingSupplier, request.model, videoContext))) && !cloudTask &&
-        !(typeof rawTaskId === "string" && rawTaskId.trim() || typeof rawTaskId === "number" && Number.isFinite(rawTaskId)))
-      throw new ProviderHttpError("供应商已响应但未返回视频任务 ID；请核对供应商记录，避免重复提交。", {
-        kind: "invalid_response", phase: "submit", retryable: false, submissionMayHaveOccurred: true, responseBody: remote,
-      });
-    const providerTaskId =
-      cloudTask ?? (typeof rawTaskId === "string" || typeof rawTaskId === "number"
-        ? String(rawTaskId)
-        : `rest:sync:${request.idempotencyKey}`);
-    const rawStatus = mapping
-      ? responseValue(remote, mapping.statusPath, mapping.statusFallbackPaths)
-      : undefined;
-    const fallback: ProviderTaskStatus =
-      rawTaskId === undefined ? "succeeded" : "running";
-    const status = normalizeStatus(rawStatus, config, fallback);
-    const envelope: RestTaskEnvelope = {
-      ...(upstreamRequestEvidence ? { upstreamRequestEvidence } : {}),
-      connectionId: request.connectionId,
-      config,
-      remote,
-      ...(cloudTask ? { taskId: cloudTask } : typeof rawTaskId === "string" || typeof rawTaskId === "number" ? { taskId: String(rawTaskId) } : {}),
-      status,
-      ...(request.model ? { model: request.model } : {}),
-      ...(connection.baseUrl ? { baseUrl: connection.baseUrl } : {}),
-      ...(videoOutputParameters === undefined ? {} : { videoOutputParameters }),
-    };
-    const result: ProviderTask = {
-      providerTaskId,
-      id: providerTaskId,
-      status,
-      ...(config.pollIntervalMs === undefined
-        ? {}
-        : { pollAfterMs: config.pollIntervalMs }),
-      result: envelope,
-    };
-    if (status === "failed" && mapping) {
-      const error = responseValue(
-        remote,
-        mapping.errorPath,
-        mapping.errorFallbackPaths,
-      );
-      if (error !== undefined) result.error = String(error);
-    }
-    if (status === "succeeded" && (config.output.format || config.output.requireOutput) && !(await this.extractOutputs(envelope)).length)
-      throw new ProviderHttpError(`供应商已返回响应但没有${config.output.kind === "video" ? "视频" : "图片"}；请核对供应商记录和响应，避免重复提交。`, {
-        kind: "invalid_response", phase: "submit", retryable: false, submissionMayHaveOccurred: true, responseBody: remote,
+    let knownProviderTaskId: string | undefined;
+    try {
+      const cloudTask = isRecord(received) && typeof received.__superCanvasCloudPoll === "string" ? received.__superCanvasCloudPoll : undefined;
+      const remote = cloudTask ? (received as Record<string, unknown>).remote : received;
+      const mapping = cloudTask ? config.poll?.response : config.submit.response;
+      const rawTaskId = mapping
+        ? responseValue(remote, mapping.taskIdPath, mapping.taskIdFallbackPaths)
+        : undefined;
+      if (!this.fixedConfig && isCangyuanMusicRequest(request.model, connection.baseUrl) && !cloudTask &&
+          !(typeof rawTaskId === "string" && rawTaskId.trim() || typeof rawTaskId === "number" && Number.isFinite(rawTaskId))) {
+        throw Object.assign(new ProviderHttpError("沧元已响应音乐提交但没有返回任务 ID；任务可能已受理，请核对供应商记录，禁止自动重复提交。", {
+          kind: "invalid_response", phase: "submit", retryable: false, submissionMayHaveOccurred: true, responseBody: remote,
+        }), { code: "music_submit_missing_id" });
+      }
+      if (config.output.format !== "openai-chat-videos" && (videoRequest || !this.fixedConfig && (isCangyuanVideoRequest(request.model, connection.baseUrl) || remainingSupplier && isRemainingVideoModel(remainingSupplier, request.model, videoContext))) && !cloudTask &&
+          !(typeof rawTaskId === "string" && rawTaskId.trim() || typeof rawTaskId === "number" && Number.isFinite(rawTaskId)))
+        throw new ProviderHttpError("供应商已响应但未返回视频任务 ID；请核对供应商记录，避免重复提交。", {
+          kind: "invalid_response", phase: "submit", retryable: false, submissionMayHaveOccurred: true, responseBody: remote,
+        });
+      const providerTaskId =
+        cloudTask ?? (typeof rawTaskId === "string" || typeof rawTaskId === "number"
+          ? String(rawTaskId)
+          : `rest:sync:${request.idempotencyKey}`);
+      knownProviderTaskId = cloudTask ?? (typeof rawTaskId === "string" || typeof rawTaskId === "number" ? String(rawTaskId) : undefined);
+      const rawStatus = mapping
+        ? responseValue(remote, mapping.statusPath, mapping.statusFallbackPaths)
+        : undefined;
+      const fallback: ProviderTaskStatus =
+        rawTaskId === undefined ? "succeeded" : "running";
+      const status = normalizeStatus(rawStatus, config, fallback);
+      const envelope: RestTaskEnvelope = {
         ...(upstreamRequestEvidence ? { upstreamRequestEvidence } : {}),
-      });
-    return result;
+        connectionId: request.connectionId,
+        config,
+        remote,
+        ...(cloudTask ? { taskId: cloudTask } : typeof rawTaskId === "string" || typeof rawTaskId === "number" ? { taskId: String(rawTaskId) } : {}),
+        status,
+        ...(request.model ? { model: request.model } : {}),
+        ...(connection.baseUrl ? { baseUrl: connection.baseUrl } : {}),
+        ...(videoOutputParameters === undefined ? {} : { videoOutputParameters }),
+      };
+      const result: ProviderTask = {
+        providerTaskId,
+        id: providerTaskId,
+        status,
+        ...(config.pollIntervalMs === undefined
+          ? {}
+          : { pollAfterMs: config.pollIntervalMs }),
+        result: envelope,
+      };
+      if (status === "failed" && mapping) {
+        const error = responseValue(
+          remote,
+          mapping.errorPath,
+          mapping.errorFallbackPaths,
+        );
+        if (error !== undefined) result.error = String(error);
+      }
+      if (status === "succeeded" && (config.output.format || config.output.requireOutput) && !(await this.extractOutputs(envelope)).length)
+        throw new ProviderHttpError(`供应商已返回响应但没有${config.output.kind === "video" ? "视频" : "图片"}；请核对供应商记录和响应，避免重复提交。`, {
+          kind: "invalid_response", phase: "submit", retryable: false, submissionMayHaveOccurred: true, responseBody: remote,
+          ...(upstreamRequestEvidence ? { upstreamRequestEvidence } : {}),
+        });
+      return result;
+    } catch (error) {
+      // The paid POST already returned. Free content downloads and response parsing
+      // must never turn into another submission, even when their own error is retryable.
+      const failure = error instanceof ProviderHttpError ? error : new ProviderHttpError(
+        error instanceof Error ? error.message : "供应商已响应，但结果处理失败，请追查原任务，禁止重复提交。",
+        { kind: "invalid_response", phase: "submit", retryable: false,
+          submissionMayHaveOccurred: true, responseBody: received, cause: error },
+      );
+      failure.details.submissionMayHaveOccurred = true;
+      delete failure.details.requestNotSent;
+      if (knownProviderTaskId) failure.details.providerTaskId = knownProviderTaskId;
+      throw failure;
+    }
   }
 
   public async poll(task: ProviderTask): Promise<NormalizedTaskState> {
