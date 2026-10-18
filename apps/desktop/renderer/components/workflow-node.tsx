@@ -47,7 +47,7 @@ import { ResultActions } from "./result-actions";
 import { ResultFailureFeedback } from "./result-failure-feedback";
 import { ReadableName, ResultInformation, ResultToolbar, WaitElapsed } from "./result-information";
 import { pendingGeneratedResultLabel } from "../lib/pending-run-reconciliation";
-import { cleanModelDisplayName } from "../lib/model-display";
+import { cleanModelDisplayName, currentSupplierUnitPrice } from "../lib/model-display";
 import { modelPickerPriceCompact, modelPickerPriceData } from "../lib/model-picker-data";
 import { SupplierBillingSummary } from "./supplier-billing-summary";
 import { useSupplierBillingOverview } from "../lib/client-supplier-billing";
@@ -645,9 +645,12 @@ export function GenerationNodeBody({
   const currentSupplier = currentConnectionOption?.supplier ?? "";
   const groupOptions = pickerConnectionGroups(connectionOptions, currentSupplier);
   const currentGroup = currentConnectionOption?.group ?? "";
+  const currentGroupLabel = currentConnectionOption?.groupLabel ?? currentGroup;
   const currentGroupConnections = groupOptions.find(group => group.group === currentGroup)?.connections ?? [];
   const connectionName = currentConnectionOption
-    ? `${currentConnectionOption.supplierLabel} · ${currentConnectionOption.group} · ${currentConnectionOption.name}`
+    ? currentConnectionOption.provider === "langframe" && currentGroupLabel !== currentGroup
+      ? `${currentConnectionOption.supplierLabel} · ${currentGroupLabel}`
+      : `${currentConnectionOption.supplierLabel} · ${currentConnectionOption.group} · ${currentConnectionOption.name}`
     : currentConnection
       ? "当前 API"
       : "未配置 API";
@@ -660,11 +663,12 @@ export function GenerationNodeBody({
   }, [data.modelOptions, data.model, data.modelOptionsAuthoritative, data.modelOptionsLoading]);
   const billingAccounts = useSupplierBillingOverview(uiActive);
   const selectedModel = modelOptions.find((model) => model.id === data.model);
-  const modelPriceLabel = useMemo(() => modelPickerPriceData(selectedModel), [selectedModel]);
-  const modelPriceCompact = useMemo(() => modelPickerPriceCompact(selectedModel), [selectedModel]);
+  const modelPriceLabelBase = useMemo(() => selectedModel?.metadata?.langframeCatalog === true ? "—" : modelPickerPriceData(selectedModel), [selectedModel]);
+  const modelPriceCompactBase = useMemo(() => selectedModel?.metadata?.langframeCatalog === true ? "—" : modelPickerPriceCompact(selectedModel), [selectedModel]);
   const hasReferenceVideo = data.linkedAssets?.some(asset => asset.kind === "video") === true;
   const priceParameters = { ...parameters,
-    has_reference_video: hasReferenceVideo,
+    has_reference_video: selectedModel?.metadata?.langframeCatalog === true && data.linkedAssets === undefined
+      ? parameters.has_reference_video : hasReferenceVideo,
     has_reference_image: data.linkedAssets?.some(asset => asset.kind === "image") === true,
     has_reference_audio: data.linkedAssets?.some(asset => asset.kind === "audio") === true,
   };
@@ -672,6 +676,9 @@ export function GenerationNodeBody({
     ...selectedModel,
     parameters: parameterDescriptorsForValues(nodeType, data.provider ?? "fake", selectedModel, parameters, undefined, { hasReferenceVideo }),
   } : selectedModel;
+  const currentUnitPrice = selectedModel?.metadata?.langframeCatalog === true ? currentSupplierUnitPrice(priceModel, priceParameters) : modelPriceCompactBase;
+  const modelPriceLabel = selectedModel?.metadata?.langframeCatalog === true ? currentUnitPrice : modelPriceLabelBase;
+  const modelPriceCompact = selectedModel?.metadata?.langframeCatalog === true ? currentUnitPrice : modelPriceCompactBase;
   const modelName = selectedModel ? cleanModelDisplayName(selectedModel.name, selectedModel.metadata?.priceLabel) : data.model ?? "自动模型";
   const cangyuanAvailabilityEnabled =
     currentSupplier === "cangyuan" && nodeType !== "music-generation" &&
@@ -885,7 +892,7 @@ export function GenerationNodeBody({
               <select
                 aria-label={`${data.label} 模型群组`}
                 value={currentGroup}
-                title={currentGroup}
+                title={currentGroupLabel}
                 onChange={(event) => {
                   const next = choosePickerConnection(connectionOptions, currentConnection, currentSupplier, event.target.value);
                   if (next) data.onConnectionChange?.(next.id);
@@ -894,7 +901,7 @@ export function GenerationNodeBody({
                 {!currentGroup && <option value="">请选择群组</option>}
                 {groupOptions.map((group) => (
                   <option key={group.group} value={group.group} disabled={!group.available && group.group !== currentGroup}>
-                    {group.group}{group.connections.length > 1 ? `（${group.connections.length} 个连接）` : ""}{!group.available ? "（连接未就绪）" : ""}
+                    {group.label}{group.connections.length > 1 ? `（${group.connections.length} 个连接）` : ""}{!group.available ? "（连接未就绪）" : ""}
                   </option>
                 ))}
               </select>
@@ -912,7 +919,7 @@ export function GenerationNodeBody({
           </div>
           <div className="supplier-quote-summary" aria-label="当前供应商报价"><InformationGrid items={[
             { label: "供应商", value: currentConnectionOption?.supplierLabel ?? "供应商" },
-            { label: "概括价", value: modelPickerPriceCompact(selectedModel) },
+            { label: selectedModel?.metadata?.langframeCatalog === true ? "当前参数价" : "概括价", value: currentUnitPrice },
             { label: "余额", value: billingCompact(billingAccounts.find(account => account.id === currentConnectionOption?.supplierId)?.billing) },
           ]} /></div>
           {supplierOptions.length > 1 && <details className="supplier-candidate-quotes"><summary>供应商候选报价</summary>

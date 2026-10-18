@@ -6,6 +6,11 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./langframe-catalog": {
+      "types": "./src/langframe-catalog.ts",
+      "import": "./dist/langframe-catalog.js",
+      "default": "./dist/langframe-catalog.js"
+    },
     "./catalog-pricing": {
       "types": "./src/catalog-pricing.ts",
       "import": "./dist/catalog-pricing.js",

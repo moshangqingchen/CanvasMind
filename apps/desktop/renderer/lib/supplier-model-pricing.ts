@@ -977,6 +977,7 @@ export async function enrichSupplierModelPrices(
   readOptions: SupplierPriceReadOptions = {},
 ): Promise<ModelDescriptor[]> {
   if (!models.length) return [...models];
+  if (models.every(model => model.provider === "langframe" && model.metadata?.langframeCatalog === true)) return [...models];
   const supplier = "savedSupplier" in readOptions ? readOptions.savedSupplier ?? null :
     typeof connection.config.supplierId === "string"
       ? await getSupplierRecord(connection.config.supplierId)

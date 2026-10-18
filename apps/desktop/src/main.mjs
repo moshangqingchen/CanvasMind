@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, Tray, ipcMain, dialog, shell, safeStorage, nativeImage, nativeTheme } from "electron";
+import { app, BrowserWindow, Menu, Tray, ipcMain, dialog, shell, safeStorage, nativeImage, nativeTheme, net } from "electron";
 import electronUpdater from "electron-updater";
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
@@ -127,7 +127,10 @@ async function start() {
     if (!secrets && development) secrets = await initializeProfile(dataRoot, { encrypt: protect });
     if (quitting || window.isDestroyed()) return;
     if (!secrets) { state("setup", "欢迎使用 Windows 桌面版", "迁移会复制画布、素材、历史和 API 配置，保留旧版资料。迁移前请关闭旧版服务及其守护程序。"); return; }
-    referenceChannel ??= new ReferenceChannel({ root: dataRoot, protect, unprotect, onState: value => send("desktop:reference-channel", value) });
+    referenceChannel ??= new ReferenceChannel({ root: dataRoot, protect, unprotect,
+      fetchImpl: (input, options) => net.fetch(input, { ...options, credentials: "omit" }),
+      onState: value => send("desktop:reference-channel", value),
+      onDiagnostic: value => log(`reference channel: ${JSON.stringify(value)}`) });
     await referenceChannel.load();
     if (quitting || window.isDestroyed()) return;
     state("loading", "正在启动画布服务…");

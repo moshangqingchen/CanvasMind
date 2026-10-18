@@ -81,6 +81,33 @@ export function userImageSizeOptions(tiers: readonly ImageSizeTier[] = ["1K", "2
   });
 }
 
+/** Langframe declares its own tier/ratio enums, including ratios absent from
+ * the shared shortcuts. Pixels remain user presets, never supplier evidence. */
+function langframePresetScope(model: ModelDescriptor): { tiers: Set<string>; ratios: string[] } | undefined {
+  if (model.metadata?.langframeCatalog !== true) return;
+  const raw = model.metadata.rawParams;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
+  const source = raw as Record<string, unknown>;
+  if (!Array.isArray(source.resolutions) || !source.resolutions.length || !Array.isArray(source.ratios) || !source.ratios.length) return;
+  return { tiers: new Set(source.resolutions.filter((value): value is string => typeof value === "string")),
+    ratios: [...new Set(source.ratios.filter((value): value is string => typeof value === "string" && /^[1-9]\d*:[1-9]\d*$/u.test(value)))] };
+}
+
+function userImageOptionsForModel(model: ModelDescriptor, tiers: readonly ImageSizeTier[]): ModelParameterOption[] {
+  const options = userImageSizeOptions(tiers), scope = langframePresetScope(model);
+  if (!scope) return options;
+  const byTierRatio = new Map(options.flatMap(option => {
+    const match = /^(1K|2K|4K) · ([\d:]+) ·/u.exec(option.label);
+    return match ? [[`${match[1]}:${match[2]}`, option] as const] : [];
+  }));
+  return [options[0]!, ...tiers.filter(tier => scope.tiers.has(tier)).flatMap(tier => scope.ratios.map(ratio => {
+    const existing = byTierRatio.get(`${tier}:${ratio}`);
+    if (existing) return existing;
+    const value = imageSizeForTier(tier, ratio);
+    return { value, label: `${tier} · ${ratio} · ${value.replace("x", " × ")}` };
+  }))];
+}
+
 function presetTier(value: unknown): ImageSizeTier | undefined {
   const normalized = typeof value === "string" ? value.toUpperCase() : "";
   return ["1K", "2K", "4K"].includes(normalized) ? normalized as ImageSizeTier : undefined;
@@ -147,13 +174,20 @@ export function applyUserImageSizePresets(model: ModelDescriptor): ModelDescript
     const match = /^(1K|2K|4K) · ([\d:]+) ·/u.exec(option.label);
     return match ? [[`${match[1]}:${match[2]}`, option] as const] : [];
   }));
-  const presets = userImageSizeOptions(tiers).map(option => {
+  const presets = userImageOptionsForModel(model, tiers).map(option => {
     if (option.value === "auto") return sourceOptions.find(source => source.value === "auto") ?? option;
     const match = /^(1K|2K|4K) · ([\d:]+) ·/u.exec(option.label);
     return match ? sourceByTierRatio.get(`${match[1]}:${match[2]}`) ?? option : option;
   }).filter(option => sizeFitsParameter(String(option.value), size, model));
   const values = new Set(presets.map(option => option.value));
-  const options = [...presets, ...sourceOptions.filter(option => !values.has(option.value))];
+  const scope = langframePresetScope(model);
+  const options = [...presets, ...sourceOptions.filter(option => !values.has(option.value))].filter(option => {
+    if (!scope) return true;
+    const match = /^(1K|2K|4K) · ([\d:]+) ·/u.exec(option.label);
+    // Keep arbitrary user W/H shortcuts; only labelled tier/ratio presets are
+    // bounded by the supplier's explicit enums and retained tier prohibitions.
+    return !match || tiers.includes(match[1] as ImageSizeTier) && scope.tiers.has(match[1]!) && scope.ratios.includes(match[2]!);
+  });
   const parameters = model.parameters!.map(parameter => parameter === size ? {
     ...parameter, control: "dimensions" as const, allowCustomValue: true, options,
     description: explanation,

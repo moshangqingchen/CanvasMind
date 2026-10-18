@@ -23,6 +23,11 @@ export interface SupplierSiteTokenCredentials {
   userId?: string;
 }
 export type SupplierSiteCredentials = SupplierSitePasswordCredentials | SupplierSiteTokenCredentials;
+export type AuthenticatedSupplierSiteKind = "newapi" | "sub2api" | "langframe";
+export interface SupplierSiteSessionOptions {
+  /** Only an explicit asset-upload operation may authenticate this site write. */
+  allowLangframeMediaUpload?: boolean;
+}
 export type SupplierLoginErrorCode =
   | "invalid_credentials"
   | "invalid_token"
@@ -57,7 +62,7 @@ const normalizedUserId = (value: unknown): string | undefined => {
   return text;
 };
 
-function tokenLoginFailure(status: number | undefined, payload: unknown, kind: "newapi" | "sub2api", userId?: string): SupplierLoginError {
+function tokenLoginFailure(status: number | undefined, payload: unknown, kind: AuthenticatedSupplierSiteKind, userId?: string): SupplierLoginError {
   // Remote messages are classification evidence only. Never echo their contents.
   const root = record(payload);
   const nested = record(root?.error);
@@ -86,7 +91,8 @@ export async function loginSupplierSite(
     credentials: SupplierSiteCredentials;
   },
   fetchImpl: FetchImplementation = providerFetch,
-): Promise<{ kind: "newapi" | "sub2api"; fetch: FetchImplementation }> {
+  options: SupplierSiteSessionOptions = {},
+): Promise<{ kind: AuthenticatedSupplierSiteKind; fetch: FetchImplementation }> {
   const base = supplierDirectoryBase(input.siteUrl);
   const tokenCredentials = "accessToken" in input.credentials ? input.credentials : undefined;
   const passwordCredentials = "username" in input.credentials ? input.credentials : undefined;
@@ -101,6 +107,16 @@ export async function loginSupplierSite(
     throw new SupplierLoginError("用户 ID 必须是后台账号对应的正整数", 400, "invalid_configuration");
   if (!tokenCredentials && (!passwordCredentials?.username.trim() || !passwordCredentials.password))
     throw new SupplierLoginError("请填写站点账号和密码", 400, "invalid_configuration");
+  // This custom contract belongs to the audited Langframe origins only. Other
+  // unfamiliar sites must retain the normal platform detection boundary.
+  const langframe = ["https://vipprompt.cn", "https://www.vipprompt.cn"].includes(base);
+  if (input.kind === "langframe" && !langframe)
+    throw new SupplierLoginError("狼帧认证只适用于已核对的官方站点地址", 400, "invalid_configuration");
+  if (langframe && (input.kind === "auto" || input.kind === "langframe")) {
+    if (suppliedUserId)
+      throw new SupplierLoginError("狼帧访问令牌不使用 NewAPI 用户 ID", 400, "invalid_configuration");
+    return loginLangframeSite(base, passwordCredentials, accessToken, fetchImpl, options);
+  }
   const read = (path: string, fetcher = fetchImpl, init: RequestInit = {}) =>
     fetchProviderJson<unknown>(
       fetcher,
@@ -313,6 +329,70 @@ export async function loginSupplierSite(
   else if (cookies.length) headers.set("cookie", cookies.join("; "));
   if (kind === "newapi" && userId) headers.set("New-Api-User", userId);
   return createSupplierSiteSession(base, kind, headers, fetchImpl);
+}
+
+async function loginLangframeSite(
+  base: string,
+  credentials: SupplierSitePasswordCredentials | undefined,
+  accessToken: string | undefined,
+  fetchImpl: FetchImplementation,
+  options: SupplierSiteSessionOptions,
+): Promise<{ kind: "langframe"; fetch: FetchImplementation }> {
+  const read = (path: string, init: RequestInit = {}) => fetchProviderJson<unknown>(fetchImpl, `${base}${path}`, {
+    method: "GET", cache: "no-store", redirect: "error", ...init,
+  }, { phase: "connect", timeoutMs: 12000, maxResponseBytes: 1024 * 1024 });
+  let token = accessToken;
+  if (credentials) {
+    let payload: unknown;
+    try {
+      payload = await read("/api/auth/login", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ account: credentials.username.trim(), password: credentials.password, ref: "" }),
+      });
+    } catch (error) {
+      const status = error instanceof ProviderHttpError ? error.details.status : undefined;
+      if (status === 429) throw new SupplierLoginError("站点限制了登录频率，请稍后重试", 429);
+      if (status === 403) throw new SupplierLoginError("站点拒绝登录或要求验证，请先在站点完成验证后重试", 403, "verification_required");
+      if (status === 400 || status === 401) throw new SupplierLoginError("登录失败，请检查站点账号和密码", 401, "invalid_credentials");
+      if (status === 404 || status === 405) throw new SupplierLoginError("站点未提供已核对的狼帧登录接口", 400, "unsupported_platform");
+      throw new SupplierLoginError("站点登录请求失败，请检查地址或稍后重试", 502, "network");
+    }
+    const root = record(payload);
+    token = typeof root?.token === "string" ? root.token.trim() : undefined;
+    if (root?.ok !== true || !token || token.length > 8192 || /[\s\u0000-\u001f\u007f]/u.test(token))
+      throw new SupplierLoginError("登录失败，请检查站点账号和密码", 401, "invalid_credentials");
+  }
+  const headers = new Headers({ authorization: `Bearer ${token}` });
+  let profile: unknown;
+  try { profile = await read("/api/me", { headers }); }
+  catch (error) {
+    throw tokenLoginFailure(error instanceof ProviderHttpError ? error.details.status : undefined,
+      error instanceof ProviderHttpError ? error.details.responseBody : undefined, "langframe");
+  }
+  const root = record(profile), user = record(root?.user);
+  if (root?.ok === false || !user || typeof user.account !== "string" || !user.account.trim())
+    throw tokenLoginFailure(200, profile, "langframe");
+  return {
+    kind: "langframe",
+    fetch: async (url, init) => {
+      const target = typeof url === "string" ? url : url instanceof URL ? url.href : url.url;
+      const method = (init?.method ?? (url instanceof Request ? url.method : "GET")).toUpperCase();
+      let allowed = false;
+      try {
+        const parsed = new URL(target);
+        allowed = parsed.origin === base && !parsed.username && !parsed.password && !parsed.hash && (
+          method === "GET" && (
+            (["/api/me", "/api/keys", "/api/relay/groups"].includes(parsed.pathname) && !parsed.search) ||
+            parsed.pathname === "/api/relay/groups" && parsed.search === "?stats=1"
+          ) || options.allowLangframeMediaUpload === true && method === "POST" && parsed.pathname === "/api/canvas/media-upload" && !parsed.search
+        );
+      } catch { /* Unrecognized targets never receive the website token. */ }
+      if (!allowed) return fetchImpl(url, init);
+      const authenticated = new Headers(init?.headers ?? (url instanceof Request ? url.headers : undefined));
+      headers.forEach((value, key) => authenticated.set(key, value));
+      return fetchImpl(url, { ...init, headers: authenticated, redirect: "error" });
+    },
+  };
 }
 
 function createSupplierSiteSession(base: string, kind: "newapi" | "sub2api", headers: Headers, fetchImpl: FetchImplementation): {

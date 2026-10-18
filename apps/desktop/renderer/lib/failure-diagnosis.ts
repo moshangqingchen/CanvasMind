@@ -1,4 +1,5 @@
 import type { LocalizedRunError } from "./error-localization";
+import { isUnsubmittedReferenceFailure } from "./result-failure-feedback";
 
 type FailureCategory = NonNullable<LocalizedRunError["failureCategory"]>;
 
@@ -50,6 +51,7 @@ export function failureDiagnosis(error: LocalizedRunError | null | undefined, op
   recoveryAction?: string;
 } = {}) {
   const cancelled = options.status === "cancelled";
+  const unsubmittedReference = isUnsubmittedReferenceFailure(error);
   const category = error?.failureCategory ?? legacyCategory(error);
   const charge = error?.charge ?? { status: "unknown" as const, source: "unconfirmed" as const };
   const chargeStatus = charge.status;
@@ -62,14 +64,18 @@ export function failureDiagnosis(error: LocalizedRunError | null | undefined, op
     : charge.source === "not_submitted"
       ? "请求尚未发送（本地确认）"
       : `供应商未返回本次扣费凭据；${cancelled ? "取消" : "失败"}不代表未扣费`;
-  const nextStep = cancelled
+  const nextStep = unsubmittedReference
+    ? "请稍后重试，程序会先重新检查素材链接；准备通过后才会提交生成。"
+    : cancelled
     ? "请核对供应商原任务是否已停止，以及本次扣费或退款记录。取消不等于退款。"
     : options.providerTaskStatus === "succeeded" || options.recoveryAction === "resume_archive"
     ? "生成结果已在供应商侧完成。修复下载或保存问题后，取回已有结果，无需重新生成。"
     : error?.code?.toLowerCase() === "content_blocked_24h"
     ? "检查内容是否符合平台规则，联系供应商或等待限制结束，不要连续重复提交相同内容。"
     : nextSteps[category];
-  const billingStep = chargeStatus === "unknown" || chargeStatus === "charged"
+  const billingStep = unsubmittedReference
+    ? "本次未产生生成费用。"
+    : chargeStatus === "unknown" || chargeStatus === "charged"
     ? "重新生成前先核对原任务和账单，避免重复提交。"
     : "再次生成会提交新请求，按供应商规则计费。";
   return {

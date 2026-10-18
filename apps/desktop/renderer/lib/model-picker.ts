@@ -57,6 +57,8 @@ export function rememberModel(recent: RecentModels, connectionId: string, modelI
 
 export interface PickerConnection {
   id: string; name: string; supplier: string; supplierLabel: string; group: string;
+  /** Human-readable application scope name; `group` retains selection identity. */
+  groupLabel?: string;
   available?: boolean; unavailableReason?: string;
   modelMatch?: boolean;
 }
@@ -73,10 +75,10 @@ export function pickerConnectionLabel(connection: PickerConnection, peers: reado
 }
 
 export function pickerConnectionGroups<T extends PickerConnection>(connections: readonly T[], supplier: string) {
-  const groups = new Map<string, { group: string; available: boolean; connections: T[] }>();
+  const groups = new Map<string, { group: string; label: string; available: boolean; connections: T[] }>();
   for (const connection of connections) {
     if (connection.supplier !== supplier) continue;
-    const group = groups.get(connection.group) ?? { group: connection.group, available: false, connections: [] };
+    const group = groups.get(connection.group) ?? { group: connection.group, label: connection.groupLabel || connection.group, available: false, connections: [] };
     group.connections.push(connection);
     group.available ||= connection.available !== false;
     groups.set(connection.group, group);

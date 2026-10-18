@@ -10,6 +10,12 @@ export interface SupplierAccountKey {
   supplierGroupId?: string;
   apiKey: string;
   name: string;
+  /** Langframe's actual ordered fallback groups; empty means all groups. */
+  accountGroups?: string[];
+  /** Langframe's public model-name restriction; empty means all group models. */
+  modelIds?: string[];
+  /** A local Key scope is not proof that the API can force one upstream group. */
+  routing?: "ordered-fallback";
 }
 export interface SupplierAccountKeys {
   keys: SupplierAccountKey[];
@@ -49,11 +55,12 @@ function active(row: Record<string, unknown>, kind: "newapi" | "sub2api", now: n
 
 /** Read existing account keys, including pagination and NewAPI's read-only reveal endpoint. */
 export async function readSupplierAccountKeys(
-  input: { siteUrl: string; kind: "newapi" | "sub2api" },
+  input: { siteUrl: string; kind: "newapi" | "sub2api" | "langframe" },
   sessionFetch: FetchImplementation,
 ): Promise<SupplierAccountKeys> {
   const result: SupplierAccountKeys = { keys: [], skipped: 0, complete: false, checkedAt: new Date().toISOString() };
   const base = supplierDirectoryBase(input.siteUrl);
+  if (input.kind === "langframe") return readLangframeAccountKeys(base, sessionFetch, result);
   const read = async (path: string, method = "GET") => payloadData(await fetchProviderJson(
     sessionFetch, `${base}${path}`, { method, cache: "no-store" },
     { phase: "connect", timeoutMs: 12000, maxResponseBytes: 4 * 1024 * 1024 },
@@ -116,6 +123,63 @@ export async function readSupplierAccountKeys(
       if (!added) break;
     }
     result.error = "密钥列表未完整返回；已读取部分可以同步，请稍后重试。";
+  } catch (error) {
+    const status = error instanceof ProviderHttpError ? error.details.status : undefined;
+    result.error = status === 401 || status === 403
+      ? "站点不允许当前账号读取 API 密钥，可继续手动填写。"
+      : "已有 API 密钥读取未完成，可稍后重新扫描；现有 Key 已保留。";
+  }
+  return result;
+}
+
+/** Keep each actual Key whole: its group order is upstream fallback routing. */
+async function readLangframeAccountKeys(
+  base: string,
+  sessionFetch: FetchImplementation,
+  result: SupplierAccountKeys,
+): Promise<SupplierAccountKeys> {
+  if (!["https://vipprompt.cn", "https://www.vipprompt.cn"].includes(base)) {
+    result.error = "狼帧密钥读取只适用于已核对的官方站点地址。";
+    return result;
+  }
+  const restrictions = (value: unknown, limit: number): string[] | undefined => {
+    if (!Array.isArray(value) || value.length > limit || value.some(item => typeof item !== "string" ||
+      !item.trim() || item !== item.trim() || item.length > 256 || /[\u0000-\u001f\u007f]/u.test(item))) return undefined;
+    return [...new Set(value as string[])];
+  };
+  try {
+    const root = object(await fetchProviderJson<unknown>(sessionFetch, `${base}/api/keys`, {
+      method: "GET", cache: "no-store", redirect: "error",
+    }, { phase: "connect", timeoutMs: 12000, maxResponseBytes: 4 * 1024 * 1024 }));
+    if (root?.ok !== true || !Array.isArray(root.keys) || root.keys.length > 5000)
+      throw new Error("Invalid key response");
+    let complete = true;
+    const seen = new Map<string, SupplierAccountKey>();
+    const conflicts = new Set<string>();
+    for (const raw of root.keys) {
+      const row = object(raw), id = typeof row?.id === "number" && Number.isSafeInteger(row.id) && row.id >= 0
+        ? String(row.id) : text(row?.id);
+      if (!row || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/u.test(id) || typeof row.revoked !== "boolean") {
+        result.skipped++; complete = false; continue;
+      }
+      if (row.revoked) { result.skipped++; continue; }
+      const accountGroups = restrictions(row.groups, 500), modelIds = restrictions(row.models, 3000);
+      const apiKey = fullKey(row.token);
+      if (!accountGroups || !modelIds) { result.skipped++; complete = false; continue; }
+      // Old site Keys may have no retained plaintext. Never create or reveal a
+      // new Key, widen its scope, or import a mask to compensate for that.
+      if (!apiKey || /[\u0000-\u001f\u007f]/u.test(apiKey)) { result.skipped++; continue; }
+      const key: SupplierAccountKey = { id, group: `账户 Key ${id}`, apiKey,
+        name: text(row.name).slice(0, 256), accountGroups, modelIds, routing: "ordered-fallback" };
+      const previous = seen.get(id);
+      if (conflicts.has(id) || previous && JSON.stringify(previous) !== JSON.stringify(key)) {
+        seen.delete(id); conflicts.add(id); result.skipped++; complete = false; continue;
+      }
+      if (!previous) seen.set(id, key);
+    }
+    result.keys = [...seen.values()];
+    result.complete = complete;
+    if (!complete) result.error = "部分 API 密钥身份或权限范围未完整返回；已保留现有配置。";
   } catch (error) {
     const status = error instanceof ProviderHttpError ? error.details.status : undefined;
     result.error = status === 401 || status === 403

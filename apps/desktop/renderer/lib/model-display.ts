@@ -1,4 +1,5 @@
 import { modelPriceAmount, selectModelQuote, selectedModelPriceTier, tokenComponentRate, catalogRequestBillingCount } from "@super-canvas/providers/media-billing";
+import { langframePricingParameters } from "@super-canvas/providers/langframe-catalog";
 import { normalizeTk1688CnyModel } from "@super-canvas/providers/tk1688-catalog";
 import { applyUserImageSizePresets } from "@super-canvas/providers/image-size-presets";
 import { getModelParameterDescriptor, validateModelParameters } from "@super-canvas/providers/cli-contracts";
@@ -7,7 +8,7 @@ import { measuredPriceScopeMatches } from "./supplier-price-evidence";
 import { confirmedVideoParameterDefault, videoDurationControl, videoDurationControlContext } from "./video-duration-control";
 import { modelParameterAliases } from "./model-parameters";
 import { evaluateImageParameters } from "@super-canvas/providers/image-parameter-contract";
-import { modelPickerPriceData } from "./model-picker-data";
+import { modelPickerPriceCompact, modelPickerPriceData } from "./model-picker-data";
 import { mikotoImageRatioIssues } from "@super-canvas/providers/supplier-image-constraints";
 import { cyberafeiSeedance25SizePreferenceIssues } from "@super-canvas/providers/cyberafei-seedance25-video-contract";
 
@@ -60,6 +61,7 @@ export function cleanModelDisplayName(name: string, priceLabel?: unknown): strin
 }
 
 function mediaPriceParameters(model: ModelDescriptor, parameters: Readonly<Record<string, unknown>>) {
+  if (model.metadata?.langframeCatalog === true) return { parameters: langframePricingParameters(parameters), valid: true };
   if (model.metadata?.sourceVideoPriceMode !== "edit") return { parameters, valid: true };
   const mode = parameters.mode ?? model.parameters?.find(parameter => parameter.key === "mode")?.default;
   const hasVideo = parameters.has_reference_video;
@@ -306,6 +308,12 @@ export function modelEstimatedQuote(model: ModelDescriptor | null | undefined, p
 /** A preview of the selected request, separate from the supplier's unit price. */
 export function modelEstimatedCost(model: ModelDescriptor | null | undefined, parameters: Readonly<Record<string, unknown>>): string | undefined {
   return modelEstimatedQuote(model, parameters)?.cost;
+}
+
+/** The current selection can use its parameters; other candidate menus keep
+ * their complete independent tariff summary. */
+export function currentSupplierUnitPrice(model: ModelDescriptor | undefined, parameters: Readonly<Record<string, unknown>>): string {
+  return model?.metadata?.langframeCatalog === true ? modelPriceSummary(model, parameters) : modelPickerPriceCompact(model);
 }
 
 /** Compare only the exact model and supported parameter combination in this connection. */

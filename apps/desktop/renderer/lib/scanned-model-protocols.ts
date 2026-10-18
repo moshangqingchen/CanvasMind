@@ -35,6 +35,7 @@ import { cyberAfeiDocumentedModel, cyberAfeiConnectorForModels } from "./cyberaf
 import { supplierKeyForConnection } from "./supplier-identity";
 import { matchesSupplierTemplate } from "./supplier-template-source";
 import { supplierImageMenuContract } from "./supplier-image-menu-contract";
+import { langframeImagePresentation } from "@super-canvas/providers/langframe-catalog";
 import { applyUserImageSizePresets } from "@super-canvas/providers/image-size-presets";
 import { applyVerifiedImage25Capabilities } from "./verified-image25-capabilities";
 import { applyMonsterImageCapabilities } from "@super-canvas/providers/monster-image-capabilities";
@@ -475,6 +476,7 @@ export function bindScannedModelProtocols(
   previous: Connection = connection,
   contractProjection?: CatalogContractProjectionOptions,
 ): ReturnType<typeof bindExistingModelProtocols> {
+  if (connection.provider === "langframe") return { models: scanned.map(applyUserImageSizePresets).map(langframeImagePresentation) };
   if (contractProjection) return projectCatalogContractModels(connection, scanned, contractProjection);
   if (scanned.some(isCatalogContractProjection)) {
     const legacy = bindScannedModelProtocols(connection, scanned.filter(model => !isCatalogContractProjection(model)), previous);

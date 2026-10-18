@@ -14,7 +14,7 @@ import {
 } from "./provider-connection-options";
 import { createSharedRequest } from "./shared-request";
 
-export type SupplierKind = "auto" | "newapi" | "sub2api" | "openai-compatible";
+export type SupplierKind = "auto" | "newapi" | "sub2api" | "langframe" | "openai-compatible";
 export type SupplierSiteAuthMode = "password" | "access-token";
 export type SupplierSiteLoginInput =
   | { authMode?: "password"; username: string; password: string }

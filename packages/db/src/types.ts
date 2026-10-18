@@ -136,7 +136,7 @@ export interface SupplierRecord {
   supplierKey: string;
   siteUrl: string;
   apiUrl: string;
-  kind: "auto" | "newapi" | "sub2api" | "openai-compatible";
+  kind: "auto" | "newapi" | "sub2api" | "langframe" | "openai-compatible";
   catalog: {
     groups: Array<{
       id: string;

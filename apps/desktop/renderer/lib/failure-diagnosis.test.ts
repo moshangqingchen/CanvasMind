@@ -8,6 +8,17 @@ import { FailureDiagnosis } from "../components/failure-diagnosis";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("generation failure diagnosis", () => {
+  it("directs confirmed reference preflight failures to prepare inputs instead of checking a nonexistent provider task", () => {
+    const error = localizeRunError({ message: "第 2 项素材公网读取中断，当前生成尚未提交。",
+      code: "LOCAL_REFERENCE_ASSET_PREFLIGHT_FAILED", source: "local_validation", failureCategory: "local_network",
+      submissionMayHaveOccurred: false, charge: { status: "not_charged", source: "not_submitted" } });
+    const diagnosis = failureDiagnosis(error);
+    expect(diagnosis).toMatchObject({ chargeLabel: "未扣费", chargeSource: "请求尚未发送（本地确认）" });
+    expect(diagnosis.nextStep).toContain("程序会先重新检查素材链接");
+    expect(diagnosis.nextStep).toContain("本次未产生生成费用");
+    expect(diagnosis.nextStep).not.toMatch(/核对原任务|账单|扣费待确认|可能扣费/u);
+  });
+
   it("explains the provider cooldown on saved 24-hour content blocks", () => {
     const error = localizeRunError({ message: "请求参数错误", code: "content_blocked_24h", failureCategory: "invalid_request" });
     expect(failureDiagnosis(error)).toMatchObject({ category: "content_policy", chargeStatus: "unknown",

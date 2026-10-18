@@ -100,6 +100,17 @@ export function providerConnectionGroup(
   return typeof group === "string" && group.trim() ? group.trim() : "默认群组";
 }
 
+/** Display a Key's saved human label without changing its internal scope ID. */
+export function providerConnectionGroupDisplayLabel(connection: ProviderConnectionView): string {
+  const group = providerConnectionGroup(connection);
+  if (connection.provider !== "langframe" || !group.startsWith("langframe-key:")) return group;
+  const configured = connection.config.langframeKeyScopeLabel ?? connection.config.modelGroupLabel;
+  if (typeof configured === "string" && configured.trim() && !configured.includes("langframe-key:")) return configured.trim();
+  const name = connection.name.trim(), prefix = `${providerConnectionSupplierLabel(connection)} · `;
+  const label = name.startsWith(prefix) ? name.slice(prefix.length) : name;
+  return label && !label.includes("langframe-key:") ? label : `Key · ${providerConnectionUsage(connection) === "agent" ? "对话" : "图片与视频"}`;
+}
+
 export function providerGroupLabel(group: string, ratio?: number): string {
   return typeof ratio === "number" && Number.isFinite(ratio)
     ? `${group}（x${ratio}）`

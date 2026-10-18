@@ -7,8 +7,10 @@ import { consumeValidatedVideoOutput, inspectVideoOutput, videoOutputContractMis
 import { recordSubmissionPhase } from "./submission-timeline.js";
 import { repositoryScheduler, runtimeConcurrency, scheduleReadyNodes, type RuntimeConcurrency, type RuntimeScheduler } from "./scheduler.js";
 import { assertDesktopPublicAssets } from "./desktop-preflight.js";
+import { requiresPublicReferenceUrls } from "./reference-delivery.js";
 import { ImageMaskValidationError, resolveImageMask } from "./image-mask.js";
-import { localReferenceChannelConfigured, localReferenceUrls } from "./reference-channel.js";
+import { LocalReferenceChannelError, localReferenceChannelConfigured, localReferenceUrls } from "./reference-channel.js";
+import { langframeReferenceUploader } from "./langframe-reference-upload.js";
 import { monsterImageEvidence } from "@super-canvas/providers/monster-image-capabilities";
 import { applyUserImageSizePresets } from "@super-canvas/providers/image-size-presets";
 import { resolveImageModelContract } from "@super-canvas/providers/image-model-contract";
@@ -42,6 +44,8 @@ import {
   decryptSecret,
   storedProviderRequestEvidence,
   CliProviderAdapter,
+  LangframeAdapter,
+  langframeConnector,
   cliJobKey,
   FakeProviderAdapter,
   imageSizeForTier,
@@ -56,7 +60,6 @@ import {
   secureSkillImageParameters,
   isJiasuImageConnection,
   jijiuImageOrigin,
-  isJijiuGptImage,
   JIJIU_IMAGE_IDS,
   pdogImageSizeSelection,
   GenericRestAdapter,
@@ -65,14 +68,8 @@ import {
   isCangyuanMusicRequest,
   modelSupportsGenerationMedia,
   AutoInterfaceAdapter,
-  restRequestRequiresPublicAssets,
-  cangyuanOwnMediaUploadAvailable,
-  secureSkillRequiresPublicAssets,
-  chuangxiangRequiresPublicAssets,
   isChuangxiangImageConnection,
-  chuangxiangMidjourneyRequiresPublicAssets,
   bananaImageRoute,
-  bananaRequiresPublicAssets,
   normalizeBananaParameters,
   getImageEditingCapabilities,
   referenceImageHostingEnabled,
@@ -937,6 +934,7 @@ export class RunService {
     const fake = new FakeProviderAdapter(resolver);
     return new Map<string, ProviderAdapter>([
       ["fake", fake],
+      ["langframe", new LangframeAdapter(resolver, { uploadReference: langframeReferenceUploader(this.repository, resolver, masterKeyForRuntime) })],
       ["openai", new AutoInterfaceAdapter(resolver, new OpenAIImageAdapter(resolver))],
       ["weai", new AutoInterfaceAdapter(resolver, new WeAIImageAdapter(resolver))],
       ["runway", new AutoInterfaceAdapter(resolver, new RunwayAdapter(resolver))],
@@ -1018,7 +1016,7 @@ export class RunService {
             const supplierId = connection.config.supplierId;
             const supplier = typeof supplierId === "string" ? await this.repository.getSupplier(supplierId) : null;
             const useCloud = type === "image-generation" && supplier?.state?.generationTransport === "cloudflare";
-            if (useCloud && !["openai", "weai", "rest"].includes(connection.provider))
+            if (useCloud && !["openai", "weai", "rest", "langframe"].includes(connection.provider))
               throw new Error("该供应商接口暂不支持云端生图，请取消云端选项后使用本机方式");
             const cloud = useCloud ? await readCloudGenerationConfig() : null;
             if (useCloud) await testCloudGeneration(cloud);
@@ -2485,6 +2483,20 @@ export class RunService {
         result: { connectionId, remote: { id: providerTaskId } },
       };
     }
+    if (provider === "langframe") {
+      const connection = cliRecovery?.frozenConnection ?? await this.repository.getConnection(connectionId);
+      const baseUrl = connectionConfigString(connection?.config, "baseUrl");
+      const catalog = connection?.config.modelCatalogModels;
+      const descriptor = Array.isArray(catalog) ? catalog.find(model => isRecord(model) && model.id === cliRecovery?.model) : undefined;
+      const operations = isRecord(descriptor) && Array.isArray(descriptor.operations) ? descriptor.operations : [];
+      const video = operations.some(operation => typeof operation === "string" && operation.startsWith("video."));
+      const image = operations.some(operation => typeof operation === "string" && operation.startsWith("image."));
+      if (!baseUrl || video === image) throw new NeedsAttentionError("无法恢复狼帧任务：原始完整型号的媒体接口身份缺失；禁止重新生成");
+      const config = langframeConnector(video ? "video" : "image");
+      return { providerTaskId, id: providerTaskId, status: "running", ...(config.pollIntervalMs ? { pollAfterMs: config.pollIntervalMs } : {}),
+        result: { connectionId, baseUrl, config, remote: {}, taskId: providerTaskId, langframe: true,
+          ...(cliRecovery?.model ? { model: cliRecovery.model } : {}) } };
+    }
     if (provider === "rest") {
       const connection = cliRecovery?.frozenConnection ?? await this.repository.getConnection(connectionId);
       const savedConfig = connection?.config.connector;
@@ -3075,15 +3087,8 @@ export class RunService {
         }
       }
     }
-    if (assets.length > 0 && !cangyuanOwnMediaUploadAvailable(providerName, connectionConfig, model, operation) &&
-        ((imageMask && editingCapabilities.mask === "url") ||
-          (providerName === "rest" && restRequestRequiresPublicAssets(connectionConfig?.connector, model, operation, connectionConfig)) ||
-          (providerName !== "fake" && operation.startsWith("video.") && isRecord(descriptor) && isRecord(descriptor.metadata) && descriptor.metadata.remoteMediaUrlsOnly === true) ||
-          secureSkillRequiresPublicAssets(providerName, connectionConfig, model, operation) ||
-          chuangxiangRequiresPublicAssets(providerName, connectionConfig, model, operation) ||
-          chuangxiangMidjourneyRequiresPublicAssets(providerName, connectionConfig, model, operation) ||
-          (providerName === "openai" && operation === "image.edit" && !!model && isJijiuGptImage(connectionConfig ?? {}, model)) ||
-          bananaRequiresPublicAssets(providerName, connectionConfig, model))) {
+    if (assets.length > 0 && requiresPublicReferenceUrls({ provider: providerName, config: connectionConfig, model, operation,
+      descriptor, assets, maskRequiresUrl: Boolean(imageMask && editingCapabilities.mask === "url") })) {
       if (frozenConnection?.cloudGeneration) {
         const savedUrls = nodeRun.inputJson.cloudReferenceUrls;
         const urls = Array.isArray(savedUrls) && savedUrls.length === assets.length && savedUrls.every(value => typeof value === "string")
@@ -3094,7 +3099,7 @@ export class RunService {
         nodeRun.inputJson.cloudReferenceUrls = urls;
         assets.forEach((asset, index) => { asset.url = urls[index]!; });
       } else if (localReferenceChannelConfigured()) {
-        const urls = await localReferenceUrls(assets.map(asset => asset.id));
+        const urls = await localReferenceUrls(assets.map(asset => asset.id), assets);
         assets.forEach((asset, index) => { asset.url = urls[index]!; });
       } else if (!referenceImageHostingEnabled(connectionConfig)) {
         throw new Error("该模型需要参考素材的公网链接，请在设置的“素材通道”中连接本机通道，或选择支持直接上传素材的模型");
@@ -3129,7 +3134,7 @@ export class RunService {
     });
     // Exact supplier contracts validate saved size/tier/ratio/count choices themselves.
     // Generic inference must not erase an illegal selection before that validation.
-    if (!resumingTask && !nativeJiasuImage && providerName !== "cli" && semanticType(node) === "image-generation") {
+    if (!resumingTask && !nativeJiasuImage && providerName !== "cli" && providerName !== "langframe" && semanticType(node) === "image-generation") {
       const configuredDescriptor = configuredImageDescriptor(
         connectionConfig,
         model,
@@ -4047,7 +4052,7 @@ function providerFailureFor(
   error: unknown,
   node: WorkflowNode,
   nodeRun: NodeRunRecord,
-): ProviderErrorPresentation | undefined {
+): (ProviderErrorPresentation & { referenceDiagnostics?: LocalReferenceChannelError["diagnostics"] }) | undefined {
   if (error instanceof CancelledError) return undefined;
   const source =
     error instanceof NeedsAttentionError && error.cause !== undefined
@@ -4087,6 +4092,13 @@ function providerFailureFor(
     ...(supplier ? { supplier } : {}),
     ...(supplierWebsiteUrl ? { supplierWebsiteUrl } : {}),
   });
+  if (source instanceof LocalReferenceChannelError) {
+    delete presentation.providerMessage;
+    presentation = { ...presentation, message: source.message, type: "本机素材通道检查失败",
+      code: source.code, source: "local_validation", localMessage: source.message,
+      phase: "submit", retryable: false, submissionMayHaveOccurred: false,
+      failureCategory: "local_network", charge: { status: "not_charged", source: "not_submitted" } };
+  }
   if (error instanceof NeedsAttentionError && !(source instanceof ProviderHttpError)) {
     presentation = { ...presentation, message: error.message,
       ...(error.code ? { code: error.code } : {}) };
@@ -4110,7 +4122,9 @@ function providerFailureFor(
   // generation task was previously accepted and could already be billed.
   if (nodeRun.providerTaskId && charge?.source === "not_submitted")
     charge = { status: "unknown", source: "unconfirmed" };
-  return { ...presentation, ...(charge ? { charge } : {}) };
+  return { ...presentation,
+    ...(source instanceof LocalReferenceChannelError ? { referenceDiagnostics: source.diagnostics } : {}),
+    ...(charge ? { charge } : {}) };
 }
 
 class ProviderRequestValidationError extends Error {

@@ -2,7 +2,7 @@ import React from "react";
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { resultFailureFeedback } from "./result-failure-feedback";
+import { isUnsubmittedReferenceFailure, resultFailureFeedback } from "./result-failure-feedback";
 import { placeResultToolbar, resultToolbarUsableArea } from "./result-toolbar-placement";
 import { localizeRunError } from "./error-localization";
 import { ResultFailureFeedback } from "../components/result-failure-feedback";
@@ -13,6 +13,74 @@ import type { CanvasNodeData } from "../components/types";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("result failure feedback", () => {
+  const referenceFailure = (message = "本机素材通道原文件检查失败（第 2 项素材：公网读取中断或连接失败）；当前生成尚未提交。") => ({
+    message, code: "LOCAL_REFERENCE_ASSET_PREFLIGHT_FAILED", type: "本机素材通道检查失败",
+    source: "local_validation" as const, failureCategory: "local_network" as const, phase: "submit" as const,
+    submissionMayHaveOccurred: false, charge: { status: "not_charged" as const, source: "not_submitted" as const },
+  });
+
+  it.each(["公网读取中断或连接失败", "公网读取超时", "HTTP 403，当前生成尚未提交"])(
+    "explains confirmed unsubmitted references before generic network classification: %s", message => {
+      const raw = referenceFailure(message), saved = structuredClone(raw);
+      const feedback = resultFailureFeedback(localizeRunError(raw), raw);
+      expect(feedback).toMatchObject({ kind: "references", raw: message });
+      expect(feedback.cause).toContain("参考素材准备失败");
+      expect(feedback.cause).toContain("尚未提交生成");
+      expect(feedback.action).toContain("未产生生成费用");
+      expect(feedback.action).toContain("程序会先重新检查素材链接");
+      expect(`${feedback.cause}${feedback.action}`).not.toMatch(/核对原任务|无法确认|账单|可能扣费/u);
+      expect(raw).toEqual(saved);
+    },
+  );
+
+  it("does not infer non-submission from a reference code or absent task ID without complete evidence", () => {
+    const original = referenceFailure();
+    for (const error of [
+      { ...original, source: undefined },
+      { ...original, submissionMayHaveOccurred: undefined },
+      { ...original, submissionMayHaveOccurred: true },
+      { ...original, charge: { status: "unknown" as const, source: "unconfirmed" as const } },
+      { ...original, charge: { status: "charged" as const, source: "provider_response" as const } },
+      { ...original, charge: { status: "not_charged" as const, source: "not_submitted" as const, amount: 0.2 } },
+      { ...original, charge: undefined },
+    ]) {
+      expect(isUnsubmittedReferenceFailure(error)).toBe(false);
+      const feedback = resultFailureFeedback(error);
+      expect(feedback.kind).toBe("network");
+      expect(feedback.cause).toContain("暂时无法确认原任务状态");
+      expect(feedback.action).toContain("核对原任务");
+      expect(feedback.action).not.toContain("未产生生成费用");
+    }
+  });
+
+  it("renders both summary and expanded diagnosis for unsubmitted references without unknown-task guidance", () => {
+    vi.stubGlobal("React", React);
+    const raw = referenceFailure();
+    const markup = renderToStaticMarkup(React.createElement(ResultFailureFeedback, {
+      error: localizeRunError(raw), rawError: raw, runId: "local-preflight-only", status: "failed",
+    }));
+    for (const text of ["参考素材准备失败", "尚未提交生成", "未产生生成费用", "本地校验原文", raw.message,
+      "请求尚未发送（本地确认）", "未扣费", "local-preflight-only"])
+      expect(markup).toContain(text);
+    expect(markup).not.toMatch(/暂时无法确认原任务状态|核对原任务|扣费待确认|可能扣费/u);
+    expect(markup).toContain("供应商任务编号");
+    expect(markup).toContain("未取得");
+  });
+
+  it("preserves uncertain submitted network failures and their billing warning", () => {
+    vi.stubGlobal("React", React);
+    const raw = { message: "网络连接中断", failureCategory: "network" as const, source: "provider_response" as const,
+      phase: "poll" as const, submissionMayHaveOccurred: true,
+      charge: { status: "unknown" as const, source: "unconfirmed" as const } };
+    const markup = renderToStaticMarkup(React.createElement(ResultFailureFeedback, {
+      error: localizeRunError(raw), rawError: raw, taskId: "accepted-provider-task", status: "failed",
+    }));
+    expect(markup).toContain("暂时无法确认原任务状态");
+    expect(markup).toContain("核对原任务");
+    expect(markup).toContain("扣费待确认");
+    expect(markup).not.toContain("本次未产生生成费用");
+  });
+
   it.each([
     ["content_policy_violation", "moderation", "审核"],
     ["content_blocked_24h", "moderation", "审核"],

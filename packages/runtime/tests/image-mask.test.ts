@@ -7,7 +7,7 @@ import { resolveImageMask } from "../src/image-mask.js";
 import { RunService } from "../src/service.js";
 
 const channel = vi.hoisted(() => ({ configured: vi.fn(() => false), urls: vi.fn(async (ids: string[]) => ids.map(id => `https://isolated.test/assets/${id}`)) }));
-vi.mock("../src/reference-channel.js", () => ({ localReferenceChannel: () => null,
+vi.mock("../src/reference-channel.js", async importOriginal => ({ ...await importOriginal<object>(), localReferenceChannel: () => null,
   localReferenceChannelConfigured: channel.configured, localReferenceUrls: channel.urls }));
 afterEach(() => { channel.configured.mockReturnValue(false); channel.urls.mockClear(); });
 
@@ -124,7 +124,10 @@ describe("RunService mask submission boundary", () => {
     expect(submitted[0]?.operation).toBe("image.edit");
     expect(submitted[0]?.assets?.map(asset => [asset.id, asset.role])).toEqual([["source", "reference"], ["mask", "mask"]]);
     if (url) {
-      expect(channel.urls).toHaveBeenCalledExactlyOnceWith(["source", "mask"]);
+      expect(channel.urls).toHaveBeenCalledExactlyOnceWith(["source", "mask"], [
+        expect.objectContaining({ id: "source", mimeType: "image/png", data: (await storage.get("source.png"))!.bytes }),
+        expect.objectContaining({ id: "mask", mimeType: "image/png", data: (await storage.get("mask.png"))!.bytes }),
+      ]);
       expect(submitted[0]?.assets?.map(asset => asset.url)).toEqual(["https://isolated.test/assets/source", "https://isolated.test/assets/mask"]);
     } else expect(channel.urls).not.toHaveBeenCalled();
     expect(submitted[0]?.parameters).toEqual({ quality: "high" });

@@ -1,4 +1,5 @@
 import { supplierKeyForConnection } from "./supplier-identity";
+import { readLangframeKeyInventory } from "./langframe-inventory";
 import { clearCatalogManualMarker } from "./supplier-catalog-policy";
 import { reconcileCangyuanNativeGroupConnection } from "./cangyuan-native-group-connection";
 import { applyUserImageSizePresets } from "@super-canvas/providers/image-size-presets";
@@ -576,6 +577,12 @@ async function readModels(
   const refresh = searchParams.get("refresh") === "1";
   let connection = await repository.getConnection(id);
   if (!connection) return jsonError("供应商连接不存在", 404);
+  if (connection.provider === "langframe") {
+    const scan = await readLangframeKeyInventory(connection);
+    await repository.saveConnection({ ...connection, config: { ...connection.config, ...scan.permissionConfig } }, { expected: connection });
+    return Response.json(scan.models, { headers: { "Cache-Control": "no-store", "X-Model-Scan-Status": scan.models.length ? "live" : "empty",
+      "X-Model-Scan-Complete": "true", "X-Model-Scan-Checked-At": scan.checkedAt } });
+  }
   const alternateSource =
     !matchesSupplierTemplate(connection) &&
     Boolean(connection.config.preset || SUPPLIER_TEMPLATE_API_URLS[supplierKeyForConnection(connection)]);

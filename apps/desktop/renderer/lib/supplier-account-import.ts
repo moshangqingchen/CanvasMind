@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { ProviderConnectionRecord, SupplierRecord, SupplierState } from "@super-canvas/db";
-import type { SupplierAccountKeys } from "@super-canvas/providers";
+import { isLangframeCatalogSource, type SupplierAccountKeys } from "@super-canvas/providers";
 import { remainingVideoSupplier } from "@super-canvas/providers/remaining-video-contracts";
 import { supplierConnectionDraft } from "./supplier-connection-draft";
 import { reconcileCangyuanNativeGroupConnection } from "./cangyuan-native-group-connection";
+import { planLangframeAccountImport } from "./langframe-account-import";
 
 function importedKeyConfig(config: ProviderConnectionRecord["config"], verifyCapabilities?: boolean) {
   const next = { ...config };
@@ -34,6 +35,7 @@ export function planSupplierAccountImport(
     matchesKey?: (connection: ProviderConnectionRecord, apiKey: string) => boolean;
   } = {},
 ) {
+  if (supplier.kind === "langframe" || isLangframeCatalogSource(supplier.siteUrl)) return planLangframeAccountImport(supplier, connections, inventory, encrypt, initialConnections, options);
   const next = [...connections];
   const summary: NonNullable<SupplierState["keySync"]> = {
     status: inventory.complete ? "live" : inventory.keys.length ? "partial" : "failed",

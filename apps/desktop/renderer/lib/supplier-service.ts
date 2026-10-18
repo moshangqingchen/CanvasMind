@@ -145,7 +145,7 @@ export const SupplierInputSchema = z
     name: z.string().trim().min(1).max(120),
     siteUrl: url.optional(),
     apiUrl: url.optional(),
-    kind: z.enum(["auto", "newapi", "sub2api", "openai-compatible"]).optional(),
+    kind: z.enum(["auto", "newapi", "sub2api", "langframe", "openai-compatible"]).optional(),
     supplierKey: z.string().trim().min(1).max(128).optional(),
     catalog: z
       .object({ groups: z.array(SupplierGroupSchema).max(500) })
@@ -889,6 +889,11 @@ export async function scanSupplierRecord(
     // Account-owned groups may not be published in the public model plaza.
     const known = new Set(result.groups.map(group => group.id));
     for (const group of plan.catalog.groups) {
+      if (!known.has(group.id) && result.kind === "langframe" && group.id.startsWith("langframe-key:") && group.status !== "missing") {
+        result.groups.push({ ...group, source: "catalog", models: group.models.map(model => ({ ...model,
+          protocol: model.protocol === "rest" ? "unknown" : model.protocol })) });
+        continue;
+      }
       if (!known.has(group.id) && accountKeys.keys.some(key => key.group === group.id))
         result.groups.push({ ...group, source: "catalog", models: [],
           details: { source: "key-groups", ...group.details, stale: true } });

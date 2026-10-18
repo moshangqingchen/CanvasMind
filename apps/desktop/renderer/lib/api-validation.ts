@@ -96,6 +96,7 @@ export const ProviderKindSchema = z.enum([
   "runway",
   "rest",
   "fake",
+  "langframe",
 ]);
 
 interface JsonInspectionState {

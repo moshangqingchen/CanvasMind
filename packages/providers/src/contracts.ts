@@ -235,7 +235,7 @@ export interface ProviderAdapter {
   cleanup?(result: unknown): Promise<void>;
 }
 
-export type ProviderName = "openai" | "weai" | "runway" | "rest" | "fake" | "cli";
+export type ProviderName = "openai" | "weai" | "runway" | "rest" | "fake" | "cli" | "langframe";
 
 export interface ResolvedProviderConnection {
   id: string;

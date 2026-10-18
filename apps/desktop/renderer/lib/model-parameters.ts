@@ -426,6 +426,9 @@ export function parametersWithDefaults(
   const savedResolutionTier =
     typeof current.size_tier === "string"
       ? current.size_tier.trim().toUpperCase()
+      : typeof current.resolution === "string" && descriptors.some(descriptor => descriptor.key === "resolution" &&
+          descriptor.options?.some(option => ["1K", "2K", "4K"].includes(String(option.value).toUpperCase())))
+        ? current.resolution.trim().toUpperCase()
       : "";
   const hasTieredDimensionControl = descriptors.some(
     (descriptor) =>
@@ -528,6 +531,18 @@ export function normalizedParametersForModel(
     undefined,
     context,
   );
+  if (model?.metadata?.langframeCatalog === true) {
+    const parameters = { ...parametersWithDefaults(descriptors, {}, true), ...current };
+    if (nodeType === "image-generation") {
+      const tier = current.resolution ?? current.size_tier ?? parameters.resolution ?? parameters.size_tier;
+      if (tier !== undefined) {
+        if (current.resolution === undefined) parameters.resolution = tier;
+        if (current.size_tier === undefined) parameters.size_tier = tier;
+      }
+      if (current.size === undefined && ["aspect_ratio", "aspectRatio", "ratio"].some(key => current[key] !== undefined)) delete parameters.size;
+    }
+    return preserveImageMaskParameters(parameters, current);
+  }
   // Exact supplier refreshes retain saved choices, including values rejected by
   // the current contract, so validation can explain the change before charging.
   // Native video objects such as materials/face have no individual UI descriptor.

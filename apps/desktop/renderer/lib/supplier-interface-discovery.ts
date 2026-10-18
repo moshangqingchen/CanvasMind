@@ -123,6 +123,7 @@ export function applySavedModelInterfaces(connection: Connection, models: readon
 /** All live models consult supplier documentation before keeping a compatibility route. */
 export async function discoverSupplierModelInterfaces(connection: Connection, models: readonly ModelDescriptor[], previous: Connection,
   read = readSupplierInterfaceDocuments, options: InterfaceDocumentReadOptions = {}): Promise<{ models: ModelDescriptor[]; bindings: Record<string, DocumentedModelInterface> }> {
+  if (connection.provider === "langframe") return { models: [...models], bindings: {} };
   const visible = new Set(models.filter(model => !isCatalogContractProjection(model) && mayBind(model)).map(model => model.id));
   const sameSource = connection.config.baseUrl === previous.config.baseUrl && connection.config.supplierSourceId === previous.config.supplierSourceId;
   const bindings = Object.assign(Object.create(null) as Record<string, DocumentedModelInterface>,

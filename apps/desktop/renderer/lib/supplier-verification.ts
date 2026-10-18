@@ -38,6 +38,7 @@ async function readCharge(
   const returned = chargeFromVerificationResponse(test);
   if (returned) return returned;
   const session = await openSupplierSiteSession(supplier);
+  if (session?.kind === "langframe") return undefined;
   if (!session) return undefined;
   const path =
     session.kind === "newapi"

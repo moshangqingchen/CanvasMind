@@ -15,6 +15,7 @@ import { GenericRestAdapter, type GenericRestAdapterOptions } from "./rest.js";
 import { AutoInterfaceAdapter } from "./auto-interface-adapter.js";
 import { RunwayAdapter, type RunwayAdapterOptions } from "./runway.js";
 import { CliProviderAdapter, type CliProviderAdapterOptions } from "./cli.js";
+import { LangframeAdapter, type LangframeAdapterOptions } from "./langframe.js";
 import { resolve } from "node:path";
 
 export interface ProviderRegistryOptions {
@@ -25,6 +26,7 @@ export interface ProviderRegistryOptions {
   rest?: Omit<GenericRestAdapterOptions, "fetch">;
   fake?: FakeProviderOptions;
   cli?: CliProviderAdapterOptions;
+  langframe?: LangframeAdapterOptions;
   adapters?: Readonly<
     Partial<Record<ProviderName | (string & {}), ProviderAdapter>>
   >;
@@ -69,6 +71,9 @@ export function createDefaultProviderRegistry(
 ): ProviderRegistry {
   const registry = new ProviderRegistry(connections, options.adapters ?? {});
   const fetchImpl = options.fetch;
+  if (!options.adapters?.langframe) registry.register("langframe", new LangframeAdapter(connections, {
+    ...options.langframe, ...(fetchImpl ? { fetch: fetchImpl } : {}),
+  }));
   if (!options.adapters?.cli) {
     registry.register("cli", new CliProviderAdapter(connections, options.cli ?? { jobRoot: resolve(".super-canvas-cli-jobs") }));
   }

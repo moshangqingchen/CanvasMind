@@ -76,7 +76,7 @@ describe("Jijiu image parameters through the execution runtime (no network)", ()
   beforeEach(() => { previousMasterKey = process.env.MASTER_KEY; process.env.MASTER_KEY = masterKey; forbiddenNetwork.mockClear(); vi.stubGlobal("fetch", forbiddenNetwork); });
   afterEach(() => {
     try { expect(forbiddenNetwork).not.toHaveBeenCalled(); }
-    finally { vi.unstubAllGlobals(); if (previousMasterKey === undefined) delete process.env.MASTER_KEY; else process.env.MASTER_KEY = previousMasterKey; }
+    finally { vi.unstubAllGlobals(); vi.unstubAllEnvs(); if (previousMasterKey === undefined) delete process.env.MASTER_KEY; else process.env.MASTER_KEY = previousMasterKey; }
   });
 
   it.each(["2K", "4K"])("preserves requested %s and high quality through an older cached contract", async size => {
@@ -88,6 +88,34 @@ describe("Jijiu image parameters through the execution runtime (no network)", ()
     const [asset] = await f.repository.listAssets();
     expect(Buffer.from((await f.storage.get(asset!.storageKey))!.bytes)).toEqual(Buffer.from(validPngBase64, "base64"));
     expect(((await f.repository.getCanvas("canvas"))!.graph.nodes[0]!.data as JsonObject).parameters).toEqual(parameters);
+  });
+  it.each(["openai", "rest"] as const)("delivers original reference PNG bytes through %s multipart without requiring a public channel", async provider => {
+    vi.stubEnv("SUPERCANVAS_DESKTOP", "true"); vi.stubEnv("SUPERCANVAS_REFERENCE_CHANNEL_FILE", "");
+    const parameters = { size: "4K", quality: "high" }, f = await fixture(highTier, parameters, { provider });
+    const bytes = new Uint8Array(Buffer.from(validPngBase64, "base64"));
+    await f.storage.put("reference.png", bytes, "image/png");
+    const reference = await f.repository.saveAsset({ id: "reference", name: "Original alpha.png", kind: "image", mimeType: "image/png",
+      size: bytes.length, storageKey: "reference.png", metadata: { original: true } });
+    await f.repository.saveCanvas({ id: "canvas", title: "Native reference edit", graph: { schemaVersion: 1, nodes: [
+      { id: "image", type: "workflow", data: { nodeType: "image-generation", provider, connectionId: "jijiu", model: highTier,
+        parts: [{ type: "text", text: "Keep the original reference" }, { type: "asset", assetId: "reference", role: "reference" }],
+        parameters, outputs: [{ id: "image", kind: "image" }] } },
+    ], edges: [] } });
+    f.fetch.mockImplementation(async (url, init) => {
+      expect(String(url)).toBe(`${baseUrl}/images/edits`);
+      expect(init?.body).toBeInstanceOf(FormData);
+      const form = init!.body as FormData;
+      expect(form.get("model")).toBe(highTier); expect(form.get("size")).toBe("4K"); expect(form.get("quality")).toBe("high");
+      const files = form.getAll("image"); expect(files).toHaveLength(1);
+      const file = files[0] as File;
+      expect(file.type).toBe("image/png"); expect(new Uint8Array(await file.arrayBuffer())).toEqual(bytes);
+      return Response.json({ data: [{ b64_json: validPngBase64 }] });
+    });
+    const result = await finished(f, "succeeded");
+    expect(f.fetch).toHaveBeenCalledOnce();
+    expect(result.nodes[0]?.inputJson.operation).toBe("image.edit"); expect(result.nodes[0]?.inputJson.parameters).toEqual(parameters);
+    expect(await f.repository.getAsset("reference")).toEqual(reference);
+    expect((await f.storage.get("reference.png"))?.bytes).toEqual(bytes);
   });
   it.each(["resolution", "image_size", "imageSize", "size_tier"])("keeps saved %s until the exact adapter maps it to native size", async key => {
     const parameters = { [key]: "4K", quality: "high" }, f = await fixture(highTier, parameters);

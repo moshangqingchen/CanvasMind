@@ -24,10 +24,11 @@ import { cangyuanCatalogVideoPricing } from "./cangyuan-catalog-video-pricing.js
 import { isChuangxiangVideoModel } from "./chuangxiang-video-contract.js";
 import { readMonsterChannelPlaza, type SupplierChannelPlazaEvidence } from "./supplier-channel-plaza.js";
 import { supplierDirectoryPayloadComplete } from "./supplier-directory-completeness.js";
+import { isLangframeCatalogSource, parseLangframeCatalog } from "./langframe-catalog.js";
 export { isCyberAfeiUnpricedCatalogVideo } from "./cyberafei-catalog-evidence.js";
 
 export type SupplierSiteKind =
-  "auto" | "newapi" | "sub2api" | "openai-compatible";
+  "auto" | "newapi" | "sub2api" | "openai-compatible" | "langframe";
 export interface DiscoveredSupplierModel {
   id: string;
   name?: string;
@@ -702,6 +703,26 @@ export async function discoverSupplierCatalog(
     checkedAt,
     error: message,
   });
+  // 狼帧 publishes public categories and downstream call names in this feed.
+  // Generic NewAPI parsing would merge its reused inner IDs and lose tariffs.
+  if (kind === "langframe" || isLangframeCatalogSource(siteUrl, input.apiUrl)) {
+    kind = "langframe";
+    if (!isLangframeCatalogSource(siteUrl)) return unavailable("狼帧目录地址与已确认的官方站点不匹配");
+    let sourceUrl = `${siteUrl}/api/relay/groups?stats=1`;
+    let response = await probe(sourceUrl);
+    let parsed = parseLangframeCatalog(response.payload, { checkedAt, sourceUrl });
+    // Statistics are supplementary. Retain a complete official price/capability
+    // feed when only its optional statistics query is temporarily unavailable.
+    if (!parsed.recognized && ![401, 403].includes(response.status)) {
+      sourceUrl = `${siteUrl}/api/relay/groups`;
+      response = await probe(sourceUrl);
+      parsed = parseLangframeCatalog(response.payload, { checkedAt, sourceUrl });
+    }
+    if (!parsed.recognized) return unavailable("狼帧模型目录暂不可读取，保留历史目录", [401, 403].includes(response.status));
+    return { groups: parsed.groups, kind, status: parsed.groups.length ? "live" : "empty", checkedAt,
+      complete: parsed.complete, modelListsComplete: parsed.complete,
+      ...(!parsed.complete ? { error: "狼帧目录读取不完整，保留历史记录，请稍后重试" } : {}) };
+  }
   const siteHeaders = (
     platform: "newapi" | "sub2api",
   ): Record<string, string> | undefined => {

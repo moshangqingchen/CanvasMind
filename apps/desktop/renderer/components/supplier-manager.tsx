@@ -106,6 +106,7 @@ const KIND_LABELS: Record<SupplierKind, string> = {
   auto: "自动识别",
   newapi: "NewAPI / OneAPI",
   sub2api: "Sub2API",
+  langframe: "狼帧",
   "openai-compatible": "OpenAI 兼容",
 };
 const PROTOCOL_LABELS: Record<SupplierModelProtocol, string> = {
@@ -136,6 +137,36 @@ interface SupplierEntry {
   apiUrl: string;
   builtIn: boolean;
   record?: SupplierRecord;
+}
+
+const isLangframeKeyUsage = (group: Pick<SupplierCatalogGroup, "id">) => group.id.startsWith("langframe-key:");
+const langframeKeyUsageName = (group: Pick<SupplierCatalogGroup, "id" | "label">) => group.label.trim() && group.label !== group.id
+  ? group.label : `Key · ${group.id.endsWith(":agent") ? "对话" : "图片与视频"}`;
+
+/** The site's categories and the app's two views of a Key are separate counts. */
+export function supplierDirectoryOverview(kind: SupplierKind | undefined, groups: readonly SupplierCatalogGroup[], catalogGroups?: readonly SupplierCatalogGroup[]) {
+  if (kind !== "langframe") return { groupCount: groups.length,
+    modelCount: catalogGroups?.reduce((total, group) => total + group.models.length, 0),
+    groupLabel: "当前分组", groupNote: "保留站点目录与手动分组", modelLabel: "目录型号", modelNote: "按已保存的分组记录统计",
+    listDescription: "平台实际扫描返回的分组。", keyUsageCount: 0 };
+  const official = (catalogGroups ?? []).filter(group => group.source === "catalog" && group.status !== "missing" && !isLangframeKeyUsage(group));
+  const keyUsageCount = groups.filter(group => group.status !== "missing" && isLangframeKeyUsage(group)).length;
+  const manualCount = groups.filter(group => group.status !== "missing" && group.source === "manual" && !isLangframeKeyUsage(group)).length;
+  const historyCount = groups.filter(group => group.status === "missing").length;
+  const parts = [`${official.length} 个官网分组`, `${keyUsageCount} 个应用 Key 用途`, ...(manualCount ? [`${manualCount} 个手动分组`] : [])];
+  return { groupCount: official.length, modelCount: catalogGroups === undefined ? undefined : new Set(official.flatMap(group => group.models.map(model => model.id))).size,
+    groupLabel: "官网分组", groupNote: "仅统计官网当前目录分组", modelLabel: "不同调用型号", modelNote: "按官网完整调用名称去重，Key 用途不重复计数",
+    listDescription: `${parts.join(" + ")}${historyCount ? `；另保留 ${historyCount} 个历史分组` : ""}。应用 Key 用途分别展示图片与视频、对话的可用范围。`, keyUsageCount };
+}
+
+/** Keep internal scope IDs in state, while the user's Key label names the row. */
+export function SupplierGroupName({ group, langframe = false, active, onSelect }: {
+  group: Pick<SupplierCatalogGroup, "id" | "label">; langframe?: boolean; active: boolean; onSelect: () => void;
+}) {
+  const keyUsage = langframe && isLangframeKeyUsage(group), displayName = keyUsage ? langframeKeyUsageName(group) : group.id;
+  return <><h4 aria-label={displayName}><button aria-label={displayName} title={displayName} type="button" className="sm-group-select" aria-expanded={active} onClick={onSelect}>
+    {active ? <ChevronDown size={15} aria-hidden="true" /> : <ChevronRight size={15} aria-hidden="true" />}<span>{displayName}</span>
+  </button></h4>{!keyUsage && group.label !== group.id && <span title={group.label}>{group.label}</span>}</>;
 }
 
 function SupplierIdentity({ name, large = false }: { name: string; large?: boolean }) {
@@ -1121,7 +1152,6 @@ function SupplierDetail({
   }
   const record = entry.record;
   const catalogGroups = record?.catalog.groups;
-  const catalogModelCount = useMemo(() => catalogGroups?.reduce((total, group) => total + group.models.length, 0), [catalogGroups]);
   const savedAuthMode = record?.siteLogin?.authMode ?? "password";
   const showUserId = kind === "auto" || kind === "newapi";
   const sameLoginSource = (() => {
@@ -1186,6 +1216,8 @@ function SupplierDetail({
             : a.id.localeCompare(b.id, "zh-CN"),
       );
   }, [record, connections, initialGroup]);
+  const langframeDirectory = record?.kind === "langframe";
+  const directoryOverview = useMemo(() => supplierDirectoryOverview(record?.kind, groups, catalogGroups), [record?.kind, groups, catalogGroups]);
   const normalizedGroupQuery = appliedGroupQuery.trim().toLocaleLowerCase();
   const visibleGroups = groups.filter(group => supplierGroupMatchesQuery(group, connections, normalizedGroupQuery));
 
@@ -1404,8 +1436,8 @@ function SupplierDetail({
         </div>
       </header>
       <section className="sm-supplier-overview" aria-label="供应商目录概览">
-        <div data-supplier-stat="groups"><span>当前分组 <span className="sm-micro-label" aria-hidden="true">GROUPS</span></span><strong>{groups.length}</strong><small>保留站点目录与手动分组</small></div>
-        <div data-supplier-stat="models"><span>目录型号 <span className="sm-micro-label" aria-hidden="true">MODELS</span></span><strong>{catalogModelCount ?? "—"}</strong><small>按已保存的分组记录统计</small></div>
+        <div data-supplier-stat="groups"><span>{directoryOverview.groupLabel} <span className="sm-micro-label" aria-hidden="true">GROUPS</span></span><strong>{directoryOverview.groupCount}</strong><small>{directoryOverview.groupNote}</small></div>
+        <div data-supplier-stat="models"><span>{directoryOverview.modelLabel} <span className="sm-micro-label" aria-hidden="true">MODELS</span></span><strong>{directoryOverview.modelCount ?? "—"}</strong><small>{directoryOverview.modelNote}</small></div>
         <div data-supplier-stat="updated"><span>目录成功更新 <span className="sm-micro-label" aria-hidden="true">UPDATED</span></span>{record?.scanLastSuccessAt ?
           <time dateTime={record.scanLastSuccessAt} title={new Date(record.scanLastSuccessAt).toLocaleString("zh-CN")}>
             {new Date(record.scanLastSuccessAt).toLocaleDateString("zh-CN", { month: "short", day: "numeric" })}
@@ -1413,7 +1445,8 @@ function SupplierDetail({
           </time> : <strong>—</strong>}</div>
       </section>
       <div className="sm-status-summary" aria-label="供应商配置概况">
-        <span>已配置 Key <strong>{connections.filter(connection => connection.apiKeySet).length}</strong></span>
+        <span>已配置 Key <strong>{new Set(connections.filter(connection => connection.apiKeySet).map(connection =>
+          connection.provider === "langframe" && connection.config.accountKeyId ? String(connection.config.accountKeyId) : connection.id)).size}</strong></span>
         <span>模型目录已确认 <strong>{connections.filter(connection => connection.config.modelScanStatus === "live" || connection.config.modelScanStatus === "empty").length}</strong></span>
         <span>待配置或确认 <strong>{connections.filter(connection => !connection.apiKeySet || !["live", "empty"].includes(String(connection.config.modelScanStatus))).length}</strong></span>
       </div>
@@ -1738,7 +1771,8 @@ function SupplierDetail({
         )}
         {record?.state?.keySync && (
           <div className={`sm-notice ${record.state.keySync.status === "failed" ? "is-error" : ""}`} role="status" aria-label="账号密钥同步结果">
-            已自动填入 {record.state.keySync.imported} 个分组 Key，保留 {record.state.keySync.preserved} 个已有配置，跳过 {record.state.keySync.skipped} 项（停用、过期、受限或未绑定分组）。
+            {langframeDirectory ? `已同步 ${record.state.keySync.imported} 项 Key 用途，保留 ${record.state.keySync.preserved} 项已有配置，跳过 ${record.state.keySync.skipped} 项。`
+              : <>已自动填入 {record.state.keySync.imported} 个分组 Key，保留 {record.state.keySync.preserved} 个已有配置，跳过 {record.state.keySync.skipped} 项（停用、过期、受限或未绑定分组）。</>}
             {record.state.keySync.multipleGroups > 0 && " 同组存在多把 Key 时，优先保留已有配置；未配置时使用最新的有效 Key。"}
             {record.state.keySync.error && ` ${record.state.keySync.error}`}
           </div>
@@ -1749,10 +1783,10 @@ function SupplierDetail({
           <div>
             <div className="sm-section-title">
               <Layers3 size={17} />
-              <h3>分组与模型</h3>
+              <h3>{langframeDirectory ? "目录与 Key 用途" : "分组与模型"}</h3>
               <span className="sm-count">{groups.length}</span>
             </div>
-            <p>登录后自动填入已有分组 Key；已有配置保持不变，也可手动填写。</p>
+            <p>{langframeDirectory ? directoryOverview.listDescription : "登录后自动填入已有分组 Key；已有配置保持不变，也可手动填写。"}</p>
           </div>
           <button
             className="sm-button"
@@ -1849,7 +1883,7 @@ function SupplierDetail({
         )}
         {normalizedGroupQuery && groups.length > 0 && (
           <p className="sm-muted" role="status">
-            显示 {visibleGroups.length} / {groups.length} 个分组
+            显示 {visibleGroups.length} / {groups.length} {langframeDirectory ? "项" : "个分组"}
           </p>
         )}
         {(["supplier", "manual", "missing"] as const).map((section) => {
@@ -1864,7 +1898,7 @@ function SupplierDetail({
             matches,
           );
           if (section === "missing" && !all.length) return null;
-          const title = section === "missing" ? "未再返回的分组" : manual ? "手动分组" : "供应商分组";
+          const title = section === "missing" ? "未再返回的分组" : manual ? "手动分组" : langframeDirectory ? "官网分组与应用 Key 用途" : "供应商分组";
           const renderGroup = (group: SupplierCatalogGroup) => (
             <SupplierGroup active={activeGroupId === group.id}
               onSelect={() => {
@@ -1908,7 +1942,7 @@ function SupplierDetail({
                 <p className="sm-muted">
                   {section === "missing" ? "最近一次成功目录扫描未返回这些分组，保留原 Key 与历史；分组恢复后会自动回到当前列表。" : manual
                     ? "自己添加的分组；删除时一并移除该分组在本应用保存的 Key。"
-                    : "平台实际扫描返回的分组。"}
+                    : directoryOverview.listDescription}
                 </p>
                 {all.length > 24 ? <VirtualList items={filtered} itemKey={group => group.id} renderItem={renderGroup}
                   itemMeasurementKey={group => activeGroupId === group.id ? "expanded" : "collapsed"}
@@ -1931,7 +1965,7 @@ function SupplierDetail({
           <div className="sm-empty sm-group-empty" role="status">
             <Search size={27} />
             <h3>没有匹配“{appliedGroupQuery.trim()}”的分组或模型</h3>
-            <p>已有 {groups.length} 个分组，当前搜索条件隐藏了它们。</p>
+            <p>已有 {groups.length} {langframeDirectory ? "项" : "个分组"}，当前搜索条件隐藏了它们。</p>
             <button
               className="sm-button"
               type="button"
@@ -2009,18 +2043,20 @@ function SupplierGroup({
       )
       ? "agent"
       : "canvas";
+  const langframe = supplier.record?.kind === "langframe", keyUsage = langframe && isLangframeKeyUsage(group);
+  const displayName = keyUsage ? langframeKeyUsageName(group) : group.id;
   return (
     <article className={`sm-group-card ${active ? "is-active" : ""}`}>
       <header className="sm-group-header">
         <div className="sm-group-identity">
-          <h4 aria-label={group.id}><button aria-label={group.id} title={group.id} type="button" className="sm-group-select" aria-expanded={active} onClick={onSelect}>{active ? <ChevronDown size={15} aria-hidden="true" /> : <ChevronRight size={15} aria-hidden="true" />}<span>{group.id}</span></button></h4>
-          {group.label !== group.id && <span title={group.label}>{group.label}</span>}
-          <span className="sm-group-stable-id" title="供应商稳定分组编号">编号 {group.supplierGroupId?.trim() ? group.supplierGroupId : "—"}</span>
+          <SupplierGroupName group={group} langframe={langframe} active={active} onSelect={onSelect} />
+          {!keyUsage && <span className="sm-group-stable-id" title="供应商稳定分组编号">编号 {group.supplierGroupId?.trim() ? group.supplierGroupId : "—"}</span>}
           <span
             className={`sm-badge ${group.source === "manual" ? "is-manual" : ""}`}
           >
             {group.status === "missing"
               ? "本次目录未返回（保留历史）"
+              : keyUsage ? "应用 Key 用途"
               : group.source === "manual"
                 ? "手动分组"
                 : group.source === "catalog"
@@ -2028,12 +2064,12 @@ function SupplierGroup({
                   : "已保存分组"}
           </span>
           <span className="sm-group-key-status" data-configured={Boolean(connection?.apiKeySet)}>{connection?.apiKeySet ? "Key 已保存" : "Key —"}</span>
-          <span className="sm-group-rate" title="后台倍率">倍率 {group.details?.rateMultiplier !== undefined ? `${group.details.rateMultiplier}×` : "—"}</span>
+          {!keyUsage && <span className="sm-group-rate" title="后台倍率">倍率 {group.details?.rateMultiplier !== undefined ? `${group.details.rateMultiplier}×` : "—"}</span>}
           {typeof connection?.config.modelScanLastSuccessAt === "string" ? <time className="sm-group-refreshed" title={new Date(connection.config.modelScanLastSuccessAt).toLocaleString("zh-CN")} dateTime={connection.config.modelScanLastSuccessAt}>
             刷新 {new Date(connection.config.modelScanLastSuccessAt).toLocaleDateString("zh-CN", { month: "short", day: "numeric" })}
           </time> : <span className="sm-group-refreshed">刷新 —</span>}
         </div>
-        {active && <button type="button" className="sm-icon" aria-label={`刷新 ${group.id} 型号`} title="刷新模型" disabled={deleting || !connection?.apiKeySet}
+        {active && <button type="button" className="sm-icon" aria-label={`刷新 ${displayName} 型号`} title="刷新模型" disabled={deleting || !connection?.apiKeySet}
           onClick={() => refreshControl.current?.click()}><RefreshCw size={14} /></button>}
         {onDelete && (
           <button
@@ -2049,7 +2085,7 @@ function SupplierGroup({
         )}
       </header>
       <div hidden={!active}>
-      {group.details && <section className="sm-group-details" aria-label={`${group.id} 分组说明`}>
+      {group.details && <section className="sm-group-details" aria-label={`${displayName} 分组说明`}>
         <div className="sm-group-details-heading">
           <strong>分组说明</strong>
           <small>来源：{group.details.source === "key-groups" ? "密钥分组页" : "模型广场"}{group.details.stale ? " · 上次读取记录" : ""}</small>

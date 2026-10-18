@@ -6,6 +6,32 @@ import type { SupplierBillingSnapshot } from "@super-canvas/db";
 afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
 
 describe("supplier account amounts", () => {
+  it("reads only Langframe's declared credits and does not sum recent ledger or generation pages", async () => {
+    const profile = { ok: true, user: { account: "user@example.com", credits: "12.35", currency: "CNY",
+      ledger: [{ amount: 900, type: "consume" }], generations: [{ cost: 800 }, { cost: 700 }] } };
+    const fetcher = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => Response.json(profile));
+    const result = await readSupplierBilling({ siteUrl: "https://vipprompt.cn", sourceId: "wolf", kind: "langframe" }, fetcher);
+    expect(result).toMatchObject({ status: "partial", balance: 12.35, unit: "credits", used: undefined,
+      todayUsed: undefined, requests: undefined, todayStatus: "missing", sourceUrl: "https://vipprompt.cn/api/me" });
+    expect(result.unitNote).toContain("积分");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0]).toMatchObject(["https://vipprompt.cn/api/me", { method: "GET", redirect: "error" }]);
+    expect(result.usedSourceUrl).toBeUndefined();
+    expect(result.todaySourceUrl).toBeUndefined();
+    expect(parseSupplierBilling("langframe", { ...profile, user: { ...profile.user, credits: 0 } }, {})).toMatchObject({ balance: 0, used: undefined });
+    expect(parseSupplierBilling("langframe", { ...profile, user: { ...profile.user, credits: -2 } }, {})).toMatchObject({ balance: -2, unit: "credits" });
+  });
+  it("rejects invalid Langframe profiles or amounts without using recent charges as a replacement", async () => {
+    expect(() => parseSupplierBilling("langframe", { ok: false, user: { account: "user", credits: 0 } }, {})).toThrow();
+    expect(() => parseSupplierBilling("langframe", { ok: true, credits: 0 }, {})).toThrow();
+    for (const credits of [null, "", " ", false, "NaN", {}, []]) {
+      await expect(readSupplierBilling({ siteUrl: "https://vipprompt.cn", sourceId: "wolf", kind: "langframe" },
+        async () => Response.json({ ok: true, user: { account: "user", credits, ledger: [{ amount: 1 }], generations: [{ cost: 2 }] } }))).rejects.toThrow();
+    }
+    const fetcher = vi.fn();
+    await expect(readSupplierBilling({ siteUrl: "https://other.test", sourceId: "wolf", kind: "langframe" }, fetcher)).rejects.toThrow();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
   it("converts NewAPI quota only with the site's own divisor", () => {
     expect(parseSupplierBilling("newapi", { data: { quota: "750000", used_quota: 125000, request_count: 12 } }, { data: { quota_per_unit: 500000 } }))
       .toMatchObject({ balance: 1.5, used: .25, todayUsed: undefined, requests: 12, unit: "credits", unitBasis: "site-conversion" });

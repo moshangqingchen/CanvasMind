@@ -119,7 +119,7 @@ async function loadAssets(
   }
   if (result.length && connection.provider === "rest" && restRequestRequiresPublicAssets(connection.config.connector, model, "image.edit", connection.config)) {
     if (localReferenceChannelConfigured()) {
-      const urls = await localReferenceUrls(result.map(asset => asset.id));
+      const urls = await localReferenceUrls(result.map(asset => asset.id), result);
       result.forEach((asset, index) => { asset.url = urls[index]!; });
     } else if (!referenceImageHostingEnabled(connection.config)) throw new Error("请在设置的“素材通道”中连接本机通道，或选择支持直接上传素材的模型");
   }

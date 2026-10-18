@@ -27,7 +27,7 @@ describe("supplier runtime reference delivery", () => {
       outputs: [{ id: "video", kind: "video" }],
     } }], edges: [] } });
     const submit = vi.fn<ProviderAdapter["submit"]>(async request => {
-      expect(urls).toHaveBeenCalledWith(["ref"]);
+      expect(urls).toHaveBeenCalledWith(["ref"], [expect.objectContaining({ id: "ref", mimeType: "image/png", data: new Uint8Array([1, 2, 3]) })]);
       expect(request.operation).toBe("video.image-to-video");
       expect(request.assets?.[0]?.url).toBe("https://assets.example.com/api/provider-assets/ref?token=signed-test");
       return { providerTaskId: "video-one", status: "succeeded" };
@@ -68,7 +68,7 @@ describe("supplier runtime reference delivery", () => {
       outputs: [{ id: "image", kind: "image" }],
     } }], edges: [] } });
     const submit = vi.fn<ProviderAdapter["submit"]>(async request => {
-      expect(urls).toHaveBeenCalledWith(["ref"]);
+      expect(urls).toHaveBeenCalledWith(["ref"], [expect.objectContaining({ id: "ref", mimeType: "image/png", data: new Uint8Array([1, 2, 3]) })]);
       expect(request.operation).toBe("image.edit");
       expect(request.assets?.[0]?.url).toBe("https://assets.example.com/api/provider-assets/ref?token=signed-test");
       return { providerTaskId: "img-one", status: "succeeded" };

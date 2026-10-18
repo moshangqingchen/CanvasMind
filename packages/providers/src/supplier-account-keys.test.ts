@@ -5,6 +5,59 @@ import { loginSupplierSite } from "./supplier-login.js";
 const siteUrl = "https://site.example.test/gateway";
 const key = "sk-full-secret-for-account-import";
 describe("account key discovery", () => {
+  it("reads Langframe's existing Keys once without turning fallback groups into independent Key bindings", async () => {
+    const fetcher = vi.fn(async () => Response.json({ ok: true, keys: [
+      { id: "707b2ab1-03f2-46d1-8217-b0b2693d2a71", name: "all", revoked: false, groups: [], models: [], token: key },
+      { id: "restricted-key", name: "limited", revoked: false, groups: ["B", "A"], models: ["image public name"], token: "sk-another-full-account-import" },
+      { id: "revoked", revoked: true, groups: [], models: [], token: "sk-revoked-secret-never-import" },
+      { id: "masked", revoked: false, groups: [], models: [], token: "sk-abcd...abcd" },
+      { id: "old", revoked: false, groups: [], models: [] },
+    ] }));
+    const result = await readSupplierAccountKeys({ siteUrl: "https://vipprompt.cn", kind: "langframe" }, fetcher);
+    expect(result).toMatchObject({ complete: true, skipped: 3, keys: [
+      { id: "707b2ab1-03f2-46d1-8217-b0b2693d2a71", group: "账户 Key 707b2ab1-03f2-46d1-8217-b0b2693d2a71", apiKey: key,
+        accountGroups: [], modelIds: [], routing: "ordered-fallback" },
+      { id: "restricted-key", accountGroups: ["B", "A"], modelIds: ["image public name"], routing: "ordered-fallback" },
+    ] });
+    expect(result.keys.every(item => !item.supplierGroupId)).toBe(true);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0]?.[0]).toBe("https://vipprompt.cn/api/keys");
+    expect(fetcher.mock.calls[0]?.[1]).toMatchObject({ method: "GET", redirect: "error" });
+  });
+
+  it("never broadens missing or malformed Langframe restrictions to all groups", async () => {
+    const fetcher = vi.fn(async () => Response.json({ ok: true, keys: [
+      { id: "missing", revoked: false, token: key },
+      { id: "wrong", revoked: false, groups: "all", models: [], token: key },
+      { id: "bad-model", revoked: false, groups: [], models: [null], token: key },
+      { id: "valid", revoked: false, groups: ["second", "first", "second"], models: [], token: key },
+    ] }));
+    const result = await readSupplierAccountKeys({ siteUrl: "https://www.vipprompt.cn", kind: "langframe" }, fetcher);
+    expect(result).toMatchObject({ complete: false, skipped: 3, keys: [{ id: "valid", accountGroups: ["second", "first"], modelIds: [] }] });
+    expect(result.error).not.toContain(key);
+  });
+
+  it("does not choose an arbitrary Langframe token or scope when a Key identity conflicts", async () => {
+    const fetcher = vi.fn(async () => Response.json({ ok: true, keys: [
+      { id: "same", revoked: false, groups: ["A"], models: [], token: key },
+      { id: "same", revoked: false, groups: ["B"], models: [], token: key },
+    ] }));
+    const result = await readSupplierAccountKeys({ siteUrl: "https://vipprompt.cn", kind: "langframe" }, fetcher);
+    expect(result).toMatchObject({ complete: false, keys: [] });
+  });
+
+  it("rejects a failed Langframe list without leaking its server message or creating Keys", async () => {
+    const fetcher = vi.fn(async () => Response.json({ ok: false, keys: [], error: `private ${key}` }, { status: 403 }));
+    const result = await readSupplierAccountKeys({ siteUrl: "https://vipprompt.cn", kind: "langframe" }, fetcher);
+    expect(result).toMatchObject({ complete: false, keys: [] });
+    expect(result.error).not.toContain(key);
+    expect(fetcher.mock.calls[0]?.[1]).toMatchObject({ method: "GET" });
+    const otherSite = vi.fn();
+    const rejected = await readSupplierAccountKeys({ siteUrl: "https://other.test", kind: "langframe" }, otherSite);
+    expect(rejected.complete).toBe(false);
+    expect(otherSite).not.toHaveBeenCalled();
+  });
+
   it("paginates Sub2API keys, resolves group IDs, and skips expired or disabled keys", async () => {
     const fetcher = vi.fn(async (url: RequestInfo | URL) => {
       const path = String(url);

@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const network = vi.hoisted(() => ({
   lookup: vi.fn(async (hostname: string, _options?: unknown) => {
     // Preserve the real-host scope test without sending a DNS request.
-    if (!["tk1688.com", "asian-acc.we-token.cc", "api.mikoto.vip", "api.eaheng.com", "tu.988236.xyz", "api.hangzhale.com", "vapi.chuangxiangai.asia", "synoralink.com", "ai.whyshy.cn", "token.secure-skill.com"].includes(hostname)) throw new Error("Unexpected DNS in supplier login test");
+    if (!["tk1688.com", "asian-acc.we-token.cc", "api.mikoto.vip", "api.eaheng.com", "tu.988236.xyz", "api.hangzhale.com", "vapi.chuangxiangai.asia", "synoralink.com", "ai.whyshy.cn", "token.secure-skill.com", "vipprompt.cn", "www.vipprompt.cn"].includes(hostname)) throw new Error("Unexpected DNS in supplier login test");
     return [{ address: "203.0.113.10", family: 4 }];
   }),
   fetch: vi.fn(),
@@ -26,7 +26,7 @@ beforeEach(() => {
 afterEach(() => {
   try {
     expect(network.fetch).not.toHaveBeenCalled();
-    expect(network.lookup.mock.calls.every(([hostname]) => ["tk1688.com", "asian-acc.we-token.cc", "api.mikoto.vip", "api.eaheng.com", "tu.988236.xyz", "api.hangzhale.com", "vapi.chuangxiangai.asia", "synoralink.com", "ai.whyshy.cn", "token.secure-skill.com"].includes(hostname))).toBe(true);
+    expect(network.lookup.mock.calls.every(([hostname]) => ["tk1688.com", "asian-acc.we-token.cc", "api.mikoto.vip", "api.eaheng.com", "tu.988236.xyz", "api.hangzhale.com", "vapi.chuangxiangai.asia", "synoralink.com", "ai.whyshy.cn", "token.secure-skill.com", "vipprompt.cn", "www.vipprompt.cn"].includes(hostname))).toBe(true);
   } finally {
     vi.unstubAllGlobals();
   }
@@ -37,6 +37,90 @@ const credentials = {
   username: " user@example.com ",
   password: " password with spaces ",
 };
+
+describe("Langframe website authentication", () => {
+  const token = "fake-langframe-dashboard-token";
+  const profile = { ok: true, user: { account: "user@example.com", credits: 1, ledger: [], generations: [] } };
+  it.each(["https://vipprompt.cn", "https://www.vipprompt.cn"])("recognizes %s without guessing NewAPI and bounds its session", async base => {
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      if (String(input).endsWith("/api/auth/login")) {
+        expect(init?.method).toBe("POST");
+        expect(init?.redirect).toBe("error");
+        expect(JSON.parse(String(init?.body))).toEqual({ account: "user@example.com", password: credentials.password, ref: "" });
+        return Response.json({ ok: true, token });
+      }
+      return Response.json(String(input).endsWith("/api/me") ? profile : { ok: true });
+    });
+    const session = await loginSupplierSite({ siteUrl: base, kind: "auto", credentials }, fetcher);
+    expect(session.kind).toBe("langframe");
+    expect(fetcher.mock.calls.map(([input]) => String(input))).toEqual([`${base}/api/auth/login`, `${base}/api/me`]);
+    for (const path of ["/api/me", "/api/keys", "/api/relay/groups", "/api/relay/groups?stats=1"]) {
+      await session.fetch(`${base}${path}`);
+      expect(new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers).get("authorization")).toBe(`Bearer ${token}`);
+      expect(fetcher.mock.calls.at(-1)?.[1]?.redirect).toBe("error");
+    }
+    for (const [target, method] of [
+      [`${base}/api/keys`, "POST"], [`${base}/api/keys/1`, "DELETE"], [`${base}/api/keys?page=1`, "GET"],
+      [`${base}/api/me/`, "GET"], [`${base}/api/me#fragment`, "GET"], [`${base}/api/relay/groups?stats=0`, "GET"],
+      [`${base}/api/relay/groups?stats=1&extra=1`, "GET"], [`${base}/v1/images/generations`, "POST"],
+      [`${base}/api/canvas/media-upload`, "POST"],
+      [`https://user@${new URL(base).host}/api/keys`, "GET"], ["https://other.test/api/keys", "GET"],
+      [base === "https://vipprompt.cn" ? "https://www.vipprompt.cn/api/keys" : "https://vipprompt.cn/api/keys", "GET"],
+    ]) {
+      await session.fetch(target!, { method });
+      expect(new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers).get("authorization")).toBeNull();
+    }
+  });
+  it("validates a saved website token through /api/me without password login", async () => {
+    const fetcher = vi.fn<typeof fetch>(async () => Response.json(profile));
+    const session = await loginSupplierSite({ siteUrl: "https://vipprompt.cn", kind: "langframe", credentials: { accessToken: token } }, fetcher);
+    expect(session.kind).toBe("langframe");
+    expect(fetcher.mock.calls.map(([input]) => String(input))).toEqual(["https://vipprompt.cn/api/me"]);
+    expect(new Headers(fetcher.mock.calls[0]?.[1]?.headers).get("authorization")).toBe(`Bearer ${token}`);
+  });
+  it("authenticates an explicitly requested raw-byte asset upload without permitting other site writes", async () => {
+    const base = "https://vipprompt.cn";
+    const fetcher = vi.fn<typeof fetch>(async input => Response.json(String(input).endsWith("/api/me") ? profile : { ok: true }));
+    const session = await loginSupplierSite({ siteUrl: base, kind: "auto", credentials: { accessToken: token } }, fetcher,
+      { allowLangframeMediaUpload: true });
+    const body = new Uint8Array([137, 80, 78, 71]);
+    await session.fetch(`${base}/api/canvas/media-upload`, { method: "POST", headers: { "content-type": "image/png" }, body });
+    const upload = fetcher.mock.calls.at(-1)?.[1];
+    expect(upload?.body).toBe(body);
+    expect(new Headers(upload?.headers).get("content-type")).toBe("image/png");
+    expect(new Headers(upload?.headers).get("authorization")).toBe(`Bearer ${token}`);
+    expect(upload?.redirect).toBe("error");
+    for (const target of [`${base}/api/canvas/media-upload?extra=1`, `${base}/api/canvas/media-upload/`,
+      `${base}/api/canvas/generate`, `${base}/api/keys`, "https://www.vipprompt.cn/api/canvas/media-upload"]) {
+      await session.fetch(target, { method: "POST", body });
+      expect(new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers).get("authorization")).toBeNull();
+    }
+  });
+  it.each(["https://other.test", "http://vipprompt.cn", "https://vipprompt.cn.evil.test", "https://vipprompt.cn/gateway"])(
+    "refuses the custom contract at %s before sending credentials", async siteUrl => {
+      const fetcher = vi.fn<typeof fetch>();
+      await expect(loginSupplierSite({ siteUrl, kind: "langframe", credentials }, fetcher)).rejects.toMatchObject({ code: "invalid_configuration" });
+      expect(fetcher).not.toHaveBeenCalled();
+    });
+  it.each([
+    { status: 401, code: "invalid_credentials" }, { status: 403, code: "verification_required" },
+    { status: 429, code: "rate_limited" }, { status: 503, code: "network" },
+  ])("classifies HTTP $status without echoing an upstream credential", async ({ status, code }) => {
+    const fetcher = vi.fn<typeof fetch>(async () => Response.json({ ok: false, error: token }, { status }));
+    let failure: unknown;
+    try { await loginSupplierSite({ siteUrl: "https://vipprompt.cn", kind: "auto", credentials }, fetcher); } catch (error) { failure = error; }
+    expect(failure).toMatchObject({ code });
+    expect(String(failure)).not.toContain(token);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+  it("does not accept a failed login envelope or an unverified account profile", async () => {
+    const rejected = vi.fn<typeof fetch>(async () => Response.json({ ok: false, token }));
+    await expect(loginSupplierSite({ siteUrl: "https://vipprompt.cn", kind: "auto", credentials }, rejected)).rejects.toMatchObject({ code: "invalid_credentials" });
+    expect(rejected).toHaveBeenCalledTimes(1);
+    const invalidProfile = vi.fn<typeof fetch>(async () => Response.json({ ok: true }));
+    await expect(loginSupplierSite({ siteUrl: "https://vipprompt.cn", kind: "auto", credentials: { accessToken: token } }, invalidProfile)).rejects.toMatchObject({ code: "invalid_token" });
+  });
+});
 
 describe("supplier website access token", () => {
   const base = "https://site.test/gateway";

@@ -17,8 +17,16 @@ function data(payload: unknown) {
 const currency = (value: unknown) => typeof value === "string" && /^[A-Z]{3}$/u.test(value.trim().toUpperCase()) ? value.trim().toUpperCase() : undefined;
 
 /** No key-list sums or recent-page sums: only account-wide totals are accepted. */
-export function parseSupplierBilling(kind: "newapi" | "sub2api", profilePayload: unknown, extraPayload: unknown, todayPayload?: unknown,
+export function parseSupplierBilling(kind: "newapi" | "sub2api" | "langframe", profilePayload: unknown, extraPayload: unknown, todayPayload?: unknown,
   options: { siteUrl?: string } = {}) {
+  if (kind === "langframe") {
+    const root = record(profilePayload), user = record(root.user);
+    if (root.ok !== true || typeof user.account !== "string" || !user.account.trim())
+      throw Error("供应商未返回有效账务数据");
+    return { balance: number(user.credits), used: undefined, todayUsed: undefined, requests: undefined,
+      unit: "credits", unitBasis: "unspecified" as const,
+      unitNote: "按狼帧后台积分显示，不换算为货币；历史账单和生成记录不代表账户累计或今日消耗。" };
+  }
   const profile = data(profilePayload);
   let extra: Record<string, unknown>;
   try { extra = data(extraPayload); } catch { extra = {}; }
@@ -81,8 +89,19 @@ function todayAvailability(result: PromiseSettledResult<unknown>, amount: number
   return { todayStatus: "missing", todayError: "供应商未返回今日消耗字段" };
 }
 
-export async function readSupplierBilling(input: { siteUrl: string; sourceId: string; kind: "newapi" | "sub2api" }, fetch: FetchImplementation): Promise<SupplierBillingSnapshot> {
+export async function readSupplierBilling(input: { siteUrl: string; sourceId: string; kind: "newapi" | "sub2api" | "langframe" }, fetch: FetchImplementation): Promise<SupplierBillingSnapshot> {
   const base = supplierDirectoryBase(input.siteUrl);
+  if (input.kind === "langframe") {
+    if (!["https://vipprompt.cn", "https://www.vipprompt.cn"].includes(base)) throw Error("狼帧账务读取只适用于已核对的官方站点地址");
+    const profile = await fetchProviderJson<unknown>(fetch, `${base}/api/me`, { method: "GET", cache: "no-store", redirect: "error" },
+      { phase: "connect", timeoutMs: 12000, maxResponseBytes: 1024 * 1024 });
+    const amounts = parseSupplierBilling("langframe", profile, {});
+    if (amounts.balance === undefined) throw Error("供应商没有返回可识别的余额字段");
+    const checkedAt = new Date().toISOString();
+    return { sourceId: input.sourceId, ...amounts, checkedAt, lastSuccessAt: checkedAt, sourceUrl: `${base}/api/me`,
+      status: "partial", todayStatus: "missing", todayError: "供应商未返回今日消耗字段",
+      error: "后台未返回账户累计消耗和今日消耗；未提供的金额显示为未读取" };
+  }
   const now = new Date();
   const dayStart = new Date(now);
   dayStart.setHours(0, 0, 0, 0);

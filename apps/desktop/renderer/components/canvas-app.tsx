@@ -204,6 +204,7 @@ import {
 } from "../lib/frimodel-presets";
 import {
   providerConnectionGroup,
+  providerConnectionGroupDisplayLabel,
   providerConnectionSupplierKey,
   providerConnectionUsage,
   providerSupplierLabel,
@@ -7928,6 +7929,7 @@ function CanvasShell({
                   connections,
                 ),
                 group: providerConnectionGroup(connection),
+                groupLabel: providerConnectionGroupDisplayLabel(connection),
                 available: connectionIsConfigured(connection) && Boolean(generationType && connectionSupportsNodeType(connection, generationType, models)),
                 supplierId: typeof connection.config.supplierId === "string" ? connection.config.supplierId : undefined,
                 modelQuote: modelPickerPriceData(compatibleModels.find(model => model.id === node.data.model)),

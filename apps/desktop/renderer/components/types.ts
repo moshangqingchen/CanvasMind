@@ -173,6 +173,8 @@ export interface CanvasNodeData extends Record<string, unknown> {
     modelDescriptor?: ModelDescriptor;
     modelMatch?: boolean;
     group: string;
+    /** Display label only; group keeps its original connection-scope identity. */
+    groupLabel?: string;
     available?: boolean;
     unavailableReason?: string;
   }>;

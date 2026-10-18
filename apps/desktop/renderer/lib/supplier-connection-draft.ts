@@ -18,6 +18,7 @@ import {
   mikotoGroup,
 } from "./mikoto-presets";
 import { weAiCatalogGroup } from "./weai-catalog";
+import { isLangframeCatalogSource } from "@super-canvas/providers/langframe-catalog";
 
 /** Keep the adapters already supported by each built-in group when connecting it in the new UI. */
 export function supplierConnectionDraft(
@@ -34,6 +35,10 @@ export function supplierConnectionDraft(
     ...(group.supplierGroupId ? { accountKeyGroupId: group.supplierGroupId } : {}),
     baseUrl: apiUrl,
   };
+  if (isLangframeCatalogSource(apiUrl)) return { provider: "langframe", config: {
+    ...base, baseUrl: `${new URL(apiUrl).origin}/v1`,
+    ...(usage === "agent" ? { protocol: "chat-completions", directorProtocol: "openai-chat-completions" } : {}),
+  } };
   if (usage !== "canvas" || group.source === "manual" || !matchesSupplierTemplate({ provider: "openai", config: base }))
     return { provider: usage === "agent" ? "rest" : "openai", config: base };
   let preset: { provider: string; config: Record<string, unknown> } | undefined;
