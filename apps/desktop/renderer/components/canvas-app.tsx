@@ -2921,6 +2921,8 @@ function CanvasShell({
   const tidyCanvasLayoutRef = useRef<(() => void) | null>(null);
   const [layoutAnimating, setLayoutAnimating] = useState(false);
   const [arrangementOrder, setArrangementOrder] = useState<CanvasArrangementOrder>(readCanvasArrangementOrder);
+  const arrangementOrderRef = useRef(arrangementOrder);
+  useEffect(() => { arrangementOrderRef.current = arrangementOrder; }, [arrangementOrder]);
   const [arrangementMenuOpen, setArrangementMenuOpen] = useState(false);
   const arrangementMenuRef = useRef<HTMLDivElement | null>(null);
   const arrangementPopupRef = useRef<HTMLDivElement | null>(null);
@@ -8966,7 +8968,7 @@ function CanvasShell({
               return ids.has(node.id) && expected && Math.abs(expected.x - node.position.x) < .5 && Math.abs(expected.y - node.position.y) < .5;
             }), optimisticNode];
             const movableIds = new Set(batchNodes.map(node => node.id));
-            const ordered = sortCanvasArrangementItems(batchNodes, arrangementOrder, node => node.data.label, node => node.id);
+            const ordered = sortCanvasArrangementItems(batchNodes, arrangementOrderRef.current, node => node.data.label, node => node.id);
             batch.positions = placeCanvasBatch(ordered.map(node => ({ id: node.id, ...nodeDimensions(node) })), batch.anchor,
               state.nodes.filter(node => !movableIds.has(node.id) && !node.hidden).map(node => ({ id: node.id, position: node.position, ...nodeDimensions(node) })));
             importBatchesRef.current.set(optimisticNode.id, batch);
@@ -9070,7 +9072,6 @@ function CanvasShell({
       }
     };
   }, [
-    arrangementOrder,
     canvasId,
     checkpoint,
     completePendingAssetImport,
