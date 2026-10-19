@@ -17,8 +17,8 @@ const image: ModelDescriptor = {
   pricing: { kind: "per-image", currency: "CNY", unitAmount: .4, confidence: "exact", checkedAt: timestamp },
 };
 
-async function fixture(page: Page, request: APIRequestContext, options: { currentId?: string; longList?: boolean; emptySecondary?: boolean; longAliasDisplay?: boolean } = {}) {
-  const { currentId = "equal-name", longList = false, emptySecondary = false, longAliasDisplay = false } = options;
+async function fixture(page: Page, request: APIRequestContext, options: { currentId?: string; longList?: boolean; emptySecondary?: boolean; longAliasDisplay?: boolean; tableDetails?: boolean } = {}) {
+  const { currentId = "equal-name", longList = false, emptySecondary = false, longAliasDisplay = false, tableDetails = false } = options;
   expect(process.env.PLAYWRIGHT_BASE_URL, "仅使用本地隔离运行时").toBeFalsy();
   const prohibited: string[] = [], errors: string[] = [], writes: Record<string, unknown>[] = [];
   page.on("pageerror", error => errors.push(error.message));
@@ -60,6 +60,10 @@ async function fixture(page: Page, request: APIRequestContext, options: { curren
   }
   if (emptySecondary) connections.push(connection("empty-secondary", "供应商甲 · 无次要内容组", "无次要内容组", {
     models: [{ ...image, metadata: { canvasRunnable: false } }],
+  }));
+  if (tableDetails) connections.push(connection("detail-table", "供应商甲 · 档位表格组", "档位表格组", {
+    models: [{ ...image, pricing: { kind: "per-image", currency: "CNY", confidence: "exact", checkedAt: timestamp,
+      tiers: [1, 2].map(value => ({ id: `tier-${value}`, dimension: "resolution", value: `${value}K`, label: `${value}K`, price: value * .4 })) } }],
   }));
   if (longList) for (let index = 0; index < 28; index++) connections.push(connection(`long-${index}`, `长列表连接 ${index}`, `长列表分组 ${index}`, { beta: true }));
   const suppliers = ["account-a", "account-b", "account-c"].map((id, index) => ({
@@ -140,6 +144,13 @@ for (const theme of ["light", "dark"] as const) for (const width of [360, 320]) 
       const quote = f.row("beta-long").getByLabel("同型号报价", { exact: true });
       await expect(quote).toHaveText(longQuote);
       expect(await quote.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+      await expect(f.routes.getByText("同型号", { exact: true })).toHaveCount(0);
+      const summary = f.row("equal-name").locator("summary");
+      await expect(summary).toHaveText("明细");
+      await expect(summary).toHaveAccessibleName(/价格明细$/u);
+      expect(await summary.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+      const rowBox = (await f.row("equal-name").boundingBox())!, summaryBox = (await summary.boundingBox())!;
+      expect(summaryBox.x + summaryBox.width).toBeLessThanOrEqual(rowBox.x + rowBox.width + 1);
     }
     f.assertSafe();
   });
@@ -166,11 +177,15 @@ test("供应商余额分层、身份去重、报价与可访问描述完整", as
   await expect(f.choice("beta-unavailable")).toContainText("密钥未配置或不可用");
   await expect(f.choice("beta-unavailable")).not.toContainText("切换后将使用");
   await expect(f.choice("beta-target")).toContainText("切换后将使用：已保存目标模型");
+  await expect(f.choice("equal-name")).toHaveAccessibleDescription(/同型号；切换后将使用/u);
+  await expect(f.choice("equal-name")).toHaveAttribute("title", /同型号；切换后将使用/u);
+  await expect(f.routes.getByText("同型号", { exact: true })).toHaveCount(0);
   await expect(f.routes.getByLabel("报价比对型号", { exact: true })).toHaveText("同型号报价");
   await expect(f.routes.locator("details[open]")).toHaveCount(0);
   const summaries = f.routes.locator("summary");
   expect(await summaries.count()).toBeGreaterThan(0);
   await expect(summaries.first()).toHaveAccessibleName(/价格明细$/u);
+  await expect(summaries.first()).toHaveText("明细");
   await summaries.first().click(); await expect(summaries.first().locator("..")).toHaveAttribute("open", "");
   for (const connection of f.connections) {
     await expect(f.choice(connection.id)).toHaveAccessibleDescription(new RegExp(`连接 ID：${connection.id}`, "u"));
@@ -180,6 +195,45 @@ test("供应商余额分层、身份去重、报价与可访问描述完整", as
   const missingDescriptions = await f.routes.evaluate(element => [...element.querySelectorAll("[aria-describedby]")].flatMap(node =>
     (node.getAttribute("aria-describedby") ?? "").split(/\s+/u).filter(id => id && !document.getElementById(id))));
   expect(missingDescriptions).toEqual([]);
+  f.assertSafe();
+});
+
+test("普通线路单行、320px单价明细完整且当前标记覆盖明细列、展开表格跨列", async ({ page, request }) => {
+  test.skip(before, "改动前仅采集相同 fixture 截图");
+  const f = await fixture(page, request, { tableDetails: true });
+  await f.trigger.evaluate(element => { element.style.width = "320px"; });
+  await f.trigger.click();
+  const current = f.row("equal-name"), choice = f.choice("equal-name"), summary = current.locator("summary");
+  await expect(current).toHaveAttribute("data-route-current", "true");
+  await expect(summary).toHaveText("明细");
+  const singleLine = await choice.evaluate(element => {
+    const style = getComputedStyle(element), title = element.querySelector("strong")!, titleStyle = getComputedStyle(title);
+    return { height: element.getBoundingClientRect().height, titleHeight: title.getBoundingClientRect().height,
+      lineHeight: parseFloat(titleStyle.lineHeight), padding: parseFloat(style.paddingTop) + parseFloat(style.paddingBottom)
+        + parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth) };
+  });
+  expect(singleLine.titleHeight).toBeLessThanOrEqual(singleLine.lineHeight + 1);
+  expect(singleLine.height).toBeLessThanOrEqual(singleLine.lineHeight + singleLine.padding + 1);
+  const [rowBox, choiceBox, summaryBox, quoteBox] = await Promise.all([
+    current.boundingBox(), choice.boundingBox(), summary.boundingBox(), current.getByLabel("同型号报价", { exact: true }).boundingBox(),
+  ]);
+  expect(summaryBox!.y).toBeGreaterThanOrEqual(choiceBox!.y - 1);
+  expect(summaryBox!.y + summaryBox!.height).toBeLessThanOrEqual(choiceBox!.y + choiceBox!.height + 1);
+  expect(rowBox!.height).toBeLessThanOrEqual(choiceBox!.height + 2);
+  expect(summaryBox!.x).toBeGreaterThanOrEqual(quoteBox!.x + quoteBox!.width - 1);
+  expect(summaryBox!.x + summaryBox!.width).toBeLessThanOrEqual(rowBox!.x + rowBox!.width + 1);
+  expect(await current.evaluate(element => getComputedStyle(element).backgroundColor)).not.toMatch(/^(?:transparent|rgba\(0, 0, 0, 0\))$/u);
+  for (const element of [summary, current.getByLabel("同型号报价", { exact: true })]) {
+    expect(await element.evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+  }
+  const tableRow = f.row("detail-table"), tableSummary = tableRow.locator("summary");
+  await tableSummary.click();
+  const details = tableRow.locator("details[open]"), table = details.getByRole("table");
+  await expect(table).toBeVisible();
+  const [expandedRowBox, detailsBox, tableBox] = await Promise.all([tableRow.boundingBox(), details.boundingBox(), table.boundingBox()]);
+  expect(detailsBox!.width).toBeGreaterThanOrEqual(expandedRowBox!.width - 2);
+  expect(tableBox!.width).toBeGreaterThan(expandedRowBox!.width * .8);
+  expect(tableBox!.x + tableBox!.width).toBeLessThanOrEqual(expandedRowBox!.x + expandedRowBox!.width + 1);
   f.assertSafe();
 });
 
