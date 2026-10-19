@@ -1794,6 +1794,24 @@ export class RunService {
     throw new NeedsAttentionError("节点状态已被其他执行器修改；本次执行已停止");
   }
 
+  private async checkpointKnownTask(
+    runId: string,
+    nodeRunId: string,
+    checkpoint: KnownTaskCheckpoint,
+    allowNull = false,
+  ): Promise<NodeRunRecord | null> {
+    try {
+      return allowNull
+        ? await this.repository.updateNodeRun(nodeRunId, checkpoint)
+        : await this.updateNodeRunOrCancel(runId, nodeRunId, checkpoint);
+    } catch (cause) {
+      if (cause instanceof CancelledError || cause instanceof NeedsAttentionError) throw cause;
+      throw new NeedsAttentionError("供应商已受理任务，但本地回执保存失败；已保留原任务，恢复时只查询原任务", {
+        code: "provider_checkpoint_failed", cause, checkpoint,
+      });
+    }
+  }
+
   private updateCancelledNode(
     runId: string,
     nodeRunId: string,
@@ -2266,10 +2284,21 @@ export class RunService {
           this.repository.getRun(runId),
           this.repository.getNodeRun(nodeRun.id),
         ]);
+        const checkpoint = error instanceof NeedsAttentionError ? error.checkpoint : undefined;
+        // Carry the actual receipt even for repositories that failed before
+        // changing memory. Never downgrade a newer terminal receipt or replace
+        // a different task owned by another executor.
+        const currentTask = storedProviderTask(authoritativeNode?.inputJson.providerTask);
+        const checkpointTask = storedProviderTask(checkpoint?.inputJson.providerTask);
+        const recoveryPatch = checkpoint && (!authoritativeNode?.providerTaskId || authoritativeNode.providerTaskId === checkpoint.providerTaskId) &&
+          !(currentTask && !["running", "queued"].includes(currentTask.status) && checkpointTask && ["running", "queued"].includes(checkpointTask.status))
+          ? { providerTaskId: checkpoint.providerTaskId, inputJson: checkpoint.inputJson } : {};
+        const diagnosticNode = { ...(authoritativeNode ?? nodeRun), ...recoveryPatch };
         if (this.shutdownSignal?.aborted && authoritativeRun?.status !== "cancelled" &&
             authoritativeNode?.status !== "cancel_requested" && authoritativeNode?.status !== "cancelled") {
           // Keep the task ID and running/archiving checkpoint available to the
           // next process. Shutdown is not a provider failure or user cancel.
+          if (checkpoint) await this.repository.updateNodeRun(nodeRun.id, recoveryPatch, { expectedUpdatedAt: authoritativeNode?.updatedAt });
           executionLost = true;
           return false;
         }
@@ -2307,7 +2336,7 @@ export class RunService {
         const providerFailure = providerFailureFor(
           error,
           node,
-          authoritativeNode ?? nodeRun,
+          diagnosticNode,
         );
         const cancelledTask = storedProviderTask(authoritativeNode?.inputJson.providerTask);
         const stoppedCliTracking = nodeOutcome === "cancelled" &&
@@ -2321,12 +2350,17 @@ export class RunService {
             : nodeOutcome === "needs_attention"
               ? "needs_attention"
               : "failed";
+        if (cancellationWon && checkpoint) {
+          // Receipt-only supplementation cannot revive a cancelled node.
+          await this.repository.updateNodeRun(nodeRun.id, recoveryPatch, { expectedUpdatedAt: authoritativeNode?.updatedAt });
+        }
         const persistedFailure = cancellationWon
           ? await this.updateCancelledNode(runId, nodeRun.id,
               providerFailure ? { ...providerFailure } : { message }, undefined, "cancelled", nodeRun.errorJson ?? null)
           : await this.repository.updateNodeRun(
           nodeRun.id,
           {
+            ...recoveryPatch,
             status: nodeStatus,
             errorJson: providerFailure
               ? { ...providerFailure }
@@ -3536,11 +3570,11 @@ export class RunService {
       ...inputJson,
       providerTask: providerTaskJson(task),
     };
-    const persistedTask = await this.repository.updateNodeRun(nodeRunId, {
+    const persistedTask = await this.checkpointKnownTask(runId, nodeRunId, {
       status: task.status === "succeeded" ? "archiving" : "running",
       providerTaskId: inputJson.cloudGeneration ? cloudSubmissionId(request.idempotencyKey) : task.providerTaskId,
       inputJson: taskSnapshot,
-    });
+    }, true);
     if (!persistedTask) {
       // Cancellation may win immediately after a paid submission. Preserve
       // the remote task id without changing the cancellation status so the
@@ -3623,8 +3657,9 @@ export class RunService {
       // running poll; terminal state or a new billing receipt needs a checkpoint.
       if (chargeChanged || (state.status !== "running" && state.status !== "queued")) {
         try {
-          await this.updateNodeRunOrCancel(runId, nodeRunId, {
+          await this.checkpointKnownTask(runId, nodeRunId, {
             status: state.status === "succeeded" ? "archiving" : "running",
+            providerTaskId: inputJson.cloudGeneration ? cloudSubmissionId(request.idempotencyKey) : state.providerTaskId,
             inputJson: { ...inputJson, providerTask: providerTaskJson(state) },
           });
         } catch (error) {
@@ -3654,8 +3689,9 @@ export class RunService {
       throw new NeedsAttentionError(
         `无法识别供应商任务状态：${String(state.status)}`,
       );
-    await this.updateNodeRunOrCancel(runId, nodeRunId, {
+    await this.checkpointKnownTask(runId, nodeRunId, {
       status: "archiving",
+      providerTaskId: inputJson.cloudGeneration ? cloudSubmissionId(request.idempotencyKey) : state.providerTaskId,
       inputJson: { ...inputJson, providerTask: providerTaskJson(state) },
     });
     let artifacts: RemoteArtifact[];
@@ -4119,7 +4155,7 @@ function providerFailureFor(
     presentation = { ...presentation, message: error.message,
       ...(error.code ? { code: error.code } : {}) };
     const storageCode = isRecord(source) && typeof source.code === "string" ? source.code : undefined;
-    if (error.code === "artifact_archive_failed" &&
+    if (error.code === "provider_checkpoint_failed" || error.code === "artifact_archive_failed" &&
         ((storageCode && ["ENOSPC", "EDQUOT", "EIO", "EROFS", "EACCES", "EPERM", "ENOENT"].includes(storageCode)) ||
           (source instanceof Error && /archive storage .*unavailable/iu.test(source.message)))) {
       presentation = { ...presentation, failureCategory: "local_storage", type: "本地保存失败" };
@@ -4188,16 +4224,20 @@ class ProviderTaskFailedError extends Error {
   }
 }
 
+type KnownTaskCheckpoint = { status: NodeRunRecord["status"]; providerTaskId: string; inputJson: JsonObject };
+
 class NeedsAttentionError extends Error {
   public readonly code?: string;
+  public readonly checkpoint?: KnownTaskCheckpoint;
 
   public constructor(
     message: string,
-    options?: ErrorOptions & { code?: string },
+    options?: ErrorOptions & { code?: string; checkpoint?: KnownTaskCheckpoint },
   ) {
     super(message, options);
     this.name = "NeedsAttentionError";
     this.code = options?.code;
+    this.checkpoint = options?.checkpoint;
   }
 }
 class CancelledError extends Error {}

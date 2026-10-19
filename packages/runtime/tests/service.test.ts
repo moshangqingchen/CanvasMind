@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -1078,6 +1078,74 @@ async function waitForRun(service: RunService, runId: string) {
 }
 
 describe("RunService", () => {
+  it.each([1, 2, 3])("recovers checkpoint %s when the repository throws before retaining the receipt", async checkpointNumber => {
+    const repository = await testRepository(), canvas = await repository.ensureDefaultCanvas();
+    await repository.saveCanvas({ id: canvas.id, graph: resumableNodeGraph() });
+    const update = repository.updateNodeRun.bind(repository); let checkpoints = 0; let failed = false;
+    vi.spyOn(repository, "updateNodeRun").mockImplementation(async (id, patch, options) => {
+      if (patch.status !== "needs_attention" && patch.inputJson?.providerTask && ++checkpoints === checkpointNumber) {
+        failed = true; throw Object.assign(new Error("receipt disk write failed"), { code: "EIO" });
+      }
+      return update(id, patch, options);
+    });
+    const provider = pollingAdapter([]), service = new AdapterRunService(provider.adapter, repository, new MemoryStorage());
+    const run = await service.createRun({ canvasId: canvas.id, clientRequestId: `checkpoint-${checkpointNumber}`, scope: "node", nodeId: "image" });
+    const first = await waitForRun(service, run.id);
+    expect(failed).toBe(true); expect(first.run.status).toBe("needs_attention");
+    expect(first.nodes[0]).toMatchObject({ status: "needs_attention", providerTaskId: "unexpected-submit",
+      inputJson: { providerTask: { providerTaskId: "unexpected-submit", status: checkpointNumber === 1 ? "running" : "succeeded" } },
+      errorJson: { code: "provider_checkpoint_failed", failureCategory: "local_storage", charge: { status: "unknown" } } });
+    await service.retryRun(run.id); const recovered = await waitForRun(service, run.id);
+    expect(recovered.run.status).toBe("succeeded"); expect(provider.calls()).toEqual({ submit: 1, poll: 1 });
+  });
+
+  it("durably preserves the accepted receipt after the first FileRepository persist fails", async () => {
+    const root = await mkdtemp(join(tmpdir(), "super-canvas-receipt-checkpoint-"));
+    try {
+      let failNext = false; let failed = false;
+      const path = join(root, "state.json"), repository = new FileRepository(path, async (oldPath, newPath) => {
+        if (failNext) { failNext = false; failed = true; throw Object.assign(new Error("receipt persist unavailable"), { code: "EIO" }); }
+        return rename(oldPath, newPath);
+      });
+      await repository.saveConnection({ id: "runway-test", name: "Offline receipt fixture", provider: "runway", encryptedSecret: null, config: {} });
+      const canvas = await repository.ensureDefaultCanvas(); await repository.saveCanvas({ id: canvas.id, graph: resumableNodeGraph() });
+      const provider = pollingAdapter([]), original = provider.adapter.submit.bind(provider.adapter);
+      vi.spyOn(provider.adapter, "submit").mockImplementation(async request => { const receipt = await original(request); failNext = true; return receipt; });
+      const storage = new MemoryStorage(), service = new AdapterRunService(provider.adapter, repository, storage);
+      const run = await service.createRun({ canvasId: canvas.id, clientRequestId: "file-receipt", scope: "node", nodeId: "image" });
+      expect((await waitForRun(service, run.id)).run.status).toBe("needs_attention"); expect(failed).toBe(true);
+      const reloaded = new FileRepository(path);
+      expect((await reloaded.listNodeRuns(run.id))[0]).toMatchObject({ status: "needs_attention", providerTaskId: "unexpected-submit",
+        inputJson: { providerTask: { providerTaskId: "unexpected-submit", status: "running" } }, errorJson: { code: "provider_checkpoint_failed" } });
+      const resumed = new AdapterRunService(provider.adapter, reloaded, storage);
+      await resumed.retryRun(run.id); expect((await waitForRun(resumed, run.id)).run.status).toBe("succeeded");
+      expect(provider.calls()).toEqual({ submit: 1, poll: 1 });
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it.each(["cancel", "shutdown"] as const)("keeps the known receipt without reviving execution after %s and a checkpoint failure", async action => {
+    const repository = await testRepository(), canvas = await repository.ensureDefaultCanvas();
+    await repository.saveCanvas({ id: canvas.id, graph: resumableNodeGraph() });
+    const shutdown = new AbortController(), provider = pollingAdapter([]);
+    const update = repository.updateNodeRun.bind(repository); let failed = false;
+    vi.spyOn(repository, "updateNodeRun").mockImplementation(async (id, patch, options) => {
+      if (!failed && patch.inputJson?.providerTask) {
+        failed = true; const node = await repository.getNodeRun(id);
+        if (action === "cancel") {
+          await repository.updateRun(node!.workflowRunId, { status: "cancelled" }); await update(id, { status: "cancelled" });
+        } else shutdown.abort();
+        throw Object.assign(new Error("checkpoint write failed"), { code: "EIO" });
+      }
+      return update(id, patch, options);
+    });
+    const service = new AdapterRunService(provider.adapter, repository, new MemoryStorage(), "inline", "runway", { shutdownSignal: shutdown.signal });
+    const run = await service.createRun({ canvasId: canvas.id, clientRequestId: `checkpoint-${action}`, scope: "node", nodeId: "image" });
+    await vi.waitFor(async () => expect((await repository.listNodeRuns(run.id))[0]?.providerTaskId).toBe("unexpected-submit"));
+    const node = (await repository.listNodeRuns(run.id))[0]!;
+    expect(node.inputJson.providerTask).toMatchObject({ providerTaskId: "unexpected-submit", status: "running" });
+    if (action === "cancel") expect(node.status).toBe("cancelled");
+    expect(provider.calls()).toEqual({ submit: 1, poll: 0 });
+  });
   it("persists accepted cloud and upstream identities in uncertainty diagnostics", async () => {
     const repository = await testRepository(); const canvas = await repository.ensureDefaultCanvas();
     await repository.saveCanvas({ id: canvas.id, graph: resumableNodeGraph() });
