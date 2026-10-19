@@ -38,7 +38,7 @@ async function setup(page: Page, request: APIRequestContext, model: ModelDescrip
   await page.route(`**/api/providers/${connection.id}/models*`, route => route.fulfill({ json: models,
     headers: { "X-Model-Scan-Status": "live", "X-Model-Scan-Complete": "true" } }));
   const parameters = Object.fromEntries((model.parameters ?? []).filter(p => p.default !== undefined).map(p => [p.key, p.default]));
-  const response = await request.post("/api/canvas", { data: { title: "佳速隔离参数验收", graph: {
+  const response = await request.post("/api/canvas", { data: { title: `佳速隔离参数验收 ${crypto.randomUUID()}`, graph: {
     schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 1 }, edges: [], nodes: [{ id: "media", type: "workflow",
       position: { x: 80, y: 60 }, style: { width: 420, height: 180 }, data: {
         nodeType: model.outputKinds?.includes("video") ? "video-generation" : "image-generation", label: "佳速验收",

@@ -80,7 +80,7 @@ for (const failure of ["submission", "provider", "multi-selection", "marquee-sel
     }
 
     const response = await request.post("/api/canvas", { data: {
-      title: "失败结果参数交互回归", graph: {
+      title: `失败结果参数交互回归 ${crypto.randomUUID()}`, graph: {
         schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 1 }, edges: [], nodes: [{
           id: "source", type: "workflow", position: { x: 55, y: 70 }, style: { width: 420, height: 180 },
           data: {

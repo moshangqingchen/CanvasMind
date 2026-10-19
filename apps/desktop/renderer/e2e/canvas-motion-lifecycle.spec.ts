@@ -10,7 +10,7 @@ async function openCanvas(page: Page, request: APIRequestContext) {
     } else await route.continue();
   });
   const response = await request.post("/api/canvas", { data: {
-    title: "隔离动效生命周期回归",
+    title: `隔离动效生命周期回归 ${crypto.randomUUID()}`,
     graph: {
       schemaVersion: 1,
       viewport: { x: 0, y: 0, zoom: 1 },

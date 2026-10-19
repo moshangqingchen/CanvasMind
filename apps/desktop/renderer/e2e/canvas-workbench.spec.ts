@@ -24,7 +24,7 @@ async function openWorkbench(page: Page, request: APIRequestContext) {
     } else await route.continue();
   });
   const created = await request.post("/api/canvas", { data: {
-    title: "工作台验收 · 很长的项目名称也应保持创作工具可用",
+    title: `工作台验收 · 很长的项目名称也应保持创作工具可用 ${crypto.randomUUID()}`,
     graph: {
       schemaVersion: 1,
       viewport: { x: 0, y: 0, zoom: 1 },

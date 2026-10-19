@@ -11,7 +11,7 @@ const QUALITY_LABEL = "用于检验长标签自动换行的输出画质设置";
 async function createLayoutCanvas(request: APIRequestContext, connectionId: string, zoom: number, nodeWidth: number) {
   const response = await request.post("/api/canvas", {
     data: {
-      title: `布局回归 ${zoom}`,
+      title: `布局回归 ${zoom} ${crypto.randomUUID()}`,
       graph: {
         schemaVersion: 1,
         viewport: { x: 0, y: 0, zoom: zoom < .55 ? 1 : zoom },

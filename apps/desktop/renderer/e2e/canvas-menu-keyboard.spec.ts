@@ -2,7 +2,7 @@ import { expect, test, type APIRequestContext, type Locator, type Page } from ".
 
 async function openCanvas(page: Page, request: APIRequestContext, grouped = false, empty = false) {
   const response = await request.post("/api/canvas", { data: {
-    title: "画布菜单键盘回归",
+    title: `画布菜单键盘回归 ${crypto.randomUUID()}`,
     graph: { schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 1 }, edges: [], nodes: (empty ? [] : [0, 1]).map((index) => ({
       id: `prompt-${index}`, type: "workflow", position: { x: 100 + index * 350, y: 130 },
       style: { width: 300, height: 200 },

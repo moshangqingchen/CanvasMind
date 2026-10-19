@@ -108,7 +108,7 @@ async function openPanel(
   });
   const response = await request.post("/api/canvas", {
     data: {
-      title: "模型面板交互回归",
+      title: `模型面板交互回归 ${crypto.randomUUID()}`,
       graph: {
         schemaVersion: 1,
         viewport: { x: 0, y: 0, zoom: 1 },

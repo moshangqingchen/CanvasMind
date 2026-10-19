@@ -39,7 +39,7 @@ async function fixture(page: Page, request: APIRequestContext) {
   await page.route(`**/api/providers/${connection.id}/models*`, route => route.fulfill({
     json: models, headers: { "X-Model-Scan-Status": "live" },
   }));
-  const canvasResponse = await request.post("/api/canvas", { data: { title: "完整模型列表布局回归", graph: {
+  const canvasResponse = await request.post("/api/canvas", { data: { title: `完整模型列表布局回归 ${crypto.randomUUID()}`, graph: {
     schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 1 }, edges: [], nodes: [{
       id: "layout-image", type: "workflow", position: { x: 55, y: 40 }, style: { width: 420, height: 180 },
       data: { nodeType: "image-generation", label: "列表布局", provider: "rest", connectionId: connection.id,

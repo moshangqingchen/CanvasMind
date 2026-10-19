@@ -70,7 +70,7 @@ async function setup(page: Page, request: APIRequestContext, group: keyof typeof
     else await route.continue();
   });
   const connection = connections.find(connection => connection.id === `isolated-pdog-${group}`)!;
-  const response = await request.post("/api/canvas", { data: { title: `pDog isolated ${group}`, graph: {
+  const response = await request.post("/api/canvas", { data: { title: `pDog isolated ${group} ${crypto.randomUUID()}`, graph: {
     schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 1 }, edges: [], nodes: [{
       id: "pdog-image", type: "workflow", position: { x: 80, y: 60 }, style: { width: 420, height: 180 },
       data: { nodeType: "image-generation", label: "pDog 文档验收", provider: "openai", connectionId: connection.id,

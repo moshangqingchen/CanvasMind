@@ -36,7 +36,7 @@ for (const modelId of ["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"]) {
       ? route.fulfill({ json: [connection] }) : route.continue());
     await page.route(`**/api/providers/${connection.id}/models*`, route => route.fulfill({ json: [model],
       headers: { "X-Model-Scan-Status": "live", "X-Model-Scan-Complete": "true" } }));
-    const response = await request.post("/api/canvas", { data: { title: "Mikoto 1K 参数隔离回归", graph: {
+    const response = await request.post("/api/canvas", { data: { title: `Mikoto 1K 参数隔离回归 ${crypto.randomUUID()}`, graph: {
       schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 1 }, edges: [], nodes: [{ id: "mikoto-g5-image", type: "workflow",
         position: { x: 80, y: 60 }, style: { width: 420, height: 180 }, data: { nodeType: "image-generation",
           label: "Mikoto 1K 参数", provider: "openai", connectionId: connection.id, model: modelId, qualityMode: "custom",

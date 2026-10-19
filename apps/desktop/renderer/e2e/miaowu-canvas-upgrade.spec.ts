@@ -82,7 +82,7 @@ for (const deliverWhileRunning of [false, true]) test(`Miaowu canvas updates the
     };
     return route.fulfill({ json: status });
   });
-  const response = await request.post("/api/canvas", { data: { title: "Miaowu directory upgrade isolated", graph: {
+  const response = await request.post("/api/canvas", { data: { title: `Miaowu directory upgrade isolated ${crypto.randomUUID()}`, graph: {
     schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 1 }, edges: [], nodes: [{ id: "miaowu-video", type: "workflow", position: { x: 80, y: 60 },
       style: { width: 420, height: 180 }, data: { nodeType: "video-generation", label: "喵呜升级验收", provider: "rest", connectionId: stored.id,
         model: "seedance-2.0-mini-deal", qualityMode: "custom", parameters: { resolution: "720p", duration: 4, aspect_ratio: "16:9" }, parts: [],

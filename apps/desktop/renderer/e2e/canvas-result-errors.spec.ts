@@ -2,7 +2,7 @@ import { expect, test } from "./helpers/canvas-offline-test";
 
 for (const status of ["cancelled", "failed", "needs_attention"]) test(`${status}: result remains draggable with scrollable errors and working controls`, async ({ page, request }, testInfo) => {
   const message = status === "cancelled" ? "运行已取消" : "参考图片传输未完成，需要核对接口。".repeat(15) + "最后一行必须完整显示";
-  const canvas = await (await request.post("/api/canvas", { data: { title: "结果文字验收", graph: {
+  const canvas = await (await request.post("/api/canvas", { data: { title: `结果文字验收 ${crypto.randomUUID()}`, graph: {
     schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 1 }, edges: [], nodes: [{ id: "result", type: "workflow", position: { x: 160, y: 110 }, style: { width: 340, height: 190 }, data: {
       nodeType: "asset-input", label: "结果验收", assetKind: "image", generatedResult: true, generatedStatus: status,
       generatedError: { message, providerMessage: "上游完整原文：" + "详细原因。".repeat(70) + "原文结尾" }, generatedProvider: "rest", generatedModel: "gpt-image-2", inputs: [], outputs: [],

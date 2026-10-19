@@ -10,7 +10,7 @@ for (const source of ["local_validation", "legacy_local", "provider_response"] a
       : source === "legacy_local"
         ? { message: `请求未提交：${reason}`, providerMessage: reason, failureCategory: "invalid_request" }
         : { message: `供应商拒绝了请求：${reason}`, source, providerMessage: reason, statusCode: 400, failureCategory: "invalid_request" };
-    const response = await request.post("/api/canvas", { data: { title: "错误来源验收", graph: {
+    const response = await request.post("/api/canvas", { data: { title: `错误来源验收 ${crypto.randomUUID()}`, graph: {
       schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 1 }, edges: [], nodes: [{ id: "result", type: "workflow",
         position: { x: 160, y: 110 }, style: { width: 340, height: 340 }, data: {
           nodeType: "asset-input", label: "错误来源验收", assetKind: "video", generatedResult: true,

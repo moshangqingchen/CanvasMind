@@ -9,7 +9,7 @@ async function graph(request: APIRequestContext, id: string): Promise<Graph> {
   return (await response.json()).graph;
 }
 async function create(request: APIRequestContext, nodes: unknown[]) {
-  const response = await request.post("/api/canvas", { data: { title: "音乐工作流 mock 验收", graph: { schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 1 }, nodes, edges: [] } } });
+  const response = await request.post("/api/canvas", { data: { title: `音乐工作流 mock 验收 ${crypto.randomUUID()}`, graph: { schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 1 }, nodes, edges: [] } } });
   expect(response.ok()).toBeTruthy();
   return (await response.json()).id as string;
 }

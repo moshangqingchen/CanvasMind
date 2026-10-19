@@ -100,7 +100,7 @@ async function setup(page: Page, request: APIRequestContext, kind: MediaKind, ov
   const parameters = kind === "video" ? { resolution: "720p", duration: 5, aspect_ratio: "16:9", generate_audio: true, n: 1 }
     : kind === "music" ? { instrumental: false, duration: 90, bpm: 72, audio_format: "mp3", title: "" } : { n: 1 };
   const output = kind === "music" ? "audio" : kind;
-  const response = await request.post("/api/canvas", { data: { title: `媒体合同 ${kind} 隔离回归`, graph: {
+  const response = await request.post("/api/canvas", { data: { title: `媒体合同 ${kind} 隔离回归 ${crypto.randomUUID()}`, graph: {
     schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 1 }, edges: [], nodes: [{
       id: "media-contract", type: "workflow", position: { x: 80, y: 60 }, style: { width: 420, height: 180 },
       data: { nodeType: `${kind}-generation`, label: labels[kind], provider: "rest", connectionId: connection.id,

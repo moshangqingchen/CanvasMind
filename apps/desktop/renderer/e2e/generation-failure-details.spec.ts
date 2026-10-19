@@ -24,7 +24,7 @@ async function openFailureDetails(page: Page, state: Locator) {
 
 async function failedGeneration(page: Page, request: APIRequestContext, error: () => RunErrorDetails, supplier = "custom:isolated") {
   const response = await request.post("/api/canvas", { data: {
-    title: "失败诊断隔离验收",
+    title: `失败诊断隔离验收 ${crypto.randomUUID()}`,
     graph: { schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 1 }, edges: [], nodes: [{
       id: "source", type: "workflow", position: { x: 50, y: 100 }, style: { width: 420, height: 210 },
       data: { nodeType: "image-generation", label: "诊断验收", provider: "fake", connectionId: "fake-default",
@@ -144,7 +144,7 @@ for (const scenario of cases) test(`失败原因与扣费贯穿结果和历史�
 for (const status of ["succeeded", "cancelled"] as const) test(`来源详情以最新${status}状态覆盖旧失败诊断`, async ({ page, request }, testInfo) => {
   const oldError: RunErrorDetails = { message: "旧任务余额不足，请充值", failureCategory: "insufficient_balance",
     charge: { status: "unknown", source: "unconfirmed" } };
-  const canvasResponse = await request.post("/api/canvas", { data: { title: "来源状态复查", graph: {
+  const canvasResponse = await request.post("/api/canvas", { data: { title: `来源状态复查 ${crypto.randomUUID()}`, graph: {
     schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 1 }, edges: [], nodes: [{
       id: "result", type: "workflow", position: { x: 160, y: 110 }, style: { width: 360, height: 220 },
       data: { nodeType: "asset-input", label: "状态复查", assetKind: "image", generatedResult: true,

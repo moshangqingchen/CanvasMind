@@ -67,7 +67,7 @@ export async function createCanvasStateVisualFixture(request: APIRequestContext,
   graph.nodes.push({ id: "asset", type: "workflow", position: { x: 1110, y: 60 }, style: { width: 240, height: 180 },
     data: { nodeType: "asset-input", label: "参考素材", assetId: asset.id, assetKind: "image", mediaAspectRatio: 4 / 3, inputs: [], outputs: [{ id: "image", kind: "image", label: "图片" }] } });
   graph.edges.push({ id: "prompt-queued", source: "prompt", sourceHandle: "prompt", target: "source-queued", targetHandle: "prompt" });
-  const response = await request.post("/api/canvas", { data: { title: "工作室状态与控件 · 隔离视觉基准", graph } });
+  const response = await request.post("/api/canvas", { data: { title: `工作室状态与控件 · 隔离视觉基准 ${crypto.randomUUID()}`, graph } });
   expect(response.ok()).toBeTruthy();
   const canvas = await response.json();
   const snapshot = { run: { id: runId, canvasId: canvas.id, scope: "canvas", status: "running", createdAt },

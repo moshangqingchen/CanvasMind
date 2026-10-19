@@ -17,7 +17,7 @@ for (const [id, values] of [
   }).model;
   const response = await request.post("/api/providers", { data: { name: "质量隔离验收", provider: "rest", apiKey: "no-paid-generation", config: { baseUrl: "https://isolated.invalid", connector: { ...structuredClone(CANGYUAN_IMAGE_CONNECTOR), models: [descriptor] } } } });
   expect(response.ok()).toBeTruthy(); const connection = await response.json();
-  const canvas = await (await request.post("/api/canvas", { data: { title: "最高质量解锁", graph: { schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 1 }, edges: [], nodes: [{ id: "image", type: "workflow", position: { x: 80, y: 30 }, style: { width: 420, height: 180 }, data: { nodeType: "image-generation", label: "质量验收", provider: "rest", connectionId: connection.id, model: descriptor.id, parameters: { size: "1024x1024", quality: values.at(-1) }, parts: [], inputs: [], outputs: [] } }] } } })).json();
+  const canvas = await (await request.post("/api/canvas", { data: { title: `最高质量解锁 ${crypto.randomUUID()}`, graph: { schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 1 }, edges: [], nodes: [{ id: "image", type: "workflow", position: { x: 80, y: 30 }, style: { width: 420, height: 180 }, data: { nodeType: "image-generation", label: "质量验收", provider: "rest", connectionId: connection.id, model: descriptor.id, parameters: { size: "1024x1024", quality: values.at(-1) }, parts: [], inputs: [], outputs: [] } }] } } })).json();
   await page.setViewportSize({ width: 1280, height: 1000 });
   await page.goto(`/canvas/${canvas.id}`);
   const open = () => page.getByRole("button", { name: "打开 质量验收 模型与参数", exact: true }).click();

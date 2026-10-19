@@ -4,7 +4,7 @@ import type { RunSnapshot } from "../components/types";
 for (const scenario of ["unknown", "capacity"] as const) {
   test(`错误记录保留真实渠道和原任务证据：${scenario}`, async ({ page, request }) => {
     const canvasResponse = await request.post("/api/canvas", { data: {
-      title: "任务证据隔离回归",
+      title: `任务证据隔离回归 ${crypto.randomUUID()}`,
       graph: { schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 0.85 }, edges: [], nodes: [{
         id: "source", type: "workflow", position: { x: 80, y: 180 }, style: { width: 420, height: 210 },
         data: { nodeType: "image-generation", label: "证据回归", provider: "fake", connectionId: "fake-default", model: "fake-image-v1", fakeScenario: "fail",

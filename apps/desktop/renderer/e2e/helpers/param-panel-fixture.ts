@@ -98,7 +98,7 @@ export async function fixture(page: Page, request: APIRequestContext, options: {
       parts: [{ type: "text", text: `${labels[id]}的隔离提示词。` }], inputs: [{ id: "prompt", kind: "text", label: "提示词" }],
       outputs: [{ id: "output", kind: kind === "music" ? "audio" : kind, label: "结果" }], ...extra },
   });
-  const created = await request.post("/api/canvas", { data: { title: "参数面板 stage1 隔离验收", graph: {
+  const created = await request.post("/api/canvas", { data: { title: `参数面板 stage1 隔离验收 ${connection.id}`, graph: {
     schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 1 }, edges: [], nodes: [
       node("a", "image", 0, options.imageParameters ?? { size: "4096x4096", quality: "max", n: 1 }),
       node("b", "image", 1, { size: "2048x2048", quality: "high", n: 2 }),

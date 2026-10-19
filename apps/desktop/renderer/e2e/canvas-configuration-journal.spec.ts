@@ -35,7 +35,7 @@ async function openFixture(page: Page, request: APIRequestContext) {
   });
   const canvasResponse = await request.post("/api/canvas", {
     data: {
-      title: "配置日志撤销回归",
+      title: `配置日志撤销回归 ${crypto.randomUUID()}`,
       graph: {
         schemaVersion: 1,
         viewport: { x: 0, y: 0, zoom: 1 },

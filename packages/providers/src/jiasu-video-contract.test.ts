@@ -411,7 +411,7 @@ describe("Jiasu exact video supplier contract", () => {
   it("stops before generation if a free supplier media upload fails", async () => {
     const local = [{ ...video, url: undefined, data: new Uint8Array([1]) }] as unknown as ProviderAssetInput[];
     const f = fixture("sd-2.0-J2", [Response.json({ success: false, message: "specific upload failure" })]);
-    await expect(f.adapter.submit(request("sd-2.0-J2", {}, local))).rejects.toThrow("生成尚未提交");
+    await expect(f.adapter.submit(request("sd-2.0-J2", {}, local))).rejects.toThrow("素材准备失败，尚未提交生成。");
     expect(f.fetcher.mock.calls).toHaveLength(1);
     expect(f.fetcher.mock.calls[0]?.[0]).toBe("https://ai.jiasuapi.com/v1/media/uploads");
   });

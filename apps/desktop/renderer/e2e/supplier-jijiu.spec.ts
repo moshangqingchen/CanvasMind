@@ -73,7 +73,7 @@ async function setup(page: Page, request: APIRequestContext, kind: "image" | "vi
   const connection = connections.find(item => item.config.modelGroup === initialGroup)!;
   const first = options.initialModelId ? modelMap.get(initialGroup)!.find(model => model.id === options.initialModelId)! : modelMap.get(initialGroup)![0]!;
   const parameters = { ...Object.fromEntries((first.parameters ?? []).filter(parameter => parameter.default !== undefined).map(parameter => [parameter.key, parameter.default])), ...options.initialParameters };
-  const createdCanvas = await request.post("/api/canvas", { data: { title: "极九目录参数离线验收", graph: {
+  const createdCanvas = await request.post("/api/canvas", { data: { title: `极九目录参数离线验收 ${crypto.randomUUID()}`, graph: {
     schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 1 }, edges: [], nodes: [{ id: "jijiu-media", type: "workflow", position: { x: 85, y: 60 }, style: { width: 420, height: 180 },
       data: { nodeType: `${kind}-generation`, label, provider: "openai", connectionId: connection.id, model: first.id, parameters, qualityMode: "custom", parts: [],
         inputs: [{ id: "prompt", kind: "text", label: "提示词" }], outputs: [{ id: "result", kind, label: "结果" }] } }],

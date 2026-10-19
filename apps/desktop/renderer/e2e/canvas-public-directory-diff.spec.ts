@@ -59,7 +59,7 @@ async function fixture(page: Page, request: APIRequestContext, nodeType: "video-
     headers: { "X-Model-Scan-Status": directoryMode === "stale" ? "stale" : directoryMode === "failed" || directoryMode === "http503" ? "failed" : "live",
       "X-Model-Scan-Complete": directoryMode ? "false" : "true" } }));
   await page.route("**/api/suppliers/*/billing*", route => route.fulfill({ json: { status: "unconfirmed" } }));
-  const canvasResponse = await request.post("/api/canvas", { data: { title: "官网与 Key 目录差异", graph: {
+  const canvasResponse = await request.post("/api/canvas", { data: { title: `官网与 Key 目录差异 ${crypto.randomUUID()}`, graph: {
     schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 1 }, edges: [], nodes: [{
       id: "directory-node", type: "workflow", position: { x: 55, y: 40 }, style: { width: 420, height: 180 },
       data: { nodeType, label: "目录差异", provider: "rest", connectionId: connection.id, model: keyModels[0]!.id,

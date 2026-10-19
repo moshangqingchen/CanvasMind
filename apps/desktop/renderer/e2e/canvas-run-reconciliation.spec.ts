@@ -26,7 +26,7 @@ async function fixture(page: Page, request: APIRequestContext, initiallyFail = f
       ...(i === 50 ? {} : { assetId: asset.id }),
       outputs: [{ id: "asset", label: "图片", kind: "image" }] },
   }));
-  const created = await request.post("/api/canvas", { data: { title: "多任务同步回归", graph: {
+  const created = await request.post("/api/canvas", { data: { title: `多任务同步回归 ${crypto.randomUUID()}`, graph: {
     schemaVersion: 1, nodes: [source, ...results], edges: [], viewport: { x: 0, y: 0, zoom: 0.8 },
   } } });
   expect(created.ok()).toBeTruthy();

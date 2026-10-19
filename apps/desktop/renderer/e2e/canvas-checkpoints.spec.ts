@@ -5,7 +5,7 @@ type Position = { x: number; y: number };
 type CheckpointWindow = typeof window & { __draftPositions: Position[] };
 
 async function createCanvas(request: APIRequestContext) {
-  const response = await request.post("/api/canvas", { data: { title: "拖动草稿检查点", graph: {
+  const response = await request.post("/api/canvas", { data: { title: `拖动草稿检查点 ${crypto.randomUUID()}`, graph: {
     schemaVersion: 1,
     viewport: { x: 0, y: 0, zoom: 1 },
     edges: [],

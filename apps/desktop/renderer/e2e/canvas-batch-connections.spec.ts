@@ -40,7 +40,7 @@ async function fixture(page: Page, request: APIRequestContext) {
       outputs: [{ id: "images", kind: "image", label: "图片" }],
     },
   }] };
-  const response = await request.post("/api/canvas", { data: { title: "隔离批量连线验收", graph } });
+  const response = await request.post("/api/canvas", { data: { title: `隔离批量连线验收 ${crypto.randomUUID()}`, graph } });
   expect(response.ok()).toBeTruthy();
   const { id } = await response.json();
   await page.goto(`/canvas/${id}`);

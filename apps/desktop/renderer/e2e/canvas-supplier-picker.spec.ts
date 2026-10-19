@@ -80,7 +80,7 @@ for (const zoom of [0.4, 1, 1.74])
     });
     const response = await request.post("/api/canvas", {
       data: {
-        title: "供应商鼠标回归",
+        title: `供应商鼠标回归 ${crypto.randomUUID()}`,
         graph: {
           schemaVersion: 1,
           // Compact LOD intentionally hides the footer trigger. Open at 1x,

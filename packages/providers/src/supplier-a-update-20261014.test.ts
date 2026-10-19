@@ -170,7 +170,8 @@ describe("October 14 Jiasu compatible protocol and complete IDs", () => {
     expect(model.limits).toMatchObject({ maxInputImages: 5, maxInputAudios: 3 });
     expect(model.parameters?.find(parameter => parameter.key === "duration")).toMatchObject({ min: 1, max: 12 });
     expect(jiasuVideoRequestIssues(request(id, { duration: 13 }))).toContainEqual(expect.objectContaining({ path: "parameters.duration" }));
-    expect(jiasuVideoRequestIssues(request(id, {}, Array.from({ length: 6 }, () => image)))).toContainEqual(expect.objectContaining({ path: "assets" }));
+    expect(jiasuVideoRequestIssues(request(id, {}, Array.from({ length: 6 }, (_, index) => ({ ...image, id: `image-${index}`, url: `https://media.example/image-${index}.png` }))))).toContainEqual(expect.objectContaining({ path: "assets" }));
+    expect(jiasuVideoRequestIssues(request(id, {}, Array.from({ length: 6 }, () => image)))).toEqual([]);
     const pricing = jiasuCatalogMediaPricing(raw, { supplierSiteUrl: "https://ai.jiasuapi.com", group: "vip", groupMultiplier: 1, currency: "CNY" })!.pricing;
     expect(pricing.billingUnit).toBe("request");
     expect(modelPriceAmount(pricing, { resolution: "720p" })).toBe(.6);

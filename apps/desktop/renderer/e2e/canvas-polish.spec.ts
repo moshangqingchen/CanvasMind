@@ -64,7 +64,7 @@ function graph(): CanvasDocument & { viewport: { x: number; y: number; zoom: num
 }
 async function create(request: APIRequestContext, value: object = graph()) {
   const response = await request.post("/api/canvas", {
-    data: { title: "隔离回归画布", graph: value },
+    data: { title: `隔离回归画布 ${crypto.randomUUID()}`, graph: value },
   });
   expect(response.ok()).toBeTruthy();
   return response.json();

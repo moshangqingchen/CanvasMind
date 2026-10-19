@@ -46,7 +46,7 @@ async function fixture(page: Page, request: APIRequestContext, selectedUsage: "c
   const backup = connection("backup-account-connection-2", "词元备用账号", "canvas", "different-account-key");
   let connections = [canvasConnection, agentConnection, ...(withBackup ? [backup] : [])];
   const selected = selectedUsage === "canvas" ? canvasConnection : agentConnection;
-  const created = await request.post("/api/canvas", { data: { title: label, graph: {
+  const created = await request.post("/api/canvas", { data: { title: `${label} ${crypto.randomUUID()}`, graph: {
     schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 1 }, edges: [], nodes: [{
       id: "image", type: "workflow", position: { x: 80, y: 60 }, style: { width: 420, height: 180 },
       data: { nodeType: "image-generation", label, provider: selected.provider, connectionId: selected.id, model: merchant47,

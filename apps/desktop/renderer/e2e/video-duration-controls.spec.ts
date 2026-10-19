@@ -145,7 +145,7 @@ async function setup(page: Page, request: APIRequestContext, initial: ModelDescr
   }));
   const parameters = { ...Object.fromEntries((initial.parameters ?? []).filter(parameter => parameter.default !== undefined)
     .map(parameter => [parameter.key, parameter.default])), ...extraParameters };
-  const createdCanvas = await request.post("/api/canvas", { data: { title: "视频时长控件隔离验收", graph: {
+  const createdCanvas = await request.post("/api/canvas", { data: { title: `视频时长控件隔离验收 ${crypto.randomUUID()}`, graph: {
     schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 1 },
     nodes: [
       { id: "duration-prompt", type: "workflow", position: { x: 590, y: 60 },

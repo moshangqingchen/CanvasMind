@@ -17,7 +17,7 @@ for (const [modelGroup, quality] of [["生图（2k4k 高质量）", "high"], ["�
     expect(connectionResponse.ok()).toBeTruthy();
     const connection = await connectionResponse.json();
     const canvasResponse = await request.post("/api/canvas", { data: {
-      title: "声明能力验收", graph: { schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 1 }, edges: [], nodes: [{
+      title: `声明能力验收 ${crypto.randomUUID()}`, graph: { schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 1 }, edges: [], nodes: [{
         id: "image", type: "workflow", position: { x: 80, y: 60 }, style: { width: 420, height: 180 },
         data: { nodeType: "image-generation", label: "参数验收", provider: "rest", connectionId: connection.id,
           model: descriptor.id, parameters: { size: "auto", quality }, parts: [],

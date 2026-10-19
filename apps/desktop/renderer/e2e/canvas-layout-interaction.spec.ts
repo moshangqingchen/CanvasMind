@@ -51,7 +51,7 @@ async function openFixture(page: Page, request: APIRequestContext, graph = messy
     if (route.request().method() === "GET") await route.continue();
     else { submissions++; await route.abort(); }
   });
-  const response = await request.post("/api/canvas", { data: { title: "隔离布局交互回归", graph } });
+  const response = await request.post("/api/canvas", { data: { title: `隔离布局交互回归 ${crypto.randomUUID()}`, graph } });
   expect(response.ok()).toBeTruthy();
   const { id } = await response.json() as SavedCanvas;
   await page.goto(`/canvas/${id}`);

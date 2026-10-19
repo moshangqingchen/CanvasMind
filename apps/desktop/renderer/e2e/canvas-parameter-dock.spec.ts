@@ -63,7 +63,7 @@ async function fixture(page: Page, request: APIRequestContext, farNodeCount = 22
     id: `far-${index}`, type: "workflow", position: { x: 10000 + index * 500, y: 4000 },
     data: { nodeType: "prompt", label: `离屏提示词 ${index}`, parts: [{ type: "text", text: "离屏裁剪回归" }], inputs: [], outputs: [{ id: "text", kind: "text", label: "文本" }] },
   }));
-  const created = await request.post("/api/canvas", { data: { title: "根级参数浮卡回归", graph: {
+  const created = await request.post("/api/canvas", { data: { title: `根级参数浮卡回归 ${crypto.randomUUID()}`, graph: {
     schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 1 }, nodes: [...generators, ...farNodes], edges: [],
   } } });
   expect(created.ok()).toBeTruthy();
