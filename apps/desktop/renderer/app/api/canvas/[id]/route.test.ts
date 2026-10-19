@@ -137,7 +137,7 @@ describe("PUT /api/canvas/[id]", () => {
 
     expect(response.status).toBe(200);
     expect(mocks.repository.saveCanvas).toHaveBeenCalledWith(
-      expect.objectContaining({ expectedRevision: undefined }),
+      expect.objectContaining({ expectedRevision: 8, title: undefined }),
     );
   });
 

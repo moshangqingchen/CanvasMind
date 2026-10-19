@@ -12,6 +12,7 @@ import { repository, storage } from "./server";
 import { collectReferencedAssetIds } from "./project-transfer";
 import type { CanvasDocument } from "../components/types";
 import { completeMediaPayload, mediaKindForMime, sanitizedAssetExtension, validateMediaMagic } from "../app/api/assets/media-utils";
+import { projectCoordinator } from "./project-coordinator";
 
 export type ProjectFileView = Omit<ProjectMediaFile, "relativePath"> & {
   contentUrl: string; previewUrl: string; assetId?: string; canDelete: boolean;
@@ -45,6 +46,7 @@ function associatedAsset(file: ProjectMediaFile, assets: readonly AssetRecord[])
 }
 
 export async function listProjectFiles(canvasId: string): Promise<{ files: ProjectFileView[]; ignoredFiles: number }> {
+  return projectCoordinator(repository).withCanvas(canvasId, async () => {
   const canvas = await uniqueProjectDirectory(canvasId);
   const store = getProjectFileStore();
   const [{ files, ignoredFiles }, assets] = await Promise.all([store.listFiles(canvas.title), projectAssets(canvas)]);
@@ -58,24 +60,32 @@ export async function listProjectFiles(canvasId: string): Promise<{ files: Proje
     return { ...publicFile, name: asset?.name ?? file.name, contentUrl, previewUrl: file.kind === "image" ? `${contentUrl}&preview=640` : contentUrl,
       ...(assetId ? { assetId } : {}), canDelete: true };
   }) };
+  });
 }
 
 export async function readProjectFile(canvasId: string, fileId: string, options?: { start?: number; end?: number; maxBytes?: number }) {
+  return projectCoordinator(repository).withCanvas(canvasId, async () => {
   const canvas = await uniqueProjectDirectory(canvasId);
   return getProjectFileStore().readFile(canvas.title, fileId, options);
+  });
 }
 
 export async function projectFileMetadata(canvasId: string, fileId: string) {
+  return projectCoordinator(repository).withCanvas(canvasId, async () => {
   const canvas = await uniqueProjectDirectory(canvasId);
   return getProjectFileStore().fileMetadata(canvas.title, fileId);
+  });
 }
 
 export async function deleteProjectFiles(canvasId: string, fileIds: readonly string[]) {
+  return projectCoordinator(repository).withCanvas(canvasId, async () => {
   const canvas = await uniqueProjectDirectory(canvasId);
   return getProjectFileStore().deleteFiles(canvas.title, fileIds);
+  });
 }
 
 export async function importProjectFiles(canvasId: string, fileIds: readonly string[]): Promise<{ assets: AssetRecord[]; failed: Array<{ fileId: string; error: string }> }> {
+  return projectCoordinator(repository).withCanvas(canvasId, async () => {
   const canvas = await uniqueProjectDirectory(canvasId);
   const known = await projectAssets(canvas);
   const assets: AssetRecord[] = [], failed: Array<{ fileId: string; error: string }> = [];
@@ -104,6 +114,7 @@ export async function importProjectFiles(canvasId: string, fileIds: readonly str
     } catch (error) { failed.push({ fileId, error: error instanceof Error && !("code" in error) ? error.message : "文件导入失败，请刷新后重试" }); }
   }
   return { assets, failed };
+  });
 }
 
 export interface ProjectSummary {
@@ -165,9 +176,13 @@ export async function projectCardSummary(canvas: CanvasRecord): Promise<ProjectS
 }
 
 export async function ensureProjectDirectory(
-  canvas: Pick<CanvasRecord, "title">,
+  canvas: Pick<CanvasRecord, "id" | "title">,
 ): Promise<void> {
-  await getProjectFileStore().ensureProject(canvas.title);
+  await projectCoordinator(repository).withCanvas(canvas.id, async () => {
+    const current = await repository.getCanvas(canvas.id);
+    if (!current) throw new ProjectFileAccessError("项目不存在", 404);
+    await getProjectFileStore().ensureProject(current.title);
+  });
 }
 
 function mediaKind(asset: AssetRecord): ProjectMediaKind | null {
@@ -200,6 +215,7 @@ export async function archiveExternalAssetsForProject(
   canvasId: string,
   assetIds: readonly string[],
 ): Promise<void> {
+  return projectCoordinator(repository).withCanvas(canvasId, async () => {
   const canvas = await repository.getCanvas(canvasId);
   if (!canvas) throw new Error("项目不存在");
   await Promise.all(
@@ -211,6 +227,7 @@ export async function archiveExternalAssetsForProject(
         await archiveAsset(canvas, asset, "external");
     }),
   );
+  });
 }
 
 export async function archiveGeneratedAssetForFinished(
@@ -220,7 +237,9 @@ export async function archiveGeneratedAssetForFinished(
   const runId = typeof asset.metadata.runId === "string" ? asset.metadata.runId : null;
   if (!kind || !runId) return false;
   const run = await repository.getRun(runId);
-  const canvas = run ? await repository.getCanvas(run.canvasId) : null;
+  if (!run) return false;
+  return projectCoordinator(repository).withCanvas(run.canvasId, async () => {
+  const canvas = await repository.getCanvas(run.canvasId);
   if (!canvas) return false;
   const object = await storage.get(asset.storageKey);
   if (!object) throw new Error("素材文件不存在");
@@ -233,6 +252,7 @@ export async function archiveGeneratedAssetForFinished(
     bytes: object.bytes,
   });
   return true;
+  });
 }
 
 export function normalizedProjectTitle(title: string): string {

@@ -474,15 +474,18 @@ export class ProjectFileStore {
   async renameProject(
     currentProjectName: string,
     nextProjectName: string,
+    options: { requireSource?: boolean; temporaryProjectName?: string } = {},
   ): Promise<boolean> {
     return this.withProjectAccess([
       this.projectDirectory(currentProjectName), this.projectDirectory(nextProjectName),
-    ], true, () => this.renameProjectOnce(currentProjectName, nextProjectName));
+      ...(options.temporaryProjectName ? [this.projectDirectory(options.temporaryProjectName)] : []),
+    ], true, () => this.renameProjectOnce(currentProjectName, nextProjectName, options));
   }
 
   private async renameProjectOnce(
     currentProjectName: string,
     nextProjectName: string,
+    options: { requireSource?: boolean; temporaryProjectName?: string },
   ): Promise<boolean> {
     const currentProject = this.projectDirectory(currentProjectName);
     const nextProject = this.projectDirectory(nextProjectName);
@@ -519,16 +522,23 @@ export class ProjectFileStore {
     }
 
     if (!currentExists) {
+      if (options.requireSource) throw new ProjectFileAccessError("原项目目录不存在，重命名待恢复");
       await this.ensureProjectShared(nextProjectName);
       return false;
     }
 
     if (caseOnlyRename) {
-      const temporary = join(
+      const temporary = options.temporaryProjectName ? this.projectDirectory(options.temporaryProjectName) : join(
         /* turbopackIgnore: true */ this.root,
         `.project-rename-${randomUUID()}`,
       );
       assertWithin(this.root, temporary);
+      try {
+        await lstat(temporary);
+        throw new ProjectFileAccessError("重命名临时目录已存在，请先处理恢复冲突");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
       await rename(currentProject, temporary);
       try {
         await rename(temporary, nextProject);

@@ -72,7 +72,7 @@ export async function GET() {
   const headers = new Headers({ "Cache-Control": "no-store" });
   try {
     const [canvas, , connections] = await Promise.all([
-      projectCoordinator(repository).run(() => repository.ensureDefaultCanvas()),
+      projectCoordinator(repository).ensureDefaultCanvas(),
       storage.healthCheck?.(),
       repository.listConnections().catch(() => []),
     ]);

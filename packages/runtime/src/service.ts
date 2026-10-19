@@ -187,6 +187,8 @@ export interface RuntimeOptions {
   executionMode?: "inline" | "queue";
   enqueueRun?: (runId: string) => Promise<void>;
   projectFileStore?: ProjectFileStore | null;
+  /** Desktop directory identities are coordinated with rename recovery. */
+  projectFileAccess?: <T>(canvasId: string, work: () => Promise<T>) => Promise<T>;
   /** Durable task files, adjacent to the desktop profile's object storage. */
   cliJobRoot?: string;
   /** Stop local work without cancelling the durable supplier task. */
@@ -908,6 +910,7 @@ export class RunService {
   private readonly executionMode?: "inline" | "queue";
   private readonly enqueueRunOverride?: (runId: string) => Promise<void>;
   private readonly projectFileStore?: ProjectFileStore | null;
+  private readonly projectFileAccess?: <T>(canvasId: string, work: () => Promise<T>) => Promise<T>;
   private readonly cliJobRoot: string;
   private readonly shutdownSignal?: AbortSignal;
 
@@ -923,6 +926,7 @@ export class RunService {
     this.executionMode = options.executionMode;
     this.enqueueRunOverride = options.enqueueRun;
     this.projectFileStore = options.projectFileStore;
+    this.projectFileAccess = options.projectFileAccess;
     this.shutdownSignal = options.shutdownSignal;
     this.cliJobRoot = resolve(/* turbopackIgnore: true */ options.cliJobRoot ?? join(/* turbopackIgnore: true */ dirname(resolve(/* turbopackIgnore: true */ process.env.LOCAL_STORAGE_PATH ?? "storage")), "cli-jobs"));
   }
@@ -3793,22 +3797,29 @@ export class RunService {
   }
 
   private async archiveProjectAsset(asset: AssetRecord, runId: string, bytes?: Uint8Array): Promise<void> {
-    if (!this.projectFileStore || asset.kind === "text") return;
+    const projectFiles = this.projectFileStore;
+    const projectKind = asset.kind;
+    if (!projectFiles || projectKind === "text") return;
     try {
       const run = await this.repository.getRun(runId);
-      const canvas = run ? await this.repository.getCanvas(run.canvasId) : null;
-      if (!canvas) return;
-      const storage = this.storage;
-      // Defer opening/reading the object: an existing project file consumes nothing.
-      const projectBytes = bytes ?? storage.stream?.(asset.storageKey) ?? (async function* () {
-        const stored = await storage.get(asset.storageKey);
-        if (!stored) throw new Error("Archived asset is missing from storage");
-        yield stored.bytes;
-      })();
-      await this.projectFileStore.archiveDraft({
-        projectName: canvas.title, assetId: asset.id, name: asset.name,
-        mimeType: asset.mimeType, kind: asset.kind, bytes: projectBytes, source: "generated",
-      });
+      if (!run) return;
+      const archive = async () => {
+        const canvas = await this.repository.getCanvas(run.canvasId);
+        if (!canvas) return;
+        const storage = this.storage;
+        // Defer opening/reading the object: an existing project file consumes nothing.
+        const projectBytes = bytes ?? storage.stream?.(asset.storageKey) ?? (async function* () {
+          const stored = await storage.get(asset.storageKey);
+          if (!stored) throw new Error("Archived asset is missing from storage");
+          yield stored.bytes;
+        })();
+        await projectFiles.archiveDraft({
+          projectName: canvas.title, assetId: asset.id, name: asset.name,
+          mimeType: asset.mimeType, kind: projectKind, bytes: projectBytes, source: "generated",
+        });
+      };
+      if (this.projectFileAccess) await this.projectFileAccess(run.canvasId, archive);
+      else await archive();
     } catch (error) {
       // Keep the durable original available; later output recovery repairs this mirror.
       console.error("[super-canvas] unable to archive generated asset",

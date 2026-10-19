@@ -7,7 +7,7 @@ import {
   parseRouteIdentifier,
 } from "../../../../lib/api-validation";
 import { jsonError, repository, safeJsonObject } from "../../../../lib/server";
-import { projectCoordinator } from "../../../../lib/project-coordinator";
+import { projectCoordinator, ProjectMutationError } from "../../../../lib/project-coordinator";
 import {
   normalizedProjectTitle,
   projectSummary,
@@ -77,19 +77,6 @@ export async function PATCH(
       409,
     );
 
-  const projectFiles = getProjectFileStore();
-  let folderRenamed = false;
-  try {
-    folderRenamed = await projectFiles.renameProject(canvas.title, title);
-  } catch (error) {
-    return jsonError(
-      `项目文件夹重命名失败：${
-        error instanceof Error ? error.message : "未知错误"
-      }`,
-      409,
-    );
-  }
-
   try {
     const saved = await projectCoordinator(repository).saveCanvas({
       id: canvas.id,
@@ -101,16 +88,15 @@ export async function PATCH(
     return Response.json({
       project: projectSummary(saved),
       revision: saved.revision,
-      folderRenamed,
+      folderRenamed: folderNameChanged,
     });
   } catch (error) {
-    if (folderNameChanged)
-      await projectFiles.renameProject(title, canvas.title).catch(() => undefined);
+    if (error instanceof ProjectMutationError) return jsonError(error.message, error.status);
     if (error instanceof CanvasRevisionConflictError)
       return jsonError("项目刚刚发生变化，请稍后重试重命名", 409);
-    return jsonError("项目重命名失败，项目文件夹已恢复原名", 500);
+    return jsonError("项目重命名待恢复，请刷新确认，保留原文件与恢复记录", 500);
   }
-  });
+  }, parsedId.data).catch(error => jsonError(error instanceof Error ? error.message : "项目重命名待恢复", error instanceof ProjectMutationError ? error.status : 500));
 }
 
 export async function DELETE(
@@ -161,5 +147,5 @@ export async function DELETE(
     folderDeleted,
     ...(warning ? { warning } : {}),
   });
-  });
+  }, parsedId.data).catch(error => jsonError(error instanceof Error ? error.message : "项目删除失败，存在待恢复操作", error instanceof ProjectMutationError ? error.status : 500));
 }

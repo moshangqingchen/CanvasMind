@@ -12,7 +12,7 @@ import {
   type ObjectStorage,
   type StoredObject,
 } from "@super-canvas/storage";
-import { RunService } from "../src/service.js";
+import { RunService, type RuntimeOptions } from "../src/service.js";
 import * as downloads from "../src/remote-download.js";
 import { validPngBytes } from "./fixtures/image-bytes.js";
 
@@ -42,6 +42,7 @@ async function fixture(
   storage: ObjectStorage,
   outputs: RemoteArtifact[],
   projectFileStore: ProjectFileStore | null = null,
+  projectFileAccess?: RuntimeOptions["projectFileAccess"],
 ) {
   const repository = new MemoryRepository();
   await repository.saveCanvas({
@@ -77,7 +78,7 @@ async function fixture(
     submit,
     extractOutputs: async () => outputs,
   };
-  const service = new RunService({ repository, storage, projectFileStore });
+  const service = new RunService({ repository, storage, projectFileStore, projectFileAccess });
   vi.spyOn(service, "adapters").mockReturnValue(new Map([["fake", adapter]]));
   return { service, repository, submit };
 }
@@ -94,6 +95,27 @@ async function terminal(service: RunService, id: string) {
 }
 
 describe("artifact checkpoints", () => {
+  it("looks up the current canvas title inside desktop project-file coordination", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "canvas-coordinated-mirror-"));
+    try {
+      const files = new ProjectFileStore({ root: directory });
+      const archived = vi.spyOn(files, "archiveDraft");
+      let repository!: MemoryRepository, coordinated = 0;
+      const f = await fixture(new MemoryStorage(), [{ kind: "image", data: validPngBytes, mimeType: "image/png" }], files, async (canvasId, work) => {
+        expect(canvasId).toBe("archive");
+        coordinated++;
+        const canvas = (await repository.getCanvas("archive"))!;
+        await repository.saveCanvas({ id: canvas.id, title: "Current coordinated project", graph: canvas.graph, expectedRevision: canvas.revision });
+        return work();
+      });
+      repository = f.repository;
+      const run = await f.service.createRun({ canvasId: "archive", clientRequestId: "coordinated-mirror", scope: "all" });
+      expect((await terminal(f.service, run.id)).run.status).toBe("succeeded");
+      expect(coordinated).toBe(1);
+      expect(archived).toHaveBeenCalledWith(expect.objectContaining({ projectName: "Current coordinated project" }));
+      expect(f.submit).toHaveBeenCalledOnce();
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  });
   it("stores the original rejected request ID and does not resubmit an uncertain image",async()=>{
     const {service,submit}=await fixture(new MemoryStorage(),[]),upstreamRequestEvidence={requestIds:["req-rejected"],observations:[{requestId:"req-rejected",source:"header:x-request-id" as const}]};
     submit.mockRejectedValue(new ProviderHttpError("supplier rejected",{kind:"invalid_request",phase:"submit",status:403,

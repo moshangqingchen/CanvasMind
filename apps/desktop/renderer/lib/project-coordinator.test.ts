@@ -18,6 +18,20 @@ const graph = { schemaVersion: 1, nodes: [], edges: [], viewport: { x: 0, y: 0, 
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
 
 describe("project identity coordination", () => {
+  it("rejects a shared-to-exclusive lock upgrade without waiting on itself or poisoning later changes", async () => {
+    const { coordinator } = await fixture();
+    const canvas = await coordinator.saveCanvas({ id: "a", title: "原名", graph });
+    await expect(coordinator.withCanvas(canvas.id, () => coordinator.saveCanvas({ id: canvas.id, title: "新名", graph, expectedRevision: canvas.revision }))).rejects.toThrow("升级");
+    await expect(coordinator.saveCanvas({ id: canvas.id, title: "新名", graph, expectedRevision: canvas.revision })).resolves.toMatchObject({ title: "新名" });
+  });
+  it("reserves recovery metadata names and never puts a journal into a legacy project's directory", async () => {
+    const { coordinator, repository, root } = await fixture();
+    await expect(coordinator.saveCanvas({ id: "reserved", title: ".SUPERCANVAS-META", graph })).rejects.toMatchObject({ status: 409 });
+    await repository.saveCanvas({ id: "legacy", title: ".supercanvas-meta", graph });
+    const canvas = await coordinator.saveCanvas({ id: "normal", title: "普通项目", graph });
+    await expect(coordinator.saveCanvas({ id: canvas.id, title: "新标题", graph, expectedRevision: canvas.revision })).rejects.toThrow("恢复元数据保留目录");
+    expect(await readdir(root)).toEqual(["普通项目"]);
+  });
   it("admits exactly one concurrent normalized-name create and one directory", async () => {
     const { coordinator, repository, root } = await fixture();
     const results = await Promise.allSettled([
@@ -35,7 +49,7 @@ describe("project identity coordination", () => {
     const prior = await coordinator.saveCanvas({ id: "a", title: "原名", graph }, true);
     const results = await Promise.allSettled([
       coordinator.saveCanvas({ id: "b", title: "目标", graph }, true),
-      coordinator.run(() => coordinator.saveCanvas({ id: prior.id, title: "目标", graph, expectedRevision: prior.revision })),
+      coordinator.saveCanvas({ id: prior.id, title: "目标", graph, expectedRevision: prior.revision }),
     ]);
     expect(results.map(result => result.status)).toEqual(["fulfilled", "rejected"]);
     expect((await repository.listCanvases()).filter(canvas => canvas.title === "目标")).toHaveLength(1);
@@ -51,7 +65,7 @@ describe("project identity coordination", () => {
     const deletion = coordinator.run(async () => {
       await repository.deleteCanvas(prior.id); deleted(); await hold;
       await files.deleteProject(prior.title);
-    });
+    }, prior.id);
     await removedRecord;
     let created = false;
     const creation = coordinator.saveCanvas({ id: "new", title: "复用", graph }, true).then(canvas => { created = true; return canvas; });

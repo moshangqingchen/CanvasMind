@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   },
   storage: { get: vi.fn(), put: vi.fn(), delete: vi.fn() },
   store: {
+    root: "D:/__supercanvas-unit-project-service-unused",
     ensureProject: vi.fn(),
     archiveDraft: vi.fn(),
     archiveFinished: vi.fn(),

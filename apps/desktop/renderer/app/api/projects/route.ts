@@ -19,11 +19,13 @@ const emptyGraph = {
 };
 
 export async function GET() {
+  try {
   const canvases = (await repository.listCanvases()).sort((a, b) =>
     b.updatedAt.localeCompare(a.updatedAt),
   );
   await Promise.all(canvases.map((canvas) => ensureProjectDirectory(canvas)));
   return Response.json({ projects: await Promise.all(canvases.map(projectCardSummary)) });
+  } catch (error) { return jsonError(error instanceof Error ? error.message : "项目列表读取失败", error instanceof ProjectMutationError ? error.status : 500); }
 }
 
 export async function POST(request: Request) {

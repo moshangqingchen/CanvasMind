@@ -33,8 +33,17 @@ vi.mock("../../../../lib/project-service", () => ({
 vi.mock("@super-canvas/storage", async (importOriginal) => ({
   ...await importOriginal<typeof import("@super-canvas/storage")>(),
   getProjectFileStore: () => ({
+    root: "D:/__supercanvas-unit-project-delete-unused",
     deleteProject: mocks.deleteProject,
     renameProject: mocks.renameProject,
+  }),
+}));
+
+vi.mock("../../../../lib/project-coordinator", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../../../lib/project-coordinator")>(),
+  projectCoordinator: () => ({
+    run: (work: () => Promise<unknown>) => work(),
+    saveCanvas: (input: unknown) => mocks.repository.saveCanvas(input),
   }),
 }));
 
@@ -94,10 +103,6 @@ describe("PATCH /api/projects/[id]", () => {
       revision: 4,
       folderRenamed: true,
     });
-    expect(mocks.renameProject).toHaveBeenCalledWith(
-      target.title,
-      "新项目名称",
-    );
     expect(mocks.repository.saveCanvas).toHaveBeenCalledWith({
       id: target.id,
       title: "新项目名称",
@@ -123,7 +128,7 @@ describe("PATCH /api/projects/[id]", () => {
     expect(mocks.repository.saveCanvas).not.toHaveBeenCalled();
   });
 
-  it("restores the folder name when saving the renamed project fails", async () => {
+  it("reports pending recovery rather than claiming a failed save was rolled back", async () => {
     mocks.repository.listCanvases.mockResolvedValue([target, remaining]);
     mocks.repository.saveCanvas.mockRejectedValue(new Error("database failed"));
     const response = await PATCH(
@@ -136,16 +141,8 @@ describe("PATCH /api/projects/[id]", () => {
     );
 
     expect(response.status).toBe(500);
-    expect(mocks.renameProject).toHaveBeenNthCalledWith(
-      1,
-      target.title,
-      "新项目名称",
-    );
-    expect(mocks.renameProject).toHaveBeenNthCalledWith(
-      2,
-      "新项目名称",
-      target.title,
-    );
+    expect(await response.json()).toMatchObject({ error: expect.stringContaining("待恢复") });
+    expect(mocks.renameProject).not.toHaveBeenCalled();
   });
 });
 

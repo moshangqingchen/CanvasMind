@@ -18,11 +18,12 @@ import { getRunService } from "@super-canvas/runtime";
 import { requireServerMasterKey, serverMasterKey } from "./master-key";
 import { scopedCatalogRepository } from "./catalog-repository-scope";
 import type { GenerationInputAsset, RunTaskEvidence } from "../components/types";
+import { projectCoordinator } from "./project-coordinator";
 
 export const repository = scopedCatalogRepository(getRepository());
 export const storage = getObjectStorage();
 serverMasterKey();
-export const runService = getRunService();
+export const runService = getRunService({ projectFileAccess: (canvasId, work) => projectCoordinator(repository).withCanvas(canvasId, work) });
 
 const inlineRecoveryKey = "__superCanvasInlineRecovery";
 

@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@super-canvas/storage", async (importOriginal) => ({
   ...await importOriginal<typeof import("@super-canvas/storage")>(),
-  getProjectFileStore: () => ({ ensureProject: mocks.ensureProject }),
+  getProjectFileStore: () => ({ root: "D:/__supercanvas-unit-project-create-unused", ensureProject: mocks.ensureProject }),
 }));
 
 vi.mock("../../../lib/server", () => ({

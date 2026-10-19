@@ -8,7 +8,7 @@ import { jsonError, repository, safeJsonObject } from "../../../lib/server";
 import { projectCoordinator, ProjectMutationError } from "../../../lib/project-coordinator";
 
 export async function GET() {
-  const canvas = await projectCoordinator(repository).run(() => repository.ensureDefaultCanvas());
+  const canvas = await projectCoordinator(repository).ensureDefaultCanvas();
   return Response.json(canvas);
 }
 
