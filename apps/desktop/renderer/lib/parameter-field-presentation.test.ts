@@ -99,6 +99,24 @@ describe("parameter evidence presentation", () => {
     for (const text of ["完整图片合同原文", "同身份实测原文", "原生组说明（上次记录）", "完整分组来源", "完整档位来源原文", "4K · 逐档像素映射：—；请填写独立 W/H，请求使用 size 原值。 比例偏好：4:3（保留）。", "完整透明来源"]) expect(html).toContain(text);
   });
 
+  it("retains resolution and quality facts when exact transparency evidence replaces an explicitly old summary", () => {
+    const current = model([], { imageCapabilityNote: "4K 原图已实测；旧透明失败摘要；max 为本次请求质量。" });
+    const html = renderToStaticMarkup(createElement(NodeParameterSources, { model: current, descriptors: [], nodeType: "image-generation", transparencyNote: "透明已实测：当前精确分组原图。" }));
+    expect(html).toContain("4K 原图已实测；");
+    expect(html).toContain("max 为本次请求质量。");
+    expect(html).toContain("透明已实测：当前精确分组原图。");
+    expect(html).not.toContain("旧透明失败摘要");
+  });
+
+  it("preserves a concrete historical opaque output and keeps legacy text without exact replacement evidence", () => {
+    const fact = "历史透明请求 request-1 返回 1672×941 不透明原图；该次失败不代表永久不支持。";
+    const current = model([], { imageCapabilityNote: fact });
+    const html = renderToStaticMarkup(createElement(NodeParameterSources, { model: current, descriptors: [], nodeType: "image-generation", transparencyNote: "透明已实测：另一原请求的完整依据。" }));
+    expect(html).toContain(fact);
+    const legacy = renderToStaticMarkup(createElement(NodeParameterSources, { model: model([], { imageCapabilityNote: "旧透明失败摘要" }), descriptors: [], nodeType: "image-generation" }));
+    expect(legacy).toContain("旧透明失败摘要");
+  });
+
   it("preserves a visible user-fallback marker and valid slider description while moving the complete source facts", () => {
     const duration = field("duration", { label: "时长", control: "number", valueType: "integer", min: 1, max: 30, step: 1, default: 5 });
     const html = renderToStaticMarkup(createElement(NodeParameterFields, { nodeId: "fallback", nodeType: "video-generation", provider: "rest", model: model([duration], { durationRangeSource: "user-fallback" }), parameters: { duration: 5 }, onChange: () => undefined, showAdvanced: false }));
@@ -122,6 +140,38 @@ describe("parameter evidence presentation", () => {
 });
 
 describe("panel-only enum presentation", () => {
+  const automaticSize = (tier?: string) => {
+    const size = field("size", { label: "输出尺寸", control: "dimensions", default: "auto", options: [
+      { value: "auto", label: "自动（供应商决定）" },
+      { value: "1024x1024", label: "1K · 1:1 · 1024 × 1024" },
+      { value: "3840x2160", label: "4K · 16:9 · 3840 × 2160" },
+    ] });
+    const parameters = tier ? { size: "auto", size_tier: tier } : { size: "auto" };
+    const onChange = vi.fn();
+    const html = renderToStaticMarkup(createElement(NodeParameterFields, { nodeId: "automatic-size", nodeType: "image-generation", provider: "rest", model: model([size]), parameters, panelPresentation: true, onChange, showAdvanced: false }));
+    const button = /<button[^>]*aria-label="输出分辨率预设"[^>]*>([\s\S]*?)<\/button>/u.exec(html)?.[0];
+    expect(button).toBeDefined();
+    expect(onChange).not.toHaveBeenCalled();
+    expect(parameters).toEqual(tier ? { size: "auto", size_tier: tier } : { size: "auto" });
+    return button!;
+  };
+
+  it("keeps the application prompt/reference automatic ratio text when retaining a resolution tier", () => {
+    const button = automaticSize("4K");
+    expect(button).toContain('data-value="auto"');
+    expect(button).toContain("自动 · 跟随提示词，其次参考图");
+    expect(button).toContain("保持 4K");
+    expect(button).not.toContain("自动（供应商决定）");
+  });
+
+  it("preserves the supplier automatic label when no application resolution tier is selected", () => {
+    const button = automaticSize();
+    expect(button).toContain('data-value="auto"');
+    expect(button).toContain("自动（供应商决定）");
+    expect(button).not.toContain("自动 · 跟随提示词，其次参考图");
+    expect(button).not.toContain("保持 4K");
+  });
+
   it.each(["video-generation", "image-generation"] as const)("keeps the disabled automatic ratio label and reason inspectable beside a sole static ratio in %s", nodeType => {
     const ratio = field("aspect_ratio", { label: "单一比例", control: "select", default: "16:9", options: [{ value: "16:9", label: "16:9" }] });
     const current = model([ratio], nodeType === "image-generation" ? { imageNativeParameterContract: true, imageFixedResolution: "2K" } : {});

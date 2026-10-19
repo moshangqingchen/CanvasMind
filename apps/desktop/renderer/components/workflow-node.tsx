@@ -75,7 +75,7 @@ import { DeferredPanelContent } from "./deferred-panel-content";
 import { nodePortTop } from "../lib/node-port-layout";
 import { acquireNodeConfigSurfaceMarkers } from "../lib/node-config-surface-markers";
 import { createGenerationNodeRunAction } from "../lib/generation-node-actions";
-import { isNodeConfigRunChord, nodeConfigChildLayerOpen, nodeConfigRunShortcutScope } from "../lib/node-config-interaction";
+import { isNodeConfigRunChord, nodeConfigChildLayerOpen, nodeConfigRunShortcutScope, promptEditorRunShortcutScope } from "../lib/node-config-interaction";
 import { createNodeParameterQuote } from "../lib/node-parameter-quote";
 import { nodeParameterSummary } from "../lib/parameter-display";
 import { NodeParameterFooter } from "./node-parameter-footer";
@@ -953,7 +953,7 @@ export function GenerationNodeBody({
         onKeyDown={(event) => {
           event.stopPropagation();
           if (isNodeConfigRunChord(event.nativeEvent)) {
-            const scope = nodeConfigRunShortcutScope(event.nativeEvent);
+            const scope = promptEditorRunShortcutScope(event.nativeEvent);
             event.preventDefault();
             if (scope) runAction.run(scope, commitBeforeRun);
           }

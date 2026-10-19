@@ -443,7 +443,7 @@ function DimensionsControl({
     ? String(value)
     : "";
   const [customSizeOpen, setCustomSizeOpen] = useState(!readOnlyDimensions && !automatic && !presetValue);
-  const automaticLabel = autoOption && /供应商|模型默认|上游默认/u.test(autoOption.label)
+  const automaticLabel = autoOption && !activeResolutionTier && /供应商|模型默认|上游默认/u.test(autoOption.label)
     ? autoOption.label : "自动 · 跟随提示词，其次参考图";
   const presetOptions = [
     { value: autoOption ? "auto" : "__automatic_size_unavailable__", label: automaticLabel,

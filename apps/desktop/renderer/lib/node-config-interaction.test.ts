@@ -4,6 +4,7 @@ import {
   nodeConfigChildLayerOpen,
   nodeConfigOwnerElement,
   nodeConfigRunShortcutScope,
+  promptEditorRunShortcutScope,
   type NodeConfigKeyEvent,
 } from "./node-config-interaction";
 
@@ -29,6 +30,36 @@ describe("parameter card run shortcut ownership", () => {
     const event = { ...chord, ...excluded };
     expect(isNodeConfigRunChord(event)).toBe(true);
     expect(nodeConfigRunShortcutScope(event)).toBeNull();
+  });
+});
+
+describe("inline prompt editor reserved run shortcuts", () => {
+  it.each([
+    { ctrlKey: true, shiftKey: false, scope: "node" },
+    { ctrlKey: true, shiftKey: true, scope: "downstream" },
+    { metaKey: true, shiftKey: false, scope: "node" },
+    { metaKey: true, shiftKey: true, scope: "downstream" },
+  ] as const)("routes the editor-reserved chord without relaxing parameter controls: %j", ({ scope, ...modifiers }) => {
+    // KeyboardEvent properties are inherited/non-enumerable. Passing the real
+    // event must retain modifiers rather than losing them in an object spread.
+    const event = Object.create(Object.defineProperties({}, Object.fromEntries(
+      Object.entries({ key: "Enter", defaultPrevented: true, ...modifiers })
+        .map(([key, value]) => [key, { get: () => value }]),
+    ))) as NodeConfigKeyEvent;
+    expect(Object.keys(event)).toEqual([]);
+    expect(promptEditorRunShortcutScope(event)).toBe(scope);
+    expect(nodeConfigRunShortcutScope(event)).toBeNull();
+  });
+
+  it.each([
+    { isComposing: true },
+    { keyCode: 229 },
+    { repeat: true },
+    { altKey: true },
+    { ctrlKey: false },
+    { key: "Escape" },
+  ])("never turns an excluded reserved chord into a submission: %j", excluded => {
+    expect(promptEditorRunShortcutScope({ ...chord, defaultPrevented: true, ...excluded })).toBeNull();
   });
 });
 

@@ -36,11 +36,20 @@ export function isNodeConfigRunChord(event: NodeConfigKeyEvent): boolean {
   return event.key === "Enter" && Boolean(event.ctrlKey || event.metaKey);
 }
 
-/** A fresh, unclaimed physical shortcut may run this card's own node. */
-export function nodeConfigRunShortcutScope(event: NodeConfigKeyEvent): NodeConfigRunScope | null {
-  if (!isNodeConfigRunChord(event) || event.defaultPrevented || event.altKey ||
+function runShortcutScope(event: NodeConfigKeyEvent, defaultActionReserved: boolean): NodeConfigRunScope | null {
+  if (!isNodeConfigRunChord(event) || event.defaultPrevented && !defaultActionReserved || event.altKey ||
       event.repeat || event.isComposing || event.keyCode === 229) return null;
   return event.shiftKey ? "downstream" : "node";
+}
+
+/** A fresh, unclaimed physical shortcut may run this card's own node. */
+export function nodeConfigRunShortcutScope(event: NodeConfigKeyEvent): NodeConfigRunScope | null {
+  return runShortcutScope(event, false);
+}
+
+/** PromptEditor reserves these chords to prevent hard breaks before React bubbles. */
+export function promptEditorRunShortcutScope(event: NodeConfigKeyEvent): NodeConfigRunScope | null {
+  return runShortcutScope(event, true);
 }
 
 /**

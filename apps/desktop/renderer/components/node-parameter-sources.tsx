@@ -16,7 +16,12 @@ export function NodeParameterSources({ model, descriptors, nodeType, nativeSourc
 }) {
   const metadata = model?.metadata;
   const contractNote = typeof metadata?.imageParameterContractNote === "string" ? metadata.imageParameterContractNote : "";
-  const capabilityNote = typeof metadata?.imageCapabilityNote === "string" ? metadata.imageCapabilityNote : "";
+  const capabilitySummary = typeof metadata?.imageCapabilityNote === "string" ? metadata.imageCapabilityNote : "";
+  // Exact transparency evidence supersedes an explicitly marked old summary,
+  // while resolution, quality and concrete historical facts remain verbatim.
+  const oldTransparencySummary = /^(?:旧|历史)\s*(?:透明|transparen(?:t|cy)|alpha)\s*(?:失败|不支持|不透明)\s*(?:摘要|结论)[。；;\s]*$/iu;
+  const capabilityNote = transparencyNote ? capabilitySummary.split(/(?<=[。；;\n])/u)
+    .filter(part => !oldTransparencySummary.test(part.trim())).join("") : capabilitySummary;
   const groupLabel = typeof metadata?.supplierGroupResolutionLabel === "string" ? metadata.supplierGroupResolutionLabel : "";
   const groupDescription = typeof metadata?.supplierGroupDescription === "string" ? metadata.supplierGroupDescription : "";
   const fieldSources = [...new Map([...(model?.parameters ?? []), ...descriptors]
