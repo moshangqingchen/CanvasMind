@@ -3,6 +3,7 @@ import base from "./playwright.canvas-v3.config";
 
 // Next's development-only version lookup is answered locally; all other
 // non-loopback connections remain subject to the inherited strict TCP guard.
+process.env.NEURAL_TEST_DEV = "1";
 process.env.NEURAL_DISABLE_VERSION_CHECK = "1";
 process.env.PARAM_PANEL_SCREENSHOT_DIR ??= fileURLToPath(new URL(
   "../../../.codex-logs/2026-10-19-route-hierarchy/regression/screenshots/", import.meta.url,
