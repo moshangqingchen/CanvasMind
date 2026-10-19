@@ -102,7 +102,13 @@ export async function smokeCustomSuppliers(page, api, origin) {
     const row = routeRow(fixture.connection);
     assert.equal(await row.getAttribute("data-route-group"), fixture.group);
     assert.equal(await row.getByLabel("同型号报价", { exact: true }).textContent(), "—");
-    assert.equal(await row.locator("[data-route-choice] small").first().textContent(), "余额未读取");
+    const supplierRoutes = routes.getByRole("group", { name: `${name} 线路`, exact: true });
+    assert.equal(await supplierRoutes.getByText("余额未读取", { exact: true }).count(), 1);
+    const choice = row.locator("[data-route-choice]");
+    assert.equal(await choice.getByText("余额未读取", { exact: true }).count(), 0);
+    const description = await choice.evaluate(element => (element.getAttribute("aria-describedby") ?? "")
+      .split(/\s+/u).filter(Boolean).map(id => document.getElementById(id)?.textContent ?? "").join("\n"));
+    assert.ok(description.includes("余额未读取"));
   }
   assert.ok(await routes.evaluate(element => element.scrollWidth <= element.clientWidth + 1));
   assert.ok(await routes.getByRole("list", { name: "候选线路", exact: true }).evaluate(element => element.scrollWidth <= element.clientWidth + 1));
