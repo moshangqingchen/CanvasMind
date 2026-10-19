@@ -2,6 +2,7 @@ import type { ModelDescriptor } from "@super-canvas/providers";
 import { modelPickerStructuredPrice, type ModelPickerPriceTier, type ModelPickerStructuredPrice } from "../lib/model-picker-data";
 import { modelPriceLayout, modelPricePivotCellMatches } from "../lib/model-price-layout";
 import { modelEstimatedQuote } from "../lib/model-display";
+import type { NodeParameterQuote } from "../lib/node-parameter-quote";
 import styles from "./model-price-table.module.css";
 
 function Historical({ checkedAt, label = "上次价格" }: { checkedAt?: string; label?: string }) {
@@ -18,13 +19,14 @@ function TierAmount({ tier, selected }: { tier: ModelPickerPriceTier; selected: 
 }
 
 /** Compact tariff presentation shared by candidates, parameter panels and suppliers. */
-export function ModelPriceTable({ model, parameters, data: supplied }: {
+export function ModelPriceTable({ model, parameters, data: supplied, quote }: {
   model?: ModelDescriptor | null;
   parameters?: Readonly<Record<string, unknown>>;
   data?: ModelPickerStructuredPrice;
+  quote?: NodeParameterQuote;
 }) {
-  const data = supplied ?? modelPickerStructuredPrice(model);
-  const selected = parameters ? modelEstimatedQuote(model, parameters) : undefined;
+  const data = supplied ?? modelPickerStructuredPrice(quote ? quote.model : model);
+  const selected = quote ? quote.estimate : parameters ? modelEstimatedQuote(model, parameters) : undefined;
   const selectedIndex = selected?.tierIndex;
   const layout = modelPriceLayout(data.tiers);
   const hasRates = data.fixedAmount !== undefined || data.tokenRates.length > 0 || data.tiers.length > 0;

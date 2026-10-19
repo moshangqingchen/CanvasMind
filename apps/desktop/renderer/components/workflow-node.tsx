@@ -79,6 +79,9 @@ import { canvasMotionEnabled } from "./canvas-motion";
 import { DeferredPanelContent } from "./deferred-panel-content";
 import { nodePortTop } from "../lib/node-port-layout";
 import { acquireNodeConfigSurfaceMarkers } from "../lib/node-config-surface-markers";
+import { createGenerationNodeRunAction } from "../lib/generation-node-actions";
+import { isNodeConfigRunChord, nodeConfigChildLayerOpen, nodeConfigRunShortcutScope } from "../lib/node-config-interaction";
+import { createNodeParameterQuote } from "../lib/node-parameter-quote";
 
 const ASSET_DRAG_TYPE = "application/x-super-canvas-asset";
 
@@ -569,7 +572,7 @@ export function GenerationNodeBody({
       // the root card must not permanently block its ordinary close shortcut.
       if (event.target instanceof HTMLSelectElement &&
           (presentation !== "parameters" || event.target.matches(":open"))) return;
-      if (event.target instanceof Element && event.target.closest(".node-model-select[data-open]")) return;
+      if (nodeConfigChildLayerOpen(event.target instanceof Element ? event.target : null, settingsPopoverRef.current)) return;
       event.stopImmediatePropagation();
       closeSettings();
       if (presentation !== "parameters") settingsTrigger.current?.focus();
@@ -591,7 +594,7 @@ export function GenerationNodeBody({
     data.nodeType === "video-generation"
       ? "video-generation"
       : data.nodeType === "music-generation" ? "music-generation" : "image-generation";
-  const parameters = data.parameters ?? {};
+  const parameters = useMemo(() => data.parameters ?? {}, [data.parameters]);
   const maskEnabled = nodeType === "image-generation" && hasImageMask(parameters);
   const maskSource = data.linkedAssets?.find(asset => asset.kind === "image");
   const maskSourceChanged = Boolean(maskEnabled && parameters.maskAssetId && maskSource && parameters.maskSourceAssetId !== maskSource.id);
@@ -666,16 +669,20 @@ export function GenerationNodeBody({
   const modelPriceLabelBase = useMemo(() => selectedModel?.metadata?.langframeCatalog === true ? "—" : modelPickerPriceData(selectedModel), [selectedModel]);
   const modelPriceCompactBase = useMemo(() => selectedModel?.metadata?.langframeCatalog === true ? "—" : modelPickerPriceCompact(selectedModel), [selectedModel]);
   const hasReferenceVideo = data.linkedAssets?.some(asset => asset.kind === "video") === true;
-  const priceParameters = { ...parameters,
+  const priceParameters = useMemo(() => ({ ...parameters,
     has_reference_video: selectedModel?.metadata?.langframeCatalog === true && data.linkedAssets === undefined
       ? parameters.has_reference_video : hasReferenceVideo,
     has_reference_image: data.linkedAssets?.some(asset => asset.kind === "image") === true,
     has_reference_audio: data.linkedAssets?.some(asset => asset.kind === "audio") === true,
-  };
-  const priceModel = selectedModel && nodeType === "video-generation" ? {
+  }), [parameters, selectedModel, data.linkedAssets, hasReferenceVideo]);
+  const priceModel = useMemo(() => selectedModel && nodeType === "video-generation" ? {
     ...selectedModel,
     parameters: parameterDescriptorsForValues(nodeType, data.provider ?? "fake", selectedModel, parameters, undefined, { hasReferenceVideo }),
-  } : selectedModel;
+  } : selectedModel, [selectedModel, nodeType, data.provider, parameters, hasReferenceVideo]);
+  // Closed canvas nodes do not need a request estimate. The retained panel owns it.
+  const parameterQuote = useMemo(() => settingsOpen ? createNodeParameterQuote(priceModel, {
+    ...priceParameters, prompt: renderPromptParts(data.parts ?? []),
+  }) : undefined, [settingsOpen, priceModel, priceParameters, data.parts]);
   const currentUnitPrice = selectedModel?.metadata?.langframeCatalog === true ? currentSupplierUnitPrice(priceModel, priceParameters) : modelPriceCompactBase;
   const modelPriceLabel = selectedModel?.metadata?.langframeCatalog === true ? currentUnitPrice : modelPriceLabelBase;
   const modelPriceCompact = selectedModel?.metadata?.langframeCatalog === true ? currentUnitPrice : modelPriceCompactBase;
@@ -724,14 +731,18 @@ export function GenerationNodeBody({
 
   const selectNode = (event?: { ctrlKey: boolean; metaKey: boolean }) =>
     data.onSelect?.(Boolean(event?.ctrlKey || event?.metaKey));
-  const commitPromptBeforeRun = () => {
+  const commitBeforeRun = useCallback(() => {
     // The editor batches updates briefly for smooth typing. Blur commits the
-    // latest transaction immediately so Run cannot submit stale prompt text.
-    const active = document.activeElement;
-    if (active instanceof HTMLElement && active.closest(".tiptap-prompt")) {
-      active.blur();
+    // latest transaction; local W/H drafts also commit on native blur.
+    const focused = document.activeElement;
+    if (focused instanceof HTMLElement && (focused.closest(".tiptap-prompt") || settingsPopoverRef.current?.contains(focused))) {
+      focused.blur();
     }
-  };
+  }, []);
+  const runAction = createGenerationNodeRunAction({
+    connectionAvailable, maskProblem, running, nodeType,
+    onRun: data.onRun, onRunDownstream: data.onRunDownstream,
+  });
 
   useEffect(() => {
     if (!uiActive || !modelMenuOpen) return;
@@ -821,6 +832,14 @@ export function GenerationNodeBody({
       // clicks must not select that node and reopen the inspector mid-popup.
       onClick={(event) => event.stopPropagation()}
       onDoubleClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => {
+        if (!isNodeConfigRunChord(event.nativeEvent)) return;
+        const scope = nodeConfigRunShortcutScope(event.nativeEvent);
+        const childOwnsKey = nodeConfigChildLayerOpen(event.target instanceof Element ? event.target : null, settingsPopoverRef.current);
+        event.preventDefault();
+        event.stopPropagation();
+        if (uiActive && scope && !childOwnsKey) runAction.run(scope, commitBeforeRun);
+      }}
       onFocusCapture={() => {
         if (presentation === "parameters") { if (!active) onRequestFocus?.(); }
         else data.onConfigurationFocus?.();
@@ -986,7 +1005,7 @@ export function GenerationNodeBody({
             }
           />
         </section>
-        <ModelPriceDetails model={priceModel} parameters={{ ...priceParameters, prompt: renderPromptParts(data.parts ?? []) }} />
+        <ModelPriceDetails quote={parameterQuote} />
         </DeferredPanelContent>
         {currentConnectionOption?.supplierId && <DeferredPanelContent>
           <SupplierBillingSummary key={currentConnectionOption?.supplierId} compact supplierId={currentConnectionOption?.supplierId} />
@@ -1043,9 +1062,10 @@ export function GenerationNodeBody({
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => {
           event.stopPropagation();
-          if (!event.nativeEvent.isComposing && (event.ctrlKey || event.metaKey) && event.key === "Enter") {
+          if (isNodeConfigRunChord(event.nativeEvent)) {
+            const scope = nodeConfigRunShortcutScope(event.nativeEvent);
             event.preventDefault();
-            if (connectionAvailable && !maskProblem) (event.shiftKey ? data.onRunDownstream : data.onRun)?.();
+            if (scope) runAction.run(scope, commitBeforeRun);
           }
         }}
       >
@@ -1101,16 +1121,16 @@ export function GenerationNodeBody({
           className="node-run-button"
           type="button"
           aria-label={`运行 ${data.label} 节点`}
-          title={maskProblem ?? (connectionAvailable ? (running ? "创建新的独立任务，当前任务继续生成（Ctrl+Enter）" : "运行节点（Ctrl+Enter）") : "当前 API 连接不可用")}
-          disabled={!connectionAvailable || Boolean(maskProblem)}
+          title={runAction.title}
+          disabled={runAction.disabled}
           onClick={(event) => {
             event.stopPropagation();
-            if (connectionAvailable && !maskProblem) data.onRun?.();
+            runAction.run("node", commitBeforeRun);
           }}
-          onPointerDown={commitPromptBeforeRun}
+          onPointerDown={commitBeforeRun}
         >
           <Play size={12} />
-          <span>{running ? (nodeType === "image-generation" ? "再生成一张" : "再生成一个") : "运行"}</span>
+          <span>{runAction.label}</span>
         </button>
       </div>
     </div>

@@ -51,6 +51,7 @@ import { acknowledgeSubmissions, forgetSubmission, hiddenResult, hideRemovedResu
 import { acknowledgeCanvasDraft, canvasDraftRecovery, discardCanvasDraft, readCanvasDraft, writeCanvasDraft } from "../lib/canvas-drafts";
 import { trackCanvasSave, waitForCanvasSaves } from "../lib/canvas-save-barrier";
 import { flushPendingEditorEdits } from "../lib/pending-editor-edits";
+import { isNodeConfigRunChord, nodeConfigOwnerElement } from "../lib/node-config-interaction";
 import { registerDesktopSave } from "../lib/desktop-client";
 import { useSupplierVerificationRevision } from "../lib/use-supplier-verification-revision";
 import { isGenimageNativeImageContractModel } from "./node-parameter-fields";
@@ -6980,6 +6981,10 @@ function CanvasShell({
         return;
       }
       if (inPromptEditor) return;
+      // A retained parameter card owns its node independently of selectedId.
+      // Let its local handler run (or reject IME/repeated/child-popup chords)
+      // before this capture listener can submit the canvas selection instead.
+      if (isNodeConfigRunChord(event) && nodeConfigOwnerElement(target)) return;
       const modalOpen = Boolean(
         document.querySelector(
           '[role="dialog"]:not(.node-config-popover), .connection-menu, .canvas-create-menu, .project-menu, .project-context-menu',
