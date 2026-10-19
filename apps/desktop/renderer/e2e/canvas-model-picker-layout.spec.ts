@@ -18,6 +18,11 @@ const models = parseTk1688Marketplace({ success: true, data: { total: items.leng
 async function fixture(page: Page, request: APIRequestContext) {
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
+  if (process.env.NEURAL_TEST_DEV === "1") {
+    // Next 16.3 stores DevTools position through this endpoint, rather than
+    // localStorage. Keep the fixture's preference in its browser only.
+    await page.route("**/__nextjs_devtools_config", route => route.fulfill({ json: {} }));
+  }
   let submissions = 0;
   await page.route("**/api/runs**", async route => {
     if (route.request().method() === "POST") { submissions++; await route.abort(); }
@@ -50,6 +55,20 @@ async function fixture(page: Page, request: APIRequestContext) {
   expect(canvasResponse.ok()).toBeTruthy();
   const canvas = await canvasResponse.json();
   await page.goto(`/canvas/${canvas.id}`);
+  if (process.env.NEURAL_TEST_DEV === "1") {
+    // The development badge otherwise covers the real Zoom Out button. Move
+    // it using its own preference UI; errors and the indicator remain enabled.
+    const devtools = page.locator("nextjs-portal");
+    const logo = devtools.locator("#next-logo");
+    await logo.click();
+    await devtools.locator("[data-preferences]").click();
+    await devtools.getByLabel("Position", { exact: true }).selectOption("top-left");
+    await expect.poll(() => devtools.locator("#devtools-indicator").evaluate(element => getComputedStyle(element).top)).toBe("20px");
+    await logo.click();
+    await expect(logo).toHaveAttribute("aria-expanded", "true");
+    await logo.click();
+    await expect(logo).toHaveAttribute("aria-expanded", "false");
+  }
   await page.getByRole("button", { name: "打开 列表布局 模型与参数", exact: true }).click();
   const panel = page.getByRole("dialog", { name: "列表布局 模型与参数", exact: true });
   const picker = panel.getByRole("combobox", { name: "列表布局 模型", exact: false });
