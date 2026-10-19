@@ -1137,7 +1137,7 @@ describe("RunService", () => {
     const adapter = synchronousAdapter();
     adapter.submit = async () => {
       submits++;
-      if (submits === 1) { firstAttempt(); throw new ProviderHttpError("connection not established", { kind: "network", phase: "submit", retryable: true, submissionMayHaveOccurred: false }); }
+      if (submits === 1) { firstAttempt(); throw new ProviderHttpError("connection not established", { kind: "network", phase: "submit", retryable: true, submissionMayHaveOccurred: false, requestNotSent: true }); }
       return { providerTaskId: "must-not-submit", status: "succeeded", result: {} };
     };
     const service = new AdapterRunService(adapter, repository, new MemoryStorage(), "inline", "runway", { shutdownSignal: controller.signal, retryBaseDelayMs: 120 });

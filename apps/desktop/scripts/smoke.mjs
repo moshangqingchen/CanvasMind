@@ -167,7 +167,7 @@ try {
   ], edges: [{ id: "link", source: "prompt", sourceHandle: "prompt", target: "image", targetHandle: "prompt" }] };
   const canvas = await api("/api/canvas", { title: "桌面验收 中文路径", graph });
   const requestId = crypto.randomUUID();
-  const submitted = await api("/api/runs", { canvasId: canvas.id, clientRequestId: requestId, scope: "all" });
+  const submitted = await api("/api/runs", { canvasId: canvas.id, clientRequestId: requestId, expectedRevision: canvas.revision, scope: "all" });
   let run;
   for (let index = 0; index < 60; index++) {
     run = await api(`/api/runs/${submitted.run.id}`);
@@ -175,7 +175,7 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 300));
   }
   assert.equal(run.run.status, "succeeded", JSON.stringify(run));
-  const repeated = await api("/api/runs", { canvasId: canvas.id, clientRequestId: requestId, scope: "all" });
+  const repeated = await api("/api/runs", { canvasId: canvas.id, clientRequestId: requestId, expectedRevision: canvas.revision, scope: "all" });
   assert.equal(repeated.run.id, submitted.run.id);
   const imageId = run.nodes.find((node) => node.nodeId === "image").outputAssetIds[0];
   const imageSize = await page.evaluate(async (id) => (await (await fetch(`/api/assets/${id}/content`)).arrayBuffer()).byteLength, imageId);

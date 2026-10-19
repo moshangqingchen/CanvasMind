@@ -1,22 +1,22 @@
-interface Waiter {
-  resolve: () => void;
+interface Waiter<TResult> {
+  resolve: (result: TResult) => void;
   reject: (error: unknown) => void;
 }
 
-interface PendingTask<T> {
+interface PendingTask<T, TResult> {
   value: T;
-  waiters: Waiter[];
+  waiters: Waiter<TResult>[];
 }
 
 /** Serializes work while coalescing queued values to the newest snapshot. */
-export class LatestTaskQueue<T> {
+export class LatestTaskQueue<T, TResult = void> {
   private running = false;
-  private pending: PendingTask<T> | null = null;
+  private pending: PendingTask<T, TResult> | null = null;
 
-  constructor(private readonly worker: (value: T) => Promise<void>) {}
+  constructor(private readonly worker: (value: T) => Promise<TResult>) {}
 
-  enqueue(value: T): Promise<void> {
-    const completion = new Promise<void>((resolve, reject) => {
+  enqueue(value: T): Promise<TResult> {
+    const completion = new Promise<TResult>((resolve, reject) => {
       if (this.pending) {
         this.pending.value = value;
         this.pending.waiters.push({ resolve, reject });
@@ -36,8 +36,8 @@ export class LatestTaskQueue<T> {
         const task = this.pending;
         this.pending = null;
         try {
-          await this.worker(task.value);
-          task.waiters.forEach(({ resolve }) => resolve());
+          const result = await this.worker(task.value);
+          task.waiters.forEach(({ resolve }) => resolve(result));
         } catch (error) {
           task.waiters.forEach(({ reject }) => reject(error));
         }

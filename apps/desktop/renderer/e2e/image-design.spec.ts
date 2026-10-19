@@ -188,6 +188,7 @@ const test = base.extend<{ designFixture: DesignFixture }>({
     const runResponse = await request.post("/api/runs", {
       data: {
         canvasId: canvas.id,
+        expectedRevision: canvas.revision,
         clientRequestId: `${fixtureId}-run`,
         scope: "node",
         nodeId: `${fixtureId}-image`,

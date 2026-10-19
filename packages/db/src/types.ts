@@ -436,7 +436,8 @@ export interface Repository {
   commitSupplier(input: SupplierCommit): Promise<SupplierRecord>;
   ensureDefaultCanvas(): Promise<CanvasRecord>;
   listCanvases(): Promise<CanvasRecord[]>;
-  getCanvas(id: string): Promise<CanvasRecord | null>;
+  /** The synchronous predicate inspects the same isolated record returned by this read. */
+  getCanvas(id: string, expectedRevision?: number, acceptChangedRevision?: (canvas: CanvasRecord) => boolean): Promise<CanvasRecord | null>;
   deleteCanvas(id: string): Promise<void>;
   saveCanvas(input: {
     id: string;

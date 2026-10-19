@@ -149,6 +149,7 @@ describe("API route input validation", () => {
         canvasId: "canvas",
         clientRequestId: "request",
         nodeId: "weai-node",
+        expectedRevision: 1,
         scope: "node",
       }),
     );
@@ -158,6 +159,7 @@ describe("API route input validation", () => {
       canvasId: "canvas",
       clientRequestId: "request",
       nodeId: "weai-node",
+      expectedRevision: 1,
       scope: "node",
     });
   });

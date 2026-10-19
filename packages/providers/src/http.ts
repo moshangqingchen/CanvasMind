@@ -45,6 +45,8 @@ export class ProviderHttpError extends Error {
       submissionMayHaveOccurred: boolean;
       /** Positive evidence that execution stopped before sending any request. */
       requestNotSent?: true;
+      /** Known identity of a task accepted before later response/output processing failed. */
+      providerTaskId?: string;
       status?: number;
       responseBody?: unknown;
       upstreamRequestEvidence?: ProviderRequestEvidence;
