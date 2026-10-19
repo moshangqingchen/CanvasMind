@@ -19,7 +19,7 @@
 .row:last-child { border-bottom:0; }
 .row:hover { background:color-mix(in srgb, var(--selection-ink) 5%, transparent); }
 .row[data-route-current="true"] { background:var(--selection-soft); box-shadow:inset 2px 0 var(--accent); }
-.choice { grid-column:1; grid-row:1; display:flex; width:100%; min-width:0; padding:7px 6px 4px; border:1px solid transparent; border-radius:5px; background:transparent; color:var(--text); font:inherit; text-align:left; cursor:pointer; }
+.choice { grid-column:1; grid-row:1; align-self:last baseline; display:flex; width:100%; min-width:0; padding:7px 6px 4px; border:1px solid transparent; border-radius:5px; background:transparent; color:var(--text); font:inherit; text-align:left; cursor:pointer; }
 .choice:only-child { grid-column:1 / -1; }
 .choice * { pointer-events:none; }
 .choice[aria-disabled="true"] { color:var(--text-secondary); cursor:not-allowed; }
@@ -34,7 +34,7 @@
 .secondary > small { min-width:0; overflow-wrap:anywhere; }
 .connectionName, .groupIdentity { overflow-wrap:anywhere; }
 .current { flex:0 0 13px; margin-top:2px; color:var(--accent); }
-.details { grid-column:2; grid-row:1; align-self:end; min-width:0; padding:0 6px 5px 0; color:var(--text-secondary); font-size:10px; }
+.details { grid-column:2; grid-row:1; align-self:last baseline; min-width:0; padding:0 6px 5px 0; color:var(--text-secondary); font-size:10px; }
 .details > summary { width:max-content; max-width:100%; margin-left:auto; padding:0; line-height:1.4; white-space:nowrap; list-style-position:inside; cursor:pointer; }
 .details[open] { grid-column:1 / -1; grid-row:2; align-self:stretch; padding:0 6px 6px; }
 .row:has(> .details[open]) > .choice { grid-column:1 / -1; }
