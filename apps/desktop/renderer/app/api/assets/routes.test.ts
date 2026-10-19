@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => {
     getAsset: vi.fn(),
     listAssets: vi.fn(),
     deleteAssets: vi.fn(),
+    deleteUnreferencedAssets: vi.fn(),
     saveAsset: vi.fn(async (input: Record<string, unknown>) => ({
       ...input,
       createdAt: "2026-01-01T00:00:00.000Z",
@@ -87,6 +88,17 @@ beforeEach(() => {
 });
 
 describe("bulk asset deletion route", () => {
+  it("never deletes original objects skipped by rollback reference protection", async () => {
+    mocks.repository.listAssets.mockResolvedValue([asset, { ...asset, id: "unused", storageKey: "assets/unused/original.mp4" }]);
+    mocks.repository.deleteUnreferencedAssets.mockResolvedValue({ deletedIds: ["unused"], referencedIds: [asset.id] });
+    const response = await bulkDeleteAssets(new Request("http://localhost/api/assets/bulk-delete", {
+      method: "POST", body: JSON.stringify({ assetIds: [asset.id, "unused"], onlyUnreferenced: true }),
+    }));
+    expect(await response.json()).toMatchObject({ deletedIds: ["unused"], skippedIds: [asset.id] });
+    expect(mocks.repository.deleteAssets).not.toHaveBeenCalled();
+    expect(mocks.storage.delete).toHaveBeenCalledOnce();
+    expect(mocks.storage.delete).toHaveBeenCalledWith("assets/unused/original.mp4");
+  });
   it("persists once and limits storage cleanup concurrency", async () => {
     const assets = Array.from({ length: 23 }, (_, index) => ({
       ...asset,

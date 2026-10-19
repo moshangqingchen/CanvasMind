@@ -1,9 +1,12 @@
 import { z } from "zod";
 import { jsonError, repository, storage } from "../../../../lib/server";
 import { deleteStoredAssetObjects } from "../../../../lib/asset-cleanup";
+import { collectReferencedAssetIds } from "../../../../lib/project-transfer";
+import type { CanvasDocument } from "../../../../components/types";
 
 const requestSchema = z.object({
   assetIds: z.array(z.string().trim().min(1).max(200)).min(1).max(500),
+  onlyUnreferenced: z.boolean().optional(),
 });
 
 const STORAGE_DELETE_CONCURRENCY = 4;
@@ -16,12 +19,21 @@ export async function POST(request: Request) {
 
   const requestedIds = Array.from(new Set(parsed.data.assetIds));
   const requestedIdSet = new Set(requestedIds);
-  const assets = (await repository.listAssets()).filter((asset) =>
+  let assets = (await repository.listAssets()).filter((asset) =>
     requestedIdSet.has(asset.id),
   );
 
+  let deletedIds = requestedIds;
+  let skippedIds: string[] = [];
   try {
-    await repository.deleteAssets(assets.map((asset) => asset.id));
+    if (parsed.data.onlyUnreferenced) {
+      const result = await repository.deleteUnreferencedAssets(requestedIds,
+        graph => collectReferencedAssetIds(graph as unknown as CanvasDocument));
+      deletedIds = result.deletedIds;
+      skippedIds = result.referencedIds;
+      const deleting = new Set(deletedIds);
+      assets = assets.filter(asset => deleting.has(asset.id));
+    } else await repository.deleteAssets(assets.map((asset) => asset.id));
   } catch (error) {
     console.error(
       "[super-canvas] unable to persist bulk asset deletion",
@@ -55,8 +67,9 @@ export async function POST(request: Request) {
   }
 
   return Response.json({
-    deletedIds: requestedIds,
+    deletedIds,
     failedIds: [],
+    ...(parsed.data.onlyUnreferenced ? { skippedIds } : {}),
     storageCleanupFailedIds,
   });
 }

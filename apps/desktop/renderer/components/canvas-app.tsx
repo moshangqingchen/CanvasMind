@@ -214,6 +214,7 @@ import {
 } from "../lib/provider-connection-options";
 import { LatestTaskQueue } from "../lib/latest-task-queue";
 import { canvasChangedBeforeRunMessage, isUnacceptedRunResult, saveCanvasForRun } from "../lib/canvas-run-save";
+import { confirmImportedCanvasSave, importSaveDefinitelyRejected } from "../lib/project-import-save";
 import {
   applyPendingNodeConfigurations,
   clearPersistedNodeConfigurations,
@@ -9624,6 +9625,8 @@ function CanvasShell({
     }
 
     const uploadedForRollback: AssetView[] = [];
+    let importSaveStarted = false;
+    let importSaveConfirmed = false;
     setProjectImportBusy(true);
     setProjectImportError(null);
     setProjectImportProgress(
@@ -9675,8 +9678,7 @@ function CanvasShell({
       saveTimer.current = null;
       pendingSave.current = null;
       geometryCheckpoints.take();
-      await saveRequest(
-        {
+      const importRequest = {
           canvasId,
           graph: serializableGraph(
             nextNodes,
@@ -9685,9 +9687,14 @@ function CanvasShell({
             importedDrawings,
           ),
           title: prepared.title,
-        },
-        false,
-      );
+      };
+      importSaveStarted = true;
+      await confirmImportedCanvasSave({
+        expected: { id: canvasId, title: prepared.title, graph: importRequest.graph },
+        save: () => saveRequest(importRequest, false),
+        read: () => fetchCanvas(canvasId),
+      });
+      importSaveConfirmed = true;
       if (!instanceActive.current || saveSuspended.current) return;
       checkpoint(true);
       setNodes(nextNodes);
@@ -9710,9 +9717,10 @@ function CanvasShell({
       );
     } catch (error) {
       let cleanupFailed = 0;
-      if (uploadedForRollback.length > 0) {
+      if (uploadedForRollback.length > 0 && (!importSaveStarted || importSaveDefinitelyRejected(error))) {
         const cleanup = await deleteAssets(
           uploadedForRollback.map((asset) => asset.id),
+          { onlyUnreferenced: true },
         );
         cleanupFailed = cleanup.failedIds.length;
         const deleted = new Set(cleanup.deletedIds);
@@ -9721,7 +9729,8 @@ function CanvasShell({
             current.filter((asset) => !deleted.has(asset.id)),
           );
       }
-      const message = error instanceof Error ? error.message : "项目导入失败";
+      const message = importSaveConfirmed ? "导入已保存，界面更新失败，请重新加载；素材已保留" :
+        error instanceof Error ? error.message : "项目导入失败";
       setProjectImportError(
         cleanupFailed > 0
           ? `${message}；另有 ${cleanupFailed} 个临时上传素材清理失败，请在素材库中手动删除`

@@ -71,6 +71,7 @@ export interface CanvasResponse {
 
 export class CanvasSaveConflictError extends Error {
   readonly code = "CANVAS_REVISION_CONFLICT";
+  definitelyRejected = false;
 
   constructor(
     readonly currentRevision: number,
@@ -79,6 +80,10 @@ export class CanvasSaveConflictError extends Error {
     super(message);
     this.name = "CanvasSaveConflictError";
   }
+}
+
+export class CanvasSaveRejectedError extends Error {
+  readonly definitelyRejected = true;
 }
 
 interface CanvasIssuePayload {
@@ -408,6 +413,7 @@ function retryableCanvasStatus(status: number): boolean {
 interface CanvasJsonResult<T> {
   response: Response;
   payload: T | null;
+  hadUncertainAttempt: boolean;
 }
 
 async function readCanvasJson<T>(
@@ -478,6 +484,7 @@ async function fetchCanvasJsonWithRetry<T>(
         // pending forever behind the canvas loading screen.
         return {
           response,
+          hadUncertainAttempt: attempt > 0,
           payload: await readCanvasJson(
             response,
             Math.max(0, deadlineAt - Date.now()),
@@ -516,7 +523,7 @@ export async function saveCanvas(
   title?: string,
   expectedRevision?: number,
 ): Promise<CanvasResponse> {
-  const { response, payload } = await fetchCanvasJsonWithRetry<
+  const { response, payload, hadUncertainAttempt } = await fetchCanvasJsonWithRetry<
     Partial<CanvasResponse> & {
       error?: unknown;
       code?: unknown;
@@ -536,12 +543,17 @@ export async function saveCanvas(
       Number.isSafeInteger(payload.currentRevision) &&
       payload.currentRevision >= 0
     ) {
-      throw new CanvasSaveConflictError(
+      const conflict = new CanvasSaveConflictError(
         payload.currentRevision,
         typeof payload.error === "string" ? payload.error : undefined,
       );
+      conflict.definitelyRejected = !hadUncertainAttempt;
+      throw conflict;
     }
-    throw new Error(canvasErrorMessage(payload, "画布保存失败"));
+    const message = canvasErrorMessage(payload, "画布保存失败");
+    if (!hadUncertainAttempt && [400, 401, 403, 404, 413, 415, 422].includes(response.status))
+      throw new CanvasSaveRejectedError(message);
+    throw new Error(message);
   }
   if (!payload?.id || !payload.graph || typeof payload.revision !== "number")
     throw new Error("画布保存响应无效");
@@ -573,18 +585,20 @@ export async function fetchAsset(assetId: string, signal?: AbortSignal): Promise
 export interface DeleteAssetsResult {
   deletedIds: string[];
   failedIds: string[];
+  skippedIds?: string[];
 }
 
 const DELETE_ASSETS_BATCH_SIZE = 500;
 
 async function deleteAssetsBatch(
   assetIds: readonly string[],
+  onlyUnreferenced = false,
 ): Promise<DeleteAssetsResult> {
   try {
     const response = await fetch("/api/assets/bulk-delete", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ assetIds }),
+      body: JSON.stringify({ assetIds, ...(onlyUnreferenced ? { onlyUnreferenced: true } : {}) }),
     });
     if (!response.ok) return { deletedIds: [], failedIds: [...assetIds] };
     const payload = (await response.json()) as Partial<DeleteAssetsResult>;
@@ -593,6 +607,7 @@ async function deleteAssetsBatch(
       failedIds: Array.isArray(payload.failedIds)
         ? payload.failedIds
         : [...assetIds],
+      ...(onlyUnreferenced ? { skippedIds: Array.isArray(payload.skippedIds) ? payload.skippedIds : [] } : {}),
     };
   } catch {
     return { deletedIds: [], failedIds: [...assetIds] };
@@ -601,12 +616,14 @@ async function deleteAssetsBatch(
 
 export async function deleteAssets(
   assetIds: readonly string[],
+  options?: { onlyUnreferenced?: boolean },
 ): Promise<DeleteAssetsResult> {
   const uniqueAssetIds = Array.from(new Set(assetIds));
   if (uniqueAssetIds.length === 0) return { deletedIds: [], failedIds: [] };
 
   const deletedIds: string[] = [];
   const failedIds: string[] = [];
+  const skippedIds: string[] = [];
   for (
     let start = 0;
     start < uniqueAssetIds.length;
@@ -614,11 +631,13 @@ export async function deleteAssets(
   ) {
     const result = await deleteAssetsBatch(
       uniqueAssetIds.slice(start, start + DELETE_ASSETS_BATCH_SIZE),
+      options?.onlyUnreferenced,
     );
     deletedIds.push(...result.deletedIds);
     failedIds.push(...result.failedIds);
+    skippedIds.push(...result.skippedIds ?? []);
   }
-  return { deletedIds, failedIds };
+  return { deletedIds, failedIds, ...(options?.onlyUnreferenced ? { skippedIds } : {}) };
 }
 
 export async function fetchMaterialDrops(): Promise<MaterialDropEventView[]> {

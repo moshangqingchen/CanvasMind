@@ -768,6 +768,12 @@ export class FileRepository extends MemoryRepository {
     await this.persist();
   }
 
+  override async deleteUnreferencedAssets(ids: readonly string[], references: Parameters<MemoryRepository["deleteUnreferencedAssets"]>[1]): ReturnType<MemoryRepository["deleteUnreferencedAssets"]> {
+    const result = await super.deleteUnreferencedAssets(ids, references);
+    if (result.deletedIds.length) await this.persist();
+    return result;
+  }
+
   override async saveConnection(
     input: Omit<ProviderConnectionRecord, "createdAt" | "updatedAt">,
     options: ConnectionSaveOptions = {},

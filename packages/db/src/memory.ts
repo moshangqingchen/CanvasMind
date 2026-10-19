@@ -749,6 +749,20 @@ export class MemoryRepository implements Repository {
     }
   }
 
+  async deleteUnreferencedAssets(ids: readonly string[], references: (graph: JsonObject) => readonly string[]): Promise<{ deletedIds: string[]; referencedIds: string[] }> {
+    const referenced = new Set<string>();
+    // No await between inspection and tombstones. Retained revisions also own originals.
+    for (const record of [...this.canvases.values(), ...this.revisions.values()])
+      for (const id of references(record.graph)) referenced.add(id);
+    const unique = [...new Set(ids)];
+    const deletedIds = unique.filter(id => !referenced.has(id));
+    for (const id of deletedIds) {
+      const asset = this.assets.get(id);
+      if (asset) this.assets.set(id, { ...asset, deleted: true });
+    }
+    return { deletedIds, referencedIds: unique.filter(id => referenced.has(id)) };
+  }
+
   async listConnections(): Promise<ProviderConnectionRecord[]> {
     return [...this.connections.values()].map(clone);
   }

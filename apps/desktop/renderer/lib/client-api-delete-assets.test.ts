@@ -2,6 +2,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { deleteAssets } from "./client-api";
 
 describe("deleteAssets", () => {
+  it("opts rollback into reference protection and does not report skipped assets as deleted", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => {
+      void _input; void _init;
+      return Response.json({ deletedIds: ["unused"], failedIds: [], skippedIds: ["used"] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(deleteAssets(["used", "unused"], { onlyUnreferenced: true })).resolves.toEqual({
+      deletedIds: ["unused"], failedIds: [], skippedIds: ["used"],
+    });
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({ assetIds: ["used", "unused"], onlyUnreferenced: true });
+  });
   afterEach(() => {
     vi.unstubAllGlobals();
   });
