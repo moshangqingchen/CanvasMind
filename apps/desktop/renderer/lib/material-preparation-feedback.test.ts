@@ -9,7 +9,7 @@ import { isUnsubmittedReferenceFailure, resultFailureFeedback } from "./result-f
 afterEach(() => vi.unstubAllGlobals());
 
 const preparationFailure = {
-  message: "素材准备失败，尚未提交生成；当前生成尚未提交。原文件读取超时。", code: "MATERIAL_PREPARATION_FAILED",
+  message: "素材准备失败，尚未提交生成。原文件读取超时。", code: "MATERIAL_PREPARATION_FAILED",
   source: "local_validation" as const, phase: "prepare" as const, failureCategory: "local_network" as const,
   submissionMayHaveOccurred: false, charge: { status: "not_charged" as const, source: "not_submitted" as const },
 };
@@ -24,6 +24,7 @@ it("keeps exact preparation summary and confirmed no-charge guidance through loc
   const html = renderToStaticMarkup(React.createElement(ResultFailureFeedback, { error: localized, rawError: preparationFailure, status: "failed" }));
   for (const text of ["素材准备失败，尚未提交生成", "未产生生成费用", "未扣费", "请求尚未发送（本地确认）"]) expect(html).toContain(text);
   expect(html).not.toMatch(/核对原任务|账单|扣费待确认|暂时无法确认/u);
+  expect(html).not.toContain("当前生成尚未提交");
 });
 
 it("never infers no-charge from the material code alone or from accepted-task evidence", () => {

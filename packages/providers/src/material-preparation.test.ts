@@ -14,6 +14,17 @@ const asset = { id: "original", kind: "image" as const, mimeType: "image/png", d
 const context = { provider: "rest", operation: "image.edit" as const };
 
 describe("free material preparation errors", () => {
+  it("uses the required preparation prefix exactly once before safe status and detail", () => {
+    const cause = new ProviderHttpError("private upstream URL must stay private", {
+      kind: "provider", phase: "prepare", retryable: false, submissionMayHaveOccurred: false, status: 503,
+    });
+    expect(new MaterialPreparationError("read").message).toBe("素材准备失败，尚未提交生成。");
+    const error = new MaterialPreparationError("upload", { cause, detail: "原文件上传暂时不可用。" });
+    expect(error.message).toBe("素材准备失败，尚未提交生成。 HTTP 503。 原文件上传暂时不可用。");
+    expect(error.message.match(/尚未提交/gu)).toHaveLength(1);
+    expect(presentProviderError(error, context)).toMatchObject({ message: error.message, localMessage: error.message,
+      code: "MATERIAL_PREPARATION_FAILED", charge: { status: "not_charged", source: "not_submitted" } });
+  });
   it("retains sanitized HTTP diagnostics without granting paid-request retries", async () => {
     const cause = new ProviderHttpError("fetch failed https://cdn.test/a?token=private-token", {
       kind: "network", phase: "prepare", retryable: true, submissionMayHaveOccurred: false,

@@ -50,7 +50,7 @@ describe("temporary reference images", () => {
   it("stops before paid submission on upload failure or a non-host URL", async () => {
     for (const response of [() => new Response("blocked", { status: 503 }), () => new Response("https://127.0.0.1/file.png")]) {
       const fetch = vi.fn(async () => response());
-      await expect(adapter(fetch).submit(request)).rejects.toThrow(/当前生成尚未提交/);
+      await expect(adapter(fetch).submit(request)).rejects.toThrow(/^素材准备失败，尚未提交生成。/);
       expect(fetch).toHaveBeenCalledTimes(1);
       expect(String(fetch.mock.calls[0]?.[0])).toContain("litterbox.catbox.moe");
     }

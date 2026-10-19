@@ -9,7 +9,7 @@ for (const accepted of [false, true]) test(accepted
   const runId = `material-display-${accepted ? "accepted" : "unsubmitted"}`;
   const taskId = accepted ? "accepted-original-task" : undefined;
   const error: RunErrorDetails = {
-    message: accepted ? "原任务已提交，恢复时素材准备失败；请核对原任务。" : "素材准备失败，尚未提交生成；当前生成尚未提交。原文件读取超时。",
+    message: accepted ? "原任务已提交，恢复时素材准备失败；请核对原任务。" : "素材准备失败，尚未提交生成。原文件读取超时。",
     code: "MATERIAL_PREPARATION_FAILED", type: "素材准备失败", source: "local_validation", phase: "prepare",
     failureCategory: "local_network", submissionMayHaveOccurred: accepted,
     charge: accepted ? { status: "unknown", source: "unconfirmed" } : { status: "not_charged", source: "not_submitted" },

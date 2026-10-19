@@ -16,7 +16,7 @@ export class MaterialPreparationError extends Error {
   constructor(readonly stage: MaterialPreparationStage, options: { cause?: unknown; detail?: string; diagnostics?: readonly ReferenceOriginalDiagnostic[] } = {}) {
     // detail is application-owned text, never an upstream response or signed URL.
     const status = options.cause instanceof ProviderHttpError ? options.cause.details.status : undefined;
-    super(`素材准备失败，尚未提交生成；当前生成尚未提交。${status === undefined ? "" : ` HTTP ${status}。`}${options.detail ? ` ${options.detail}` : ""}`, { cause: options.cause });
+    super(`素材准备失败，尚未提交生成。${status === undefined ? "" : ` HTTP ${status}。`}${options.detail ? ` ${options.detail}` : ""}`, { cause: options.cause });
     this.diagnostics = options.diagnostics ?? [];
   }
 }
