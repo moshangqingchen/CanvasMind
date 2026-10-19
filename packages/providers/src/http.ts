@@ -21,7 +21,7 @@ import type {
 } from "./contracts.js";
 
 export type ProviderRequestPhase =
-  "connect" | "submit" | "poll" | "cancel" | "archive";
+  "connect" | "prepare" | "submit" | "poll" | "cancel" | "archive";
 
 export type ProviderErrorKind =
   | "authentication"

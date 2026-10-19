@@ -82,6 +82,7 @@ import {
   presentProviderError,
   extractProviderChargeEvidence,
   ProviderHttpError,
+  MaterialPreparationError,
   withProviderSubmissionProgress,
   type ProviderSubmissionPhase,
   RunwayAdapter,
@@ -2329,7 +2330,9 @@ export class RunService {
         const nodeOutcome: WorkflowRunRecord["status"] =
           cancellationWon || error instanceof CancelledError
             ? "cancelled"
-            : error instanceof NeedsAttentionError
+            : error instanceof NeedsAttentionError ||
+              ((error instanceof MaterialPreparationError || error instanceof LocalReferenceChannelError) &&
+                materialPreparationHasPriorSubmission(authoritativeNode ?? nodeRun))
               ? "needs_attention"
               : "failed";
         overall = combineRunStatus(overall, nodeOutcome);
@@ -4113,6 +4116,14 @@ function cyberAfeiCapabilityDenialFromProviderError(
   return undefined;
 }
 
+/** A free preparation failure cannot erase an earlier accepted/uncertain generation. */
+function materialPreparationHasPriorSubmission(nodeRun: NodeRunRecord): boolean {
+  return Boolean(nodeRun.providerTaskId || storedProviderTask(nodeRun.inputJson.providerTask)) ||
+    nodeRun.inputJson.cloudAccepted === true ||
+    (typeof nodeRun.inputJson.submissionPhase === "string" && nodeRun.inputJson.submissionPhase !== "not_started") ||
+    ["charged", "refunded"].includes(taskChargeEvidence(nodeRun)?.status ?? "");
+}
+
 function providerFailureFor(
   error: unknown,
   node: WorkflowNode,
@@ -4176,6 +4187,12 @@ function providerFailureFor(
   }
   if (error instanceof NeedsAttentionError && isRecord(source) && source.code === "music_submit_missing_id")
     presentation = { ...presentation, message: error.message, code: "music_submit_missing_id" };
+  if ((source instanceof MaterialPreparationError || source instanceof LocalReferenceChannelError) &&
+      materialPreparationHasPriorSubmission(nodeRun)) {
+    const message = "素材准备失败；原生成任务已提交或提交结果尚待核对，请继续查询原任务。";
+    presentation = { ...presentation, message, localMessage: message,
+      submissionMayHaveOccurred: true, charge: { status: "unknown", source: "unconfirmed" } };
+  }
   const taskCharge = taskChargeEvidence(nodeRun);
   // Billing on a failed query/download/cancel belongs to that HTTP request,
   // not necessarily the generation. Only the matching task's saved response
