@@ -29,3 +29,21 @@
 源码保持 HEAD `eb7d4586de9667910a3c3f657dbeb52d7c37377d`、分支 release/v0.2.110；本轮未提交、推送、打 tag 或发布 GitHub Release。新增内容为两个版本号、发布说明、本记录及测试 fixture 适配；未增加产品逻辑修复。两份 providers 测试与 36 份 E2E fixture 的精确改动等 Claude 审查。
 
 完整中文报告（含原样失败）：[final-report.md](../.codex-logs/2026-10-19-release-v0.2.118/final-report.md)；[正式启动边界复核](../.codex-logs/2026-10-19-release-v0.2.118/startup-readonly-reassessment.md)。证据目录：`.codex-logs/2026-10-19-release-v0.2.118/`。不包含供应商协议或价格调整，不发起收费生成。云端超时保留任务编号的改动仍须另外部署云端服务，本次未部署。
+
+## 启动后只读文件核对（Claude，2026-10-19）
+
+用户确认后，Claude 于 **2026-10-19T08:00:10Z** 按正常方式启动安装版 0.2.118（`Start-Process`，与双击图标相同，照常检查更新），约 3 分钟后做了一次只读文件快照，对照备份 `backups/before-local-update-v0.2.118-20261019T063745489Z`。核对脚本是 0.2.117 同名脚本的改编版，增加了项目文件夹对比：[after-start-readonly-files.mjs](../.codex-logs/2026-10-19-release-v0.2.118/after-start-readonly-files.mjs)。
+
+采样时间 **08:03:02.037Z – 08:03:03.282Z**，一次即取得一致快照。结果为**全部通过**：
+
+- 主库 SHA-256 仍为 `2034d7f7dcf646909ed8441f2dd878daa7523901dcf9de32ae104570a674fa5c`，与安装前基线完全相同，即启动后应用尚未写入主库；
+- 18 条核验证据规范化哈希 `3b522ff4…a105` 不变；
+- 19 份 sidecar 和 19 份证据文件逐 SHA 不变；
+- 182 条连接的完整保护字段及密钥上下文不变；
+- 历史 `cancel_requested` 节点和它的父 run 均不变；
+- 各业务集合与应用设置无变化；
+- 5 个项目文件夹完全一致，没有新增 `.supercanvas-meta/`。
+
+每日供应商目录检查上次在 2026-10-19T04:14Z 前后运行，本次采样时尚未到期，因此没有出现 0.2.117 那次的目录写入。之后到期运行产生的目录变化属于正常功能，不在本次结论内。
+
+本次只读文件，没有读取草稿或日志内容，没有调用应用 API，没有操作窗口或截图，也没有写入正式资料。快照只代表采样时刻。应用保持运行。完整结果见 `.codex-logs/2026-10-19-release-v0.2.118/after-start-readonly-check.private.json` 和 `after-start-readonly-summary.json`。
