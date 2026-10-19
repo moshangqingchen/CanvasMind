@@ -3,6 +3,7 @@ import { assetToBlob, fetchProviderJson, mergeHeaders, providerFetch, ProviderHt
 import { jiasuImageOrigin } from "./jiasu-image-contract.js";
 import { MaterialPreparationError, prepareMaterial } from "./material-preparation.js";
 import { distinctAssetSources } from "./asset-preparation-cache.js";
+import { verifyReferenceOriginal } from "./reference-original-probe.server.js";
 
 interface MediaOptions { fetch?: FetchImplementation; requestTimeoutMs?: number }
 interface UploadTicket { url?: string; put?: { url?: string; method?: string; headers?: Record<string, string> } }
@@ -39,21 +40,24 @@ export async function uploadJiasuMedia(connection: ResolvedProviderConnection, a
         Authorization: `Bearer ${requireApiKey(connection)}`, "content-type": "application/json",
       }), body: JSON.stringify({ items: batch.map(item => ({ name: item.name, content_type: item.asset.mimeType, size: item.blob.size, kind: item.asset.kind })) }) },
       { phase: "prepare", timeoutMs: options.requestTimeoutMs ?? 120_000, idempotent: false }));
-    const tickets = receipt.data?.items;
-    if (receipt.success !== true || !Array.isArray(tickets) || tickets.length !== batch.length)
+    const tickets = receipt?.data?.items;
+    if (receipt?.success !== true || !Array.isArray(tickets) || tickets.length !== batch.length)
       throw new MaterialPreparationError("initialize", { detail: "佳速免费素材初始化没有返回全部直传凭证", cause: new ProviderHttpError("佳速免费素材初始化没有返回全部直传凭证", {
         kind: "invalid_response", phase: "prepare", retryable: false, submissionMayHaveOccurred: false,
       }) });
     for (let index = 0; index < batch.length; index++) {
       const item = batch[index]!;
       const ticket = tickets[index]!;
-      if (!jiasuPublicMediaUrl(ticket.url) || !jiasuPublicMediaUrl(ticket.put?.url) || ticket.put?.method && ticket.put.method !== "PUT")
+      if (!jiasuPublicMediaUrl(ticket?.url) || !jiasuPublicMediaUrl(ticket?.put?.url) || ticket.put?.method && ticket.put.method !== "PUT")
         throw new MaterialPreparationError("initialize", { detail: "佳速素材初始化返回无效 CDN 或直传地址", cause: new ProviderHttpError("佳速素材初始化返回无效 CDN 或直传地址", {
           kind: "invalid_response", phase: "prepare", retryable: false, submissionMayHaveOccurred: false,
         }) });
       // The presigned PUT receives only its own storage headers, never the API credential.
       await prepareMaterial("upload", () => fetchProviderJson(fetch, ticket.put!.url!, { method: "PUT", ...(ticket.put?.headers ? { headers: ticket.put.headers } : {}), body: item.blob },
         { phase: "prepare", timeoutMs: options.requestTimeoutMs ?? 120_000, idempotent: true, allowEmpty: true }));
+      const original = item.asset.data ?? new Uint8Array(await prepareMaterial("read", () => item.blob.arrayBuffer()));
+      await verifyReferenceOriginal(ticket.url!, { id: item.asset.id, mimeType: item.blob.type || item.asset.mimeType, data: original }, offset + index,
+        { fetch, timeoutMs: options.requestTimeoutMs ?? 120_000 });
       urls.set(item.asset.id, ticket.url!);
     }
   }

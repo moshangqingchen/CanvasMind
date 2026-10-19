@@ -67,4 +67,12 @@ describe("free material preparation errors", () => {
     expect(presentProviderError(error, context)).toMatchObject({ statusCode: 503, phase: "prepare", charge: { source: "not_submitted" } });
     expect(JSON.stringify(presentProviderError(error, context))).not.toContain("private-token");
   });
+  it.each(["jiasu", "cangyuan"] as const)("keeps a null %s upload receipt inside the unpaid preparation boundary", async supplier => {
+    const fetch = vi.fn<FetchImplementation>(async () => Response.json(null));
+    const connection = { id: "fixture", provider: "rest", apiKey: "synthetic-key", baseUrl: supplier === "jiasu" ? "https://ai.jiasuapi.com/v1" : "https://ai.cangyuansuanli.cn/v1" };
+    const error = await (supplier === "jiasu" ? uploadJiasuMedia(connection, [asset], { fetch }) : uploadCangyuanMedia(connection, [asset], { fetch })).catch(value => value);
+    expect(error).toBeInstanceOf(MaterialPreparationError);
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(presentProviderError(error, context)).toMatchObject({ code: "MATERIAL_PREPARATION_FAILED", charge: { source: "not_submitted" } });
+  });
 });

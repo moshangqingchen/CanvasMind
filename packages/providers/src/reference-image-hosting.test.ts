@@ -20,6 +20,10 @@ describe("temporary reference images", () => {
     const calls: string[] = [];
     const fetch = vi.fn(async (url, init) => {
       calls.push(String(url));
+      if (init?.method === "GET") {
+        const id = Number(/ref-(\d+)/u.exec(String(url))![1]);
+        return new Response(new Uint8Array([id, 2, 3]), { headers: { "content-type": "image/png" } });
+      }
       if (String(url).includes("litterbox.catbox.moe")) {
         expect(new Headers(init?.headers).has("authorization")).toBe(false);
         const form = init?.body as FormData;
@@ -34,7 +38,8 @@ describe("temporary reference images", () => {
       return Response.json({ data: [{ url: "https://provider.test/result.png" }] });
     }) as typeof globalThis.fetch;
     expect((await adapter(fetch).submit(request)).status).toBe("succeeded");
-    expect(calls).toHaveLength(3);
+    expect(calls).toHaveLength(5);
+    expect(fetch.mock.calls.filter(([url, init]) => String(url).endsWith("/v1/images/edits") && init?.method === "POST")).toHaveLength(1);
     expect(assets[0]).not.toHaveProperty("url");
   });
   it("does not upload or generate without opt-in", async () => {

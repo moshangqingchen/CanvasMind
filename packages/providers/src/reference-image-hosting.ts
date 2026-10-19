@@ -2,6 +2,7 @@ import type { FetchImplementation, ProviderAssetInput } from "./contracts.js";
 import { fetchProviderJson, providerFetch } from "./http.js";
 import { MaterialPreparationError, prepareMaterial } from "./material-preparation.js";
 import { distinctAssetSources } from "./asset-preparation-cache.js";
+import { verifyReferenceOriginal } from "./reference-original-probe.server.js";
 
 export function referenceImageHostingEnabled(settings: Readonly<Record<string, unknown>> | undefined): boolean {
   return settings?.referenceImageHosting === "litterbox-24h";
@@ -35,6 +36,7 @@ export async function uploadTemporaryReferenceImages(
       const url = typeof result === "string" ? new URL(result.trim()) : null;
       if (!url || url.protocol !== "https:" || url.hostname !== "litter.catbox.moe" || url.username || url.password || url.port)
         throw new MaterialPreparationError("upload", { detail: "临时图床返回无效素材链接" });
+      await verifyReferenceOriginal(url.href, asset, assets.findIndex(item => item.id === asset.id), { fetch: fetchImpl, timeoutMs: 120_000 });
       // Preserve IDs and roles/order; only the provider-facing copy gets a URL.
       urls.set(asset.id, url.href);
     });

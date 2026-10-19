@@ -4,6 +4,7 @@ import { assetToBlob, fetchProviderJson, mergeHeaders, parseDataUrl, providerFet
 import { CANGYUAN_UPLOAD_LIMITS, cangyuanMediaUploadOrigin } from "./cangyuan-media-upload-contract.js";
 import { MaterialPreparationError, prepareMaterial } from "./material-preparation.js";
 import { distinctAssetSources } from "./asset-preparation-cache.js";
+import { verifyReferenceOriginal } from "./reference-original-probe.server.js";
 
 export const cangyuanLocalMedia = (asset: ProviderAssetInput): boolean => asset.data !== undefined || asset.url?.startsWith("data:") === true;
 export function cangyuanMediaUploadInputIssues(assets: readonly ProviderAssetInput[]): ValidationIssue[] {
@@ -42,7 +43,7 @@ export async function uploadCangyuanMedia(connection: ResolvedProviderConnection
   const issues = cangyuanMediaUploadInputIssues(assets);
   if (issues.length) throw new MaterialPreparationError("read", { detail: issues.map(issue => issue.message).join("；") });
   const sources = distinctAssetSources(assets);
-  const fetch = options.fetch ?? providerFetch, key = requireApiKey(connection), urls = new Map<string, string>();
+  const fetch = options.fetch ?? providerFetch, key = await prepareMaterial("initialize", async () => requireApiKey(connection)), urls = new Map<string, string>();
   // Validate all inputs before the first signing request.
   const prepared = await Promise.all(sources.map(async asset => cangyuanLocalMedia(asset)
     ? { asset, blob: await prepareMaterial("read", () => assetToBlob(asset, fetch)) } : undefined));
@@ -54,12 +55,14 @@ export async function uploadCangyuanMedia(connection: ResolvedProviderConnection
       body: JSON.stringify({ bytes: data.byteLength, content_type: item.blob.type,
         content_md5: createHash("md5").update(data).digest("base64") }),
     }, { phase: "prepare", timeoutMs: options.requestTimeoutMs ?? 120_000, idempotent: false }));
-    if (!publicHttps(ticket.upload_url) || !publicHttps(ticket.url) || typeof ticket.expires_in !== "number" || ticket.expires_in <= 0 ||
+    if (!publicHttps(ticket?.upload_url) || !publicHttps(ticket.url) || typeof ticket.expires_in !== "number" || ticket.expires_in <= 0 ||
         !ticket.headers || typeof ticket.headers !== "object" || Array.isArray(ticket.headers)) throw invalidTicket();
     const headers = Object.entries(ticket.headers);
     if (headers.some(([name, value]) => typeof value !== "string" || !name || /[\r\n]/u.test(name + value) || value.includes(key))) throw invalidTicket();
     await prepareMaterial("upload", () => fetchProviderJson(fetch, ticket.upload_url as string, { method: "PUT", headers: Object.fromEntries(headers) as Record<string, string>, body: data },
       { phase: "prepare", timeoutMs: options.requestTimeoutMs ?? 120_000, idempotent: true, allowEmpty: true }));
+    await verifyReferenceOriginal(ticket.url, { id: item.asset.id, mimeType: item.blob.type || item.asset.mimeType, data },
+      assets.findIndex(asset => asset.id === item.asset.id), { fetch, timeoutMs: options.requestTimeoutMs ?? 120_000 });
     urls.set(item.asset.id, ticket.url);
   }
   return assets.map(asset => {

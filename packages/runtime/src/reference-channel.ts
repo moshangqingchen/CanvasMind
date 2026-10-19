@@ -1,7 +1,5 @@
 import { readFileSync } from "node:fs";
-import { createHash } from "node:crypto";
-import { createProviderAssetToken, hasProviderHttpProxy, providerFetch } from "@super-canvas/providers";
-import type { ProviderAssetInput } from "@super-canvas/providers";
+import { createProviderAssetToken, hasProviderHttpProxy, probeReferenceOriginal, providerFetch, type ReferenceOriginal, type ReferenceOriginalDiagnostic } from "@super-canvas/providers";
 
 interface ChannelState { enabled: boolean; ready: boolean; baseUrl: string; updatedAt: number; instance: string; desktopPublicProbe?: boolean }
 /** An enabled private channel must never silently fall back to a public host. */
@@ -22,21 +20,8 @@ export function localReferenceChannel(): ChannelState | null {
   } catch { return null; }
 }
 
-type LocalReferenceOriginal = Pick<ProviderAssetInput, "id" | "mimeType" | "data">;
-type ProbeCode = "ok" | "missing_original" | "http" | "mime" | "length" | "hash" | "network" | "timeout";
-export interface LocalReferenceAssetDiagnostic {
-  /** One-based file position (zero is instance health) and an opaque identifier. */
-  assetIndex: number;
-  assetReference: string;
-  code: ProbeCode;
-  attempts: number;
-  durationMs: number;
-  httpStatus?: number;
-  expectedMime?: string;
-  actualMime?: string;
-  expectedBytes?: number;
-  actualBytes?: number;
-}
+type LocalReferenceOriginal = ReferenceOriginal;
+export type LocalReferenceAssetDiagnostic = ReferenceOriginalDiagnostic;
 
 export class LocalReferenceChannelError extends Error {
   readonly code = "LOCAL_REFERENCE_ASSET_PREFLIGHT_FAILED";
@@ -48,16 +33,8 @@ export class LocalReferenceChannelError extends Error {
 }
 
 const ASSET_PROBE_TIMEOUT_MS = 60_000;
-const PROBE_ATTEMPTS = 2;
 const PROBE_CONCURRENCY = 2;
 type ProbeFetch = (url: string, init: RequestInit) => Promise<Response>;
-const sha256 = (bytes: Uint8Array | string) => createHash("sha256").update(bytes).digest("hex");
-function mimeType(value: string | null | undefined): string | undefined {
-  const mime = value?.split(";", 1)[0]?.trim().toLowerCase();
-  return mime && /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/u.test(mime) ? mime : undefined;
-}
-function cancelBody(response: Response): void { void response.body?.cancel().catch(() => {}); }
-
 /** Only reference preflight reads may use the app's authenticated system-network relay. */
 function referenceProbeFetch(channel: ChannelState): ProbeFetch {
   if (channel.desktopPublicProbe !== true) return providerFetch;
@@ -86,83 +63,9 @@ function referenceProbeFetch(channel: ChannelState): ProbeFetch {
   };
 }
 
-/** Keep the body read under the same deadline, including a stalled streaming response. */
-function withAbort<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const abort = () => reject(new Error("reference probe timed out"));
-    if (signal.aborted) { void operation.catch(() => {}); abort(); return; }
-    signal.addEventListener("abort", abort, { once: true });
-    operation.then(value => { signal.removeEventListener("abort", abort); resolve(value); }, error => {
-      signal.removeEventListener("abort", abort); reject(error);
-    });
-  });
-}
-
-async function probeAsset(url: string, original: LocalReferenceOriginal, index: number, timeoutMs = ASSET_PROBE_TIMEOUT_MS, fetchProbe: ProbeFetch = providerFetch): Promise<LocalReferenceAssetDiagnostic> {
-  const startedAt = Date.now();
-  const finish = (diagnostic: Omit<LocalReferenceAssetDiagnostic, "durationMs">): LocalReferenceAssetDiagnostic =>
-    ({ ...diagnostic, durationMs: Math.max(0, Date.now() - startedAt) });
-  const base = { assetIndex: index + 1, assetReference: sha256(original.id).slice(0, 12),
-    expectedMime: mimeType(original.mimeType), expectedBytes: original.data?.byteLength };
-  if (!original.data?.byteLength || !base.expectedMime)
-    return finish({ ...base, code: "missing_original", attempts: 0 });
-  const expectedHash = sha256(original.data);
-  for (let attempt = 1; attempt <= PROBE_ATTEMPTS; attempt++) {
-    const signal = AbortSignal.timeout(timeoutMs);
-    let response: Response | undefined;
-    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
-    let actualBytes = 0;
-    try {
-      response = await withAbort(fetchProbe(url, { method: "GET", redirect: "error", signal, cache: "no-store" }), signal);
-      const info = { ...base, attempts: attempt, httpStatus: response.status };
-      if (response.status !== 200) {
-        cancelBody(response);
-        if (attempt < PROBE_ATTEMPTS && (response.status === 408 || response.status === 429 || response.status >= 500)) {
-          await new Promise(resolve => setTimeout(resolve, 250));
-          continue;
-        }
-        return finish({ ...info, code: "http" });
-      }
-      const actualMime = mimeType(response.headers.get("content-type"));
-      if (actualMime !== base.expectedMime) {
-        cancelBody(response);
-        return finish({ ...info, code: "mime", ...(actualMime ? { actualMime } : {}) });
-      }
-      const declaredLength = response.headers.get("content-length");
-      if (declaredLength !== null && (!/^\d+$/u.test(declaredLength) || Number(declaredLength) !== base.expectedBytes)) {
-        cancelBody(response);
-        return finish({ ...info, actualMime, code: "length" });
-      }
-      reader = response.body?.getReader();
-      const hash = createHash("sha256");
-      if (reader) while (true) {
-        const chunk = await withAbort(reader.read(), signal);
-        if (chunk.done) break;
-        actualBytes += chunk.value.byteLength;
-        if (actualBytes > original.data.byteLength)
-          return finish({ ...info, actualMime, actualBytes, code: "length" });
-        hash.update(chunk.value);
-      }
-      if (actualBytes !== original.data.byteLength)
-        return finish({ ...info, actualMime, actualBytes, code: "length" });
-      return finish({ ...info, actualMime, actualBytes, code: hash.digest("hex") === expectedHash ? "ok" : "hash" });
-    } catch {
-      // Never retain fetch's exception text: it can contain the complete signed URL.
-      if (attempt === PROBE_ATTEMPTS)
-        return finish({ ...base, attempts: attempt, ...(response ? { httpStatus: response.status } : {}), actualBytes,
-          code: signal.aborted ? "timeout" : "network" });
-    } finally {
-      if (reader) { void reader.cancel().catch(() => {}); reader.releaseLock(); }
-      else if (response) cancelBody(response);
-    }
-    await new Promise(resolve => setTimeout(resolve, 250));
-  }
-  throw new Error("unreachable reference probe state");
-}
-
 const failureDetail = (item: LocalReferenceAssetDiagnostic): string => {
-  const reason: Record<ProbeCode, string> = { ok: "通过", missing_original: "缺少可核对的本地原文件或 MIME",
-    http: `HTTP ${item.httpStatus ?? "异常"}`, mime: "返回的文件类型与本地原文件不符", length: "返回的文件字节数与本地原文件不符",
+  const reason: Record<ReferenceOriginalDiagnostic["code"], string> = { ok: "通过", missing_original: "缺少可核对的本地原文件或 MIME",
+    url: "原文件链接地址无效", http: `HTTP ${item.httpStatus ?? "异常"}`, mime: "返回的文件类型与本地原文件不符", length: "返回的文件字节数与本地原文件不符",
     hash: "返回内容与本地原文件不一致", network: "公网读取中断或连接失败", timeout: "公网读取超时" };
   return `${item.assetIndex === 0 ? "通道实例探针" : `第 ${item.assetIndex} 项素材`}：${reason[item.code]}`;
 };
@@ -179,7 +82,7 @@ export async function localReferenceUrls(assetIds: readonly string[], originals:
     url.searchParams.set("token", createProviderAssetToken({ assetId: id, secret: process.env.MASTER_KEY!, expiresInSeconds: lifetime, nowSeconds }));
     return url.href;
   };
-  const health = await probeAsset(urlFor("_health", 30), { id: "_health", mimeType: "text/plain", data: Buffer.from(channel.instance) }, -1, 12_000, fetchProbe);
+  const health = await probeReferenceOriginal(urlFor("_health", 30), { id: "_health", mimeType: "text/plain", data: Buffer.from(channel.instance) }, -1, { timeoutMs: 12_000, fetch: fetchProbe, strictMime: true });
   if (health.code !== "ok") {
     throw new LocalReferenceChannelError(`本机素材通道暂时无法从公网访问（${failureDetail(health)}），请检查网络后重试`, [health]);
   }
@@ -193,7 +96,7 @@ export async function localReferenceUrls(assetIds: readonly string[], originals:
       const index = next++;
       const id = uniqueIds[index]!;
       const original = byId.get(id) ?? { id, mimeType: "" };
-      diagnostics[index] = await probeAsset(urls.get(id)!, original, assetIds.indexOf(id), ASSET_PROBE_TIMEOUT_MS, fetchProbe);
+      diagnostics[index] = await probeReferenceOriginal(urls.get(id)!, original, assetIds.indexOf(id), { timeoutMs: ASSET_PROBE_TIMEOUT_MS, fetch: fetchProbe, strictMime: true });
     }
   }));
   const failed = diagnostics.filter(item => item.code !== "ok");

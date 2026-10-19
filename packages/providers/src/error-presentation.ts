@@ -8,6 +8,7 @@ import {
 import { providerSupplierLabel, providerSupplierProfile } from "./suppliers.js";
 import { extractProviderChargeEvidence, type ProviderChargeEvidence } from "./charge-evidence.js";
 import { MaterialPreparationError, type MaterialPreparationStage } from "./material-preparation.js";
+import type { ReferenceOriginalDiagnostic } from "./reference-original-probe.server.js";
 export { extractProviderChargeEvidence, type ProviderChargeEvidence } from "./charge-evidence.js";
 
 export type ProviderFailureCategory = "insufficient_balance" | "local_network" | "network" |
@@ -34,6 +35,7 @@ export interface ProviderErrorPresentation {
   failureCategory?: ProviderFailureCategory;
   charge?: ProviderChargeEvidence;
   materialPreparationStage?: MaterialPreparationStage;
+  referenceDiagnostics?: readonly ReferenceOriginalDiagnostic[];
 }
 
 export interface ProviderErrorContext {
@@ -547,6 +549,7 @@ export function presentProviderError(
       message: error.message, type: "素材准备失败", code: error.code,
       source: "local_validation", localMessage: error.message,
       phase: "prepare", materialPreparationStage: error.stage,
+      ...(error.diagnostics.length ? { referenceDiagnostics: error.diagnostics } : {}),
       retryable: false, submissionMayHaveOccurred: false,
       failureCategory: "local_network",
       charge: { status: "not_charged", source: "not_submitted" },

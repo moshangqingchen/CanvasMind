@@ -1,5 +1,5 @@
 import type { Repository } from "@super-canvas/db";
-import { assetToBlob, decryptSecret, loginSupplierSite, MaterialPreparationError, prepareMaterial, ProviderHttpError, providerFetch, supplierDirectoryBase,
+import { assetToBlob, decryptSecret, loginSupplierSite, MaterialPreparationError, prepareMaterial, ProviderHttpError, providerFetch, supplierDirectoryBase, verifyReferenceOriginal,
   type FetchImplementation, type ProviderAssetInput, type ProviderConnectionResolver } from "@super-canvas/providers";
 
 /** Website uploads use the encrypted login tied to the frozen supplier source. */
@@ -32,8 +32,9 @@ export function langframeReferenceUploader(repository: Repository, resolver: Pro
       }) });
     let url: URL;
     try { url = new URL(data.url, `${base}/`); } catch { throw new MaterialPreparationError("upload", { detail: "狼帧素材上传返回无效 URL" }); }
-    if (!["https:", "http:"].includes(url.protocol) || url.username || url.password)
-      throw new MaterialPreparationError("upload", { detail: "狼帧素材上传返回非公开 HTTP(S) URL" });
+    if (url.protocol !== "https:" || url.username || url.password)
+      throw new MaterialPreparationError("upload", { detail: "狼帧素材上传返回非公开 HTTPS URL" });
+    await verifyReferenceOriginal(url.href, { id: asset.id, mimeType: blob.type || asset.mimeType, data: bytes }, 0, { fetch: fetchImpl, timeoutMs: 180_000 });
     return url.href;
   };
 }

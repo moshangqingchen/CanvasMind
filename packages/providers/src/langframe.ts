@@ -4,6 +4,7 @@ import { assertValidResult, getProviderTaskId, withCanonicalModelFields } from "
 import { assertSafeProviderEndpoint, assetToBlob, fetchProviderJson, mergeHeaders, parseDataUrl, providerFetch, ProviderHttpError, providerSubmitTransportActive, requireApiKey } from "./http.js";
 import { GenericRestAdapter, type GenericRestAdapterOptions, type RestConnectorConfig } from "./rest.js";
 import { distinctAssetSources } from "./asset-preparation-cache.js";
+import { MaterialPreparationError } from "./material-preparation.js";
 
 export interface LangframeAdapterOptions extends Omit<GenericRestAdapterOptions, "config"> {
   /** Upload original bytes with the supplier's saved website session, never the SK. */
@@ -79,7 +80,7 @@ function publicUrl(value: unknown, base?: string): string | undefined {
 
 async function publicReferenceUrl(value: unknown): Promise<string | undefined> {
   const url = publicUrl(value);
-  if (!url) return;
+  if (!url || new URL(url).protocol !== "https:") return;
   try { await assertSafeProviderEndpoint(url); return url; } catch { return; }
 }
 
@@ -178,7 +179,7 @@ export class LangframeAdapter implements ProviderAdapter {
       if (image && asset.kind !== "image") add("assets", "图片接口只能接收参考图片");
       if (!asset.data?.length && !asset.url) add("assets", "参考素材缺少原始字节或 URL");
       if (!image && !await publicReferenceUrl(asset.url) && !(this.options.uploadReference && (asset.data?.length || asset.url?.startsWith("data:"))))
-        add("assets", "视频参考素材需要安全的公开 HTTP(S) URL 或可通过狼帧站点会话上传的本地字节", "invalid_public_media_url");
+        add("assets", "视频参考素材需要安全的公开 HTTPS URL 或可通过狼帧站点会话上传的本地字节", "invalid_public_media_url");
     }
     if ((request.operation === "image.edit" || request.operation === "video.image-to-video" || model?.limits?.requiresInputImage) && !counts.image) add("assets", "此操作需要参考图片");
     if (image && counts.image > 1) add("assets", "狼帧目录声明多图参考，但公共 v1 文档与官方插件仅明确 image 为单个 data URL；多图字段映射尚未公布，原素材保留且生成尚未提交", "undeclared_multi_image_transport");
@@ -225,7 +226,7 @@ export class LangframeAdapter implements ProviderAdapter {
       const urls = new Map(distinctAssetSources(assets).map(asset => [asset.id, (async () => {
         const url = await publicReferenceUrl(asset.url) ?? (this.options.uploadReference ? await this.options.uploadReference(request.connectionId, asset) : undefined);
         const verified = await publicReferenceUrl(url);
-        if (!verified) throw new Error("狼帧素材上传没有返回公开 HTTP(S) URL；生成尚未提交");
+        if (!verified) throw new MaterialPreparationError("verify", { detail: "狼帧素材上传没有返回公开 HTTPS URL" });
         return verified;
       })()]));
       parameters.media = await Promise.all(assets.map(async asset => {

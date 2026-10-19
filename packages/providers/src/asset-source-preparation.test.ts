@@ -34,6 +34,7 @@ describe("one original with multiple role entries", () => {
     expect(result[0]?.url).toBe(result[1]?.url);
     expect(fetch.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
     expect(fetch.mock.calls.filter(([, init]) => init?.method === "PUT")).toHaveLength(supplier === "hosting" ? 0 : 1);
+    expect(fetch.mock.calls.filter(([, init]) => init?.method === "GET")).toHaveLength(1);
     expect(assets).toEqual(original);
     if (supplier !== "hosting") expect(result.every(asset => asset.data === undefined)).toBe(true);
   });

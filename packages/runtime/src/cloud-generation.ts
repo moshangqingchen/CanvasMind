@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { setTimeout as abortableDelay } from "node:timers/promises";
-import { decryptSecret, distinctAssetSources, encryptSecret, fetchProviderJson, ProviderHttpError, providerFetch, withProviderSubmitTransport, type ProviderSubmitTransport, type ProviderSubmissionPhase } from "@super-canvas/providers";
+import { decryptSecret, distinctAssetSources, encryptSecret, fetchProviderJson, MaterialPreparationError, prepareMaterial, ProviderHttpError, providerFetch, verifyReferenceOriginal, withProviderSubmitTransport, type ProviderSubmitTransport, type ProviderSubmissionPhase } from "@super-canvas/providers";
 
 export interface CloudGenerationConfig { endpoint: string; encryptedToken: string }
 export interface CloudGenerationView { endpoint: string; tokenConfigured: boolean }
@@ -66,13 +66,18 @@ export async function uploadCloudReferences(config: CloudGenerationConfig, reque
   const urls = new Map<string, string>();
   const sources = distinctAssetSources(assets.map(asset => ({ ...asset, kind: "image" as const, mimeType: asset.mimeType ?? "" })));
   for (const asset of sources) {
-    if (!asset.data?.byteLength || !asset.mimeType?.startsWith("image/")) throw new Error("云端参考图缺少本地图片内容");
+    if (!asset.data?.byteLength || !asset.mimeType?.startsWith("image/")) throw new MaterialPreparationError("read", { detail: "云端参考图缺少本地图片内容" });
     const id = createHash("sha256").update(`${requestKey}:${asset.id}`).digest("hex");
-    const response = await providerFetch(`${config.endpoint}/v1/references/${id}`, { method: "PUT", headers: { ...headers(config), "content-type": asset.mimeType }, body: new Uint8Array(asset.data), redirect: "error", signal: AbortSignal.timeout(120_000) });
-    if (!response.ok) throw new Error(`云端参考图保存失败（HTTP ${response.status}），未提交生成`);
-    const result = await response.json() as { url?: string };
-    if (!result.url || new URL(result.url).origin !== config.endpoint) throw new Error("云端参考图地址无效，未提交生成");
-    urls.set(asset.id, result.url);
+    const response = await prepareMaterial("upload", () => providerFetch(`${config.endpoint}/v1/references/${id}`, { method: "PUT", headers: { ...headers(config), "content-type": asset.mimeType }, body: new Uint8Array(asset.data!), redirect: "error", signal: AbortSignal.timeout(120_000) }));
+    if (!response.ok) throw new MaterialPreparationError("upload", { detail: `云端参考图保存失败（HTTP ${response.status}）`, cause: new ProviderHttpError("云端参考图保存失败", {
+      kind: "provider", phase: "prepare", status: response.status, retryable: false, submissionMayHaveOccurred: false,
+    }) });
+    const result = await prepareMaterial("upload", () => response.json()) as { url?: string };
+    let url: URL;
+    try { url = new URL(result.url ?? ""); } catch { throw new MaterialPreparationError("upload", { detail: "云端参考图地址无效" }); }
+    if (url.origin !== config.endpoint) throw new MaterialPreparationError("upload", { detail: "云端参考图地址无效" });
+    await verifyReferenceOriginal(url.href, { id: asset.id, mimeType: asset.mimeType, data: asset.data }, 0, { fetch: providerFetch, timeoutMs: 120_000 });
+    urls.set(asset.id, url.href);
   }
   return assets.map(asset => urls.get(asset.id)!);
 }

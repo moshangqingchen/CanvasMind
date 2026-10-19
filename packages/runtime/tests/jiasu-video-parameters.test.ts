@@ -95,6 +95,10 @@ describe("saved Jiasu video parameters through the execution runtime", () => {
           expect(new Uint8Array(await body.arrayBuffer())).toEqual(sourceBytes);
           return new Response(null, { status: 204 });
         }
+        if (url === "https://cdn.fixture.invalid/original.png") {
+          expect(init?.method).toBe("GET"); expect(new Headers(init?.headers).has("authorization")).toBe(false);
+          return new Response(sourceBytes, { headers: { "content-type": "image/png" } });
+        }
         expect(url).toMatch(/^https:\/\/ai\.jiasuapi\.com\/v1\/(?:video\/generations|videos(?:\/generations)?)$/u);
         expect(init?.method).toBe("POST");
         const body = JSON.parse(String(init?.body)); expect(body.model).toBe(model);
@@ -105,7 +109,8 @@ describe("saved Jiasu video parameters through the execution runtime", () => {
       const service = new VideoParameterService(fixtureFetch, { repository, storage, executionMode: "inline" });
       const run = await service.createRun({ canvasId: "canvas", clientRequestId: `own-upload-${provider}`, scope: "all" });
       await expect.poll(async () => (await service.getRun(run.id))?.run.status, { timeout: 4000 }).toBe("failed");
-      expect(fixtureFetch).toHaveBeenCalledTimes(3); expect(forbidden).not.toHaveBeenCalled();
+      expect(fixtureFetch).toHaveBeenCalledTimes(4); expect(forbidden).not.toHaveBeenCalled();
+      expect(fixtureFetch.mock.calls.filter(([url, init]) => /\/v1\/(?:video\/generations|videos(?:\/generations)?)$/u.test(String(url)) && init?.method === "POST")).toHaveLength(1);
       expect(await repository.getAsset("original")).toEqual(reference);
       expect((await storage.get("original.png"))?.bytes).toEqual(sourceBytes);
       expect((await repository.getCanvas("canvas"))!.graph.nodes[0]!.data.parameters).toEqual(parameters);

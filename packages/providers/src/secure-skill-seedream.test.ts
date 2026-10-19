@@ -100,13 +100,16 @@ describe("Secure Seedream native 202 protocol", () => {
   it("revalidates hosted JSON references through the dynamic GenericRest validate call without losing edit inputs", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>()
       .mockResolvedValueOnce(new Response("https://litter.catbox.moe/reference.png"))
+      .mockResolvedValueOnce(new Response(new Uint8Array([137, 80, 78, 71]), { headers: { "content-type": "image/png" } }))
       .mockResolvedValueOnce(json({ id: "hosted-edit", status: "in_progress" }, 202));
     const result = await adapter(fetch, { referenceImageHosting: "litterbox-24h" }).submit({ ...request, operation: "image.edit", assets: [
       { id: "local", kind: "image", mimeType: "image/png", data: new Uint8Array([137, 80, 78, 71]) },
     ] });
     expect(result).toMatchObject({ providerTaskId: "hosted-edit", result: { secureSkillSeedream: true } });
-    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenCalledTimes(3);
     expect(new Headers(fetch.mock.calls[0]![1]?.headers).has("authorization")).toBe(false);
-    expect(JSON.parse(String(fetch.mock.calls[1]![1]?.body)).image_urls).toEqual(["https://litter.catbox.moe/reference.png"]);
+    const generation = fetch.mock.calls.filter(([url, init]) => String(url).endsWith("/images/generations") && init?.method === "POST");
+    expect(generation).toHaveLength(1);
+    expect(JSON.parse(String(generation[0]![1]?.body)).image_urls).toEqual(["https://litter.catbox.moe/reference.png"]);
   });
 });
