@@ -3,6 +3,7 @@ import { expect, test, type Locator, type Page } from "./helpers/canvas-offline-
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createCanvasStateVisualFixture as createFixture } from "./helpers/canvas-state-visual-fixture";
+import { expectParameterValue, openParameterDetails, readParameterOptions } from "./helpers/parameter-controls";
 
 const output = process.env.UI_PHASE2_OUTPUT_DIR;
 const phase = process.env.UI_PHASE2_PHASE ?? "sample";
@@ -179,13 +180,16 @@ test("第二阶段隔离视觉证据与完整控件", async ({ page, request }, 
   await expect(panel).toHaveCSS("background-color", /^rgb\(\d+, \d+, \d+\)$/u);
   await expect(panel).toHaveCSS("backdrop-filter", "none");
   await assertUnobstructed(tiers.getByRole("button", { name: "4K", exact: true }));
-  await expect(size.locator('option[value="3840x2160"]')).toContainText("4K · 16:9 · 3840 × 2160");
+  const fourK = (await readParameterOptions(size)).filter(option => option.value === "3840x2160");
+  expect(fourK).toHaveLength(1);
+  for (const detail of ["4K", "16:9", "3840 × 2160"]) expect(fourK[0]!.label).toContain(detail);
   await shot("image-parameters-tiers");
+  await openParameterDetails(panel, "自定义宽高");
   await assertUnobstructed(width);
   await assertUnobstructed(height);
   await expect(width).toHaveValue("3840"); await expect(height).toHaveValue("2160");
   await shot("image-parameters-dimensions");
-  await assertUnobstructed(quality); await expect(quality).toHaveValue("max");
+  await assertUnobstructed(quality); await expectParameterValue(quality, "max");
   await shot("image-parameters-quality");
   const picker = panel.getByRole("combobox", { name: "完整图片参数 模型", exact: false });
   await picker.click();

@@ -4,6 +4,7 @@ import { freemem } from "node:os";
 import { join } from "node:path";
 import { installPhase3LargeFixture, PHASE3_COUNTS } from "./helpers/phase3-large-fixtures";
 import { memorySampleValidity, minimumAvailableMemoryBytes } from "./helpers/performance-environment";
+import { expectParameterValue, openParameterDetails, readParameterOptions } from "./helpers/parameter-controls";
 
 // Phase5 captures reuse the exact screen/asset fixtures; normal regression
 // runs retain their default browser preference. No hidden theme mutation.
@@ -358,12 +359,15 @@ for (const size of sizes) {
     await expect(tiers.getByRole("button")).toHaveText(["自动", "1K", "2K", "4K"]);
     await tiers.scrollIntoViewIfNeeded(); await ready(tiers.getByRole("button").first()); await shot("image-parameters-tiers", panel);
     const preset = panel.getByLabel("输出分辨率预设", { exact: true });
-    await expect(preset.locator('option[value="3840x2160"]')).toContainText("4K · 16:9 · 3840 × 2160");
+    const fourK = (await readParameterOptions(preset)).filter(option => option.value === "3840x2160");
+    expect(fourK).toHaveLength(1);
+    for (const detail of ["4K", "16:9", "3840 × 2160"]) expect(fourK[0]!.label).toContain(detail);
+    await openParameterDetails(panel, "自定义宽高");
     const width = panel.getByLabel("图片宽度", { exact: true }), height = panel.getByLabel("图片高度", { exact: true });
     await width.scrollIntoViewIfNeeded(); await expect(width).toHaveValue("3840"); await expect(height).toHaveValue("2160");
     await ready(width); await ready(height); await shot("image-parameters-dimensions", panel);
     const quality = panel.getByLabel("质量", { exact: true });
-    await quality.scrollIntoViewIfNeeded(); await expect(quality).toHaveValue("max"); await ready(quality); await shot("image-parameters-quality", panel);
+    await quality.scrollIntoViewIfNeeded(); await expectParameterValue(quality, "max"); await ready(quality); await shot("image-parameters-quality", panel);
     await panel.getByRole("combobox", { name: "完整图片参数 模型", exact: false }).click();
     await expect(panel.getByRole("combobox", { name: "搜索模型名称或 ID", exact: true })).toBeVisible();
     await ready(panel.getByRole("combobox", { name: "搜索模型名称或 ID", exact: true }));

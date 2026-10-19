@@ -5,6 +5,10 @@ import type { ModelDescriptor, ModelParameterDescriptor } from "@super-canvas/pr
 import { jijiuVideoAspectRatioPresets, NodeParameterFields } from "../components/node-parameter-fields";
 import { normalizedParametersForModel } from "./model-parameters";
 
+vi.mock("../components/ui/Dropdown", async () => ({
+  Dropdown: (await import("./test-helpers/parameter-dropdown.test-helper")).StaticParameterDropdown,
+}));
+
 const ratio: ModelParameterDescriptor = { key: "aspect_ratio", label: "画面比例", control: "text", valueType: "string", placeholder: "供应商默认（留空）" };
 const presets = [{ value: "16:9", label: "16:9（横屏）" }, { value: "9:16", label: "9:16（竖屏）" }, { value: "1:1", label: "1:1（方形）" }];
 const model: ModelDescriptor = { id: "SD2.0fast稳定903A", name: "SD2.0fast稳定903A", operations: ["video.generate"], parameters: [ratio],
@@ -35,13 +39,16 @@ describe("Jijiu video aspect-ratio shortcuts", () => {
     expect(normalizedParametersForModel("video-generation", "openai", model, { aspect_ratio: value })).toEqual({ aspect_ratio: value });
   });
 
-  it("keeps fixed enums and other suppliers' free-text controls unchanged", () => {
+  it("keeps fixed enums and other suppliers' free-text values without borrowing Jijiu presets", () => {
     const fixed = { ...model, parameters: [{ ...ratio, control: "select" as const, options: presets }] };
     const other = { ...model, metadata: { videoAspectRatioPresets: presets } };
     expect(jijiuVideoAspectRatioPresets(fixed, fixed.parameters[0]!)).toEqual([]);
     expect(jijiuVideoAspectRatioPresets(other, ratio)).toEqual([]);
     expect(render({ aspect_ratio: "16:9" }, fixed)).not.toContain("__custom_ratio__");
-    expect(render({ aspect_ratio: "3:2" }, other)).not.toContain("__custom_ratio__");
+    const custom = render({ aspect_ratio: "3:2" }, other);
+    expect(custom).not.toContain("16:9（横屏）");
+    expect(custom).toMatch(/aria-label="画面比例（自定义）"[^>]*value="3:2"/u);
+    expect(normalizedParametersForModel("video-generation", "openai", other, { aspect_ratio: "3:2" })).toEqual({ aspect_ratio: "3:2" });
   });
 
   it("accepts only well-formed positive string ratios from exact-contract metadata", () => {

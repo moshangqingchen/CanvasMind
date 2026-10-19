@@ -7,6 +7,10 @@ import { validateModelParameters } from "@super-canvas/providers/cli-contracts";
 import { NodeParameterFields, parameterIssueFacts } from "../components/node-parameter-fields";
 import { NativeImageResolutionFields } from "../components/native-image-resolution-fields";
 
+vi.mock("../components/ui/Dropdown", async () => ({
+  Dropdown: (await import("./test-helpers/parameter-dropdown.test-helper")).StaticParameterDropdown,
+}));
+
 const model: ModelDescriptor = { id: "dola-sd-2.5", name: "dola-sd-2.5", operations: ["video.generate"],
   parameters: [
     { key: "duration", label: "视频时长", control: "number", valueType: "integer", min: 1, max: 30, step: 1, default: 5 },

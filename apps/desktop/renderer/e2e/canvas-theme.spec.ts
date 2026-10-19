@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "./helpers/canvas-offline-test";
+import { openParameterDetails, readParameterOptions } from "./helpers/parameter-controls";
 import { installPhase5StateFixture } from "./helpers/phase5-state-fixture";
 
 const preferenceKey = "supercanvas:appearance";
@@ -215,7 +216,11 @@ test("切换主题不重挂节点或丢失图片参数，减少动态效果仍�
   const parameters = page.getByRole("dialog", { name: "完整图片参数 模型与参数", exact: true });
   await expect(parameters).toBeVisible();
   await expect(parameters.locator('[data-panel-loading="true"]')).toHaveCount(0);
-  const values = async () => Promise.all(["图片宽度", "图片高度", "质量"].map(label => parameters.getByLabel(label, { exact: true }).inputValue()));
+  await openParameterDetails(parameters, "自定义宽高");
+  const values = async () => Promise.all(["图片宽度", "图片高度", "质量"].map(async label => {
+    const field = parameters.getByLabel(label, { exact: true });
+    return await field.getAttribute("data-value") ?? await field.inputValue();
+  }));
   expect(await values()).toEqual(["3840", "2160", "max"]);
   await page.evaluate(() => { (window as ThemeWindow).__themeCards = [...document.querySelectorAll(".react-flow__node .node-card")]; });
   const control = await appearance(page);
@@ -226,8 +231,11 @@ test("切换主题不重挂节点或丢失图片参数，减少动态效果仍�
   expect(await values()).toEqual(["3840", "2160", "max"]);
   const tiers = parameters.getByRole("group", { name: "自动与输出分辨率快捷档位", exact: true });
   await expect(tiers.getByRole("button")).toHaveText(["自动", "1K", "2K", "4K"]);
-  await expect(parameters.getByLabel("输出分辨率预设", { exact: true }).locator('option[value="3840x2160"]')).toContainText("4K · 16:9 · 3840 × 2160");
+  const fourK = (await readParameterOptions(parameters.getByLabel("输出分辨率预设", { exact: true }))).filter(option => option.value === "3840x2160");
+  expect(fourK).toHaveLength(1);
+  for (const detail of ["4K", "16:9", "3840 × 2160"]) expect(fourK[0]!.label).toContain(detail);
   await expect(parameters.getByRole("group", { name: "生成模式", exact: true })).toBeAttached();
+  await openParameterDetails(parameters, "价格明细");
   await expect(parameters.getByLabel("当前参数价格", { exact: true })).toBeAttached();
   expect(await page.evaluate(() => {
     const current = [...document.querySelectorAll(".react-flow__node .node-card")];

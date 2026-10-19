@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { installAssistantFixture, assistantCanvasId, assistantModelKey } from "./helpers/assistant-fixture";
 import { agentPanel, expectAgentModel } from "./helpers/agent-controls";
+import { expectParameterValue, openParameterDetails } from "./helpers/parameter-controls";
 
 test("助手模型、模拟方案与参数编辑只读取已保存缓存，不扫描、不生成", async ({ page }) => {
   const fixture = await installAssistantFixture(page, { motion: false, channelParameters: true, unreadCatalog: true });
@@ -37,7 +38,8 @@ test("助手模型、模拟方案与参数编辑只读取已保存缓存，不�
   const controls = card.getByRole("group", { name: "秋日主视觉 渠道与参数", exact: true });
   await expect(controls.getByLabel("未读取的供应商目录", { exact: true })).toContainText("未读取目录 · 请先在设置中刷新");
   await controls.getByLabel("秋日主视觉 供应商", { exact: true }).selectOption("fixture-image-b");
-  await expect(controls.getByLabel("质量", { exact: true })).toHaveValue("standard");
+  await expectParameterValue(controls.getByLabel("质量", { exact: true }), "standard");
+  await openParameterDetails(controls, "更多参数");
   await controls.getByLabel("种子", { exact: true }).fill("77");
   await controls.getByRole("combobox", { name: "秋日主视觉 执行模型", exact: true }).click();
   await expect(page.getByRole("listbox", { name: "秋日主视觉 执行模型 可选模型", exact: true })).toContainText("fixture.image.full-id-b");

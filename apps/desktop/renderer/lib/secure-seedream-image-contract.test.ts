@@ -58,7 +58,9 @@ describe("Secure Seedream exact image controls", () => {
       parameters, onChange: () => {}, showAdvanced: false, operation: "image.generate" }));
     expect(html.match(/aria-label="图片宽度"/gu)).toHaveLength(1);
     expect(html.match(/aria-label="图片高度"/gu)).toHaveLength(1);
-    expect(html).not.toContain("指定 W"); expect(html).not.toContain("指定 H");
+    // Original field descriptions remain in the collapsed sources disclosure;
+    // only the one unified W/H pair may be rendered as editable controls.
+    expect(html).not.toMatch(/<label[^>]*>指定 [WH]<\/label>/u);
     expect(html).toContain('value="1111"'); expect(html).toContain('value="777"');
     expect(html).not.toContain("16 倍数对齐");
     expect(parameterValueForModel(model, parameters, "size")).toBe("1111x777");

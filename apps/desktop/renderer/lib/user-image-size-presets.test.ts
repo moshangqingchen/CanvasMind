@@ -8,6 +8,10 @@ import { normalizedParametersForModel } from "./model-parameters";
 import { withCurrentImageRequestParameters } from "./image-request-parameters";
 import type { ProviderConnectionView } from "./client-api";
 
+vi.mock("../components/ui/Dropdown", async () => ({
+  Dropdown: (await import("./test-helpers/parameter-dropdown.test-helper")).StaticParameterDropdown,
+}));
+
 const connection: ProviderConnectionView = { id: "weai-open", name: "WeAI", provider: "weai", apiKey: "", apiKeySet: true, config: {
   baseUrl: "https://asian-acc.we-token.cc/v1", modelGroup: "生图-openai-adobe-image2.5专属", usage: "canvas",
 } };
@@ -40,7 +44,7 @@ describe("user requested image presets survive source contract refresh", () => {
     const html = renderToStaticMarkup(React.createElement(NodeParameterFields, { nodeId: "restored", nodeType: "image-generation", provider: "weai", model,
       parameters: { size: "2880x2880", size_tier: "4K", aspect_ratio: "1:1" }, onChange: vi.fn() }));
     expect(html.match(/aria-label="自动与输出分辨率快捷档位"/gu)).toHaveLength(1);
-    expect(html).toContain("4K · 3:2 · 3520 × 2336");
+    expect(html).toMatch(/data-option-value="3520x2336">3:2 · 4K · 3520 × 2336<\/span>/u);
     expect(html).toContain('aria-label="图片宽度"');
     expect(html).not.toContain("请填写独立 W/H");
   });

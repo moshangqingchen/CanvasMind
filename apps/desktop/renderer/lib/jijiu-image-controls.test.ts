@@ -10,6 +10,10 @@ import { modelEstimatedCost, modelPriceSummary } from "./model-display";
 import { normalizedParametersForModel, parametersWithDefaults, setParameterValue } from "./model-parameters";
 import { applySupplierCatalogPrices } from "./supplier-model-pricing";
 
+vi.mock("../components/ui/Dropdown", async () => ({
+  Dropdown: (await import("./test-helpers/parameter-dropdown.test-helper")).StaticParameterDropdown,
+}));
+
 vi.mock("./supplier-service", () => ({ getSupplierRecord: vi.fn(async () => null) }));
 vi.mock("./server", () => ({ repository: { getSupplierVerification: vi.fn(async () => null) } }));
 
@@ -35,7 +39,7 @@ describe("Jijiu exact high-tier image controls (offline)", () => {
     const model = descriptor(), html = render(model);
     expect(model.parameters?.find(parameter => parameter.key === "size")?.options?.map(option => option.value)).toEqual(["auto", "1K", "2K", "4K"]);
     expect(model.parameters?.find(parameter => parameter.key === "quality")?.options?.map(option => option.value)).toEqual(["auto", "high"]);
-    expect(html).toContain('aria-pressed="true">4K</button>');
+    expect(html).toMatch(/<button[^>]*aria-pressed="true"[^>]*data-value="4K"[^>]*><span>4K<\/span><\/button>/u);
     expect(html).toContain('value="high" selected="">最高</option>');
     expect(html.match(/aria-label="图片宽度"/gu)).toHaveLength(1);
     expect(html.match(/aria-label="图片高度"/gu)).toHaveLength(1);
@@ -63,8 +67,9 @@ describe("Jijiu exact high-tier image controls (offline)", () => {
       expect(html.match(/aria-label="图片宽度"/gu)).toHaveLength(1);
       expect(html.match(/aria-label="图片高度"/gu)).toHaveLength(1);
       expect(html).toContain("自定义尺寸（W × H）");
-      expect(html).toContain("1024 × 1024（官方示例）");
-      expect(html).not.toMatch(/>2K<\/button>|>4K<\/button>|16 倍数/u);
+      expect(size?.options?.find(option => option.value === "1024x1024")?.label).toContain("官方示例");
+      expect(html).toMatch(/data-option-value="1024x1024">[^<]*1024 × 1024<\/span>/u);
+      expect(html).not.toMatch(/><span>2K<\/span><\/button>|><span>4K<\/span><\/button>|16 倍数/u);
 
       expect(validateModelParameters(model, selected, "image.generate")).toEqual({ valid: true, issues: [] });
       expect(jijiuGptImageRequestIssues({ provider: "openai", config: { baseUrl: `${source}/v1`, modelGroup: group, accountKeyGroup: group } }, {
@@ -91,7 +96,7 @@ describe("Jijiu exact high-tier image controls (offline)", () => {
     ] });
     expect(size?.allowCustomValue).not.toBe(true);
     const html = render(model, { size: "4K", quality: "high", n: 1 });
-    expect(html).toContain('aria-pressed="true">4K</button>');
+    expect(html).toMatch(/<button[^>]*aria-pressed="true"[^>]*data-value="4K"[^>]*><span>4K<\/span><\/button>/u);
     expect(html.match(/readOnly="" placeholder="以原图为准"[^>]*value=""/gu)).toHaveLength(2);
     expect(validateModelParameters(model, { size: "1536x1024", quality: "high", n: 1 }, "image.generate").valid).toBe(false);
     expect(normalizedParametersForModel("image-generation", "openai", model, { size: "4K", quality: "high", n: 1 }))
@@ -100,22 +105,27 @@ describe("Jijiu exact high-tier image controls (offline)", () => {
 
   it("keeps the two source notes in one closed, neutral disclosure after the controls", () => {
     const html = render(descriptor());
-    expect(html.match(/<details class="parameter-contract-details"/gu)).toHaveLength(1);
-    expect(html).not.toMatch(/<details[^>]*open=/u);
+    expect(html.match(/<section class="[^"]*parameter-sources"/gu)).toHaveLength(1);
+    const sources = html.slice(html.indexOf('parameter-sources'));
+    expect(sources).toMatch(/<button[^>]*aria-expanded="false"/u);
+    expect(sources).toMatch(/<div[^>]*hidden=""/u);
     expect(html).not.toContain("parameter-group-note");
-    expect(html).toContain("参数说明与分组依据");
+    expect(html).toContain("参数与来源");
     expect(html).toContain("官网分组 1K / 2K / 4K");
     expect(html).toContain("原始分组说明保留");
-    expect(html.indexOf('aria-pressed="true">4K')).toBeLessThan(html.indexOf('<details class="parameter-contract-details"'));
-    expect(html.indexOf('value="high"')).toBeLessThan(html.indexOf('<details class="parameter-contract-details"'));
+    expect(html.indexOf('data-value="4K"')).toBeLessThan(html.indexOf('parameter-sources'));
+    expect(html.indexOf('value="high"')).toBeLessThan(html.indexOf('parameter-sources'));
   });
 
-  it("does not collapse unrelated source notes or hide an invalid saved selection", () => {
+  it("keeps all source notes in one disclosure without hiding an invalid saved selection", () => {
     const other = render(descriptor("gpt-image-2"), { size: "auto", n: 1 });
-    expect(other).not.toContain("parameter-contract-details");
-    expect(other.match(/class="parameter-group-note"/gu)).toHaveLength(2);
+    expect(other.match(/<section class="[^"]*parameter-sources"/gu)).toHaveLength(1);
+    expect(other).toContain("官网分组 1K / 2K / 4K");
+    expect(other).toContain("原始分组说明保留");
     const generic = render({ ...descriptor(), metadata: { ...descriptor().metadata, jijiuImageContract: false } });
-    expect(generic).not.toContain("parameter-contract-details");
+    expect(generic.match(/<section class="[^"]*parameter-sources"/gu)).toHaveLength(1);
+    expect(generic).toContain("官网分组 1K / 2K / 4K");
+    expect(generic).toContain("原始分组说明保留");
     const invalid = render(descriptor(), { size: "4096x4096", quality: "max", n: 1 });
     expect(invalid).toContain("当前档位：4096x4096 · 目录档位：自动 / 1K / 2K / 4K");
     expect(invalid).not.toMatch(/未确认|不支持|不可运行/u);

@@ -46,28 +46,31 @@ export async function smokeCustomSuppliers(page, api, origin) {
   await page.goto(`${origin}/canvas/${canvas.id}`);
   const open = () => page.getByRole("button", { name: /打开 供应商验收 模型与参数/u }).click();
   await open();
-  const panel = page.getByRole("dialog", { name: "供应商验收 模型与参数" });
-  const select = panel.getByLabel("供应商验收 供应商", { exact: true });
-  await select.locator("option", { hasText: "怪兽ai" }).waitFor({ state: "attached" });
-  assert.equal(await select.locator("option", { hasText: "智元api" }).count(), 1);
-  assert.equal(await select.locator("option", { hasText: "怪兽ai" }).count(), 1);
-  assert.equal(await select.locator("option", { hasText: /custom-/u }).count(), 0);
-  // A programmatic selectOption bypasses the actual native popup and missed
-  // clicks bubbling from this portal into the owning canvas node.
+  const panel = page.getByRole("dialog", { name: "供应商验收 模型与参数", exact: true });
+  const routeTrigger = panel.getByRole("button", { name: "供应商验收 线路", exact: true });
+  const routes = panel.getByRole("dialog", { name: "供应商验收 候选线路", exact: true });
+  const supplierHeading = (name) => routes.getByRole("heading", { name, exact: true });
+  const routeRow = (connection) => routes.locator(`[data-route-id="${connection.id}"]`);
+  const openRoutes = async () => { await routeTrigger.click(); await routes.waitFor({ state: "visible" }); };
+  const closeRoutes = async () => { await page.keyboard.press("Escape"); await routes.waitFor({ state: "hidden" }); };
+  await openRoutes();
+  await supplierHeading("怪兽ai").waitFor({ state: "visible" });
+  assert.equal(await supplierHeading("智元api").count(), 1);
+  assert.equal(await supplierHeading("怪兽ai").count(), 1);
+  assert.equal(await routes.getByRole("heading").filter({ hasText: /custom-/u }).count(), 0);
+  await closeRoutes();
+  // Use the real route popup: API writes or programmatic selection would miss
+  // clicks bubbling through this portal into the owning canvas node.
   await page.locator(".react-flow__pane").click({ position: { x: 15, y: 90 } });
-  await select.click();
-  assert.equal(await select.evaluate((element) => element.matches(":open")), true);
+  await openRoutes();
   assert.equal(await page.locator('.react-flow__node[data-id="supplier-image"]')
     .evaluate((element) => element.classList.contains("selected")), false);
-  const monsterIndex = await select.locator("option").evaluateAll(
-    (options, key) => options.findIndex((option) => option.value === key), monster.supplier.supplierKey,
-  );
-  assert.ok(monsterIndex >= 0);
-  await page.keyboard.press("Home");
-  for (let index = 0; index < monsterIndex; index++) await page.keyboard.press("ArrowDown");
-  await page.keyboard.press("Enter");
-  assert.equal(await panel.getByLabel("供应商验收 模型群组").inputValue(), monster.group);
-  await panel.getByRole("combobox", { name: "供应商验收 模型", exact: true }).click();
+  const monsterRow = routeRow(monster.connection);
+  assert.equal(await monsterRow.getAttribute("data-route-group"), monster.group);
+  await monsterRow.locator("[data-route-choice]").click();
+  assert.equal(await routeTrigger.getAttribute("aria-expanded"), "false");
+  assert.ok((await panel.getByLabel("当前线路", { exact: true }).textContent()).includes(monster.group));
+  await panel.getByRole("combobox", { name: /^供应商验收 模型(?: ·|$)/u }).click();
   for (const model of models) {
     const option = panel.getByRole("option", { name: modelLabels[model.id], exact: true });
     await option.waitFor({ state: "visible" });
@@ -82,21 +85,29 @@ export async function smokeCustomSuppliers(page, api, origin) {
   await api(`/api/suppliers/${monster.supplier.id}`, { name: "怪兽设计", expectedRevision: currentSupplier.state.revision }, "PATCH");
   await page.reload();
   await open();
-  await select.locator("option", { hasText: "怪兽设计" }).waitFor({ state: "attached" });
-  assert.equal(await select.locator("option:checked").textContent(), "怪兽设计");
-  const quote = panel.getByLabel("当前供应商报价", { exact: true });
-  assert.deepEqual(await quote.getByRole("term").allTextContents(), ["供应商", "概括价", "余额"]);
-  assert.deepEqual(await quote.getByRole("definition").allTextContents(), ["怪兽设计", "—", "余额未读取"]);
-  const candidates = panel.locator("details.supplier-candidate-quotes");
-  await candidates.locator(":scope > summary").click();
-  const candidateTable = candidates.getByRole("table", { name: "供应商候选报价", exact: true });
-  for (const name of ["怪兽设计", "智元api"]) {
-    const row = candidateTable.getByRole("rowheader", { name, exact: true }).locator("..");
-    assert.equal(await row.isVisible(), true);
-    assert.deepEqual(await row.getByRole("cell").allTextContents(), ["—", "余额未读取"]);
+  await openRoutes();
+  await supplierHeading("怪兽设计").waitFor({ state: "visible" });
+  assert.equal(await supplierHeading("怪兽设计").count(), 1);
+  assert.equal(await routeRow(monster.connection).locator("[data-route-choice]").getAttribute("aria-pressed"), "true");
+  await closeRoutes();
+  assert.ok((await panel.getByLabel("当前线路", { exact: true }).textContent()).includes("怪兽设计"));
+  assert.equal(await panel.getByTestId("param-panel-unit-price").textContent(), "—");
+  await panel.getByRole("button", { name: "账号余额与消耗", exact: true }).click();
+  const billing = panel.getByLabel("供应商余额与消耗", { exact: true });
+  assert.equal(await billing.locator("span").filter({ hasText: /^余额\s*未读取$/u }).count(), 1);
+  await openRoutes();
+  for (const fixture of fixtures) {
+    const name = fixture === monster ? "怪兽设计" : "智元api";
+    assert.equal(await supplierHeading(name).isVisible(), true);
+    const row = routeRow(fixture.connection);
+    assert.equal(await row.getAttribute("data-route-group"), fixture.group);
+    assert.equal(await row.getByLabel("同型号报价", { exact: true }).textContent(), "—");
+    assert.equal(await row.locator("[data-route-choice] small").first().textContent(), "余额未读取");
   }
-  assert.ok(await candidateTable.evaluate(element => element.scrollWidth <= element.clientWidth + 1));
-  assert.equal(await select.inputValue(), monster.supplier.supplierKey);
+  assert.ok(await routes.evaluate(element => element.scrollWidth <= element.clientWidth + 1));
+  assert.ok(await routes.getByRole("list", { name: "候选线路", exact: true }).evaluate(element => element.scrollWidth <= element.clientWidth + 1));
+  assert.equal(await routeRow(monster.connection).locator("[data-route-choice]").getAttribute("aria-pressed"), "true");
+  await closeRoutes();
   await page.goto(origin);
   await page.getByRole("button", { name: "创作设置", exact: true }).click();
   const settings = page.getByRole("dialog", { name: "供应商与模型设置" });

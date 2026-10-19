@@ -7,6 +7,10 @@ import { DeferredPanelContent } from "../components/deferred-panel-content";
 import { NodeParameterFields } from "../components/node-parameter-fields";
 import { ModelPriceDetails } from "../components/model-price-details";
 
+vi.mock("../components/ui/Dropdown", async () => ({
+  Dropdown: (await import("./test-helpers/parameter-dropdown.test-helper")).StaticParameterDropdown,
+}));
+
 // Reuse the offline identity and values from image-parameter-contract-integration.
 const connection = { provider: "openai", config: {
   baseUrl: "https://api.mikoto.vip/v1", supplierKey: "mikoto",
@@ -42,8 +46,8 @@ describe("parameter panel first-render content", () => {
     expect(html).not.toContain('data-panel-loading="true"');
     expect(html).toContain('aria-label="自动与输出分辨率快捷档位"');
     // This exact fixture group explicitly declares 2K / 4K; do not invent 1K.
-    for (const tier of ["自动", "2K", "4K"]) expect(html).toContain(`>${tier}</button>`);
-    expect(html).toContain("4K · 16:9 · 3840 × 2160");
+    for (const tier of ["自动", "2K", "4K"]) expect(html).toContain(`><span>${tier}</span></button>`);
+    expect(html).toContain("16:9 · 4K · 3840 × 2160");
     expect(html).toMatch(/<input[^>]*aria-label="图片宽度"[^>]*value="3840"/u);
     expect(html).toMatch(/<input[^>]*aria-label="图片高度"[^>]*value="2160"/u);
     expect(html).toContain('value="max" selected=""');

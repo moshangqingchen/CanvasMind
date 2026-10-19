@@ -1,27 +1,7 @@
-import { expect, test, type Locator, type Page } from "./helpers/canvas-offline-test";
+import { expect, test } from "./helpers/canvas-offline-test";
 import { clickBlankCanvas, setCanvasZoomWithWheel } from "./canvas-test-actions";
 import { floatingPanelGeometry } from "./floating-panel-geometry";
-
-async function chooseOpenNativeOption(
-  page: Page,
-  select: Locator,
-  value: string,
-) {
-  const index = await select
-    .locator("option")
-    .evaluateAll(
-      (options, target) =>
-        options.findIndex(
-          (option) => (option as HTMLOptionElement).value === target,
-        ),
-      value,
-    );
-  expect(index).toBeGreaterThanOrEqual(0);
-  await page.keyboard.press("Home");
-  for (let i = 0; i < index; i++) await page.keyboard.press("ArrowDown");
-  await page.keyboard.press("Enter");
-  await expect(select).toHaveValue(value);
-}
+import { chooseParameterOption, expectParameterValue } from "./helpers/parameter-controls";
 
 for (const zoom of [0.4, 1, 1.74])
   test(`供应商与群组实际点击切换并保存（${Math.round(zoom * 100)}% 缩放）`, async ({
@@ -104,7 +84,7 @@ for (const zoom of [0.4, 1, 1.74])
         graph: {
           schemaVersion: 1,
           // Compact LOD intentionally hides the footer trigger. Open at 1x,
-          // then retain all real-pointer/native-popup checks at 40% below.
+          // then retain all real-pointer/route-popup checks at 40% below.
           viewport: { x: zoom < 0.5 ? 140 : 0, y: 0, zoom: zoom < .55 ? 1 : zoom },
           edges: [],
           nodes: [
@@ -142,7 +122,7 @@ for (const zoom of [0.4, 1, 1.74])
       .click();
     // Opening the panel selects its node and can open the inspector. Close it
     // afterwards so 174% has room for the attached panel before real clicks;
-    // scrolling an off-canvas select into view is not a native-popup test.
+    // scrolling an off-canvas field into view is not a pointer-popup test.
     if ((await sidebar.getAttribute("aria-expanded")) === "true")
       await sidebar.click();
     await expect(sidebar).toHaveAttribute("aria-expanded", "false");
@@ -163,24 +143,21 @@ for (const zoom of [0.4, 1, 1.74])
       }, { message: "40% 参数面板应位于可见画布内，避开创作轨栏" }).toBe(true);
     }
     // The popover remains open after clearing canvas selection. Opening a field
-    // must not reselect its node or open the inspector over the native popup.
+    // must not reselect its node or open the inspector over the route popup.
     await clickBlankCanvas(page);
     await expect(
       page.locator('.react-flow__node[data-id="source"]'),
     ).not.toHaveClass(/selected/);
     const selectionState = await sidebar.getAttribute("aria-expanded");
-    const supplier = page.getByRole("combobox", {
-      name: "选择测试 供应商",
-      exact: true,
-    });
-    await expect.poll(() => supplier.evaluate(element => {
+    const routeTrigger = panel.getByRole("button", { name: "选择测试 线路", exact: true });
+    const routes = panel.getByRole("dialog", { name: "选择测试 候选线路", exact: true });
+    const routeChoice = (id: string) => routes.locator(`[data-route-id="${id}"] [data-route-choice]`);
+    await expect.poll(() => routeTrigger.evaluate(element => {
       const box = element.getBoundingClientRect();
-      return document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2) === element;
-    }), { message: "供应商控件的真实点击位置应可见且未被遮挡" }).toBe(true);
-    await supplier.click();
-    await expect
-      .poll(() => supplier.evaluate((el) => el.matches(":open")))
-      .toBe(true);
+      return document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)?.closest("button") === element;
+    }), { message: "线路入口的真实点击位置应可见且未被遮挡" }).toBe(true);
+    await routeTrigger.click();
+    await expect(routes).toBeVisible();
     await page.waitForTimeout(250);
     await expect(
       page.locator('.react-flow__node[data-id="source"]'),
@@ -189,28 +166,23 @@ for (const zoom of [0.4, 1, 1.74])
     const supplierModelsPath = `/api/providers/${connections[2]!.id}/models`;
     const [supplierModelsRequest] = await Promise.all([
       page.waitForRequest(request => request.method() === "GET" && new URL(request.url()).pathname === supplierModelsPath),
-      chooseOpenNativeOption(page, supplier, connections[2]!.supplierKey),
+      routeChoice(connections[2]!.id).click(),
     ]);
     // The active floating editor must keep loading its new connection after canvas selection was cleared.
     expect(new URL(supplierModelsRequest.url()).pathname).toBe(supplierModelsPath);
     const quality = page.getByRole("dialog", { name: "选择测试 模型与参数" }).getByLabel("质量", { exact: true });
-    await expect(quality).toHaveValue("max");
-    const group = page.getByRole("combobox", {
-      name: "选择测试 模型群组",
-      exact: true,
-    });
-    await group.click();
-    await expect
-      .poll(() => group.evaluate((el) => el.matches(":open")))
-      .toBe(true);
+    await expectParameterValue(quality, "max");
+    await expect(panel.getByLabel("当前线路", { exact: true })).toContainText(`供应商乙 ${zoom} › 高质量`);
+    await routeTrigger.click();
+    await expect(routes).toBeVisible();
     const groupModelsPath = `/api/providers/${connections[3]!.id}/models`;
     const [groupModelsRequest] = await Promise.all([
       page.waitForRequest(request => request.method() === "GET" && new URL(request.url()).pathname === groupModelsPath),
-      chooseOpenNativeOption(page, group, "标准"),
+      routeChoice(connections[3]!.id).click(),
     ]);
     expect(new URL(groupModelsRequest.url()).pathname).toBe(groupModelsPath);
-    await expect(quality).toHaveValue("max");
-    await quality.selectOption("low");
+    await expectParameterValue(quality, "max");
+    await chooseParameterOption(quality, "low");
     await expect.poll(savedData).toMatchObject({ model: "gpt-image-2.5", qualityMode: "custom", parameters: { quality: "low" } });
     await page.getByRole("combobox", { name: "选择测试 模型", exact: false }).click();
     const modelOptions = page.getByRole("listbox", { name: "选择测试 模型 可选模型", exact: true });
@@ -219,13 +191,13 @@ for (const zoom of [0.4, 1, 1.74])
     await expect(modelOptions.locator('[id$="-parameters"]')).toHaveCount(0);
     if (zoom === 1) await page.screenshot({ path: testInfo.outputPath("compact-model-menu-with-parameter-controls.png") });
     await page.getByRole("option", { name: "图像模型", exact: true }).click();
-    await expect(quality).toHaveValue("high");
+    await expectParameterValue(quality, "high");
     await expect.poll(savedData).toMatchObject({ model: "gpt-image-2", qualityMode: "highest", parameters: { quality: "high" } });
     await page.getByRole("combobox", { name: "选择测试 模型", exact: false }).click();
     await page.getByRole("option", { name: "另一图像模型", exact: true }).click();
     // First selection uses the model's highest quality; returning to a model
     // restores its own explicit choice, including the custom-quality mode.
-    await expect(quality).toHaveValue("low");
+    await expectParameterValue(quality, "low");
     await expect(page.locator('.react-flow__node[data-id="source"]')).not.toHaveClass(/selected/);
     await expect
       .poll(
@@ -239,13 +211,17 @@ for (const zoom of [0.4, 1, 1.74])
     ).toBe("gpt-image-2.5");
     await expect.poll(async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data)
       .toMatchObject({ qualityMode: "custom", parameters: { quality: "low" } });
-    // Escape and Tab must retain native select keyboard behavior without selecting the canvas node.
-    await supplier.focus();
-    await page.keyboard.press("Alt+ArrowDown");
-    await expect
-      .poll(() => supplier.evaluate((el) => el.matches(":open")))
-      .toBe(true);
+    // The unified route picker now uses ArrowDown to open its focused choices.
+    // Escape restores its trigger; neither keyboard layer selects the node.
+    await routeTrigger.focus();
+    await page.keyboard.press("ArrowDown");
+    await expect(routes).toBeVisible();
+    await expect(routes.locator("[data-route-choice]").first()).toBeFocused();
     await page.keyboard.press("Escape");
+    await expect(routes).toBeHidden();
+    await expect(routeTrigger).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(sidebar).toHaveAttribute("aria-expanded", selectionState!);
     await expect(
       page.locator('.react-flow__node[data-id="source"]'),
     ).not.toHaveClass(/selected/);
@@ -255,17 +231,19 @@ for (const zoom of [0.4, 1, 1.74])
       .getByRole("button", { name: "打开 选择测试 模型与参数", exact: true })
       .click();
     if (zoom < .55) await setCanvasZoomWithWheel(page, zoom);
-    await expect(supplier).toHaveValue(connections[2]!.supplierKey);
-    await expect(group).toHaveValue("标准");
-    await expect(quality).toHaveValue("low");
+    await expect(panel.getByLabel("当前线路", { exact: true })).toContainText(`供应商乙 ${zoom} › 标准`);
+    await routeTrigger.click();
+    await expect(routeChoice(connections[3]!.id)).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("Escape");
+    await expectParameterValue(quality, "low");
     await expect.poll(savedData).toMatchObject({ model: "gpt-image-2.5", qualityMode: "custom", parameters: { quality: "low" } });
     await page.getByRole("combobox", { name: "选择测试 模型", exact: false }).click();
     await page.getByRole("option", { name: "图像模型", exact: true }).click();
-    await expect(quality).toHaveValue("high");
+    await expectParameterValue(quality, "high");
     await expect.poll(savedData).toMatchObject({ model: "gpt-image-2", qualityMode: "highest", parameters: { quality: "high" } });
     await page.getByRole("combobox", { name: "选择测试 模型", exact: false }).click();
     await page.getByRole("option", { name: "另一图像模型", exact: true }).click();
-    await expect(quality).toHaveValue("low");
+    await expectParameterValue(quality, "low");
     await expect.poll(savedData).toMatchObject({ model: "gpt-image-2.5", qualityMode: "custom", parameters: { quality: "low" } });
     expect(submitted).toBe(0);
   });
@@ -310,15 +288,18 @@ test("同群组多连接保留身份，旧智能体 Key 的图片模型可选择
   if ((await sidebar.getAttribute("aria-expanded")) === "true") await sidebar.click();
   await page.getByRole("button", { name: "打开 多连接测试 模型与参数", exact: true }).click();
   const panel = page.getByRole("dialog", { name: "多连接测试 模型与参数", exact: true });
-  const group = panel.getByRole("combobox", { name: "多连接测试 模型群组", exact: true });
-  const connection = panel.getByRole("combobox", { name: "多连接测试 API 连接", exact: true });
-  await expect(connection).toHaveValue(ids[2]!);
-  await expect(connection.locator(`option[value="${ids[1]}"]`)).toBeEnabled();
-  await expect(connection.locator(`option[value="${ids[3]}"]`)).toHaveCount(0);
-  await expect(group.locator('option[value="共享群组"]')).toBeEnabled();
+  const routeTrigger = panel.getByRole("button", { name: "多连接测试 线路", exact: true });
+  const routes = panel.getByRole("dialog", { name: "多连接测试 候选线路", exact: true });
+  const routeChoice = (id: string) => routes.locator(`[data-route-id="${id}"] [data-route-choice]`);
+  await routeTrigger.click();
+  await expect(routeChoice(ids[2]!)).toHaveAttribute("aria-pressed", "true");
+  await expect(routeChoice(ids[1]!)).toHaveAttribute("aria-disabled", "false");
+  await expect(routeChoice(ids[3]!)).toHaveCount(0);
+  await expect(routes.locator(`[data-route-id="${ids[1]}"]`)).toHaveAttribute("data-route-group", "共享群组");
   await expect(panel.getByText(/当前实际连接是 未配置账户/)).toBeVisible();
   expect((await savedData()).connectionId).toBe(ids[2]);
-  await connection.selectOption(ids[1]!);
+  await routeChoice(ids[1]!).click();
+  await expect(routeTrigger).toHaveAttribute("aria-expanded", "false");
   const picker = panel.getByRole("combobox", { name: "多连接测试 模型", exact: false });
   await expect(picker).toContainText("列表模型 000");
   await picker.click();
@@ -389,7 +370,8 @@ test("同群组多连接保留身份，旧智能体 Key 的图片模型可选择
   await search.press("Escape");
   await expect(panel).toBeVisible();
   await expect(picker).toBeFocused();
-  await connection.selectOption(ids[0]!);
+  await routeTrigger.click();
+  await routeChoice(ids[0]!).click();
   await picker.click();
   await panel.getByLabel("模型状态筛选").selectOption("recent");
   await expect(panel.getByRole("listbox").getByRole("option")).toHaveCount(0);
@@ -455,7 +437,7 @@ test("长目录暖开尺寸缓存随新报价与窄窗口重新测量", async ({
   const scansBeforeChange = scans;
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expect.poll(() => scans).toBeGreaterThan(scansBeforeChange);
-  await expect(panel.getByLabel("当前供应商报价", { exact: true })).toContainText(nextQuote);
+  await expect(panel.getByTestId("param-panel-unit-price")).toContainText(nextQuote);
   await page.setViewportSize({ width: 390, height: 844 });
   for (let reopen = 0; reopen < 2; reopen++) {
     await picker.click();

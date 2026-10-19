@@ -2,6 +2,7 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
 import type { ModelDescriptor } from "@super-canvas/providers";
 import type { CanvasResponse, ProviderConnectionView } from "../lib/client-api";
 import { CANGYUAN_IMAGE_CONNECTOR } from "../lib/provider-presets";
+import { expectParameterValue } from "./helpers/parameter-controls";
 
 // Isolated fixtures verify common parameter preservation. They do not assert
 // that the real suppliers share an enum, price or output capability.
@@ -113,7 +114,7 @@ for (const supplier of ["jiasu", "secure", "chentu", "cangyuan"]) {
     await page.reload();
     await f.open();
     await expect.poll(f.reads).toBeGreaterThan(before);
-    await expect(f.panel.getByRole("combobox", { name: "输出分辨率", exact: true })).toHaveValue("1440p");
+    await expectParameterValue(f.panel.getByRole("combobox", { name: "输出分辨率", exact: true }), "1440p");
     await expect(f.panel).toContainText("1440p（已保存）");
     await expect(f.panel).toContainText("38（已保存）");
     expect(await f.saved()).toEqual(selected);

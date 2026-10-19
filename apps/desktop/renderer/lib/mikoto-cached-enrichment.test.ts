@@ -9,6 +9,10 @@ import { nativeImageResolutionControl } from "./native-image-resolution";
 import { NodeParameterFields, setParameterValueWithSizeExclusivity } from "../components/node-parameter-fields";
 import { modelEstimatedCost } from "./model-display";
 
+vi.mock("../components/ui/Dropdown", async () => ({
+  Dropdown: (await import("./test-helpers/parameter-dropdown.test-helper")).StaticParameterDropdown,
+}));
+
 vi.stubGlobal("React", React);
 afterAll(() => vi.unstubAllGlobals());
 
@@ -56,9 +60,9 @@ describe("installed cached Mikoto enrichment contract", () => {
     const onChange = vi.fn();
     const html = renderToStaticMarkup(React.createElement(NodeParameterFields, { nodeId: "mikoto39", nodeType: "image-generation",
       provider: "openai", model, parameters: selected, onChange }));
-    expect(html).toMatch(/<button(?=[^>]*aria-pressed="false")[^>]*>2K<\/button>/u);
-    expect(html).toMatch(/<button(?=[^>]*aria-pressed="true")[^>]*>4K<\/button>/u);
-    expect(html).not.toContain(">1K</button>");
+    expect(html).toMatch(/<button(?=[^>]*aria-pressed="false")[^>]*><span>2K<\/span><\/button>/u);
+    expect(html).toMatch(/<button(?=[^>]*aria-pressed="true")[^>]*><span>4K<\/span><\/button>/u);
+    expect(html).not.toContain("><span>1K</span></button>");
     expect(html).toContain("逐档像素映射：—；请填写独立 W/H");
     expect(html).toContain("比例偏好：16:9（保留）");
     expect(html).toMatch(/<input(?=[^>]*aria-label="Mikoto画面比例偏好")(?=[^>]*value="16:9")[^>]*>/u);

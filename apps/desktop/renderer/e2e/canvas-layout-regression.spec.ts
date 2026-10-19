@@ -2,6 +2,7 @@ import { expect, test, type APIRequestContext, type Locator } from "./helpers/ca
 import { CANGYUAN_IMAGE_CONNECTOR } from "../lib/provider-presets";
 import { floatingPanelGeometry } from "./floating-panel-geometry";
 import { setCanvasZoomWithWheel } from "./canvas-test-actions";
+import { openParameterDetails } from "./helpers/parameter-controls";
 
 const NODE_LABEL = "布局验收：长名称模型与参数";
 const MODEL_NAME = "用于检验长模型名称截断和完整提示的高质量图像生成模型";
@@ -101,13 +102,14 @@ for (const width of [980, 1280, 1366, 1440, 1920]) {
       await expect.poll(async () => (await floatingPanelGeometry(panel)).floatingError).toBeLessThanOrEqual(1);
       await expect(panel.getByRole("button", { name: "关闭模型与参数面板" })).toBeInViewport({ ratio: 1 });
       await expect(panel.locator(":scope > header").getByRole("button")).toHaveCount(1);
-      const routeMenu = panel.getByLabel("线路菜单", { exact: true });
+      const routeMenu = panel.getByRole("button", { name: `${NODE_LABEL} 线路`, exact: true });
       await routeMenu.click();
       const manage = panel.getByRole("button", { name: "管理供应商与密钥", exact: true });
       await expect(manage).toBeInViewport({ ratio: 1 });
       await manage.click({ trial: true });
-      await routeMenu.click();
-      await expect(panel.locator(".node-config-provider-header > span").first()).toHaveCSS("font-size", "12px");
+      await page.keyboard.press("Escape");
+      await expect(routeMenu).toHaveAttribute("aria-expanded", "false");
+      await expect(panel.getByLabel("当前线路", { exact: true }).locator(":scope > span").first()).toHaveCSS("font-size", "12px");
       const body = panel.locator(".node-config-popover-body");
       await expect(body).toHaveCSS("overflow-y", "auto");
       await expect.poll(() => body.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
@@ -118,6 +120,10 @@ for (const width of [980, 1280, 1366, 1440, 1920]) {
       await expect.poll(() => label.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
       await quality.scrollIntoViewIfNeeded();
       await expect(quality).toBeInViewport({ ratio: 1 });
+      await openParameterDetails(panel, "更多参数");
+      const lastParameter = panel.getByLabel("滚动布局参数 12", { exact: true });
+      await lastParameter.scrollIntoViewIfNeeded();
+      await expect(lastParameter).toBeInViewport({ ratio: 1 });
       await expect.poll(() => body.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
       await expect.poll(async () => (await floatingPanelGeometry(panel)).floatingError).toBeLessThanOrEqual(1);
       await page.screenshot({ path: testInfo.outputPath(`panel-${zoom * 100}.png`) });

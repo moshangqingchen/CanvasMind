@@ -3,6 +3,7 @@ import { effectiveImageCapabilities } from "../lib/supplier-capabilities";
 import { CANGYUAN_IMAGE_CONNECTOR } from "../lib/provider-presets";
 import { bindScannedModelProtocols } from "../lib/scanned-model-protocols";
 import { floatingPanelGeometry } from "./floating-panel-geometry";
+import { chooseParameterOption, expectParameterValue, openParameterDetails, readParameterOptions } from "./helpers/parameter-controls";
 
 for (const [id, values] of [
   ["gpt-image-2.5-flare-yf", ["auto", "low", "medium", "high", "xhigh", "max"]],
@@ -23,14 +24,14 @@ for (const [id, values] of [
   await open();
   const panel = page.getByRole("dialog", { name: "质量验收 模型与参数" });
   const quality = panel.getByLabel("质量", { exact: true });
-  expect(await quality.locator("option").evaluateAll(options => options.map(o => (o as HTMLOptionElement).value).filter(Boolean))).toEqual(values);
+  expect((await readParameterOptions(quality)).map(option => option.value).filter(Boolean)).toEqual(values);
   for (const value of values) {
-    await quality.selectOption(value);
+    await chooseParameterOption(quality, value);
     await expect.poll(async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data.parameters.quality).toBe(value);
   }
-  await quality.selectOption("low");
+  await chooseParameterOption(quality, "low");
   await expect.poll(async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data.parameters.quality).toBe("low");
-  await page.reload(); await open(); await expect(quality).toHaveValue("low");
+  await page.reload(); await open(); await expectParameterValue(quality, "low");
 });
 
 test("Chuangxiang historical small response keeps 2K and 4K plus every ratio visible", async ({ page, request }) => {
@@ -48,12 +49,29 @@ test("Chuangxiang historical small response keeps 2K and 4K plus every ratio vis
   await page.goto(`/canvas/${canvas.id}`);
   await page.getByRole("button", { name: "打开 创想验收 模型与参数", exact: true }).click();
   const panel = page.getByRole("dialog", { name: "创想验收 模型与参数" });
+  const size = panel.getByLabel("输出分辨率预设", { exact: true });
+  const supplierDefaultAuto = async () => {
+    const automatic = (await readParameterOptions(size)).filter(option => option.value === "auto");
+    expect(automatic).toHaveLength(1);
+    expect(automatic[0]!.disabled).toBe(false);
+    expect(automatic[0]!.label).toBe("自动（供应商决定）");
+  };
+  await supplierDefaultAuto();
   for (const tier of ["1K", "2K", "4K"]) {
     await panel.getByRole("button", { name: tier, exact: true }).click();
-    const options = await panel.getByLabel("输出分辨率预设", { exact: true }).locator("option").allTextContents();
-    expect(options.filter(label => label.startsWith(`${tier} ·`))).toHaveLength(11);
+    const choices = await readParameterOptions(size);
+    const automatic = choices.filter(option => option.value === "auto");
+    expect(automatic).toHaveLength(1);
+    expect(automatic[0]!.disabled).toBe(false);
+    expect(automatic[0]!.label).toContain("自动 · 跟随提示词，其次参考图");
+    expect(automatic[0]!.label).toContain(`保持 ${tier}`);
+    const options = choices.map(option => option.label);
+    expect(options.filter(label => label.includes(`${tier} ·`))).toHaveLength(11);
     expect(options.some(label => /自动.*提示词.*参考图/u.test(label))).toBe(true);
   }
+  await panel.getByRole("group", { name: "自动与输出分辨率快捷档位", exact: true }).getByRole("button", { name: "自动", exact: true }).click();
+  await expectParameterValue(size, "auto");
+  await supplierDefaultAuto();
 });
 
 test("one passed 4K probe exposes every ratio, preserves auto, and anchors the panel within the viewport while clearing tools", async ({ page, request }, testInfo) => {
@@ -78,7 +96,7 @@ test("one passed 4K probe exposes every ratio, preserves auto, and anchors the p
   await open();
   const panel = page.getByRole("dialog", { name: "比例验收 模型与参数" });
   const size = panel.getByLabel("输出分辨率预设", { exact: true });
-  await expect(size).toHaveValue("3840x2160");
+  await expectParameterValue(size, "3840x2160");
   const inspector = page.getByRole("button", { name: "智能体面板", exact: true });
   if (await inspector.getAttribute("aria-expanded") === "true") await inspector.click();
   await expect(inspector).toHaveAttribute("aria-expanded", "false");
@@ -86,13 +104,13 @@ test("one passed 4K probe exposes every ratio, preserves auto, and anchors the p
   await expect(panel).toHaveCSS("width", "380px");
   const assertFloating = () => expect.poll(async () => (await floatingPanelGeometry(panel)).floatingError).toBeLessThanOrEqual(1);
   await assertFloating();
-  const options = await size.locator("option").allTextContents();
-  expect(options.filter(label => /4K · \d+:\d+/u.test(label))).toHaveLength(11);
+  const options = (await readParameterOptions(size)).map(option => option.label);
+  expect(options.filter(label => label.includes("4K ·") && /\d+:\d+/u.test(label))).toHaveLength(11);
   expect(options.some(label => /自动.*提示词.*参考图/u.test(label))).toBe(true);
-  await size.selectOption("2160x3840");
-  await size.selectOption("auto");
+  await chooseParameterOption(size, "2160x3840");
+  await chooseParameterOption(size, "auto");
   await expect.poll(async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data.parameters).toMatchObject({ size: "auto", size_tier: "4K" });
-  await panel.locator("summary").last().click();
+  await openParameterDetails(panel, "参数与来源");
   await assertFloating();
   const body = panel.locator(".node-config-popover-body");
   await expect(body).toHaveCSS("overflow-y", "auto");
@@ -106,8 +124,8 @@ test("one passed 4K probe exposes every ratio, preserves auto, and anchors the p
   await expect(body).toHaveJSProperty("scrollTop", 0);
   const modelSelect = panel.getByRole("combobox", { name: "比例验收 模型", exact: false });
   await expect(modelSelect).toBeInViewport({ ratio: 1 });
-  await expect(panel.getByLabel("比例验收 供应商", { exact: true })).toBeInViewport({ ratio: 1 });
-  await expect(panel.getByLabel("比例验收 模型群组", { exact: true })).toBeInViewport({ ratio: 1 });
+  await expect(panel.getByLabel("当前线路", { exact: true })).toBeInViewport({ ratio: 1 });
+  await expect(panel.getByRole("button", { name: "比例验收 线路", exact: true })).toBeInViewport({ ratio: 1 });
   await page.screenshot({ path: testInfo.outputPath("panel-scrolled-back-to-model.png") });
   const modelBox = await modelSelect.boundingBox();
   const bodyBox = await body.boundingBox();
@@ -134,10 +152,10 @@ test("one passed 4K probe exposes every ratio, preserves auto, and anchors the p
   await panel.getByRole("combobox", { name: "比例验收 模型", exact: false }).click();
   await panel.getByRole("option", { name: "比例验收", exact: true }).click();
   await panel.getByRole("group", { name: "自动与输出分辨率快捷档位" }).getByRole("button", { name: "4K", exact: true }).click();
-  await size.selectOption("auto");
+  await chooseParameterOption(size, "auto");
   await page.reload();
   await open();
-  await expect(size).toHaveValue("auto");
+  await expectParameterValue(size, "auto");
   // Reload restores the default desktop inspector independently of the saved
   // model parameters. Close it normally before testing the narrow canvas.
   if (await inspector.getAttribute("aria-expanded") === "true") await inspector.click();

@@ -52,9 +52,9 @@ describe("Mikoto group5 exact source controls and accepted highest input", () =>
     const selected = Object.freeze({ size_tier: "1K", size: "4097x2051", quality: "high", aspect_ratio: "auto" });
     const html = renderToStaticMarkup(React.createElement(NodeParameterFields, { nodeId: "mikoto-g5", nodeType: "image-generation",
       provider: "rest", model, parameters: selected, onChange: vi.fn() }));
-    expect(html).toMatch(/<button(?=[^>]*aria-pressed="true")[^>]*>1K<\/button>/u);
-    expect(html).toContain(">2K</button>");
-    expect(html).toContain(">4K</button>");
+    expect(html).toMatch(/<button(?=[^>]*aria-pressed="true")[^>]*><span>1K<\/span><\/button>/u);
+    expect(html).toContain("><span>2K</span></button>");
+    expect(html).toContain("><span>4K</span></button>");
     expect(html).toMatch(/<input(?=[^>]*aria-label="图片宽度")(?=[^>]*value="4097")[^>]*>/u);
     expect(html).toMatch(/<input(?=[^>]*aria-label="图片高度")(?=[^>]*value="2051")[^>]*>/u);
     expect(html).not.toMatch(/max="3840"|min="256"|step="16"|16 倍数对齐/u);

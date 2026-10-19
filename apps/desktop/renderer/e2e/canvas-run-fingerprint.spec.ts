@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "./helpers/canvas-offline-test";
 import { waitForCanvasViewportStable } from "./canvas-test-actions";
+import { expectParameterValue } from "./helpers/parameter-controls";
 
 const descriptor = {
   id: "gpt-image-2", name: "运行指纹隔离模型",
@@ -82,7 +83,7 @@ for (const change of ["presentation", "prompt"] as const) {
     await expect(source).toBeVisible();
     await page.getByRole("button", { name: "打开 运行指纹测试 模型与参数", exact: true }).click();
     const panel = page.getByRole("dialog", { name: "运行指纹测试 模型与参数", exact: true });
-    await expect(panel.getByLabel("质量", { exact: true })).toHaveValue("high");
+    await expectParameterValue(panel.getByLabel("质量", { exact: true }), "high");
     await panel.getByRole("button", { name: "关闭模型与参数面板", exact: true }).click();
     await expect(panel).toBeHidden();
     await waitForCanvasViewportStable(page);

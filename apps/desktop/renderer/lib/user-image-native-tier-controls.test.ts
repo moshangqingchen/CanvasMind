@@ -7,6 +7,10 @@ import { NodeParameterFields, syncUserImageNativeTier } from "../components/node
 import { modelEstimatedCost } from "./model-display";
 import { normalizedParametersForModel } from "./model-parameters";
 
+vi.mock("../components/ui/Dropdown", async () => ({
+  Dropdown: (await import("./test-helpers/parameter-dropdown.test-helper")).StaticParameterDropdown,
+}));
+
 const descriptor = (id: string) => applyUserImageSizePresets(cangyuanCurrentModel({
   id, name: id, operations: ["image.generate", "image.edit"],
 }));
@@ -25,8 +29,8 @@ describe("user image size controls retain the supplier's native billing tier", (
       const highest = id === "gpt-image-2.5-x" ? "max" : "high";
       const html = render(model, { tier: "4k", size: "2880x2880", quality: highest, series: "sunburst" });
       expect(html.match(/aria-label="自动与输出分辨率快捷档位"/gu)).toHaveLength(1);
-      expect(html).toMatch(/<button[^>]*aria-pressed="true"[^>]*>4K<\/button>/u);
-      expect(html).not.toContain("清晰度 / 计费档位");
+      expect(html).toMatch(/<button[^>]*aria-pressed="true"[^>]*><span>4K<\/span><\/button>/u);
+      expect(html).not.toMatch(/<label[^>]*>清晰度 \/ 计费档位<\/label>/u);
       expect(html.match(/aria-label="图片宽度"/gu)).toHaveLength(1);
       expect(html.match(/aria-label="图片高度"/gu)).toHaveLength(1);
       expect(html).toContain(`value="${highest}" selected=""`);
@@ -38,16 +42,16 @@ describe("user image size controls retain the supplier's native billing tier", (
       expect(model.parameters?.find(parameter => parameter.key === "tier")?.options?.map(option => option.value))
         .toEqual(["web", "1k", "2k", "4k"]);
       const html = render(model, { tier: "web", size: "auto", series: "sunburst" });
-      expect(html).toMatch(/<button[^>]*aria-pressed="true"[^>]*>自动<\/button>/u);
+      expect(html).toMatch(/<button[^>]*aria-pressed="true"[^>]*><span>自动<\/span><\/button>/u);
       expect(html).toMatch(/<label[^>]*>质量<\/label>/u);
-      expect(html).not.toContain("清晰度 / 计费档位");
+      expect(html).not.toMatch(/<label[^>]*>清晰度 \/ 计费档位<\/label>/u);
       expect(html).toContain('aria-label="图片宽度"');
     });
 
     it(`${id} displays an explicit 2k billing tier for custom pixels without inferring a new tier`, () => {
       const parameters = Object.freeze({ tier: "2k", size: "1111x777", quality: "low", series: "sunburst" });
       const html = render(descriptor(id), parameters);
-      expect(html).toMatch(/<button[^>]*aria-pressed="true"[^>]*>2K<\/button>/u);
+      expect(html).toMatch(/<button[^>]*aria-pressed="true"[^>]*><span>2K<\/span><\/button>/u);
       expect(html).toMatch(/<input[^>]*aria-label="图片宽度"[^>]*value="1111"/u);
       expect(html).toMatch(/<input[^>]*aria-label="图片高度"[^>]*value="777"/u);
       expect(html).toContain('value="low" selected=""');
@@ -99,9 +103,9 @@ describe("user image size controls retain the supplier's native billing tier", (
       metadata: { imageNativeParameterContract: true, imageOpenSizePreferences: true },
       parameters: [{ key: "size", label: "尺寸", control: "dimensions", default: "auto", step: 1 }] });
     const preset = render(model, { size: "3840x2160" });
-    expect(preset).toMatch(/<button[^>]*aria-pressed="true"[^>]*>4K<\/button>/u);
+    expect(preset).toMatch(/<button[^>]*aria-pressed="true"[^>]*><span>4K<\/span><\/button>/u);
     const custom = render(model, { size: "3501x2301" });
-    expect(custom).not.toMatch(/<button[^>]*aria-pressed="true"[^>]*>自动<\/button>/u);
+    expect(custom).not.toMatch(/<button[^>]*aria-pressed="true"[^>]*><span>自动<\/span><\/button>/u);
     expect(custom).toMatch(/<input[^>]*aria-label="图片宽度"[^>]*value="3501"/u);
   });
 
@@ -115,7 +119,7 @@ describe("user image size controls retain the supplier's native billing tier", (
     const html = render(model, { size: "2880x2880", size_tier: "4K", resolution: "4K", quality: "max" });
     expect(html.match(/aria-label="自动与输出分辨率快捷档位"/gu)).toHaveLength(1);
     expect(html.match(/aria-label="图片宽度"/gu)).toHaveLength(1);
-    expect(html).toMatch(/<button[^>]*aria-pressed="true"[^>]*>4K<\/button>/u);
+    expect(html).toMatch(/<button[^>]*aria-pressed="true"[^>]*><span>4K<\/span><\/button>/u);
     expect(model.metadata?.tk1688SupportedResolutions).toEqual(["4K"]);
   });
 });

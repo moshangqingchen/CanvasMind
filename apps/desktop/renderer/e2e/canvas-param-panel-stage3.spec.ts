@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { fixture, labels, image, video } from "./helpers/param-panel-fixture";
 import { openParameterDetails } from "./helpers/parameter-controls";
 
-const evidence = "D:/project development/超级画布/.codex-logs/2026-10-18-param-panel/stage3";
+const evidence = process.env.PARAM_PANEL_SCREENSHOT_DIR || "D:/project development/超级画布/.codex-logs/2026-10-18-param-panel/stage3";
 
 async function capture(panel: Locator, name: string) {
   await mkdir(evidence, { recursive: true });

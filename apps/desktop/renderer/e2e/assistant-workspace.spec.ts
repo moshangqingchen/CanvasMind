@@ -20,6 +20,7 @@ import {
   openAgentSessions,
 } from "./helpers/agent-controls";
 import { clickWorkspaceModule } from "./helpers/workspace-navigation";
+import { expectParameterSegmentValue, expectParameterValue, openParameterDetails } from "./helpers/parameter-controls";
 
 const repository = fileURLToPath(new URL("../../../..", import.meta.url));
 const output = resolve(
@@ -823,8 +824,9 @@ test("首页头像与规整网络→合一草稿与模拟流→渠道参数→�
     await card.locator('details[class*="planStep"] > summary').click();
     const parameters = card.getByRole("group", { name: "秋日主视觉 渠道与参数", exact: true });
     await parameters.getByLabel("秋日主视觉 供应商", { exact: true }).selectOption("fixture-image-b");
-    await expect(parameters.getByLabel("画面比例", { exact: true })).toHaveValue("9:16");
-    await expect(parameters.getByRole("group", { name: "自动与输出分辨率快捷档位", exact: true }).getByRole("button", { name: "2K", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expectParameterValue(parameters.getByLabel("画面比例", { exact: true }), "9:16");
+    await expectParameterSegmentValue(parameters.getByRole("group", { name: "自动与输出分辨率快捷档位", exact: true }), "2K");
+    await openParameterDetails(parameters, "更多参数");
     await parameters.getByLabel("种子", { exact: true }).fill("77");
     await page.waitForTimeout(1200);
     await capture(page, "dark-flow-channel-parameters");

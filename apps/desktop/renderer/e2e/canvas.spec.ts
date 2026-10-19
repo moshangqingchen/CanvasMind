@@ -17,6 +17,7 @@ import {
 import { applyMonsterImageCapabilities } from "@super-canvas/providers/monster-image-capabilities";
 import { floatingPanelGeometry } from "./floating-panel-geometry";
 import { clickBlankCanvas, setCanvasZoomWithWheel } from "./canvas-test-actions";
+import { chooseParameterOption, expectParameterValue, openParameterDetails } from "./helpers/parameter-controls";
 
 const REFERENCE_ASSET_NAME = "e2e reference asset.png";
 const PNG_1X1 = Buffer.from(
@@ -553,13 +554,19 @@ async function openNodeParameters(node: Locator, connection?: ProviderConnection
   const nodeId = await node.getAttribute("data-id");
   if (!nodeId) throw new Error("A node data-id is required to open its parameters");
   await node.getByRole("button", { name: /^打开 .* 模型与参数$/u }).click();
-  const panel = node.page().locator(`.canvas-parameter-deck [data-parameter-node-id=${JSON.stringify(nodeId)}]`).getByRole("dialog");
+  const panel = node.page().locator(`.canvas-parameter-deck [data-parameter-node-id=${JSON.stringify(nodeId)}]`)
+    .getByRole("dialog", { name: / 模型与参数$/u });
   await expect(panel).toBeVisible();
   if (connection) {
-    await panel.getByRole("combobox", { name: / 供应商$/u }).selectOption(String(connection.config.supplierKey ?? connection.provider));
-    await panel.getByRole("combobox", { name: / 模型群组$/u }).selectOption(String(connection.config.modelGroup ?? "默认群组"));
-    const connections = panel.getByRole("combobox", { name: / API 连接$/u });
-    if (await connections.count()) await connections.selectOption(connection.id);
+    const trigger = panel.getByRole("button", { name: / 线路$/u });
+    await trigger.click();
+    const routes = panel.getByRole("dialog", { name: / 候选线路$/u });
+    const row = routes.locator(`[data-route-id=${JSON.stringify(connection.id)}]`);
+    await expect(row).toHaveAttribute("data-route-group", String(connection.config.modelGroup ?? "默认群组"));
+    await row.locator("[data-route-choice]").click();
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await expect.poll(async () => (await savedCanvas(node.page())).graph.nodes.find(item => item.id === nodeId)?.data.connectionId)
+      .toBe(connection.id);
   }
   return panel;
 }
@@ -825,21 +832,22 @@ test.describe("超级画布完整验收", () => {
       await expect(tiers.getByRole("button", { name: "4K", exact: true })).toHaveCount(fourKAllowed ? 1 : 0);
       if (fourKAllowed) {
         await tiers.getByRole("button", { name: "4K", exact: true }).click();
-        await panel.getByLabel("输出分辨率预设", { exact: true }).selectOption("3840x2160");
+        await chooseParameterOption(panel.getByLabel("输出分辨率预设", { exact: true }), "3840x2160");
         await expect.poll(async () => (await savedCanvas(page)).graph.nodes.find(n => n.id === "e2e-image")?.data.parameters).toMatchObject({ size: "3840x2160", size_tier: "4K" });
         await tiers.getByRole("button", { name: "自动", exact: true }).click();
       }
       await tiers.getByRole("button", { name: "2K", exact: true }).click();
       await expect.poll(async () => (await savedCanvas(page)).graph.nodes.find(n => n.id === "e2e-image")?.data.parameters).toMatchObject({ size_tier: "2K" });
-      await panel.getByLabel("输出分辨率预设", { exact: true }).selectOption("1536x2720");
-      await panel.getByLabel("质量", { exact: true }).selectOption("high");
+      await chooseParameterOption(panel.getByLabel("输出分辨率预设", { exact: true }), "1536x2720");
+      await chooseParameterOption(panel.getByLabel("质量", { exact: true }), "high");
       await expect.poll(async () => (await savedCanvas(page)).graph.nodes.find(n => n.id === "e2e-image")?.data.parameters).toMatchObject({ size: "1536x2720", size_tier: "2K", quality: "high" });
+      await openParameterDetails(panel, "自定义宽高");
       await expect(panel.getByLabel("图片宽度", { exact: true })).toHaveValue("1536");
       await expect(panel.getByLabel("图片高度", { exact: true })).toHaveValue("2720");
       await page.reload();
       await node.getByRole("button", { name: /打开 E2E 图片生成 模型与参数/u }).click();
-      await expect(panel.getByLabel("输出分辨率预设", { exact: true })).toHaveValue("1536x2720");
-      await expect(panel.getByLabel("质量", { exact: true })).toHaveValue("high");
+      await expectParameterValue(panel.getByLabel("输出分辨率预设", { exact: true }), "1536x2720");
+      await expectParameterValue(panel.getByLabel("质量", { exact: true }), "high");
     });
   }
 
@@ -2100,10 +2108,11 @@ test.describe("超级画布完整验收", () => {
     await page.getByRole("button", { name: "Fit View", exact: true }).click();
     const created = page.locator('.react-flow__node:has(.node-card[data-node-type="image-generation"])').last();
     const inspector = await openNodeParameters(created, connection);
+    await openParameterDetails(inspector, "自定义宽高");
     await inspector.getByLabel("图片宽度", { exact: true }).fill("1536");
     await inspector.getByLabel("图片高度", { exact: true }).fill("1024");
     await inspector.getByLabel("图片高度", { exact: true }).press("Enter");
-    await inspector.getByLabel("质量").selectOption("high");
+    await chooseParameterOption(inspector.getByLabel("质量", { exact: true }), "high");
     await inspector.getByLabel("生成张数").fill("3");
 
     await expect
@@ -2261,9 +2270,14 @@ test.describe("超级画布完整验收", () => {
       await node.locator(".node-head").click();
       await expect(node).toHaveClass(/selected/u);
       await node.getByRole("button", { name: `打开 ${label} 模型与参数` }).click();
-      const panel = page.getByRole("dialog", { name: `${label} 模型与参数` });
-      const groups = await panel.getByLabel(`${label} 模型群组`).locator("option").allTextContents();
+      const panel = page.getByRole("dialog", { name: `${label} 模型与参数`, exact: true });
+      await panel.getByRole("button", { name: `${label} 线路`, exact: true }).click();
+      const routes = panel.getByRole("dialog", { name: `${label} 候选线路`, exact: true });
+      await expect(routes).toBeVisible();
+      const groups = await routes.locator("[data-route-group]").evaluateAll(rows => rows.map(row => row.getAttribute("data-route-group")));
       expect(groups).toContain(included); expect(groups).toContain("综合组"); expect(groups).not.toContain(excluded);
+      await page.keyboard.press("Escape");
+      await expect(routes).toBeHidden();
       await panel.getByRole("combobox", { name: `${label} 模型`, exact: false }).click();
       await expect(panel.getByRole("option", { name: modelName })).toBeVisible();
       await expect(panel.getByRole("option", { name: modelName === "图片型号" ? "视频型号" : "图片型号" })).toHaveCount(0);
@@ -2293,15 +2307,16 @@ test.describe("超级画布完整验收", () => {
     const imageConfigPopover = await openNodeParameters(imageNode, connection);
     await imageConfigPopover.getByRole("combobox", { name: "E2E 图片生成 模型", exact: false }).click();
     await imageConfigPopover.getByRole("option", { name: "E2E Image Cinematic", exact: true }).click();
+    await openParameterDetails(imageConfigPopover, "自定义宽高");
     await imageConfigPopover.getByLabel("图片宽度", { exact: true }).fill("2160");
     await imageConfigPopover.getByLabel("图片高度", { exact: true }).fill("3840");
     await imageConfigPopover.getByLabel("图片高度", { exact: true }).press("Enter");
     await expect(
-      imageConfigPopover.getByLabel("E2E 图片生成 模型", { exact: true }),
+      imageConfigPopover.getByRole("combobox", { name: "E2E 图片生成 模型", exact: false }),
     ).toContainText("E2E Image Cinematic");
-    await imageConfigPopover.getByLabel("质量").selectOption("high");
+    await chooseParameterOption(imageConfigPopover.getByLabel("质量", { exact: true }), "high");
     await expect(imageConfigPopover.getByLabel("画面比例", { exact: true })).toHaveCount(0);
-    await expect(imageConfigPopover.getByLabel("输出分辨率预设", { exact: true })).toHaveValue("2160x3840");
+    await expectParameterValue(imageConfigPopover.getByLabel("输出分辨率预设", { exact: true }), "2160x3840");
     await imageConfigPopover
       .getByRole("button", { name: "关闭模型与参数面板" })
       .click();
@@ -2319,7 +2334,7 @@ test.describe("超级画布完整验收", () => {
     await videoDuration.press("ArrowLeft");
     await videoDuration.press("ArrowLeft");
     await expect(videoDuration).toHaveValue("8");
-    await videoConfig.getByLabel("画面比例").fill("720:1280");
+    await chooseParameterOption(videoConfig.getByLabel("画面比例", { exact: true }), "720:1280");
 
     await expect
       .poll(async () => {
@@ -2370,11 +2385,12 @@ test.describe("超级画布完整验收", () => {
     );
     const restoredInspector = await openNodeParameters(restoredImage);
     await expect(restoredInspector.getByRole("combobox", { name: "E2E 图片生成 模型", exact: false })).toContainText("E2E Image Cinematic");
+    await openParameterDetails(restoredInspector, "自定义宽高");
     await expect(restoredInspector.getByLabel("图片宽度", { exact: true })).toHaveValue("2160");
     await expect(restoredInspector.getByLabel("图片高度", { exact: true })).toHaveValue("3840");
-    await expect(restoredInspector.getByLabel("质量")).toHaveValue("high");
+    await expectParameterValue(restoredInspector.getByLabel("质量", { exact: true }), "high");
     await expect(restoredInspector.getByLabel("画面比例", { exact: true })).toHaveCount(0);
-    await expect(restoredInspector.getByLabel("输出分辨率预设", { exact: true })).toHaveValue("2160x3840");
+    await expectParameterValue(restoredInspector.getByLabel("输出分辨率预设", { exact: true }), "2160x3840");
   });
 
   test("生成中再次运行创建独立结果，后发任务先完成且刷新不覆盖前一任务", async ({ page, request }) => {
@@ -3845,10 +3861,11 @@ test.describe("超级画布完整验收", () => {
     const editor = createdNode.locator(".tiptap-prompt");
     await editor.pressSequentially("一张可以立即运行的霓虹街景", { delay: 5 });
     const inspector = await openNodeParameters(createdNode, connection);
+    await openParameterDetails(inspector, "自定义宽高");
     await inspector.getByLabel("图片宽度", { exact: true }).fill("1536");
     await inspector.getByLabel("图片高度", { exact: true }).fill("1024");
     await inspector.getByLabel("图片高度", { exact: true }).press("Enter");
-    await inspector.getByLabel("质量").selectOption("high");
+    await chooseParameterOption(inspector.getByLabel("质量", { exact: true }), "high");
     await inspector.getByLabel("数量").fill("2");
     await inspector.getByRole("button", { name: "关闭模型与参数面板" }).click();
 
@@ -3982,7 +3999,7 @@ test.describe("超级画布完整验收", () => {
       "一张可以立即运行的霓虹街景",
     );
     await expect(restored.locator(".node-config-summary")).toHaveAttribute("title", /1536x1024/u);
-    await expect(restored.locator(".node-config-summary")).toHaveAttribute("title", /high/u);
+    await expect(restored.locator(".node-config-summary")).toHaveAttribute("title", /高/u);
     await expect(restored.locator(".node-generation-preview")).toHaveCount(0);
     await page.getByRole("button", { name: "Fit View" }).click();
     await expect(
@@ -4613,9 +4630,16 @@ test.describe("超级画布完整验收", () => {
     await page.reload();
     await page.getByRole("button", { name: "打开 E2E 图片生成 模型与参数", exact: true }).click();
     const panel = page.getByRole("dialog", { name: "E2E 图片生成 模型与参数", exact: true });
-    await expect(panel.getByRole("combobox", { name: "E2E 图片生成 模型群组", exact: true })).toContainText(CANGYUAN_BACKUP_IMAGE_GROUP);
+    await expect(panel.getByLabel("当前线路", { exact: true })).toContainText(CANGYUAN_BACKUP_IMAGE_GROUP);
+    await panel.getByRole("button", { name: "E2E 图片生成 线路", exact: true }).click();
+    const routes = panel.getByRole("dialog", { name: "E2E 图片生成 候选线路", exact: true });
+    const selectedRoute = routes.locator(`[data-route-id=${JSON.stringify(connection!.id)}]`);
+    await expect(selectedRoute).toHaveAttribute("data-route-group", CANGYUAN_BACKUP_IMAGE_GROUP);
+    await expect(selectedRoute.locator("[data-route-choice]")).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("Escape");
+    await expect(routes).toBeHidden();
     await expect(panel.getByRole("combobox", { name: "E2E 图片生成 模型", exact: false })).toContainText("codex-gpt-image-2-1k");
-    await expect(panel.getByLabel("画面比例", { exact: true })).toHaveValue("auto");
+    await expectParameterValue(panel.getByLabel("画面比例", { exact: true }), "auto");
     await expect(panel.getByRole("group", { name: "自动与输出分辨率快捷档位", exact: true })
       .getByRole("button", { name: "2K", exact: true })).toHaveAttribute("aria-pressed", "true");
     await expect(panel.getByLabel("生成张数", { exact: true })).toHaveValue("1");

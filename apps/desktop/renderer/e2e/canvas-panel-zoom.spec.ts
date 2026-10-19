@@ -1,6 +1,7 @@
 import { expect, test } from "./helpers/canvas-offline-test";
 import { bindScannedModelProtocols } from "../lib/scanned-model-protocols";
 import { floatingPanelGeometry } from "./floating-panel-geometry";
+import { expectParameterValue } from "./helpers/parameter-controls";
 
 test("参数浮卡不随画布缩放，后台扫描保持参数及滚动位置", async ({ page, request }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 960 });
@@ -49,7 +50,7 @@ test("参数浮卡不随画布缩放，后台扫描保持参数及滚动位置",
   const quality = panel.getByLabel("质量", { exact: true });
   const body = panel.locator(".node-config-popover-body");
   await expect(tiers).toBeAttached();
-  await expect(quality).toHaveValue("max");
+  await expectParameterValue(quality, "max");
   // The desktop drawer initializes on the first animation frame. Close it
   // after model controls are ready, before measuring layout or scroll position.
   if (await sidebar.getAttribute("aria-expanded") === "true") await sidebar.click();
@@ -71,8 +72,8 @@ test("参数浮卡不随画布缩放，后台扫描保持参数及滚动位置",
     await expect.poll(async () => (await floatingPanelGeometry(panel)).floatingError).toBeLessThanOrEqual(1);
     await panel.getByRole("button", { name: "关闭模型与参数面板", exact: true }).click({ trial: true });
     await expect(tiers.getByRole("button", { name: "4K", exact: true })).toHaveAttribute("aria-pressed", "true");
-    await expect(panel.getByLabel("输出分辨率预设", { exact: true })).toHaveValue("auto");
-    await expect(quality).toHaveValue("max");
+    await expectParameterValue(panel.getByLabel("输出分辨率预设", { exact: true }), "auto");
+    await expectParameterValue(quality, "max");
     await expect(panel.getByRole("combobox", { name: "精确尺寸", exact: true })).toHaveCount(0);
     await expect.poll(() => body.evaluate(element => element.scrollTop)).toBe(scrollTop);
   };

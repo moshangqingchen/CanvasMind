@@ -156,49 +156,31 @@ async function openPanel(
     connections,
     canvas,
     panel,
-    supplier: panel.getByRole("combobox", {
-      name: "面板测试 供应商",
-      exact: true,
-    }),
-    group: panel.getByRole("combobox", {
-      name: "面板测试 模型群组",
-      exact: true,
-    }),
+    route: panel.getByRole("button", { name: "面板测试 线路", exact: true }),
     model: panel.getByRole("combobox", { name: "面板测试 模型", exact: false }),
     quantity: panel.getByRole("spinbutton", { name: "数量", exact: true }),
     assertNoRuns: () => expect(submitted).toBe(0),
   };
 }
 
-async function chooseWithMouse(
+async function chooseRouteWithMouse(
   page: Page,
-  select: Locator,
-  value: string,
+  panel: Locator,
+  connectionId: string,
   control = false,
 ) {
   if (control) await page.keyboard.down("Control");
   try {
-    await select.click();
-    await expect
-      .poll(() => select.evaluate((element) => element.matches(":open")))
-      .toBe(true);
+    const trigger = panel.getByRole("button", { name: "面板测试 线路", exact: true });
+    await trigger.click();
+    const routes = panel.getByRole("dialog", { name: "面板测试 候选线路", exact: true });
+    await expect(routes).toBeVisible();
+    await routes.locator(`[data-route-id="${connectionId}"] [data-route-choice]`).click();
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await expect(trigger).toBeFocused();
   } finally {
     if (control) await page.keyboard.up("Control");
   }
-  const index = await select
-    .locator("option")
-    .evaluateAll(
-      (options, target) =>
-        options.findIndex(
-          (option) => (option as HTMLOptionElement).value === target,
-        ),
-      value,
-    );
-  expect(index).toBeGreaterThanOrEqual(0);
-  await page.keyboard.press("Home");
-  for (let i = 0; i < index; i++) await page.keyboard.press("ArrowDown");
-  await page.keyboard.press("Enter");
-  await expect(select).toHaveValue(value);
 }
 
 test("按住画布框选键切换供应商与模型后，面板仍可编辑和关闭", async ({
@@ -206,13 +188,13 @@ test("按住画布框选键切换供应商与模型后，面板仍可编辑和�
   request,
 }) => {
   const ui = await openPanel(page, request);
-  await chooseWithMouse(
+  await chooseRouteWithMouse(
     page,
-    ui.supplier,
-    ui.connections[2]!.supplierKey,
+    ui.panel,
+    ui.connections[2]!.id,
     true,
   );
-  await chooseWithMouse(page, ui.group, "标准", true);
+  await chooseRouteWithMouse(page, ui.panel, ui.connections[3]!.id, true);
   await page.keyboard.down("Control");
   try {
     await ui.model.click();
@@ -251,12 +233,15 @@ test("点击模型列表外的供应商输入会收起模型菜单并保留输�
   const ui = await openPanel(page, request);
   await ui.model.click();
   await expect(ui.panel.getByRole("listbox")).toBeVisible();
-  // Search, model IDs and prices make the menu taller than the old name-only
-  // list. The quantity field can be covered; the supplier stays outside it.
-  await ui.supplier.click();
+  // The route entry replaces the supplier select and stays outside the model
+  // menu. Its own surface focuses the current route until Escape restores it.
+  await ui.route.click();
   await expect(ui.model).toHaveAttribute("aria-expanded", "false");
-  await expect(ui.supplier).toBeFocused();
+  const routes = ui.panel.getByRole("dialog", { name: "面板测试 候选线路", exact: true });
+  await expect(routes.locator(`[data-route-id="${ui.connections[0]!.id}"] [data-route-choice]`)).toBeFocused();
   await page.keyboard.press("Escape");
+  await expect(routes).toBeHidden();
+  await expect(ui.route).toBeFocused();
   await ui.quantity.click();
   await expect(ui.quantity).toBeFocused();
   await ui.quantity.fill("3");
@@ -330,12 +315,12 @@ test("异步模型目录返回后反复切换供应商与群组仍可编辑参�
 }) => {
   const ui = await openPanel(page, request, 600);
   for (const index of [2, 0, 2]) {
-    await chooseWithMouse(
+    await chooseRouteWithMouse(
       page,
-      ui.supplier,
-      ui.connections[index]!.supplierKey,
+      ui.panel,
+      ui.connections[index]!.id,
     );
-    await chooseWithMouse(page, ui.group, "标准");
+    await chooseRouteWithMouse(page, ui.panel, ui.connections[index + 1]!.id);
     await ui.model.click();
     await expect(ui.model).toHaveAttribute("aria-expanded", "true");
     // Open before the delayed catalog arrives. Filling the automatic model
@@ -358,8 +343,13 @@ test("异步模型目录返回后反复切换供应商与群组仍可编辑参�
     .getByRole("button", { name: "打开 面板测试 模型与参数", exact: true })
     .click();
   await expect(ui.quantity).toHaveValue("2");
-  await expect(ui.supplier).toHaveValue(ui.connections[2]!.supplierKey);
-  await expect(ui.group).toHaveValue("标准");
+  await expect(ui.panel.getByLabel("当前线路", { exact: true })).toContainText("面板供应商乙 › 标准");
+  await ui.route.click();
+  await expect(ui.panel.locator(`[data-route-id="${ui.connections[3]!.id}"] [data-route-choice]`)).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Escape");
+  await expect.poll(async () =>
+    (await (await request.get(`/api/canvas/${ui.canvas.id}`)).json()).graph.nodes[0].data.connectionId,
+  ).toBe(ui.connections[3]!.id);
   ui.assertNoRuns();
 });
 

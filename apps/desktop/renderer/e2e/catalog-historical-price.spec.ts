@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type { ModelDescriptor } from "@super-canvas/providers";
 import { installNeuralFixture } from "./helpers/neural-fixture";
+import { openParameterDetails } from "./helpers/parameter-controls";
 
 const sampledAt = "2026-10-10T03:04:05.000Z";
 const historicalId = "retained-unchanged-model-full-id";
@@ -38,6 +39,7 @@ test("型号菜单、参数面板和供应商详情显示旧价格原采样时�
   await expect(page.locator(".react-flow__node")).toHaveCount(1);
   await page.getByRole("button", { name: "打开 历史报价 模型与参数", exact: true }).click();
   const panel = page.getByRole("dialog", { name: "历史报价 模型与参数", exact: true });
+  await openParameterDetails(panel, "价格明细");
   const quote = panel.getByLabel("当前参数价格", { exact: true });
   await expect(quote).toContainText("上次价格");
   await expect(quote).toContainText(`采样时间 ${sampledAt}`);

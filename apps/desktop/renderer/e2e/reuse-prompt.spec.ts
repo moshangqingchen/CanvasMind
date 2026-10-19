@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { CANGYUAN_IMAGE_CONNECTOR } from "../lib/provider-presets";
+import { expectParameterValue } from "./helpers/parameter-controls";
 
 const originalPrompt = "保留原图版式。\n标题：新品上市，文字必须准确。";
 
@@ -121,7 +122,7 @@ for (const { history, kind, failed } of [
       await page.getByRole("button", { name: `打开 ${kind === "video" ? "视频生成" : "图片生成"} 模型与参数`, exact: true }).click();
       const panel = page.getByRole("dialog", { name: `${kind === "video" ? "视频生成" : "图片生成"} 模型与参数`, exact: true });
       await expect(panel.getByRole("combobox", { name: `${kind === "video" ? "视频生成" : "图片生成"} 模型`, exact: false })).toContainText("原任务模型");
-      await expect(panel.getByLabel("质量", { exact: true })).toHaveValue("low");
+      await expectParameterValue(panel.getByLabel("质量", { exact: true }), "low");
       expect((await snapshot()).nodes.find((node: { id: string }) => node.id === created.id).data).toMatchObject(fixture.configuration);
       expect(submissions).toBe(0);
     } finally {

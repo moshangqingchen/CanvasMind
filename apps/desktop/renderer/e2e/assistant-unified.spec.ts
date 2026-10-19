@@ -4,6 +4,7 @@ import { resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { installAssistantFixture, assistantCanvasId, assistantModelKey } from "./helpers/assistant-fixture";
 import { agentPanel, expectAgentModel } from "./helpers/agent-controls";
+import { expectParameterSegmentValue, expectParameterValue, openParameterDetails } from "./helpers/parameter-controls";
 
 for (const theme of ["dark", "light"] as const) test(`${theme} 合一输入与真实参数控件，切换渠道并原样放入画布`, async ({ page }) => {
   const fixture = await installAssistantFixture(page, { theme, motion: false, channelParameters: true });
@@ -25,13 +26,14 @@ for (const theme of ["dark", "light"] as const) test(`${theme} 合一输入与�
   const card = panel.locator('article[class*="productionCard"]');
   await card.locator('details[class*="planStep"] > summary').click();
   const controls = card.getByRole("group", { name: "秋日主视觉 渠道与参数", exact: true });
-  await expect(controls.getByLabel("画面比例", { exact: true })).toHaveValue("9:16");
-  await expect(controls.getByRole("group", { name: "自动与输出分辨率快捷档位", exact: true }).getByRole("button", { name: "4K", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expectParameterValue(controls.getByLabel("画面比例", { exact: true }), "9:16");
+  await expectParameterSegmentValue(controls.getByRole("group", { name: "自动与输出分辨率快捷档位", exact: true }), "4K");
   await controls.getByLabel("秋日主视觉 供应商", { exact: true }).selectOption("fixture-image-b");
-  await expect(controls.getByLabel("画面比例", { exact: true })).toHaveValue("9:16");
-  await expect(controls.getByRole("group", { name: "自动与输出分辨率快捷档位", exact: true }).getByRole("button", { name: "2K", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await expect(controls.getByLabel("质量", { exact: true })).toHaveValue("standard");
+  await expectParameterValue(controls.getByLabel("画面比例", { exact: true }), "9:16");
+  await expectParameterSegmentValue(controls.getByRole("group", { name: "自动与输出分辨率快捷档位", exact: true }), "2K");
+  await expectParameterValue(controls.getByLabel("质量", { exact: true }), "standard");
   await expect(controls.getByRole("status")).toContainText("已按所选型号的合法默认值调整");
+  await openParameterDetails(controls, "更多参数");
   await controls.getByLabel("种子", { exact: true }).fill("77");
   await controls.getByRole("combobox", { name: "秋日主视觉 执行模型", exact: true }).click();
   await expect(page.getByRole("listbox", { name: "秋日主视觉 执行模型 可选模型", exact: true })).toContainText("fixture.image.full-id-b");
@@ -53,8 +55,9 @@ for (const theme of ["dark", "light"] as const) test(`${theme} 合一输入与�
   await page.getByRole("button", { name: "打开 秋日主视觉 模型与参数", exact: true }).click();
   const nodePanel = page.getByRole("dialog", { name: "秋日主视觉 模型与参数", exact: true });
   await expect(nodePanel.getByRole("combobox", { name: "秋日主视觉 模型", exact: false })).toContainText("fixture.image.full-id-b");
-  for (const [label, value] of [["画面比例", "9:16"], ["质量", "standard"], ["种子", "77"]]) await expect(nodePanel.getByLabel(label!, { exact: true })).toHaveValue(value!);
-  await expect(nodePanel.getByRole("group", { name: "自动与输出分辨率快捷档位", exact: true }).getByRole("button", { name: "2K", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await openParameterDetails(nodePanel, "更多参数");
+  for (const [label, value] of [["画面比例", "9:16"], ["质量", "standard"], ["种子", "77"]]) await expectParameterValue(nodePanel.getByLabel(label!, { exact: true }), value!);
+  await expectParameterSegmentValue(nodePanel.getByRole("group", { name: "自动与输出分辨率快捷档位", exact: true }), "2K");
   await page.screenshot({ path: join(output, `${theme}-materialized-node-parameters.png`) });
   expect(fixture.calls.map(call => call.action)).toEqual(["turn:auto", "update", "materialize"]);
   fixture.assertSafe();

@@ -6,6 +6,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createCanvasStateVisualFixture } from "./helpers/canvas-state-visual-fixture";
 import { canvasHandlePoint, waitForCanvasViewportStable } from "./canvas-test-actions";
+import { expectParameterValue, openParameterDetails, readParameterOptions } from "./helpers/parameter-controls";
 
 // Phase5 captures reuse the exact screen/asset fixtures; normal regression
 // runs retain their default browser preference. No hidden theme mutation.
@@ -177,16 +178,20 @@ async function assertImageControls(panel: Locator) {
   await expect(tiers.getByRole("button")).toHaveText(["自动", "1K", "2K", "4K"]);
   expect(await tiers.getByRole("button").evaluateAll(elements => Math.max(...elements.map(x => x.getBoundingClientRect().top)) - Math.min(...elements.map(x => x.getBoundingClientRect().top)))).toBeLessThan(1);
   const size = panel.getByLabel("输出分辨率预设", { exact: true });
-  await expect(size.locator('option[value="3840x2160"]')).toContainText("4K · 16:9 · 3840 × 2160");
+  const fourK = (await readParameterOptions(size)).filter(option => option.value === "3840x2160");
+  expect(fourK).toHaveLength(1);
+  for (const detail of ["4K", "16:9", "3840 × 2160"]) expect(fourK[0]!.label).toContain(detail);
+  await openParameterDetails(panel, "自定义宽高");
   for (const [label, value] of [["图片宽度", "3840"], ["图片高度", "2160"], ["质量", "max"]] as const) {
     const control = panel.getByLabel(label, { exact: true });
-    await control.scrollIntoViewIfNeeded(); await expect(control).toBeVisible(); await expect(control).toHaveValue(value);
+    await control.scrollIntoViewIfNeeded(); await expect(control).toBeVisible(); await expectParameterValue(control, value);
   }
-  const mode = panel.getByRole("group", { name: "生成模式", exact: true });
+  const mode = panel.getByLabel("生成模式", { exact: true });
   await expect(mode).toBeAttached(); await mode.scrollIntoViewIfNeeded({ timeout: 10_000 }); await expect(mode).toBeVisible();
   // Price labels and values share a single div; exact text matching the label
   // alone cannot match that element. Use the real public price-group label.
   const price = panel.getByLabel("当前参数价格", { exact: true });
+  await openParameterDetails(panel, "价格明细");
   await expect(price).toBeAttached(); await price.scrollIntoViewIfNeeded({ timeout: 10_000 }); await expect(price).toBeVisible();
   await expect(price).toContainText("型号报价"); await expect(price).toContainText("本次预计费用");
   // The evidence disclosure has its own heading; assert the two price rows.

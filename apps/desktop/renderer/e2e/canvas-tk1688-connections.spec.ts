@@ -2,6 +2,7 @@ import { expect, test, type APIRequestContext, type Page } from "./helpers/canva
 import { parseTk1688Marketplace } from "@super-canvas/providers";
 import type { ProviderConnectionView } from "../lib/client-api";
 import type { SupplierRecord } from "../lib/client-suppliers";
+import { openParameterDetails } from "./helpers/parameter-controls";
 
 const label = "词元连接验收";
 const baseModel = "gpt-image-2.5-sunburst";
@@ -82,8 +83,20 @@ async function fixture(page: Page, request: APIRequestContext, selectedUsage: "c
   };
   await reopen();
   const panel = page.getByRole("dialog", { name: `${label} 模型与参数`, exact: true });
-  const group = panel.getByRole("combobox", { name: `${label} 模型群组`, exact: true });
-  const apiConnection = panel.getByRole("combobox", { name: `${label} API 连接`, exact: true });
+  const routeTrigger = panel.getByRole("button", { name: `${label} 线路`, exact: true });
+  const routes = panel.getByRole("dialog", { name: `${label} 候选线路`, exact: true });
+  const routeRows = routes.locator('[data-route-group="default"]');
+  const routeChoice = (id: string) => routes.locator(`[data-route-id="${id}"] [data-route-choice]`);
+  const openRoutes = async () => { await routeTrigger.click(); await expect(routes).toBeVisible(); };
+  const closeRoutes = async () => { await page.keyboard.press("Escape"); await expect(routes).toBeHidden(); await expect(routeTrigger).toBeFocused(); };
+  const expectRouteSelection = async (id: string, count: number) => {
+    await expect(panel.getByLabel("当前线路", { exact: true })).toContainText("词元 › default");
+    await openRoutes();
+    await expect(routeRows).toHaveCount(count);
+    await expect(routes.locator("[data-route-choice]")).toHaveCount(count);
+    await expect(routeChoice(id)).toHaveAttribute("aria-pressed", "true");
+    await closeRoutes();
+  };
   const picker = panel.getByRole("combobox", { name: `${label} 模型`, exact: false });
   const readNode = async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data;
   const chooseMerchant48 = async () => {
@@ -92,35 +105,41 @@ async function fixture(page: Page, request: APIRequestContext, selectedUsage: "c
     await list.getByRole("option", { name: baseModel, exact: true }).click();
     await list.getByRole("option", { name: "商家 48 · 渠道 262", exact: true }).click();
   };
-  return { panel, group, apiConnection, picker, selected, backup, state, readNode, chooseMerchant48, reopen,
+  return { panel, routes, routeRows, routeChoice, openRoutes, closeRoutes, expectRouteSelection, picker, selected, backup, state, readNode, chooseMerchant48, reopen,
     reverseConnections: () => { connections = [...connections].reverse(); } };
 }
 
 for (const selectedUsage of ["canvas", "agent"] as const) {
   test(`词元同 Key 图片与文本用途副本折叠，已保存的 ${selectedUsage} 连接和商家型号保持不变`, async ({ page, request }, testInfo) => {
     const scene = await fixture(page, request, selectedUsage);
-    const { panel, group, apiConnection, picker, selected, readNode } = scene;
-    await expect(group).toHaveValue("default");
-    await expect(group.locator('option[value="default"]')).not.toContainText(/\d+\s*个连接/u);
-    await expect(apiConnection).toHaveCount(0);
+    const { panel, picker, selected, readNode } = scene;
+    // The unified route list replaces the group/API selects; one real route
+    // proves that canvas/agent copies of this same account key stay folded.
+    await scene.expectRouteSelection(selected.id, 1);
     await expect(picker).toContainText("商家 47 · 渠道 261");
-    const quote = panel.getByLabel("当前供应商报价", { exact: true });
+    const quote = panel.getByLabel("当前型号单价", { exact: true });
     await expect(quote).toHaveCount(1);
-    await expect(quote.getByRole("term")).toHaveText(["供应商", "概括价", "余额"]);
-    await expect(quote.getByRole("definition")).toHaveText(["词元", "0.206688 CNY / 次（目录快照）", "余额未读取"]);
-    await expect(panel.getByLabel("当前供应商报价", { exact: true })).not.toContainText(/USD|\$/u);
+    await expect(quote.getByTestId("param-panel-unit-price")).toHaveText("0.206688 CNY / 次（目录快照）");
+    await expect(quote).not.toContainText(/USD|\$/u);
+    await openParameterDetails(panel, "价格明细");
+    const details = panel.getByRole("region", { name: "型号报价", exact: true });
+    await expect(details.getByRole("term").filter({ hasText: /^固定价$/u })).toBeVisible();
+    await expect(details.getByRole("definition").filter({ hasText: "0.206688 CNY / 次" })).toHaveCount(1);
+    await openParameterDetails(panel, "账号余额与消耗");
+    const billing = panel.getByLabel("供应商余额与消耗", { exact: true });
+    await expect(billing.locator("span").filter({ hasText: /^余额\s*未读取$/u })).toHaveCount(1);
     expect(await readNode()).toMatchObject({ connectionId: selected.id, model: merchant47 });
     await scene.chooseMerchant48();
     await expect.poll(readNode).toMatchObject({ connectionId: selected.id, model: merchant48 });
     scene.reverseConnections();
     await page.reload();
     await page.getByRole("button", { name: `打开 ${label} 模型与参数`, exact: true }).click();
-    await expect(apiConnection).toHaveCount(0);
+    await scene.expectRouteSelection(selected.id, 1);
     await expect(picker).toContainText("商家 48 · 渠道 262");
     expect(await readNode()).toMatchObject({ connectionId: selected.id, model: merchant48 });
     await page.goto("/");
     await scene.reopen();
-    await expect(apiConnection).toHaveCount(0);
+    await scene.expectRouteSelection(selected.id, 1);
     await expect(picker).toContainText("商家 48 · 渠道 262");
     expect(await readNode()).toMatchObject({ connectionId: selected.id, model: merchant48 });
     expect(scene.state).toEqual({ paidCalls: 0, providerWrites: 0 });
@@ -130,21 +149,19 @@ for (const selectedUsage of ["canvas", "agent"] as const) {
 
 test("词元不同 Key 保留独立连接选择，显示账号名称并保存准确连接与商家", async ({ page, request }, testInfo) => {
   const scene = await fixture(page, request, "agent", true);
-  const { panel, group, apiConnection, picker, selected, backup, readNode } = scene;
-  await expect(group.locator('option[value="default"]')).toContainText("2 个连接");
-  await expect(apiConnection).toHaveValue(selected.id);
-  await expect(apiConnection.locator("option")).toHaveCount(2);
-  await expect(apiConnection.locator(`option[value="${selected.id}"]`)).toHaveText(selected.name);
-  await expect(apiConnection.locator(`option[value="${backup.id}"]`)).toHaveText(backup.name);
-  await apiConnection.selectOption(backup.id);
+  const { panel, picker, selected, backup, readNode } = scene;
+  await scene.expectRouteSelection(selected.id, 2);
+  await scene.openRoutes();
+  await expect(scene.routeChoice(selected.id)).toHaveAccessibleName(new RegExp(selected.name, "u"));
+  await expect(scene.routeChoice(backup.id)).toHaveAccessibleName(new RegExp(backup.name, "u"));
+  await scene.routeChoice(backup.id).click();
   await expect.poll(readNode).toMatchObject({ connectionId: backup.id, model: merchant47 });
   await scene.chooseMerchant48();
   await expect.poll(readNode).toMatchObject({ connectionId: backup.id, model: merchant48 });
   scene.reverseConnections();
   await page.reload();
   await page.getByRole("button", { name: `打开 ${label} 模型与参数`, exact: true }).click();
-  await expect(apiConnection).toHaveValue(backup.id);
-  await expect(apiConnection.locator("option")).toHaveCount(2);
+  await scene.expectRouteSelection(backup.id, 2);
   await expect(picker).toContainText("商家 48 · 渠道 262");
   expect(await readNode()).toMatchObject({ connectionId: backup.id, model: merchant48 });
   expect(scene.state).toEqual({ paidCalls: 0, providerWrites: 0 });

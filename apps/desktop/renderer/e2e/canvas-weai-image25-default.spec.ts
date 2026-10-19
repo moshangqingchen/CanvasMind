@@ -1,6 +1,7 @@
 import { expect, test } from "./helpers/canvas-offline-test";
 import { imageSizeOptions, type ModelDescriptor } from "@super-canvas/providers";
 import type { ProviderConnectionView } from "../lib/client-api";
+import { chooseParameterOption, expectParameterValue } from "./helpers/parameter-controls";
 
 for (const entry of ["toolbar", "context-menu"]) {
   test(`新建默认 We-AI Image 2.5 4K max，刷新和手选保持：${entry}`, async ({ page, request }, info) => {
@@ -61,35 +62,49 @@ for (const entry of ["toolbar", "context-menu"]) {
       const open = () => page.getByRole("button", { name: "打开 图片生成 模型与参数", exact: true }).click();
       await open();
       const panel = page.getByRole("dialog", { name: "图片生成 模型与参数", exact: true });
-      const supplier = panel.getByRole("combobox", { name: "图片生成 供应商", exact: true });
+      const routeTrigger = panel.getByRole("button", { name: "图片生成 线路", exact: true });
+      const routes = panel.getByRole("dialog", { name: "图片生成 候选线路", exact: true });
+      const routeRow = (connection: ProviderConnectionView) => routes
+        .locator(`[data-route-supplier="${connection.config.supplierKey}"] [data-route-id="${connection.id}"]`);
+      const expectSelectedRoute = async (connection: ProviderConnectionView) => {
+        await expect(panel.getByLabel("当前线路", { exact: true })).toContainText(String(connection.config.modelGroup));
+        await routeTrigger.click();
+        await expect(routes).toBeVisible();
+        await expect(routeRow(connection)).toHaveAttribute("data-route-group", String(connection.config.modelGroup));
+        await expect(routeRow(connection).locator("[data-route-choice]")).toHaveAttribute("aria-pressed", "true");
+        await page.keyboard.press("Escape");
+        await expect(routes).toBeHidden();
+      };
       const quality = panel.getByLabel("质量", { exact: true });
       const size = panel.getByLabel("输出分辨率预设", { exact: true });
-      await expect(supplier).toHaveValue("weai");
+      await expectSelectedRoute(weai);
       await expect(panel.getByRole("combobox", { name: "图片生成 模型", exact: false })).toContainText("Image 2.5 sunburst");
-      await expect(quality).toHaveValue("max");
-      await expect(size).toHaveValue("2880x2880");
+      await expectParameterValue(quality, "max");
+      await expectParameterValue(size, "2880x2880");
       await expect.poll(() => scans).toBeGreaterThan(0);
       await page.reload();
       await open();
-      await expect(quality).toHaveValue("max");
-      await expect(size).toHaveValue("2880x2880");
+      await expectParameterValue(quality, "max");
+      await expectParameterValue(size, "2880x2880");
       expect((await saved()).find(node => node.id === "existing")?.data).toMatchObject({
         model: "gpt-image-2.5-flare", connectionId: weai.id, parameters: existingParameters,
       });
-      await quality.selectOption("high");
+      await chooseParameterOption(quality, "high");
       await panel.getByRole("group", { name: "自动与输出分辨率快捷档位" }).getByRole("button", { name: "2K", exact: true }).click();
-      await size.selectOption("2048x2048");
+      await chooseParameterOption(size, "2048x2048");
       await expect.poll(async () => (await saved()).find(node => node.id !== "existing")?.data.parameters)
         .toMatchObject({ quality: "high", size: "2048x2048", size_tier: "2K" });
       await page.reload();
       await open();
-      await expect(quality).toHaveValue("high");
-      await expect(size).toHaveValue("2048x2048");
-      await supplier.selectOption("custom-manual-default");
+      await expectParameterValue(quality, "high");
+      await expectParameterValue(size, "2048x2048");
+      await routeTrigger.click();
+      await expect(routes).toBeVisible();
+      await routeRow(other).locator("[data-route-choice]").click();
       await expect.poll(async () => (await saved()).find(node => node.id !== "existing")?.data.connectionId).toBe(other.id);
       await page.reload();
       await open();
-      await expect(supplier).toHaveValue("custom-manual-default");
+      await expectSelectedRoute(other);
       await expect(panel.getByRole("combobox", { name: "图片生成 模型", exact: false })).toContainText("手选图片模型");
       expect(submissions).toBe(0);
       await page.screenshot({ path: info.outputPath("weai-default-and-manual-choice.png") });

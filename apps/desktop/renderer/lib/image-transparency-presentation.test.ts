@@ -18,8 +18,8 @@ describe("exact image transparency facts in the parameter panel", () => {
     expect(html).toContain(label);expect(html).toContain(info.note);expect(html).not.toContain("旧透明失败摘要");
     expect(onChange).not.toHaveBeenCalled();expect(current.background).toBe("transparent");
     if(status==="rejected"||status==="unverified"){
-      expect(html).not.toContain(">透明模式</button>");expect(html).toContain("原值继续保留");
-    }else expect(html).toContain(">透明模式</button>");
+      expect(html).not.toContain("><span>透明模式</span></button>");expect(html).toContain("原值继续保留");
+    }else expect(html).toContain("><span>透明模式</span></button>");
   });
   it("does not claim a result for missing evidence", () => {
     expect(imageTransparencyEvidenceNote()).toBeUndefined();
