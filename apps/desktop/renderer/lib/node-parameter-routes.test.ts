@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { ModelDescriptor } from "@super-canvas/providers";
 import type { SupplierBillingSnapshot } from "@super-canvas/db";
-import { nodeParameterRouteBalance, nodeParameterRouteGroups, nodeParameterRoutePath, nodeParameterRouteRows, type NodeParameterRoute } from "./node-parameter-routes";
+import { nodeParameterRouteBalance, nodeParameterRouteGroups, nodeParameterRoutePath, nodeParameterRouteRows, nodeParameterRouteSharedSupplierId, type NodeParameterRoute } from "./node-parameter-routes";
+import { billingCompact } from "./supplier-billing-display";
 
 const model = (currency: string, unitAmount: number): ModelDescriptor => ({
   id: "shared-full-model", name: "Shared model", operations: ["image.generate"],
@@ -64,12 +65,106 @@ describe("parameter route menu display projection", () => {
     expect(rows[0]?.shortLabel).toBe("图片组 · 主连接");
     expect(rows[0]?.path).toBe("供应商 A › 图片组 › 供应商 A · 主连接");
     expect(rows[0]?.switchLabel).toBe("同型号");
+    expect(rows[0]?.sameModel).toBe(true);
     expect(rows[1]?.shortLabel).toBe("图片组");
     expect(rows[1]?.switchLabel).toBe("切换后将使用：共同显示名");
     expect(rows[1]?.switchModelId).toBe("different-model");
-    expect(rows[2]?.switchLabel).toBe("切换后将使用：—");
+    expect(rows[1]?.sameModel).toBe(false);
+    expect(rows[2]?.switchLabel).toBeUndefined();
+    expect(rows[2]?.sameModel).toBe(false);
     expect(rows[3]?.shortLabel).toBe("图片组 · 主连接");
-    expect(nodeParameterRouteRows([candidates[2]!], "unknown", "—")[0]?.switchLabel).toBe("切换后将使用：—");
+    expect(nodeParameterRouteRows([candidates[2]!], "unknown", "—")[0]?.switchLabel).toBeUndefined();
+    expect(nodeParameterRouteRows([{ ...candidates[2]!, switchModelId: "", switchModelName: "过期名称" }], "unknown")[0]?.switchLabel).toBeUndefined();
+  });
+
+  it("marks only existing exact full switch IDs as the same model, never fallback placeholders or display names", () => {
+    const route = (switchModelId?: string): NodeParameterRoute => ({ ...connections[0]!, switchModelId, switchModelName: "共同显示名" });
+    for (const [switchModelId, currentModel, sameModel] of [
+      ["current-model", "current-model", true],
+      ["current-model-4K", "current-model", false],
+      ["different-model", "current-model", false],
+      ["different-model", "共同显示名", false],
+      [undefined, "—", false],
+      [undefined, undefined, false],
+      ["", "", false],
+      ["current-model", undefined, false],
+    ] as const) {
+      const row = nodeParameterRouteRows([route(switchModelId)], "", currentModel)[0]!;
+      expect(row.sameModel).toBe(sameModel);
+      expect(row.switchLabel === "同型号").toBe(sameModel);
+    }
+  });
+
+  it("uses the longer normalized group or connection prefix once, retaining unrelated names separately", () => {
+    const route = (name: string, groupLabel: string): NodeParameterRoute => ({ ...connections[0]!, name, groupLabel });
+    for (const [name, groupLabel, primaryLabel, secondaryLabel] of [
+      ["供应商 A · 图片组", "图片组", "图片组", undefined],
+      ["供应商 A › 图片组-备用", "图片组", "图片组-备用", undefined],
+      ["图片组", "图片组-高质量", "图片组-高质量", undefined],
+      [" 供应商 A · · 图片组 › ", " · 供应商 A › 图片组 · ", "图片组", undefined],
+      ["供应商 A 主连接", "图片组", "图片组", "主连接"],
+    ] as const) {
+      const candidate = route(name, groupLabel);
+      const before = JSON.stringify(candidate);
+      const row = nodeParameterRouteRows([candidate], candidate.id)[0]!;
+      expect([row.primaryLabel, row.secondaryLabel]).toEqual([primaryLabel, secondaryLabel]);
+      expect(row.path).toBe(`供应商 A › ${groupLabel} › ${name.trim()}`);
+      expect(JSON.stringify(candidate)).toBe(before);
+    }
+  });
+
+  it("keeps duplicate group IDs and same-group connection short IDs visibly distinct", () => {
+    const rows = nodeParameterRouteRows(connections, "same-prefix-1");
+    expect(rows.map(row => row.primaryLabel)).toEqual(["图片组", "图片组", "图片组"]);
+    expect(rows.map(row => row.groupIdLabel)).toEqual(["stable-7", "stable-7", "stable-8"]);
+    expect(rows.map(row => row.secondaryLabel)).toEqual(["同名连接 · same-prefix-1", "同名连接 · same-prefix-2", "其他连接"]);
+    const repeated = connections.slice(0, 2).map(connection => ({ ...connection, name: "供应商 A · 图片组" }));
+    const repeatedRows = nodeParameterRouteRows(repeated, "same-prefix-1");
+    expect(repeatedRows.map(row => row.primaryLabel)).toEqual(["图片组 · same-prefix-1", "图片组 · same-prefix-2"]);
+    expect(repeatedRows.every(row => row.secondaryLabel === undefined)).toBe(true);
+    const normalizedGroups = [
+      { ...connections[0]!, name: "图片组-备用", groupLabel: "供应商 A · 图片组" },
+      { ...connections[2]!, groupLabel: "图片组" },
+      { ...connections[2]!, id: "separate-supplier", supplier: "supplier-b", groupLabel: "图片组" },
+    ];
+    const normalizedRows = nodeParameterRouteRows(normalizedGroups, "");
+    expect(normalizedRows.map(row => row.primaryLabel)).toEqual(["图片组-备用", "图片组", "图片组"]);
+    expect(normalizedRows.map(row => row.groupIdLabel)).toEqual(["stable-7", "stable-8", undefined]);
+  });
+
+  it("keeps duplicate group identity separate from a long clamped display name", () => {
+    const groupLabel = "极长的分组显示名称需要在窄屏下折行并截断".repeat(12);
+    const candidates = [connections[0]!, connections[2]!].map(connection => ({ ...connection, groupLabel, name: groupLabel }));
+    const rows = nodeParameterRouteRows(candidates, "");
+    expect(rows.map(row => row.primaryLabel)).toEqual([groupLabel, groupLabel]);
+    expect(rows.map(row => row.groupIdLabel)).toEqual(["stable-7", "stable-8"]);
+    expect(rows.every(row => row.secondaryLabel === undefined)).toBe(true);
+  });
+
+  it("reproduces the legacy mojibake projection and preserves its original text in the new hierarchy", () => {
+    const candidate = { ...connections[0]!, supplierLabel: "供应商 A", name: "供应商 A Â· AZURE-openai", groupLabel: "AZURE-openai" };
+    const row = nodeParameterRouteRows([candidate], candidate.id)[0]!;
+    expect(row.shortLabel).toBe("AZURE-openai · Â· AZURE-openai");
+    expect(row.primaryLabel).toBe("AZURE-openai");
+    expect(row.secondaryLabel).toBe("Â· AZURE-openai");
+    expect(row.connectionLabel).toBe(candidate.name);
+    expect(row.path).toBe("供应商 A › AZURE-openai › 供应商 A Â· AZURE-openai");
+    expect(candidate.name).toBe("供应商 A Â· AZURE-openai");
+  });
+
+  it("lifts a balance only for one shared nonempty supplier account, including unread balances", () => {
+    const rows = nodeParameterRouteRows(connections, "same-prefix-1");
+    expect(nodeParameterRouteSharedSupplierId(rows)).toBe("account-a");
+    expect(nodeParameterRouteSharedSupplierId(rows.slice(0, 1))).toBe("account-a");
+    const candidates = (supplierId: string | undefined) => nodeParameterRouteRows([connections[0]!, { ...connections[1]!, supplierId }], "same-prefix-1");
+    expect(nodeParameterRouteSharedSupplierId(candidates("account-b"))).toBeUndefined();
+    expect(nodeParameterRouteSharedSupplierId(candidates(undefined))).toBeUndefined();
+    expect(nodeParameterRouteSharedSupplierId(candidates(""))).toBeUndefined();
+    expect(nodeParameterRouteSharedSupplierId(nodeParameterRouteRows(connections.map(connection => ({ ...connection, supplierId: " " })), ""))).toBeUndefined();
+    expect(nodeParameterRouteSharedSupplierId([])).toBeUndefined();
+    const accounts: Array<{ id: string; billing?: SupplierBillingSnapshot }> = [{ id: "account-a" }];
+    expect(billingCompact(accounts.find(account => account.id === nodeParameterRouteSharedSupplierId(rows))?.billing)).toBe("余额未读取");
+    expect(nodeParameterRouteSharedSupplierId(candidates("account-b"))).toBeUndefined();
   });
 
   it("shows only finite recorded compact balances, preserving zero, currency and stale evidence", () => {

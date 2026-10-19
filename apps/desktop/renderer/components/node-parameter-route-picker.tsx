@@ -4,7 +4,7 @@ import { useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent }
 import { Check, ChevronDown, ExternalLink } from "lucide-react";
 import type { SupplierBillingSnapshot } from "@super-canvas/db";
 import { billingCompact } from "../lib/supplier-billing-display";
-import { nodeParameterRouteBalance, nodeParameterRouteGroups, nodeParameterRoutePath, nodeParameterRouteRows, type NodeParameterRoute } from "../lib/node-parameter-routes";
+import { nodeParameterRouteBalance, nodeParameterRouteGroups, nodeParameterRoutePath, nodeParameterRouteRows, nodeParameterRouteSharedSupplierId, type NodeParameterRoute } from "../lib/node-parameter-routes";
 import { ModelPriceTable } from "./model-price-table";
 import { useAnchoredSurface } from "./ui/useAnchoredSurface";
 import styles from "./node-parameter-route-picker.module.css";
@@ -12,34 +12,76 @@ import styles from "./node-parameter-route-picker.module.css";
 type BillingAccount = { id: string; billing?: SupplierBillingSnapshot };
 type RouteRow = ReturnType<typeof nodeParameterRouteRows>[number];
 
-function RouteChoice({ row, balance, onChoose }: { row: RouteRow; balance: string; onChoose: (id: string) => void }) {
+function RouteChoice({ row, balance, sharedBalanceId, onChoose }: {
+  row: RouteRow;
+  balance: string;
+  sharedBalanceId?: string;
+  onChoose: (id: string) => void;
+}) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const connection = row.connection;
   const reasonId = useId();
   const switchId = useId();
   const quoteId = useId();
-  const details = `${row.path}\n分组 ID：${connection.group}\n连接 ID：${connection.id}\n${balance}\n同型号报价：${row.comparisonPrice}\n切换后将使用：${row.switchModelName}（${row.switchModelId}）${row.unavailableReason ? `\n${row.unavailableReason}` : ""}`;
-  return <li className={styles.row} data-route-id={connection.id} data-route-group={connection.group}>
+  const identityId = useId();
+  const balanceId = useId();
+  const switchDescription = connection.switchModelId ? `${row.sameModel ? "同型号；" : ""}切换后将使用：${row.switchModelName}（${connection.switchModelId}）` : undefined;
+  const visibleSwitchDescription = row.sameModel ? undefined : switchDescription;
+  const identityDescription = `${row.path}\n分组名称：${connection.groupLabel ?? connection.group}\n连接名称：${connection.name}\n分组 ID：${connection.group}\n连接 ID：${connection.id}`;
+  const details = [identityDescription, balance, `同型号报价：${row.comparisonPrice}`, switchDescription, row.unavailableReason].filter(Boolean).join("\n");
+  const rowBalance = sharedBalanceId ? undefined : balance;
+  const hasDetails = Boolean(connection.modelDescriptor || connection.modelQuote);
+  const descriptionIds = [identityId, quoteId, sharedBalanceId ?? (rowBalance ? balanceId : undefined),
+    switchDescription ? switchId : undefined, row.unavailableReason ? reasonId : undefined].filter(Boolean).join(" ");
+  return <li className={styles.row} data-route-id={connection.id} data-route-group={connection.group} data-route-current={row.current ? "true" : undefined}>
     <button type="button" className={styles.choice} data-route-choice="true"
       aria-label={`选择线路 ${row.path}`} aria-pressed={row.current} aria-disabled={Boolean(row.unavailableReason)}
-      aria-describedby={`${switchId} ${quoteId}${row.unavailableReason ? ` ${reasonId}` : ""}`}
+      aria-describedby={descriptionIds}
       title={details}
       onClick={() => { if (!row.unavailableReason) onChoose(connection.id); }}>
       <span className={styles.identity}>
-        <span className={styles.primary}><strong>{row.shortLabel}</strong>
-          <span className={styles.amount} id={quoteId} aria-label="同型号报价" title={row.comparisonPrice}>{row.comparisonPrice}</span>
+        <span className={styles.primary}><span className={styles.routeName}><strong>{row.primaryLabel}</strong>
           {row.current && <Check size={13} className={styles.current} aria-label="当前线路" />}
         </span>
-        <span className={styles.secondary}><small>{balance}</small>
-          <small id={switchId} aria-label={`切换后将使用：${row.switchModelName}（${row.switchModelId}）`}>{row.switchLabel}</small>
+          <span className={styles.amount} id={quoteId} aria-label="同型号报价" title={row.comparisonPrice}>{row.comparisonPrice}</span>
         </span>
+        {row.groupIdLabel && <small className={styles.groupIdentity}>{row.groupIdLabel}</small>}
+        {row.secondaryLabel && <small className={styles.connectionName}>{row.secondaryLabel}</small>}
+        {(rowBalance || visibleSwitchDescription) && <span className={styles.secondary}>
+          {rowBalance && <small id={balanceId}>{rowBalance}</small>}
+          {visibleSwitchDescription && <small id={switchId} aria-label={visibleSwitchDescription}>{row.switchLabel}</small>}
+        </span>}
         {row.unavailableReason && <small id={reasonId}>{row.unavailableReason}</small>}
       </span>
+      <span id={identityId} className={styles.visuallyHidden}>{identityDescription}</span>
+      {row.sameModel && switchDescription && <span id={switchId} className={styles.visuallyHidden}>{switchDescription}</span>}
     </button>
-    <details className={styles.details} open={detailsOpen} onToggle={event => setDetailsOpen(event.currentTarget.open)}>
-      <summary aria-label={`${row.path}价格明细`}>价格明细</summary>
+    {hasDetails && <details className={styles.details} open={detailsOpen} onToggle={event => setDetailsOpen(event.currentTarget.open)}>
+      <summary aria-label={`${row.path}价格明细`}>明细</summary>
       {detailsOpen && (connection.modelDescriptor ? <ModelPriceTable model={connection.modelDescriptor} /> : <p>{connection.modelQuote ?? "—"}</p>)}
-    </details>
+    </details>}
+  </li>;
+}
+
+function SupplierRoutes({ group, billingFor, onChoose }: {
+  group: ReturnType<typeof nodeParameterRouteGroups>[number];
+  billingFor: (connection: NodeParameterRoute) => SupplierBillingSnapshot | undefined;
+  onChoose: (id: string) => void;
+}) {
+  const balanceId = useId();
+  const sharedSupplierId = nodeParameterRouteSharedSupplierId(group.rows);
+  const sharedBalance = sharedSupplierId ? billingCompact(billingFor(group.rows[0]!.connection)) : undefined;
+  return <li className={styles.supplier} data-route-supplier={group.supplier}>
+    <section role="group" aria-label={`${group.label} 线路`} aria-describedby={sharedBalance ? balanceId : undefined}>
+      <div className={styles.supplierHeading}>
+        <h4 title={group.supplier}>{group.label}</h4><small>{group.rows.length} 条线路</small>
+      </div>
+      {sharedBalance && <p id={balanceId} className={styles.supplierBalance}>{sharedBalance}</p>}
+      <ul className={styles.rows} aria-label={`${group.label} 候选连接`}>
+        {group.rows.map(row => <RouteChoice key={row.connection.id} row={row} balance={billingCompact(billingFor(row.connection))}
+          sharedBalanceId={sharedBalance ? balanceId : undefined} onChoose={onChoose} />)}
+      </ul>
+    </section>
   </li>;
 }
 
@@ -85,6 +127,7 @@ export function NodeParameterRoutePicker({ label, active, connections, currentCo
     const selected = focusIntent.current === "last" ? buttons.at(-1) : focusIntent.current === "first" ? buttons[0]
       : buttons.find(button => button.getAttribute("aria-pressed") === "true") ?? buttons[0];
     selected?.focus({ preventScroll: true });
+    selected?.scrollIntoView({ block: "nearest" });
   }, [open]);
 
   const keyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -126,14 +169,7 @@ export function NodeParameterRoutePicker({ label, active, connections, currentCo
       role="dialog" aria-label={`${label} 候选线路`} aria-modal="false">
       <header className={styles.heading}><strong>选择线路</strong><span aria-label="报价比对型号" title={currentModel || "—"}>同型号报价</span></header>
       <ul className={styles.list} aria-label="候选线路">
-        {groups.map(group => <li key={group.supplier} className={styles.supplier} data-route-supplier={group.supplier}>
-          <section role="group" aria-label={`${group.label} 线路`}>
-            <h4 className={styles.supplierHeading} title={group.supplier}>{group.label}</h4>
-            <ul className={styles.rows} aria-label={`${group.label} 候选连接`}>
-              {group.rows.map(row => <RouteChoice key={row.connection.id} row={row} balance={billingCompact(billingFor(row.connection))} onChoose={choose} />)}
-            </ul>
-          </section>
-        </li>)}
+        {groups.map(group => <SupplierRoutes key={group.supplier} group={group} billingFor={billingFor} onChoose={choose} />)}
       </ul>
       {groups.length === 0 && <p className={styles.empty}>暂无连接，请先配置供应商。</p>}
       <button type="button" className={styles.manage} aria-label="管理供应商与密钥" onClick={() => { setOpen(false); onManage(); }}>

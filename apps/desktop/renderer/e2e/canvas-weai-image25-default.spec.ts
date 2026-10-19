@@ -51,6 +51,9 @@ for (const entry of ["toolbar", "context-menu"]) {
     const saved = async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes as { id: string; data: Record<string, unknown> }[];
     try {
       await page.goto(`/canvas/${canvas.id}`);
+      // The pane mounts before its loaded canvas can accept a context action.
+      // Keep the real right-click entry, after the same readiness as the toolbar.
+      await expect(page.getByRole("button", { name: "新建图片节点", exact: true })).toBeEnabled();
       if (entry === "toolbar") await page.getByRole("button", { name: "新建图片节点", exact: true }).click();
       else {
         await page.locator(".react-flow__pane").click({ button: "right", position: { x: 700, y: 520 } });

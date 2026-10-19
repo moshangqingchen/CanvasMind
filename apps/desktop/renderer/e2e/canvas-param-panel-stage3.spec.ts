@@ -79,10 +79,14 @@ test("stage3 单选项模式截图与线路详情键盘让权", async ({ page, r
   const trigger = panel.getByRole("button", { name: `${labels.a} 线路`, exact: true });
   await trigger.focus(); await trigger.press("Enter");
   const routes = panel.getByRole("dialog", { name: `${labels.a} 候选线路`, exact: true });
-  await expect(routes).toContainText("同型号");
+  const selectedRoute = routes.getByRole("button", { name: /^选择线路 /u, pressed: true });
+  await expect(selectedRoute).toHaveAccessibleDescription(/同型号；切换后将使用/u);
+  await expect(selectedRoute).toHaveAttribute("title", /同型号；切换后将使用/u);
+  await expect(routes.getByText("同型号", { exact: true })).toHaveCount(0);
   const detailSummaries = routes.locator("summary");
   expect(await detailSummaries.count()).toBeGreaterThan(0);
-  await expect(detailSummaries).toHaveText(Array.from({ length: await detailSummaries.count() }, () => "价格明细"));
+  await expect(detailSummaries).toHaveText(Array.from({ length: await detailSummaries.count() }, () => "明细"));
+  for (const summary of await detailSummaries.all()) await expect(summary).toHaveAccessibleName(/价格明细$/u);
   await capture(panel, "stage3-route-picker.png");
   await page.keyboard.press("Control+Enter"); expect(f.submissions).toHaveLength(0);
   await page.keyboard.press("Escape"); await expect(trigger).toBeFocused();

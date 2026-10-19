@@ -66,12 +66,25 @@ export default async function neuralGlobalSetup(config: FullConfig) {
   const guard = join(environment.root, "neural-loopback-only.cjs");
   const networkLog = join(output, "neural-server-external-attempts.jsonl");
   const requestLog = join(output, "neural-server-request-hosts.jsonl");
+  const localVersionLog = join(output, "neural-server-local-version-checks.jsonl");
   await writeFile(networkLog, "");
   await writeFile(requestLog, "");
+  await writeFile(localVersionLog, "");
   await writeFile(
     guard,
     `const net = require('node:net');
 const fs = require('node:fs');
+${process.env.NEURAL_DISABLE_VERSION_CHECK === "1" ? `const originalFetch = globalThis.fetch;
+globalThis.fetch = async function (input, init) {
+  const href = typeof input === 'string' ? input : input instanceof URL ? input.href : input?.url;
+  const method = init?.method ?? (typeof input === 'object' && !(input instanceof URL) ? input?.method : undefined) ?? 'GET';
+  if (href === 'https://registry.npmjs.org/-/package/next/dist-tags' && method === 'GET') {
+    fs.appendFileSync(${JSON.stringify(localVersionLog)}, JSON.stringify({ at: new Date().toISOString(), lookup: 'next-dist-tags', answeredLocally: true, status: 503 }) + '\\n');
+    return new Response(null, { status: 503 });
+  }
+  return Reflect.apply(originalFetch, this, [input, init]);
+};
+` : ""}
 require('node:diagnostics_channel').channel('undici:request:create').subscribe(({request}) => {
   let url; try { url = new URL(String(request.origin)); } catch { return; }
   if (['127.0.0.1', 'localhost', '::1', '[::1]'].includes(url.hostname)) return;

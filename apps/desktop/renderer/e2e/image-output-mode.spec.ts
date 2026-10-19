@@ -132,7 +132,7 @@ test("生成模式与编码按型号保存，未支持型号保持普通，返�
     await expect.poll(async () => Object.hasOwn((await f.saved()).parameters, "output_compression")).toBe(false);
     await expect(f.panel.getByText("透明背景 · PNG 原图", { exact: true })).toBeVisible();
     await expectLockedPng(f.panel);
-    const deliveryDirectory = "D:/project development/超级画布/.codex-logs/2026-10-18-param-panel/stage3";
+    const deliveryDirectory = process.env.PARAM_PANEL_SCREENSHOT_DIR ?? info.outputPath("screenshots");
     await mkdir(deliveryDirectory, { recursive: true });
     await f.panel.screenshot({ path: `${deliveryDirectory}/stage3-transparent-mode.png` });
     await page.reload(); await f.open();
