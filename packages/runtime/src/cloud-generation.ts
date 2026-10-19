@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { setTimeout as abortableDelay } from "node:timers/promises";
-import { decryptSecret, encryptSecret, fetchProviderJson, ProviderHttpError, providerFetch, withProviderSubmitTransport, type ProviderSubmitTransport, type ProviderSubmissionPhase } from "@super-canvas/providers";
+import { decryptSecret, distinctAssetSources, encryptSecret, fetchProviderJson, ProviderHttpError, providerFetch, withProviderSubmitTransport, type ProviderSubmitTransport, type ProviderSubmissionPhase } from "@super-canvas/providers";
 
 export interface CloudGenerationConfig { endpoint: string; encryptedToken: string }
 export interface CloudGenerationView { endpoint: string; tokenConfigured: boolean }
@@ -63,17 +63,18 @@ export async function testCloudGeneration(config?: CloudGenerationConfig | null)
 export const cloudSubmissionId = (idempotencyKey: string) => `cloud:${createHash("sha256").update(`${idempotencyKey}:0`).digest("hex")}`;
 export const isCloudSubmission = (id: unknown): boolean => typeof id === "string" && /^cloud:[a-f0-9]{64}$/.test(id);
 export async function uploadCloudReferences(config: CloudGenerationConfig, requestKey: string, assets: readonly { id: string; data?: Uint8Array; mimeType?: string }[]): Promise<string[]> {
-  const urls: string[] = [];
-  for (const asset of assets) {
+  const urls = new Map<string, string>();
+  const sources = distinctAssetSources(assets.map(asset => ({ ...asset, kind: "image" as const, mimeType: asset.mimeType ?? "" })));
+  for (const asset of sources) {
     if (!asset.data?.byteLength || !asset.mimeType?.startsWith("image/")) throw new Error("云端参考图缺少本地图片内容");
     const id = createHash("sha256").update(`${requestKey}:${asset.id}`).digest("hex");
     const response = await providerFetch(`${config.endpoint}/v1/references/${id}`, { method: "PUT", headers: { ...headers(config), "content-type": asset.mimeType }, body: new Uint8Array(asset.data), redirect: "error", signal: AbortSignal.timeout(120_000) });
     if (!response.ok) throw new Error(`云端参考图保存失败（HTTP ${response.status}），未提交生成`);
     const result = await response.json() as { url?: string };
     if (!result.url || new URL(result.url).origin !== config.endpoint) throw new Error("云端参考图地址无效，未提交生成");
-    urls.push(result.url);
+    urls.set(asset.id, result.url);
   }
-  return urls;
+  return assets.map(asset => urls.get(asset.id)!);
 }
 export interface CloudTransportOptions {
   fetch?: typeof fetch;

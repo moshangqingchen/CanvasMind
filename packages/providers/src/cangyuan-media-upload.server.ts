@@ -3,6 +3,7 @@ import type { FetchImplementation, ProviderAssetInput, ResolvedProviderConnectio
 import { assetToBlob, fetchProviderJson, mergeHeaders, parseDataUrl, providerFetch, ProviderHttpError, requireApiKey } from "./http.js";
 import { CANGYUAN_UPLOAD_LIMITS, cangyuanMediaUploadOrigin } from "./cangyuan-media-upload-contract.js";
 import { MaterialPreparationError, prepareMaterial } from "./material-preparation.js";
+import { distinctAssetSources } from "./asset-preparation-cache.js";
 
 export const cangyuanLocalMedia = (asset: ProviderAssetInput): boolean => asset.data !== undefined || asset.url?.startsWith("data:") === true;
 export function cangyuanMediaUploadInputIssues(assets: readonly ProviderAssetInput[]): ValidationIssue[] {
@@ -40,10 +41,11 @@ export async function uploadCangyuanMedia(connection: ResolvedProviderConnection
   if (!origin) throw new MaterialPreparationError("initialize", { detail: "沧元素材直传需要当前官方 API 来源" });
   const issues = cangyuanMediaUploadInputIssues(assets);
   if (issues.length) throw new MaterialPreparationError("read", { detail: issues.map(issue => issue.message).join("；") });
-  const fetch = options.fetch ?? providerFetch, key = requireApiKey(connection), result = [...assets];
+  const sources = distinctAssetSources(assets);
+  const fetch = options.fetch ?? providerFetch, key = requireApiKey(connection), urls = new Map<string, string>();
   // Validate all inputs before the first signing request.
-  const prepared = await Promise.all(assets.map(async (asset, index) => cangyuanLocalMedia(asset)
-    ? { index, asset, blob: await prepareMaterial("read", () => assetToBlob(asset, fetch)) } : undefined));
+  const prepared = await Promise.all(sources.map(async asset => cangyuanLocalMedia(asset)
+    ? { asset, blob: await prepareMaterial("read", () => assetToBlob(asset, fetch)) } : undefined));
   for (const item of prepared) {
     if (!item) continue;
     const data = new Uint8Array(await prepareMaterial("read", () => item.blob.arrayBuffer()));
@@ -58,8 +60,12 @@ export async function uploadCangyuanMedia(connection: ResolvedProviderConnection
     if (headers.some(([name, value]) => typeof value !== "string" || !name || /[\r\n]/u.test(name + value) || value.includes(key))) throw invalidTicket();
     await prepareMaterial("upload", () => fetchProviderJson(fetch, ticket.upload_url as string, { method: "PUT", headers: Object.fromEntries(headers) as Record<string, string>, body: data },
       { phase: "prepare", timeoutMs: options.requestTimeoutMs ?? 120_000, idempotent: true, allowEmpty: true }));
-    const { data: _local, ...asset } = item.asset;
-    result[item.index] = { ...asset, url: ticket.url };
+    urls.set(item.asset.id, ticket.url);
   }
-  return result;
+  return assets.map(asset => {
+    const url = urls.get(asset.id);
+    if (!url) return asset;
+    const { data: _local, ...publicAsset } = asset;
+    return { ...publicAsset, url };
+  });
 }

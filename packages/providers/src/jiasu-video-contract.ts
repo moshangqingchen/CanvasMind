@@ -287,11 +287,17 @@ export function normalizeJiasuVideoParameters(request: NormalizedRequest, model?
   if (source.size !== undefined && source.size !== "") p.size = source.size;
   for (const [kind, field] of [["image", "images"], ["video", "videos"], ["audio", "audios"]] as const) {
     const native = array(source[field]);
-    const known = new Set(native.map(item => typeof item === "string" ? item : record(item).url));
-    const values = [...native, ...(request.assets ?? []).filter(asset => asset.kind === kind && !known.has(asset.url)).map(asset => {
-      if (kind === "video" && (request.model === specialMinimax || request.model === "minimax-h3")) return { url: asset.url, duration_seconds: asset.durationSeconds };
-      return assetUrl(asset);
-    })];
+    const identity = (item: unknown) => {
+      const row = record(item), url = typeof item === "string" ? item : row.url;
+      return JSON.stringify([url, row.type === "first_frame" || row.type === "end_frame" ? row.type : "reference"]);
+    };
+    const known = new Set(native.map(identity)), values = [...native];
+    for (const asset of (request.assets ?? []).filter(asset => asset.kind === kind)) {
+      const item = kind === "video" && (request.model === specialMinimax || request.model === "minimax-h3")
+        ? { url: asset.url, duration_seconds: asset.durationSeconds } : assetUrl(asset);
+      const key = identity(item);
+      if (!known.has(key)) { known.add(key); values.push(item); }
+    }
     if (values.length) p[field] = values;
   }
   for (const field of ["materials", "face"] as const) if (source[field] !== undefined) p[field] = source[field];

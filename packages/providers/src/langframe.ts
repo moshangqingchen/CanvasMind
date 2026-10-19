@@ -3,6 +3,7 @@ import type { ModelDescriptor, NormalizedRequest, NormalizedTaskState, ProviderA
 import { assertValidResult, getProviderTaskId, withCanonicalModelFields } from "./contracts.js";
 import { assertSafeProviderEndpoint, assetToBlob, fetchProviderJson, mergeHeaders, parseDataUrl, providerFetch, ProviderHttpError, providerSubmitTransportActive, requireApiKey } from "./http.js";
 import { GenericRestAdapter, type GenericRestAdapterOptions, type RestConnectorConfig } from "./rest.js";
+import { distinctAssetSources } from "./asset-preparation-cache.js";
 
 export interface LangframeAdapterOptions extends Omit<GenericRestAdapterOptions, "config"> {
   /** Upload original bytes with the supplier's saved website session, never the SK. */
@@ -221,11 +222,14 @@ export class LangframeAdapter implements ProviderAdapter {
       const asset = assets[0]!, blob = await assetToBlob(asset, this.fetchImpl);
       parameters.image = `data:${blob.type || asset.mimeType};base64,${Buffer.from(await blob.arrayBuffer()).toString("base64")}`;
     } else if (!image && assets.length) {
-      parameters.media = await Promise.all(assets.map(async asset => {
+      const urls = new Map(distinctAssetSources(assets).map(asset => [asset.id, (async () => {
         const url = await publicReferenceUrl(asset.url) ?? (this.options.uploadReference ? await this.options.uploadReference(request.connectionId, asset) : undefined);
         const verified = await publicReferenceUrl(url);
         if (!verified) throw new Error("狼帧素材上传没有返回公开 HTTP(S) URL；生成尚未提交");
-        return { type: asset.kind === "image" ? "reference_image" : asset.kind === "video" ? "reference_video" : "audio", url: verified };
+        return verified;
+      })()]));
+      parameters.media = await Promise.all(assets.map(async asset => {
+        return { type: asset.kind === "image" ? "reference_image" : asset.kind === "video" ? "reference_video" : "audio", url: await urls.get(asset.id)! };
       }));
     }
     const clientTaskId = `lf-${createHash("sha256").update(`${request.connectionId}\0${request.idempotencyKey}`).digest("hex")}`;

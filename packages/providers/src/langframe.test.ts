@@ -104,6 +104,14 @@ describe("LangframeAdapter", () => {
     expect(validation.issues.some(issue => issue.code === "undeclared_frame_role")).toBe(true);
     expect(fetcher).not.toHaveBeenCalled();
   });
+  it("shares the in-flight upload of one original across repeated reference entries", async () => {
+    const upload = vi.fn(async () => "https://vipprompt.cn/uploads/source");
+    const fetcher = vi.fn(async () => json({ task_id: "video-original", status: "queued" }));
+    const adapter = new LangframeAdapter(new StaticConnectionResolver([connection()]), { uploadReference: upload, fetch: fetcher });
+    await adapter.submit(request({ model: video, operation: "video.generate", parameters: { duration: 5, resolution: "720P" }, assets: [image, { ...image }] }));
+    expect(upload).toHaveBeenCalledOnce();
+    expect(fetcher.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+  });
 
   it("recovers an interrupted POST by the preassigned identity using GET only, including after restart", async () => {
     const methods: string[] = [], urls: string[] = [];

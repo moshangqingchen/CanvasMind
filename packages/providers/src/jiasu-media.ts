@@ -2,6 +2,7 @@ import type { FetchImplementation, ProviderAssetInput, ResolvedProviderConnectio
 import { assetToBlob, fetchProviderJson, mergeHeaders, providerFetch, ProviderHttpError, requireApiKey } from "./http.js";
 import { jiasuImageOrigin } from "./jiasu-image-contract.js";
 import { MaterialPreparationError, prepareMaterial } from "./material-preparation.js";
+import { distinctAssetSources } from "./asset-preparation-cache.js";
 
 interface MediaOptions { fetch?: FetchImplementation; requestTimeoutMs?: number }
 interface UploadTicket { url?: string; put?: { url?: string; method?: string; headers?: Record<string, string> } }
@@ -21,16 +22,15 @@ export async function uploadJiasuMedia(connection: ResolvedProviderConnection, a
   const origin = jiasuImageOrigin(connection.baseUrl);
   if (!origin) throw new MaterialPreparationError("initialize", { detail: "佳速素材上传需要当前官方 API 来源" });
   const fetch = options.fetch ?? providerFetch;
-  const prepared: Array<{ index: number; blob: Blob; asset: ProviderAssetInput; name: string }> = [];
-  for (let index = 0; index < assets.length; index++) {
-    const asset = assets[index]!;
+  const prepared: Array<{ blob: Blob; asset: ProviderAssetInput; name: string }> = [];
+  for (const asset of distinctAssetSources(assets)) {
     // A URL-only public input is already usable, but explicit bytes take precedence.
     if (!asset.data && jiasuPublicMediaUrl(asset.url)) continue;
     const blob = await prepareMaterial("read", () => assetToBlob(asset, fetch));
     if (!blob.size || blob.size > 512 * 1024 * 1024) throw new MaterialPreparationError("read", { detail: "佳速每个直传素材必须大于零且不超过 512 MB" });
-    prepared.push({ index, blob, asset, name: asset.filename ?? `${asset.id}.${asset.mimeType.split("/")[1] ?? "bin"}` });
+    prepared.push({ blob, asset, name: asset.filename ?? `${asset.id}.${asset.mimeType.split("/")[1] ?? "bin"}` });
   }
-  const result = [...assets];
+  const urls = new Map<string, string>();
   // The documented limit is per initialization request, not an invented generation limit.
   for (let offset = 0; offset < prepared.length; offset += 20) {
     const batch = prepared.slice(offset, offset + 20);
@@ -54,9 +54,13 @@ export async function uploadJiasuMedia(connection: ResolvedProviderConnection, a
       // The presigned PUT receives only its own storage headers, never the API credential.
       await prepareMaterial("upload", () => fetchProviderJson(fetch, ticket.put!.url!, { method: "PUT", ...(ticket.put?.headers ? { headers: ticket.put.headers } : {}), body: item.blob },
         { phase: "prepare", timeoutMs: options.requestTimeoutMs ?? 120_000, idempotent: true, allowEmpty: true }));
-      const { data: _bytes, ...publicAsset } = item.asset;
-      result[item.index] = { ...publicAsset, url: ticket.url! };
+      urls.set(item.asset.id, ticket.url!);
     }
   }
-  return result;
+  return assets.map(asset => {
+    const url = urls.get(asset.id);
+    if (!url) return asset;
+    const { data: _bytes, ...publicAsset } = asset;
+    return { ...publicAsset, url };
+  });
 }

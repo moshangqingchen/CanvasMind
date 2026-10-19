@@ -20,7 +20,6 @@ import { genimageImageRatioIssues, isGenimageImageConnection } from "@super-canv
 import { isChuangxiangMidjourneyConnection } from "@super-canvas/providers/chuangxiang-midjourney-contract";
 import { CloudGenerationUncertainError, cloudSubmissionId, isCloudSubmission, queryCloudGeneration, readCloudGenerationConfig, runCloudGeneration, testCloudGeneration, uploadCloudReferences, type CloudGenerationConfig } from "./cloud-generation.js";
 import {
-  extractPromptAssetIds,
   getEdgeTargetPortId,
   renderPromptParts,
   runFingerprint,
@@ -2988,45 +2987,34 @@ export class RunService {
       hasInlineText || connectedPrompts.length === 0
         ? inlineParts
         : connectedPrompts;
-    const promptAssetIds = extractPromptAssetIds(parts);
-    const assetIds = [
-      ...new Set([
-        ...values.flatMap((value) => value.assetIds ?? []),
-        ...promptAssetIds,
-      ]),
-    ];
+    const inputEntries: Array<{ assetId: string; role: "reference" | "firstFrame" | "lastFrame" }> = [];
+    const inputKeys = new Set<string>();
+    const addInput = (assetId: string, role: "reference" | "firstFrame" | "lastFrame") => {
+      const key = JSON.stringify([assetId, role]);
+      if (!inputKeys.has(key)) { inputKeys.add(key); inputEntries.push({ assetId, role }); }
+    };
+    // Keep edge order, then prompt order. Identity reuse must not erase roles.
+    for (const value of values) for (const assetId of value.assetIds ?? [])
+      addInput(assetId, value.assetRoles?.[assetId] ?? "reference");
+    for (const part of parts) if (part.type === "asset") addInput(part.assetId, part.role);
+    const assetIds = [...new Set(inputEntries.map(input => input.assetId))];
     const assets: ProviderAssetInput[] = [];
     // A known supplier task only needs its saved receipt for polling/archival.
     // Re-reading, validating or uploading original references can strand paid
     // jobs after inputs were removed or their reference channel went offline.
     const resumingTask = Boolean(nodeRun.providerTaskId);
-    const connectedRoles = new Map<
-      string,
-      "reference" | "firstFrame" | "lastFrame"
-    >();
-    for (const value of values) {
-      for (const [assetId, role] of Object.entries(value.assetRoles ?? {}))
-        connectedRoles.set(assetId, role);
-    }
-    for (const assetId of resumingTask ? [] : assetIds) {
-      const asset = await this.repository.getAsset(assetId);
-      if (!asset) throw new Error(`素材 ${assetId} 不存在`);
-      const stored = await this.storage.get(asset.storageKey);
-      if (!stored) throw new Error(`素材 ${assetId} 的存储文件不存在`);
-      const referencedPart = parts.find(
-        (part): part is Extract<PromptPart, { type: "asset" }> =>
-          part.type === "asset" && part.assetId === asset.id,
-      );
-      const role =
-        referencedPart?.role ?? connectedRoles.get(asset.id) ?? "reference";
-      assets.push({
-        id: asset.id,
-        kind: inputAssetKind(asset.kind),
-        mimeType: asset.mimeType,
-        data: stored.bytes,
-        role,
-        filename: asset.name,
-      });
+    const originals = new Map<string, Omit<ProviderAssetInput, "role">>();
+    for (const { assetId, role } of resumingTask ? [] : inputEntries) {
+      let original = originals.get(assetId);
+      if (!original) {
+        const asset = await this.repository.getAsset(assetId);
+        if (!asset) throw new Error(`素材 ${assetId} 不存在`);
+        const stored = await this.storage.get(asset.storageKey);
+        if (!stored) throw new Error(`素材 ${assetId} 的存储文件不存在`);
+        original = { id: asset.id, kind: inputAssetKind(asset.kind), mimeType: asset.mimeType, data: stored.bytes, filename: asset.name };
+        originals.set(assetId, original);
+      }
+      assets.push({ ...original, role });
     }
     const providerName =
       typeof nodeRun.inputJson.provider === "string"
@@ -3128,9 +3116,11 @@ export class RunService {
       assetIds.push(imageMask.asset.id);
     }
     if (!resumingTask && operation.startsWith("video.") && providerName !== "fake") {
+      const metadataById = new Map<string, Awaited<ReturnType<typeof readLocalMediaMetadata>>>();
       for (const asset of assets) {
         if ((asset.kind === "video" || asset.kind === "audio") && asset.data) {
-          const metadata = await readLocalMediaMetadata(asset.data);
+          let metadata = metadataById.get(asset.id);
+          if (!metadata) { metadata = await readLocalMediaMetadata(asset.data); metadataById.set(asset.id, metadata); }
           if (metadata.durationSeconds !== undefined) asset.durationSeconds = metadata.durationSeconds;
           if (asset.kind === "video" && metadata.width !== undefined && metadata.height !== undefined) {
             asset.width = metadata.width;
@@ -3178,8 +3168,8 @@ export class RunService {
       );
     }
     const prompt = resumingTask && typeof nodeRun.inputJson.prompt === "string" ? nodeRun.inputJson.prompt : renderPromptParts(parts, {
-      resolveAsset: (id) => {
-        const index = assets.findIndex((asset) => asset.id === id);
+      resolveAsset: (id, role) => {
+        const index = assets.findIndex((asset) => asset.id === id && (asset.role ?? "reference") === role);
         return index < 0 ? "" : `[参考素材 ${index + 1}]`;
       },
       unresolvedAsset: "empty",

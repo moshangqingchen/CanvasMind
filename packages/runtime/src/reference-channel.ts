@@ -183,19 +183,20 @@ export async function localReferenceUrls(assetIds: readonly string[], originals:
   if (health.code !== "ok") {
     throw new LocalReferenceChannelError(`本机素材通道暂时无法从公网访问（${failureDetail(health)}），请检查网络后重试`, [health]);
   }
-  const urls = assetIds.map(id => urlFor(id, 3600));
+  const uniqueIds = [...new Set(assetIds)];
+  const urls = new Map(uniqueIds.map(id => [id, urlFor(id, 3600)]));
   const byId = new Map(originals.map(asset => [asset.id, asset]));
-  const diagnostics: LocalReferenceAssetDiagnostic[] = new Array(assetIds.length);
+  const diagnostics: LocalReferenceAssetDiagnostic[] = new Array(uniqueIds.length);
   let next = 0;
-  await Promise.all(Array.from({ length: Math.min(PROBE_CONCURRENCY, assetIds.length) }, async () => {
-    while (next < assetIds.length) {
+  await Promise.all(Array.from({ length: Math.min(PROBE_CONCURRENCY, uniqueIds.length) }, async () => {
+    while (next < uniqueIds.length) {
       const index = next++;
-      const id = assetIds[index]!;
+      const id = uniqueIds[index]!;
       const original = byId.get(id) ?? { id, mimeType: "" };
-      diagnostics[index] = await probeAsset(urls[index]!, original, index, ASSET_PROBE_TIMEOUT_MS, fetchProbe);
+      diagnostics[index] = await probeAsset(urls.get(id)!, original, assetIds.indexOf(id), ASSET_PROBE_TIMEOUT_MS, fetchProbe);
     }
   }));
   const failed = diagnostics.filter(item => item.code !== "ok");
   if (failed.length) throw new LocalReferenceChannelError(`本机素材通道原文件检查失败（${failed.map(failureDetail).join("；")}）`, diagnostics);
-  return urls;
+  return assetIds.map(id => urls.get(id)!);
 }

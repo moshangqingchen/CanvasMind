@@ -50,6 +50,7 @@ export * from "./supplier-account-keys.js";
 export * from "./rest.js";
 export * from "./reference-image-hosting.js";
 export * from "./material-preparation.js";
+export * from "./asset-preparation-cache.js";
 export * from "./secure-skill-image.js";
 export * from "./secure-skill-image-contract.js";
 export * from "./chuangxiang-images-contract.js";

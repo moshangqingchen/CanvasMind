@@ -69,6 +69,13 @@ describe("local reference channel", () => {
     expect(error.diagnostics).toMatchObject([{ assetIndex: 0, code: "length", attempts: 1, durationMs: expect.any(Number) }]);
     expect(mocks.fetch).toHaveBeenCalledTimes(1);
   });
+  it("reuses one verified original URL for repeated role entries", async () => {
+    save(); routeAssets(() => assetResponse(references[0]!.data));
+    const urls = await getUrls([references[0]!, references[0]!]);
+    expect(urls).toHaveLength(2); expect(urls[0]).toBe(urls[1]);
+    expect(mocks.fetch).toHaveBeenCalledTimes(2); // one health GET and one original GET
+    expect(mocks.fetch.mock.calls[1]![0]).toBe(urls[0]);
+  });
   it("checks every requested original, with at most two concurrent full streaming reads", async () => {
     save();
     const assets = Array.from({ length: 4 }, (_, index) => original(`reference-${index}`, `original-${index}`));

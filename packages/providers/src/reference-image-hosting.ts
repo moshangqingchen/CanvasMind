@@ -1,6 +1,7 @@
 import type { FetchImplementation, ProviderAssetInput } from "./contracts.js";
 import { fetchProviderJson, providerFetch } from "./http.js";
 import { MaterialPreparationError, prepareMaterial } from "./material-preparation.js";
+import { distinctAssetSources } from "./asset-preparation-cache.js";
 
 export function referenceImageHostingEnabled(settings: Readonly<Record<string, unknown>> | undefined): boolean {
   return settings?.referenceImageHosting === "litterbox-24h";
@@ -18,9 +19,10 @@ export async function uploadTemporaryReferenceImages(
     if (asset.data.byteLength > 200 * 1024 * 1024)
       throw new MaterialPreparationError("read", { detail: "参考图片超过临时图床的 200 MB 限制" });
   }
-  const hosted: ProviderAssetInput[] = [];
-  for (const asset of assets) {
-    if (asset.url?.startsWith("https://")) { hosted.push(asset); continue; }
+  const sources = distinctAssetSources(assets);
+  const urls = new Map<string, string>();
+  for (const asset of sources) {
+    if (asset.url?.startsWith("https://")) continue;
     const body = new FormData();
     body.append("reqtype", "fileupload");
     body.append("time", "24h");
@@ -34,8 +36,8 @@ export async function uploadTemporaryReferenceImages(
       if (!url || url.protocol !== "https:" || url.hostname !== "litter.catbox.moe" || url.username || url.password || url.port)
         throw new MaterialPreparationError("upload", { detail: "临时图床返回无效素材链接" });
       // Preserve IDs and roles/order; only the provider-facing copy gets a URL.
-      hosted.push({ ...asset, url: url.href });
+      urls.set(asset.id, url.href);
     });
   }
-  return hosted;
+  return assets.map(asset => urls.has(asset.id) ? { ...asset, url: urls.get(asset.id)! } : asset);
 }
