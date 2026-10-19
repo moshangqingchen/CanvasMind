@@ -1,3 +1,4 @@
+import { chooseParameterOption, expectParameterValue, openParameterDetails, readParameterOptions } from "./helpers/parameter-controls";
 import { idleCatalogCheckFixture } from "./helpers/catalog-check-fixture";
 import { expect, test, type APIRequestContext, type Page } from "./helpers/canvas-offline-test";
 import { readFileSync } from "node:fs";
@@ -95,6 +96,7 @@ async function setup(page: Page, request: APIRequestContext, f: Fixture) {
   const open = async () => {
     await page.getByRole("button", { name: `打开 ${label} 模型与参数`, exact: true }).click();
     await expect(panel).toBeVisible();
+    for (const label of ["自定义宽高", "查看宽高"]) if (await panel.getByRole("button", { name: label, exact: true }).count()) await openParameterDetails(panel, label);
   };
   const saved = async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data;
   const safe = () => {
@@ -113,8 +115,8 @@ for (const fixture of fixtures) test(`${fixture.supplier} 的 Banana 档位保�
     const ratio = f.panel.getByRole("combobox", { name: "画面比例", exact: true });
     const picker = f.panel.getByRole("combobox", { name: `${f.label} 模型`, exact: true });
     await expect(picker).toContainText(`ID: ${fixture.model.id}`);
-    await expect(picker).toHaveAttribute("title", `${cleanModelDisplayName(fixture.model.name, fixture.model.metadata?.priceLabel)} · ${fixture.model.id}`);
-    await expect(tiers.getByRole("button")).toHaveText(fixture.labels);
+    await expect(picker).toHaveAttribute("title", new RegExp(`${cleanModelDisplayName(fixture.model.name, fixture.model.metadata?.priceLabel)} · ${fixture.model.id}`.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
+    await expect(tiers.getByRole("button")).toHaveText(fixture.labels.includes("自动") ? fixture.labels : ["自动", ...fixture.labels]);
     if (fixture.customPixels) {
       expect(fixture.model.parameters?.find(parameter => parameter.key === "size"))
         .toMatchObject({ control: "dimensions", allowCustomValue: true, min: 1, step: 1 });
@@ -131,14 +133,14 @@ for (const fixture of fixtures) test(`${fixture.supplier} 的 Banana 档位保�
         await expect(field).toHaveAttribute("step", "1");
         await expect(field).not.toHaveAttribute("max");
       }
-      await expect(f.panel.getByRole("checkbox", { name: /16 倍数/u })).toHaveCount(0);
+      await expect(f.panel.getByRole("switch", { name: /16 倍数/u })).toHaveCount(0);
       // These are user-requested application presets, not the supplier's
       // reference-output pixel table. Native quality remains lowercase.
       for (const [quality, pixels] of [["1k", "768x1360"], ["2k", "1536x2720"], ["4k", "2160x3840"]]) {
         const label = quality.toUpperCase();
         await tiers.getByRole("button", { name: label, exact: true }).click();
         await expect(tiers.getByRole("button", { name: label, exact: true })).toHaveAttribute("aria-pressed", "true");
-        await preset.selectOption(pixels);
+        await chooseParameterOption(preset, pixels);
         const [w, h] = pixels.split("x");
         await expect(width).toHaveValue(w);
         await expect(height).toHaveValue(h);
@@ -146,7 +148,7 @@ for (const fixture of fixtures) test(`${fixture.supplier} 的 Banana 档位保�
           .toEqual({ quality, aspect_ratio: "9:16", size_tier: label, size: pixels });
       }
       await page.reload(); await f.open();
-      await expect(preset).toHaveValue("2160x3840");
+      await expectParameterValue(preset, "2160x3840");
       await expect(tiers.getByRole("button", { name: "4K", exact: true })).toHaveAttribute("aria-pressed", "true");
       await width.fill("1111"); await height.fill("777"); await height.press("Enter");
       await expect.poll(async () => (await f.saved()).parameters).toEqual({ quality: "4k", size_tier: "4K", size: "1111x777" });
@@ -155,12 +157,12 @@ for (const fixture of fixtures) test(`${fixture.supplier} 的 Banana 档位保�
       await expect(height).toHaveValue("777");
       await expect.poll(async () => (await f.saved()).parameters).toEqual({ quality: "4k", size_tier: "4K", size: "1111x777" });
       await tiers.getByRole("button", { name: "自动", exact: true }).click();
-      await expect(preset).toHaveValue("auto");
+      await expectParameterValue(preset, "auto");
       await expect(width).toHaveValue("");
       await expect(height).toHaveValue("");
       await expect.poll(async () => (await f.saved()).parameters).toEqual({ quality: "4k", size: "auto" });
       await page.reload(); await f.open();
-      await expect(preset).toHaveValue("auto");
+      await expectParameterValue(preset, "auto");
       await expect.poll(async () => (await f.saved()).parameters).toEqual({ quality: "4k", size: "auto" });
       await f.panel.screenshot({ path: testInfo.outputPath("Cangyuan-Nano-2-1-banana-parameters.png") });
       return;
@@ -170,9 +172,9 @@ for (const fixture of fixtures) test(`${fixture.supplier} 的 Banana 档位保�
     await expect(f.panel.getByLabel("图片宽度", { exact: true })).toHaveCount(fixture.pixels ? 1 : 0);
     await expect(f.panel.getByLabel("图片高度", { exact: true })).toHaveCount(fixture.pixels ? 1 : 0);
     const ratioDescriptor = fixture.model.parameters!.find(parameter => parameter.key === fixture.ratioKey)!;
-    expect(await ratio.locator("option").evaluateAll(options => options.map(option => (option as HTMLOptionElement).value).filter(Boolean)))
-      .toEqual(ratioDescriptor.options!.map(option => String(option.value)));
-    await ratio.selectOption("9:16");
+    expect((await readParameterOptions(ratio)).filter(option => option.value && !option.value.startsWith("__")).map(option => option.value))
+      .toEqual([...ratioDescriptor.options!.filter(option => option.value === "auto"), ...ratioDescriptor.options!.filter(option => option.value !== "auto")].map(option => String(option.value)));
+    await chooseParameterOption(ratio, "9:16");
     // A provider's K labels can have unrelated wire values, such as low/medium.
     // Every button must preserve those values and both original parameter keys.
     for (let index = 0; index < fixture.values.length; index++) {
@@ -184,7 +186,7 @@ for (const fixture of fixtures) test(`${fixture.supplier} 的 Banana 档位保�
     }
     await page.reload(); await f.open();
     await expect(tiers.getByRole("button", { name: fixture.labels.at(-1), exact: true })).toHaveAttribute("aria-pressed", "true");
-    await expect(ratio).toHaveValue("9:16");
+    await expectParameterValue(ratio, "9:16");
     await expect.poll(async () => (await f.saved()).parameters)
       .toEqual({ [fixture.key]: fixture.values.at(-1), [fixture.ratioKey]: "9:16" });
     await f.panel.screenshot({ path: testInfo.outputPath(`${fixture.supplier.replace(/[^a-z0-9]/giu, "-")}-banana-parameters.png`) });
@@ -212,28 +214,28 @@ test("精确尺寸枚举显示统一档位与只读像素，保持原始 size �
     await expect(f.panel.getByText("分辨率", { exact: true })).toBeVisible();
     await expect(tiers.getByRole("button")).toHaveText(["自动", "1K", "2K", "4K"]);
     await expect(tiers.getByRole("button", { name: "自动", exact: true })).toHaveAttribute("aria-pressed", "true");
-    await expect(preset).toHaveValue("auto");
+    await expectParameterValue(preset, "auto");
     await expect(width).toHaveJSProperty("readOnly", true);
     await expect(height).toHaveJSProperty("readOnly", true);
-    await expect(f.panel.getByRole("checkbox", { name: /16/u })).toHaveCount(0);
+    await expect(f.panel.getByRole("switch", { name: /16/u })).toHaveCount(0);
     await expect(f.panel.getByRole("combobox", { name: "画面比例", exact: true })).toHaveCount(0);
     await expect(f.panel.getByRole("combobox", { name: "质量", exact: true })).toHaveCount(0);
 
     await tiers.getByRole("button", { name: "2K", exact: true }).click();
-    await expect(preset).toHaveValue("1080x1440");
+    await expectParameterValue(preset, "1080x1440");
     // 1080 is not divisible by 16: native enum selection must never round it.
     await expect(width).toHaveValue("1080");
     await expect(height).toHaveValue("1440");
     await expect.poll(async () => (await f.saved()).parameters).toEqual({ size: "1080x1440" });
 
     await tiers.getByRole("button", { name: "自动", exact: true }).click();
-    await preset.selectOption("2160x3840");
+    await chooseParameterOption(preset, "2160x3840");
     await expect(tiers.getByRole("button", { name: "4K", exact: true })).toHaveAttribute("aria-pressed", "true");
     await expect(width).toHaveValue("2160");
     await expect(height).toHaveValue("3840");
     await expect.poll(async () => (await f.saved()).parameters).toEqual({ size: "2160x3840" });
     await page.reload(); await f.open();
-    await expect(preset).toHaveValue("2160x3840");
+    await expectParameterValue(preset, "2160x3840");
     await expect(width).toHaveValue("2160");
     await expect(height).toHaveValue("3840");
     await expect.poll(async () => (await f.saved()).parameters).toEqual({ size: "2160x3840" });

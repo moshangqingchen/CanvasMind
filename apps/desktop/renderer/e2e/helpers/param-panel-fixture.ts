@@ -47,17 +47,18 @@ type Submission = { nodeId?: string; scope?: string; graph: Graph };
 type Kind = "image" | "video" | "music";
 export const labels = { a: "图片甲", b: "图片乙", video: "视频甲", music: "音乐甲", mask: "蒙版待修正", missing: "连接待修正", unknown: "缺价图片" };
 
-export async function fixture(page: Page, request: APIRequestContext) {
+export async function fixture(page: Page, request: APIRequestContext, options: { image?: ModelDescriptor; imageParameters?: Record<string, unknown> } = {}) {
   expect(process.env.PLAYWRIGHT_BASE_URL, "stage1 只使用隔离数据运行时").toBeFalsy();
   await page.setViewportSize({ width: 1920, height: 1080 });
   await page.addInitScript(() => {
     localStorage.setItem("super-canvas:inspector-open", "false");
     localStorage.setItem("supercanvas:appearance", "light");
   });
-  const unknown: ModelDescriptor = { ...image, id: "stage1-unknown", name: "缺价图片模型", pricing: undefined };
-  const models = [image, video, music, unknown];
+  const selectedImage = options.image ?? image;
+  const unknown: ModelDescriptor = { ...selectedImage, id: "stage1-unknown", name: "缺价图片模型", pricing: undefined };
+  const models = [selectedImage, video, music, unknown];
   const createdConnection = await request.post("/api/providers", { data: {
-    provider: "rest", apiKey: "stage1-isolated-no-upstream", name: "参数层级隔离线路", config: { usage: "canvas", baseUrl: "http://127.0.0.1:9", defaultModel: image.id,
+    provider: "rest", apiKey: "stage1-isolated-no-upstream", name: "参数层级隔离线路", config: { usage: "canvas", baseUrl: "http://127.0.0.1:9", defaultModel: selectedImage.id,
       modelCatalogModels: models, scannedModelIds: models.map(model => model.id), modelScanStatus: "live",
       connector: { auth: { type: "none" }, models, restrictModels: true, submit: { path: "/stage1-never-submit", method: "POST", bodyMode: "json" }, output: { path: "$.data", kind: "image" } } },
   } });
@@ -93,13 +94,13 @@ export async function fixture(page: Page, request: APIRequestContext) {
   const node = (id: keyof typeof labels, kind: Kind, index: number, parameters: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
     id, type: "workflow", position: { x: 100 + index % 3 * 450, y: 140 + Math.floor(index / 3) * 310 }, style: { width: 360, height: 240 },
     data: { nodeType: `${kind === "music" ? "music" : kind}-generation`, label: labels[id], provider: "rest", connectionId: connection.id,
-      model: ({ image, video, music })[kind].id, qualityMode: "custom", parameters,
+      model: ({ image: selectedImage, video, music })[kind].id, qualityMode: "custom", parameters,
       parts: [{ type: "text", text: `${labels[id]}的隔离提示词。` }], inputs: [{ id: "prompt", kind: "text", label: "提示词" }],
       outputs: [{ id: "output", kind: kind === "music" ? "audio" : kind, label: "结果" }], ...extra },
   });
   const created = await request.post("/api/canvas", { data: { title: "参数面板 stage1 隔离验收", graph: {
     schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 1 }, edges: [], nodes: [
-      node("a", "image", 0, { size: "4096x4096", quality: "max", n: 1 }),
+      node("a", "image", 0, options.imageParameters ?? { size: "4096x4096", quality: "max", n: 1 }),
       node("b", "image", 1, { size: "2048x2048", quality: "high", n: 2 }),
       node("video", "video", 2, { duration: 8, aspect_ratio: "16:9", resolution: "1080p", generate_audio: true }),
       node("music", "music", 3, { title: "晨光", instrumental: false, lyrics: "[Verse]\n晨光照进窗", duration: 90, bpm: 72, audio_format: "wav" }),
@@ -126,4 +127,3 @@ export async function fixture(page: Page, request: APIRequestContext) {
   };
   return { panel, owner, open, run, saved, submissions, closeAll, assertSafe: () => expect({ external, errors }).toEqual({ external: [], errors: [] }) };
 }
-

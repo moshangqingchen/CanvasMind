@@ -81,7 +81,10 @@ async function setup(page: Page, request: APIRequestContext, group: keyof typeof
   expect(response.ok()).toBeTruthy();
   const canvas = await response.json();
   const saved = async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data;
-  const open = () => page.getByRole("button", { name: "打开 pDog 文档验收 模型与参数", exact: true }).click();
+  const open = async () => {
+    await page.getByRole("button", { name: "打开 pDog 文档验收 模型与参数", exact: true }).click();
+    await openParameterDetails(page.getByRole("dialog", { name: "pDog 文档验收 模型与参数", exact: true }), "价格明细");
+  };
   await page.goto(`/canvas/${canvas.id}`);
   await open();
   const panel = page.getByRole("dialog", { name: "pDog 文档验收 模型与参数", exact: true });
@@ -154,7 +157,13 @@ test("pDog 同型号切换分组展示原生与超分说明，并保存分组选
   await expect(price).not.toContainText("说明超分");
   await page.reload(); await open();
   if (await group.count()) await expect(group).toHaveValue(groups.native);
-  else await expect(panel.getByRole("button", { name: "pDog 文档验收 线路", exact: true })).toContainText(groups.native);
+  else {
+    await panel.getByRole("button", { name: "pDog 文档验收 线路", exact: true }).click();
+    const currentRoute = panel.getByRole("dialog", { name: "pDog 文档验收 候选线路", exact: true }).locator('[data-route-id="isolated-pdog-native"]');
+    await expect(currentRoute).toContainText(groups.native);
+    await expect(currentRoute.locator("button[data-route-choice]")).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("Escape");
+  }
   await expect(panel.getByRole("combobox", { name: "pDog 文档验收 模型", exact: true })).toContainText("GPT Image 2");
   expect(fixture.safety()).toEqual({ submissions: 0, upstreamRequests: 0 });
   await panel.screenshot({ path: info.outputPath("pdog-native-group.png") });

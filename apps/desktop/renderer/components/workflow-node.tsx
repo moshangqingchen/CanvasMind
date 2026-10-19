@@ -870,7 +870,6 @@ export function GenerationNodeBody({
           loadState={availabilityState} checkedAt={availabilitySnapshot.connectionId === currentConnection ? availabilitySnapshot.checkedAt : undefined} />}
         <DeferredPanelContent immediate={presentation === "parameters"}>
         <section className="node-config-parameter-section" aria-label="输出参数" key={`${currentConnection}:${data.model}`}>
-<div className="node-config-section-heading"><strong>输出参数</strong></div>
           <ModelResolutionShortcuts models={modelOptions} selected={selectedModel} onChange={id => data.onModelChange?.(id)} />
           <NodeParameterFields
             nodeId={nodeId}

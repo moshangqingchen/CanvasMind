@@ -2,6 +2,7 @@ import { expect, test } from "./helpers/canvas-offline-test";
 import { bindScannedModelProtocols } from "../lib/scanned-model-protocols";
 import { CANGYUAN_IMAGE_CONNECTOR } from "../lib/provider-presets";
 import { effectiveImageCapabilities } from "../lib/supplier-capabilities";
+import { chooseParameterOption, expectParameterValue, readParameterOptions } from "./helpers/parameter-controls";
 
 for (const [modelGroup, quality] of [["生图（2k4k 高质量）", "high"], ["生图（2k4k 中质量）", "medium"]]) {
   test(`声明的尺寸与质量显示、保存并恢复：${modelGroup}`, async ({ page, request }, testInfo) => {
@@ -36,18 +37,18 @@ for (const [modelGroup, quality] of [["生图（2k4k 高质量）", "high"], ["�
     const tiers = panel.getByRole("group", { name: "自动与输出分辨率快捷档位" });
     const size = panel.getByLabel("输出分辨率预设", { exact: true });
     const qualitySelect = panel.getByLabel("质量", { exact: true });
-    await expect(qualitySelect).toHaveValue(quality!);
-    expect(await qualitySelect.locator("option").evaluateAll(options => options.map(option => (option as HTMLOptionElement).value).filter(Boolean))).toEqual([quality]);
+    await expectParameterValue(qualitySelect, quality!);
+    expect((await readParameterOptions(qualitySelect)).map(option => option.value).filter(Boolean)).toEqual([quality]);
     for (const [tier, pixels] of [["2K", "2560x1440"], ["4K", "2160x3840"]]) {
       await tiers.getByRole("button", { name: tier!, exact: true }).click();
-      await size.selectOption(pixels!);
+      await chooseParameterOption(size, pixels!);
       await expect.poll(async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data.parameters)
         .toMatchObject({ size: pixels, size_tier: tier, quality });
     }
     await page.reload();
     await open();
-    await expect(size).toHaveValue("2160x3840");
-    await expect(qualitySelect).toHaveValue(quality!);
+    await expectParameterValue(size, "2160x3840");
+    await expectParameterValue(qualitySelect, quality!);
     expect(submitted).toBe(0);
     await page.screenshot({ path: testInfo.outputPath("parameters.png") });
   });
@@ -98,21 +99,21 @@ for (const variant of ["flare", "sunburst"]) {
     await open();
     const panel = page.getByRole("dialog", { name: "质量验收 模型与参数" });
     const quality = panel.getByLabel("质量", { exact: true });
-    await expect(quality).toHaveValue(variant === "sunburst" ? "high" : "max");
-    expect(await quality.locator("option").evaluateAll(options => options.map(option => (option as HTMLOptionElement).value).filter(Boolean)))
+    await expectParameterValue(quality, variant === "sunburst" ? "high" : "max");
+    expect((await readParameterOptions(quality)).map(option => option.value).filter(Boolean))
       .toEqual(["auto", "low", "medium", "high", "xhigh", "max"]);
     for (const value of ["auto", "low", "medium", "high", "xhigh", "max"]) {
-      await quality.selectOption(value);
+      await chooseParameterOption(quality, value);
       await expect.poll(async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data.parameters.quality).toBe(value);
       if (value === "low") {
         await page.reload();
         await open();
-        await expect(quality).toHaveValue("low");
+        await expectParameterValue(quality, "low");
       }
     }
     await page.reload();
     await open();
-    await expect(quality).toHaveValue("max");
+    await expectParameterValue(quality, "max");
     expect(submitted).toBe(0);
     await page.screenshot({ path: testInfo.outputPath("image25-quality-max.png") });
   });

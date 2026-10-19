@@ -194,6 +194,12 @@
 .node-mask-summary .node-mask-remove { margin-left:auto; width:28px; padding:0; }
 .canvas-editor .node-config-section-heading { display:flex; align-items:center; gap:8px; margin:0 0 4px; color:var(--text-secondary); }
 .canvas-editor .node-config-section-heading strong { font-size:12px; font-weight:600; letter-spacing:.02em; }
+.canvas-editor .parameter-section { display:grid; min-width:0; gap:12px; margin:0; }
+.canvas-editor .parameter-section + .parameter-section { margin-top:12px; padding-top:20px; border-top:1px solid var(--line); }
+.canvas-editor .parameter-section-heading { margin:0 0 4px; color:var(--text-secondary); font-size:12px; font-weight:600; letter-spacing:.02em; line-height:1.5; }
+.canvas-editor .parameter-sources { min-width:0; margin-top:12px; padding-top:12px; border-top:1px solid var(--line); }
+.canvas-editor .parameter-sources p { margin:0 0 10px; font-size:12px; line-height:1.6; color:var(--text-secondary); overflow-wrap:anywhere; }
+.canvas-editor .parameter-sources .parameter-help { display:block; margin:0 0 10px; }
 .canvas-editor .node-config-parameter-section .parameter-group-note {
   margin:0;
   padding:9px 10px;

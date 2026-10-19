@@ -1,6 +1,7 @@
 import { expect, test } from "./helpers/canvas-offline-test";
 import { effectiveImageCapabilities } from "../lib/supplier-capabilities";
 import { CANGYUAN_IMAGE_CONNECTOR } from "../lib/provider-presets";
+import { chooseParameterOption, expectParameterValue, readParameterOptions } from "./helpers/parameter-controls";
 
 test("说明支持的每档开放全部比例和自动，最高档开放全部质量，选择保存后可恢复", async ({ page, request }, testInfo) => {
   test.setTimeout(90_000); // Exercise every preset through the debounced save path.
@@ -46,30 +47,32 @@ test("说明支持的每档开放全部比例和自动，最高档开放全部�
   const tiers = panel.getByRole("group", { name: "自动与输出分辨率快捷档位" });
   const sizes = panel.getByLabel("输出分辨率预设", { exact: true });
   const quality = panel.getByLabel("质量", { exact: true });
-  await expect(quality).toHaveValue("max");
+  await expectParameterValue(quality, "max");
   const qualities = ["auto", "low", "medium", "high", "xhigh", "max"];
-  expect(await quality.locator("option").evaluateAll(options => options.map(option => (option as HTMLOptionElement).value).filter(Boolean))).toEqual(qualities);
+  expect((await readParameterOptions(quality)).map(option => option.value).filter(Boolean)).toEqual(qualities);
   for (const tier of ["1K", "2K", "4K"]) {
     await tiers.getByRole("button", { name: tier, exact: true }).click();
-    const options = await sizes.locator("option").evaluateAll(options => options.map(option => ({ label: option.textContent ?? "", value: (option as HTMLOptionElement).value })));
-    expect(options.filter(option => option.label.startsWith(tier) && option.value)).toHaveLength(11);
+    const options = await readParameterOptions(sizes);
+    // The same eleven presets now show ratio first, with tier and pixels in
+    // their detail text. Verify the complete visible dropdown, not a hidden select.
+    expect(options.filter(option => option.label.includes(tier) && option.value && option.value !== "auto")).toHaveLength(11);
     expect(options.some(option => option.value === "auto")).toBe(true);
     for (const option of options.filter(option => option.value && option.value !== "auto")) {
-      await sizes.selectOption(option.value);
+      await chooseParameterOption(sizes, option.value);
       await expect.poll(saved).toMatchObject({ size: option.value, size_tier: tier });
     }
-    await sizes.selectOption("auto");
+    await chooseParameterOption(sizes, "auto");
     await expect.poll(saved).toMatchObject({ size: "auto", size_tier: tier });
   }
   for (const value of qualities) {
-    await quality.selectOption(value);
+    await chooseParameterOption(quality, value);
     await expect.poll(saved).toMatchObject({ quality: value });
   }
-  await quality.selectOption("low");
+  await chooseParameterOption(quality, "low");
   await expect.poll(saved).toMatchObject({ size: "auto", size_tier: "4K", quality: "low" });
   await page.reload(); await open();
-  await expect(sizes).toHaveValue("auto");
-  await expect(quality).toHaveValue("low");
+  await expectParameterValue(sizes, "auto");
+  await expectParameterValue(quality, "low");
   await expect(tiers.getByRole("button", { name: "4K", exact: true })).toHaveAttribute("aria-pressed", "true");
   await page.screenshot({ path: testInfo.outputPath("all-ratios-and-qualities.png") });
   await tiers.getByRole("button", { name: "自动", exact: true }).click();

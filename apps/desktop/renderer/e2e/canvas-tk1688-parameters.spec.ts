@@ -117,6 +117,7 @@ for (const { variant, modelId, tiers: supportedTiers, size } of cases) {
     await chooseParameterOption(preset, size);
     await expect(width).toHaveValue(size.split("x")[0]!);
     await expect(height).toHaveValue(size.split("x")[1]!);
+    await openParameterDetails(panel, "价格明细");
     await expect(panel.getByLabel("当前参数价格", { exact: true })).toContainText(/¥\d+(?:\.\d+)?|\d+(?:\.\d+)? CNY/u);
     await expect(panel.getByLabel("当前参数价格", { exact: true })).not.toContainText(/USD|\$/u);
     const qualityOptions = await values("质量");

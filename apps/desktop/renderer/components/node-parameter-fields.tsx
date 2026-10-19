@@ -27,7 +27,7 @@ import {
   tk1688ResolutionControl,
 } from "../lib/tk1688-resolution-control";
 import { isImageRatioParameter, nativeImageResolutionControl } from "../lib/native-image-resolution";
-import { NativeImageResolutionFields } from "./native-image-resolution-fields";
+import { NativeImageResolutionFields, NativeImageResolutionSources, nativeImageResolutionSourceNotes } from "./native-image-resolution-fields";
 import { imageTransparencyEvidenceNote, type ImageTransparencyPresentation } from "../lib/image-transparency-presentation";
 import { Dropdown } from "./ui/Dropdown";
 import { Segmented } from "./ui/Segmented";
@@ -35,6 +35,8 @@ import { Disclosure } from "./ui/Disclosure";
 import { Switch } from "./ui/Switch";
 import { RatioIcon } from "./ui/RatioIcon";
 import { parameterOptionDisplayLabel } from "../lib/parameter-display";
+import { parameterPresentationGroups } from "../lib/parameter-field-presentation";
+import { NodeParameterSources } from "./node-parameter-sources";
 
 interface NodeParameterFieldsProps {
   nodeId: string;
@@ -378,6 +380,7 @@ function DimensionsControl({
   showContractDescription = false,
   showResolutionShortcuts = true,
   explicitRatio,
+  independentSizePreferences = false,
 }: {
   id: string;
   descriptor: ModelParameterDescriptor;
@@ -392,6 +395,7 @@ function DimensionsControl({
   showContractDescription?: boolean;
   showResolutionShortcuts?: boolean;
   explicitRatio?: unknown;
+  independentSizePreferences?: boolean;
 }) {
   const initial = useMemo(() => dimensionParts(value), [value]);
   const [width, setWidth] = useState(initial[0]);
@@ -436,7 +440,9 @@ function DimensionsControl({
   const presetOptions = [
     { value: autoOption ? "auto" : "__automatic_size_unavailable__", label: automaticLabel,
       detail: activeResolutionTier ? `保持 ${activeResolutionTier}` : undefined,
-      disabled: !autoOption, disabledReason: !autoOption ? "当前尺寸选项没有自动项，请选择已列比例或填写宽高。" : undefined },
+      disabled: !autoOption, disabledReason: !autoOption
+        ? readOnlyDimensions ? "当前渠道使用固定尺寸，自动比例不可用；请选择已列尺寸。" : "当前尺寸选项没有自动项，请选择已列比例或填写宽高。"
+        : undefined },
     ...visiblePresetOptions.filter(option => String(option.value) !== "auto").map(option => {
       const ratio = option.label.match(/\d+\s*:\s*\d+/u)?.[0]?.replaceAll(" ", "");
       const dimensions = canonicalDimension(option.value);
@@ -515,7 +521,7 @@ function DimensionsControl({
       ) : null}
       {descriptor.options?.length ? (
         <div className="parameter-ratio-dropdown">
-        <label htmlFor={`${id}-preset`}>画面比例</label>
+        <label htmlFor={`${id}-preset`}>{independentSizePreferences ? "尺寸比例" : "画面比例"}</label>
         <Dropdown id={`${id}-preset`} label="输出分辨率预设" value={presetValue} options={presetOptions}
           onChange={next => {
             if (!next) { setCustomSizeOpen(true); return; }
@@ -594,7 +600,6 @@ function DimensionsControl({
         {descriptor.min !== undefined ? `最小 ${descriptor.min}` : ""}{descriptor.max !== undefined ? ` · 最大 ${descriptor.max}` : ""}{descriptor.step !== undefined ? ` · 步长 ${descriptor.step}` : ""}
       </small>}
       </Disclosure>
-      {showContractDescription && descriptor.description && <small className="parameter-help">{descriptor.description}</small>}
     </div>
   );
 }
@@ -653,7 +658,9 @@ function ParameterSuggestions({
           if (next === customChoice) setEditingValue(value);
           else { setEditingValue(null); update(next); }
         }} />
-      {custom && <input type="text" aria-label={`${descriptor.label}（自定义）`} value={value}
+      {custom && <input type={descriptor.control === "number" ? "number" : "text"} aria-label={`${descriptor.label}（自定义）`} value={value}
+        min={descriptor.control === "number" ? descriptor.min : undefined} max={descriptor.control === "number" ? descriptor.max : undefined}
+        step={descriptor.control === "number" ? descriptor.step : undefined}
         disabled={Boolean(disabledReason)} placeholder={descriptor.placeholder}
         title={disabledReason ?? descriptor.description} aria-required={descriptor.required}
         onChange={event => { setEditingValue(event.target.value); update(event.target.value); }} />}
@@ -806,6 +813,7 @@ function ParameterControl({
         showContractDescription={nativeImageContract}
         showResolutionShortcuts={!hasIndependentImageTier(sizeAspectRatioContext.model)}
         explicitRatio={parameters.aspect_ratio ?? parameters.aspectRatio ?? parameters.ratio}
+        independentSizePreferences={hasIndependentImageTier(sizeAspectRatioContext.model) || sizeAspectRatioContext.model?.metadata?.imageOpenSizePreferences === true || usesSecureSeedreamSizePrecedence(sizeAspectRatioContext.model)}
       />
       {savedSelectValueMissing && <small role="status" className="parameter-help parameter-wide">已保存：{String(value)}；目录尺寸：{(descriptor.options ?? []).map(option => option.label).join(" / ") || "—"}</small>}
       </>
@@ -852,7 +860,7 @@ function ParameterControl({
             <span>{durationControl.max} 秒</span>
           </small>
           {durationContext.userFallbackRange && <small id={`${id}-source`} className="parameter-help" data-duration-source="user-fallback">
-            用户兜底范围：{durationControl.min}–{durationControl.max} 秒。供应商未公布完整范围；已公布的限制仍优先适用。
+            用户兜底范围：{durationControl.min}–{durationControl.max} 秒；完整依据见“参数与来源”。
           </small>}
           {durationControl.invalidValue !== undefined && <div id={`${id}-saved`} className="parameter-duration-saved parameter-help" role="status">
             <span>当前值：{durationControl.invalidValue} · 目录范围：{durationControl.min}–{durationControl.max} 秒 · 步长：{durationControl.step} 秒。</span>
@@ -927,7 +935,7 @@ function ParameterControl({
         <ParameterSuggestions key={`${nodeId}:${modelId ?? ""}:${descriptor.key}`} id={id} descriptor={descriptor}
           presets={(descriptor.options ?? []).map(option => ({ value: String(option.value), label: option.label }))}
           value={String(value)} disabledReason={disabledReason} update={update} ratio />
-      ) : qualityControl && descriptor.control === "text" ? (
+      ) : qualityControl && (descriptor.control === "text" || descriptor.control === "number") ? (
         <ParameterSuggestions key={`${nodeId}:${modelId ?? ""}:${descriptor.key}`} id={id} descriptor={descriptor}
           presets={(descriptor.options ?? []).map(option => ({ value: String(option.value), label: option.label }))}
           value={String(value)} disabledReason={disabledReason} update={update} />
@@ -1061,25 +1069,56 @@ export function NodeParameterFields({
     aspectRatioKey: aspectRatioDescriptor?.key,
     model,
   } satisfies SizeAspectRatioContext;
-  const compactImageNotes = nodeType === "image-generation" && model?.metadata?.jijiuImageContract === true && model.id === "gpt-image-2-2K/4K";
+  const visibleDescriptors = descriptors.filter(
+    descriptor => (provider === "cli" || descriptor.key !== "background") &&
+      (!userSizePresets || !["size_tier", String(model?.metadata?.imageResolutionTierParameter ?? model?.metadata?.imageNativeResolutionParameter ?? "size_tier")].filter(key => key !== "size").includes(descriptor.key)) &&
+      (!(nodeType === "image-generation" && usesSecureSeedreamSizePrecedence(model)) || !["width", "height"].includes(descriptor.key)) &&
+      (provider === "cli" || descriptor.key !== "mask") && (!tk1688Resolution || !["size", "resolution", "aspect_ratio"].includes(descriptor.key)) &&
+      (!nativeResolution || (descriptor.key !== nativeResolution.resolution.key && descriptor.key !== nativeResolution.ratio?.key)) &&
+      (!unifiedExactSize || descriptor.key !== aspectRatioDescriptor?.key),
+  );
+  const presentationGroups = parameterPresentationGroups(nodeType, visibleDescriptors, parameterIssues);
+  const moreContainsIssues = presentationGroups.some(group => group.key === "more" && group.forceOpen);
+  const [moreParametersOpen, setMoreParametersOpen] = useState(moreContainsIssues);
+  // Keep the same mounted field and leave the group open after the user fixes
+  // a saved error, so correcting the final character cannot hide their input.
+  if (moreContainsIssues && !moreParametersOpen) setMoreParametersOpen(true);
+  const nativeSourceProps = nativeResolution ? { model, resolution: nativeResolution.resolution, ratio: nativeResolution.ratio,
+    parameters, hasExactSizeControl: sizeAspectRatioContext.hasSizeControl } : undefined;
+  const hasImageOutputMode = nodeType === "image-generation" && provider !== "cli";
+  const renderControl = (descriptor: ModelParameterDescriptor) => <ParameterControl
+    key={descriptor.key}
+    nodeId={nodeId}
+    nodeType={nodeType}
+    modelId={model?.id}
+    descriptor={descriptor}
+    parameters={parameters}
+    onChange={onChange}
+    sizeAspectRatioContext={sizeAspectRatioContext}
+    clampNumericInput={clampNumericInput}
+    durationRangeUnverified={model?.metadata?.durationRangeUnverified === true || (!model?.parameters?.length && provider !== "fake")}
+    durationUpperBoundConfirmed={durationUpperBoundConfirmed}
+    resolutionRangeUnverified={model?.metadata?.resolutionRangeUnverified === true}
+    imageLayout={provider !== "cli"}
+    disabledReason={
+      provider !== "cli" && descriptor.key === "output_format" && parameters.background === "transparent"
+        ? "透明模式使用 PNG，保留透明通道"
+        : descriptor.key === "output_compression" && !compressionEnabled
+        ? "压缩率适用格式：JPEG / WebP · 当前格式：PNG（无损）"
+        : undefined
+    }
+  />;
 
   return (
     <>
       {provider === "cli" && !model && <p className="parameter-group-note">请先在“个人 AI 网站”中接入并同步模型与参数。</p>}
-      {!compactImageNotes && !userSizePresets && typeof model?.metadata?.imageParameterContractNote === "string" && model.metadata.imageParameterContractNote && (
-        <p className="parameter-group-note">{model.metadata.imageParameterContractNote}</p>
-      )}
       {parameterIssues.length > 0 && <div role="status" className="parameter-group-note" aria-label="当前参数与目录数据">{parameterIssueFacts(parameterIssues, descriptors, parameters, model).map(fact => <p key={fact}>{fact}</p>)}</div>}
-      {!transparency && typeof model?.metadata?.imageCapabilityNote === "string" && model.metadata.imageCapabilityNote && (
-        <p className="parameter-group-note">实测说明：{model.metadata.imageCapabilityNote}</p>
-      )}
-      {!compactImageNotes && typeof model?.metadata?.supplierGroupResolutionLabel === "string" && model.metadata.supplierGroupResolutionLabel && (
-        <p className="parameter-group-note" title={typeof model.metadata.supplierGroupDescription === "string" ? model.metadata.supplierGroupDescription : undefined}>
-          分组说明：{model.metadata.supplierGroupResolutionLabel}{model.metadata.supplierGroupInfoStale ? "（上次记录）" : ""}
-        </p>
-      )}
-      <div className="parameter-grid">
-        {nativeResolution && <NativeImageResolutionFields
+      {presentationGroups.map(group => {
+        const hasResolution = group.key === "image-size" && Boolean(nativeResolution || tk1688Resolution);
+        const hasOutputMode = group.key === "output" && hasImageOutputMode;
+        if (!group.descriptors.length && !hasResolution && !hasOutputMode) return null;
+        const fields = <div className="parameter-grid">
+        {hasResolution && nativeResolution && <NativeImageResolutionFields
           id={`${controlId(nodeId, nativeResolution.resolution.key)}-${resolutionControlId}`}
           model={model}
           resolution={nativeResolution.resolution}
@@ -1088,7 +1127,7 @@ export function NodeParameterFields({
           onChange={onChange}
           hasExactSizeControl={sizeAspectRatioContext.hasSizeControl}
         />}
-        {tk1688Resolution && (
+        {hasResolution && tk1688Resolution && (
           <DimensionsControl
             id={`${controlId(nodeId, "size")}-${resolutionControlId}`}
             descriptor={tk1688Resolution.descriptor}
@@ -1103,67 +1142,38 @@ export function NodeParameterFields({
             )}
           />
         )}
-        {descriptors.filter(
-          descriptor => (provider === "cli" || descriptor.key !== "background") &&
-            (!userSizePresets || !["size_tier", String(model?.metadata?.imageResolutionTierParameter ?? model?.metadata?.imageNativeResolutionParameter ?? "size_tier")].filter(key => key !== "size").includes(descriptor.key)) &&
-            (!(nodeType === "image-generation" && usesSecureSeedreamSizePrecedence(model)) || !["width", "height"].includes(descriptor.key)) &&
-            (provider === "cli" || descriptor.key !== "mask") && (!tk1688Resolution || !["size", "resolution", "aspect_ratio"].includes(descriptor.key)) &&
-            (!nativeResolution || (descriptor.key !== nativeResolution.resolution.key && descriptor.key !== nativeResolution.ratio?.key)) &&
-            (!unifiedExactSize || descriptor.key !== aspectRatioDescriptor?.key),
-        ).map((descriptor) => (
-          <ParameterControl
-            key={descriptor.key}
-            nodeId={nodeId}
-            nodeType={nodeType}
-            modelId={model?.id}
-            descriptor={descriptor}
-            parameters={parameters}
-            onChange={onChange}
-            sizeAspectRatioContext={sizeAspectRatioContext}
-            clampNumericInput={clampNumericInput}
-            durationRangeUnverified={model?.metadata?.durationRangeUnverified === true || (!model?.parameters?.length && provider !== "fake")}
-            durationUpperBoundConfirmed={durationUpperBoundConfirmed}
-            resolutionRangeUnverified={model?.metadata?.resolutionRangeUnverified === true}
-            imageLayout={provider !== "cli"}
-            disabledReason={
-              provider !== "cli" && descriptor.key === "output_format" && parameters.background === "transparent"
-                ? "透明模式使用 PNG，保留透明通道"
-                : descriptor.key === "output_compression" && !compressionEnabled
-                ? "压缩率适用格式：JPEG / WebP · 当前格式：PNG（无损）"
-                : undefined
-            }
-          />
-        ))}
-        {undeclaredSavedImageFields.length > 0 && <div className="parameter-help" role="group" aria-label="已保存的其它图片字段">
-          {undeclaredSavedImageFields.map(key => <div className="parameter-field" key={key}>
-            <span>{key}（已保存）：{String(parameters[key])}</span>
-            <button type="button" className="button nodrag nopan" onClick={() => {
-              const next = { ...parameters }; delete next[key]; onChange(next);
-            }}>清除 {key}</button>
-          </div>)}
-          <small>这些原值继续保存；当前完整型号资料未声明其请求映射，提交前可在此逐项清除。</small>
-        </div>}
-        {nodeType === "image-generation" && provider !== "cli" && (
+        {hasOutputMode && (
           <div className="image-output-mode">
             <span>生成模式</span>
             <Segmented label="生成模式" className="image-output-mode-options" value={parameters.background === "transparent" ? "transparent" : "normal"}
               options={[{ value: "normal", label: "普通模式" }, ...(transparentSupported ? [{ value: "transparent", label: "透明模式" }] : [])]}
               onChange={mode => onChange(imageModeParameters(parameters, transparentSupported, mode === "transparent" ? "transparent" : "normal"))} />
             {transparentSupported && parameters.background === "transparent" && <small>透明背景 · PNG 原图</small>}
-            {imageTransparencyEvidenceNote(transparency) && <small role="status" aria-label="透明模式依据">{imageTransparencyEvidenceNote(transparency)}</small>}
             {!transparentSupported && parameters.background === "transparent" && <small role="status">已保存透明模式参数；原值继续保留，可选择普通模式。</small>}
           </div>
         )}
-      </div>
-      {compactImageNotes && model.metadata && Boolean(model.metadata.imageParameterContractNote || model.metadata.supplierGroupResolutionLabel) && (
-        <details className="parameter-contract-details" onPointerDown={event => event.stopPropagation()}>
-          <summary>参数说明与分组依据{model.metadata.supplierGroupInfoStale ? "（分组说明待更新）" : ""}</summary>
-          {typeof model.metadata.imageParameterContractNote === "string" && <p>{model.metadata.imageParameterContractNote}</p>}
-          {typeof model.metadata.supplierGroupResolutionLabel === "string" && <p title={typeof model.metadata.supplierGroupDescription === "string" ? model.metadata.supplierGroupDescription : undefined}>
-            分组说明：{model.metadata.supplierGroupResolutionLabel}{model.metadata.supplierGroupInfoStale ? "（上次记录）" : ""}
-          </p>}
-        </details>
-      )}
+        {group.descriptors.map(renderControl)}
+        </div>;
+        return group.key === "more" ? <Disclosure key={group.key} label={group.label} className="parameter-section parameter-more-fields"
+          open={Boolean(group.forceOpen || moreParametersOpen)} onOpenChange={open => { if (!group.forceOpen) setMoreParametersOpen(open); }}>
+          {group.forceOpen && <small className="parameter-help">含需修改的参数，修正前保持展开。</small>}{fields}
+        </Disclosure>
+          : <section key={group.key} className="parameter-section" aria-label={group.label} data-parameter-section={group.key}>
+            <h4 className="parameter-section-heading">{group.label}</h4>{fields}
+          </section>;
+      })}
+      {undeclaredSavedImageFields.length > 0 && <div className="parameter-help" role="group" aria-label="已保存的其它图片字段">
+        {undeclaredSavedImageFields.map(key => <div className="parameter-field" key={key}>
+          <span>{key}（已保存）：{String(parameters[key])}</span>
+          <button type="button" className="button nodrag nopan" onClick={() => {
+            const next = { ...parameters }; delete next[key]; onChange(next);
+          }}>清除 {key}</button>
+        </div>)}
+        <small>这些原值继续保存；当前完整型号资料未声明其请求映射，提交前可在此逐项清除。</small>
+      </div>}
+      <NodeParameterSources model={model} descriptors={nativeResolution ? [...descriptors, nativeResolution.resolution] : descriptors} nodeType={nodeType}
+        transparencyNote={imageTransparencyEvidenceNote(transparency)}
+        nativeSources={nativeSourceProps && nativeImageResolutionSourceNotes(nativeSourceProps).length ? <NativeImageResolutionSources {...nativeSourceProps} /> : undefined} />
       {showAdvanced ? (
         <AdvancedParametersEditor
           key={`${nodeId}:${parameterJson}`}

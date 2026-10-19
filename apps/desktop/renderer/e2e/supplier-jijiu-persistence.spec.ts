@@ -4,6 +4,7 @@ import { parseSupplierCatalog, scanProviderModelCatalog, type StructuredModelPri
 import { applyJijiuImageCapabilities } from "@super-canvas/providers/jijiu-image-contract";
 import type { ProviderConnectionView } from "../lib/client-api";
 import type { CatalogUpgradeStatus } from "../lib/supplier-catalog-contracts";
+import { chooseParameterOption, expectParameterValue } from "./helpers/parameter-controls";
 
 // The real API/database belong to globalSetup's temporary profile. Supplier
 // reads are public sanitized fixtures, and no generation can leave the browser.
@@ -112,7 +113,7 @@ test("极九2K/4K与high经历目录刷新、同型号重选、型号及分组�
   let active = page;
   const panel = () => active.getByRole("dialog", { name: `${label} 模型与参数`, exact: true });
   const picker = () => panel().getByRole("combobox", { name: `${label} 模型`, exact: true });
-  const groupControl = () => panel().getByRole("combobox", { name: `${label} 模型群组`, exact: true });
+  const groupControl = () => panel().getByLabel("当前线路", { exact: true });
   const quality = () => panel().getByRole("combobox", { name: "质量", exact: true });
   const tiers = () => panel().getByRole("group", { name: "自动与输出分辨率快捷档位", exact: true });
   const open = async () => {
@@ -127,12 +128,21 @@ test("极九2K/4K与high经历目录刷新、同型号重选、型号及分组�
     await panel().getByRole("option").filter({ has: active.locator('[id$="-id"]').filter({ hasText: identity }) }).click();
     await expect(picker()).toContainText(id);
   };
+  const chooseGroup = async (group: string) => {
+    const connection = connections.find(item => item.config.modelGroup === group)!;
+    await panel().getByRole("button", { name: `${label} 线路`, exact: true }).click();
+    const routes = panel().getByRole("dialog", { name: `${label} 候选线路`, exact: true });
+    const row = routes.locator(`[data-route-id="${connection.id}"]`);
+    await expect(row).toHaveAttribute("data-route-group", group);
+    await row.getByRole("button", { name: /^选择线路 /u }).click();
+    await expect(routes).toHaveCount(0);
+  };
   const assertSelection = async (tier: string, group: string, targetPanel: Locator = panel()) => {
-    await expect(groupControl()).toHaveValue(group);
+    await expect(groupControl()).toContainText(group);
     await expect(picker()).toContainText(modelId);
     await expect(tiers().getByRole("button")).toHaveText(["自动", "1K", "2K", "4K"]);
     await expect(tiers().getByRole("button", { name: tier, exact: true })).toHaveAttribute("aria-pressed", "true");
-    await expect(quality()).toHaveValue("high");
+    await expectParameterValue(quality(), "high");
     await expect(targetPanel.getByRole("alert")).toHaveCount(0);
     await expect.poll(saved).toMatchObject({ model: modelId, connectionId: connections.find(item => item.config.modelGroup === group)!.id,
       parameters: { size: tier, quality: "high" } });
@@ -147,7 +157,7 @@ test("极九2K/4K与high经历目录刷新、同型号重选、型号及分组�
     await assertSelection("2K", "default");
     await choose(modelId); await assertSelection("2K", "default");
     await tiers().getByRole("button", { name: "4K", exact: true }).click();
-    await quality().selectOption("high");
+    await chooseParameterOption(quality(), "high");
     await assertSelection("4K", "default");
     const beforeAutomatic = reads.get("default") ?? 0;
     await expect.poll(() => automaticStarts).toBe(1);
@@ -163,14 +173,14 @@ test("极九2K/4K与high经历目录刷新、同型号重选、型号及分组�
     await active.reload(); await open();
     await expect(picker()).toContainText(alternateModelId);
     await choose(modelId); await assertSelection("4K", "default");
-    await groupControl().selectOption(groupIds[1]!);
+    await chooseGroup(groupIds[1]!);
     await assertSelection("4K", groupIds[1]!);
     await choose(modelId);
     await tiers().getByRole("button", { name: "2K", exact: true }).click();
-    await quality().selectOption("high");
+    await chooseParameterOption(quality(), "high");
     await assertSelection("2K", groupIds[1]!);
-    await groupControl().selectOption("default"); await assertSelection("4K", "default");
-    await groupControl().selectOption(groupIds[1]!); await assertSelection("2K", groupIds[1]!);
+    await chooseGroup("default"); await assertSelection("4K", "default");
+    await chooseGroup(groupIds[1]!); await assertSelection("2K", groupIds[1]!);
     await active.reload(); await open(); await assertSelection("2K", groupIds[1]!);
     await capture("jijiu-2k-high-after-refresh-switch-reload.png");
     await active.getByRole("button", { name: "API 设置", exact: true }).click();
@@ -181,16 +191,16 @@ test("极九2K/4K与high经历目录刷新、同型号重选、型号及分组�
     await settings.getByRole("button", { name: "关闭设置", exact: true }).click();
     if (!await panel().isVisible()) await open();
     await assertSelection("2K", groupIds[1]!);
-    await groupControl().selectOption("default"); await assertSelection("4K", "default");
+    await chooseGroup("default"); await assertSelection("4K", "default");
     await capture("jijiu-4k-high-after-manual-supplier-refresh.png");
     // Closing the page drops its renderer memory. This is a fresh renderer
     // check; actual installed-app process restart is validated separately.
     await active.close(); active = await context.newPage();
     await active.setViewportSize({ width: 1600, height: 1080 });
     await active.goto(`/canvas/${canvas.id}`); await open(); await assertSelection("4K", "default");
-    await groupControl().selectOption(groupIds[1]!); await assertSelection("2K", groupIds[1]!);
+    await chooseGroup(groupIds[1]!); await assertSelection("2K", groupIds[1]!);
     await capture("jijiu-2k-high-after-fresh-renderer.png");
-    await groupControl().selectOption("default"); await assertSelection("4K", "default");
+    await chooseGroup("default"); await assertSelection("4K", "default");
     await capture("jijiu-4k-high-after-fresh-renderer.png");
     // A separate canvas has no previous default-group selection. Its target
     // group's default is another model, but the current complete model exists.
@@ -202,7 +212,7 @@ test("极九2K/4K与high经历目录刷新、同型号重选、型号及分组�
     expect(reverseCreated.ok()).toBeTruthy();
     currentCanvas = await reverseCreated.json();
     await active.goto(`/canvas/${currentCanvas.id}`); await open(); await assertSelection("2K", groupIds[1]!);
-    await groupControl().selectOption("default"); await assertSelection("2K", "default");
+    await chooseGroup("default"); await assertSelection("2K", "default");
     await active.reload(); await open(); await assertSelection("2K", "default");
     await capture("jijiu-2k-high-first-reverse-group-switch.png");
   } finally {

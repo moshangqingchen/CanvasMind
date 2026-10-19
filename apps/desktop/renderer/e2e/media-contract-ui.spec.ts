@@ -3,6 +3,7 @@ import { expect, test, type APIRequestContext, type Locator, type Page } from "@
 import type { ModelDescriptor } from "@super-canvas/providers";
 import type { ProviderConnectionView } from "../lib/client-api";
 import { CANGYUAN_IMAGE_CONNECTOR } from "../lib/provider-presets";
+import { chooseParameterOption, expectParameterValue, openParameterDetails, readParameterOptions } from "./helpers/parameter-controls";
 
 // All prices and capabilities in this file are isolated UI fixtures. No supplier
 // credentials or generation requests are involved in these contract checks.
@@ -67,7 +68,9 @@ test.beforeAll(async () => {
   expect(process.env.PLAYWRIGHT_BASE_URL, "媒体合同验收只能使用 globalSetup 创建的隔离数据目录").toBeFalsy();
 });
 
-async function setup(page: Page, request: APIRequestContext, kind: MediaKind) {
+async function setup(page: Page, request: APIRequestContext, kind: MediaKind, overrides: { model?: ModelDescriptor; parameters?: Record<string, unknown> } = {}) {
+  const activeModel = overrides.model ?? initialModel[kind];
+  const fixtureModels = overrides.model ? models.map(model => model.id === activeModel.id ? activeModel : model) : models;
   await page.setViewportSize({ width: 1600, height: 1080 });
   const errors: string[] = [];
   let submissions = 0, upstreamRequests = 0, modelReads = 0;
@@ -80,19 +83,19 @@ async function setup(page: Page, request: APIRequestContext, kind: MediaKind) {
   await page.route(/\/api\/suppliers(?:\?.*)?$/u, route => route.fulfill({ json: [] }));
   const created = await request.post("/api/providers", { data: {
     name: `媒体合同隔离验收 ${kind}`, provider: "rest", apiKey: "isolated-no-paid-generation",
-    config: { baseUrl: "https://media-contract-ui.invalid", defaultModel: initialModel[kind].id,
-      connector: { ...structuredClone(CANGYUAN_IMAGE_CONNECTOR), models, restrictModels: true } },
+    config: { baseUrl: "https://media-contract-ui.invalid", defaultModel: activeModel.id,
+      connector: { ...structuredClone(CANGYUAN_IMAGE_CONNECTOR), models: fixtureModels, restrictModels: true } },
   } });
   expect(created.ok()).toBeTruthy();
   const stored = await created.json();
   const connection: ProviderConnectionView = { ...stored, apiKey: "", apiKeySet: true, apiKeyUsable: true,
     config: { ...stored.config, supplierKey: "custom-media-contract-ui", supplierName: "媒体验收 · 原生渠道",
       usage: "canvas", modelGroup: "图片、视频、音乐混合分组", accountKeyGroup: "图片、视频、音乐混合分组",
-      modelScanStatus: "live", modelCatalogModels: models, scannedModelIds: models.map(model => model.id) } };
+      modelScanStatus: "live", modelCatalogModels: fixtureModels, scannedModelIds: fixtureModels.map(model => model.id) } };
   await page.route(/\/api\/providers(?:\?.*)?$/u, route => route.request().method() === "GET" ? route.fulfill({ json: [connection] }) : route.continue());
   await page.route(`**/api/providers/${connection.id}/models*`, route => {
     modelReads++;
-    return route.fulfill({ json: models, headers: { "X-Model-Scan-Status": "live", "X-Model-Scan-Complete": "true" } });
+    return route.fulfill({ json: fixtureModels, headers: { "X-Model-Scan-Status": "live", "X-Model-Scan-Complete": "true" } });
   });
   const parameters = kind === "video" ? { resolution: "720p", duration: 5, aspect_ratio: "16:9", generate_audio: true, n: 1 }
     : kind === "music" ? { instrumental: false, duration: 90, bpm: 72, audio_format: "mp3", title: "" } : { n: 1 };
@@ -101,7 +104,7 @@ async function setup(page: Page, request: APIRequestContext, kind: MediaKind) {
     schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 1 }, edges: [], nodes: [{
       id: "media-contract", type: "workflow", position: { x: 80, y: 60 }, style: { width: 420, height: 180 },
       data: { nodeType: `${kind}-generation`, label: labels[kind], provider: "rest", connectionId: connection.id,
-        model: initialModel[kind].id, qualityMode: "custom", parameters, parts: [],
+        model: activeModel.id, qualityMode: "custom", parameters: { ...parameters, ...overrides.parameters }, parts: [],
         inputs: [{ id: "prompt", kind: "text", label: "提示词" }], outputs: [{ id: "result", kind: output, label: "结果" }] },
     }],
   } } });
@@ -111,6 +114,7 @@ async function setup(page: Page, request: APIRequestContext, kind: MediaKind) {
   const open = async () => {
     await page.getByRole("button", { name: `打开 ${labels[kind]} 模型与参数`, exact: true }).click();
     await expect(panel).toBeVisible();
+    await openParameterDetails(panel, "价格明细");
   };
   const panel = page.getByRole("dialog", { name: `${labels[kind]} 模型与参数`, exact: true });
   await page.goto(`/canvas/${canvas.id}`);
@@ -125,7 +129,7 @@ async function setup(page: Page, request: APIRequestContext, kind: MediaKind) {
 }
 
 async function selectValues(control: Locator) {
-  return control.locator('option:not([value=""])').evaluateAll(options => options.map(option => (option as HTMLOptionElement).value));
+  return (await readParameterOptions(control)).filter(option => option.value && !option.value.startsWith("__")).map(option => option.value);
 }
 
 async function expectContained(locator: Locator, viewportWidth: number) {
@@ -177,27 +181,27 @@ test("视频分辨率切换收紧离散时长，费用随秒数和数量变化�
     await expect(prices).toContainText("分辨率=1080p · 0.4 CNY / 秒");
     await expect(prices).toContainText("本次预计费用 1 CNY");
     expect(await selectValues(duration)).toEqual(["5", "10", "15"]);
-    await duration.selectOption("15");
+    await chooseParameterOption(duration, "15");
     await count.fill("2");
     await expect(prices).toContainText("本次预计费用 6 CNY");
-    await resolution.selectOption("1080p");
+    await chooseParameterOption(resolution, "1080p");
     await expect.poll(() => selectValues(duration)).toEqual(["15", "5", "10"]);
-    await expect(duration).toHaveValue("15");
+    await expectParameterValue(duration, "15");
     await expect(duration).toHaveAttribute("aria-invalid", "true");
-    await expect(duration.locator('option[value="15"]')).toBeDisabled();
+    expect((await readParameterOptions(duration)).find(option => option.value === "15")?.disabled).toBe(true);
     await expect.poll(async () => (await f.saved()).parameters).toMatchObject({ resolution: "1080p", duration: 15 });
     await expect(prices).toContainText("本次预计费用 —");
-    await expect(f.panel.getByTestId("param-panel-unit-price")).toHaveText("—");
+    await expect(f.panel.getByTestId("param-panel-unit-price")).toContainText("0.2–0.4 CNY / 秒");
     await expect(f.panel.getByTestId("param-panel-total-price")).toHaveText("—");
-    await duration.selectOption("10");
+    await chooseParameterOption(duration, "10");
     await expect(duration).not.toHaveAttribute("aria-invalid", "true");
     await expect(prices).toContainText("分辨率=1080p · 0.4 CNY / 秒");
     await expect(prices).toContainText("本次预计费用 8 CNY");
     await f.panel.getByLabel("生成声音", { exact: true }).uncheck();
     await expect.poll(async () => (await f.saved()).parameters).toMatchObject({ resolution: "1080p", duration: 10, n: 2, generate_audio: false });
     await page.reload(); await f.open();
-    await expect(resolution).toHaveValue("1080p");
-    await expect(duration).toHaveValue("10");
+    await expectParameterValue(resolution, "1080p");
+    await expectParameterValue(duration, "10");
     await expect(count).toHaveValue("2");
     await expect(prices).toContainText("本次预计费用 8 CNY");
     await expect(f.panel.getByText("型号参数数据", { exact: true })).toHaveCount(0);
@@ -206,8 +210,8 @@ test("视频分辨率切换收紧离散时长，费用随秒数和数量变化�
 
     await f.picker.click();
     await f.panel.getByRole("option", { name: alternateVideo.name, exact: true }).click();
-    await expect(resolution).toHaveValue("4K");
-    await expect(duration).toHaveValue("4");
+    await expectParameterValue(resolution, "4K");
+    await expectParameterValue(duration, "4");
     await expect(count).toHaveCount(0);
     await expectQuotedAmount(prices.getByRole("region", { name: "型号报价", exact: true }), 2, "USD", "次");
     await expect(prices.getByRole("region", { name: "型号报价", exact: true })).toContainText("目录快照");
@@ -216,7 +220,7 @@ test("视频分辨率切换收紧离散时长，费用随秒数和数量变化�
     await expect.poll(async () => (await f.saved()).parameters).toEqual({ resolution: "4K", duration: 4 });
     await page.reload(); await f.open();
     await expect(f.picker).toContainText(alternateVideo.name);
-    await expect(duration).toHaveValue("4");
+    await expectParameterValue(duration, "4");
     await expect(f.panel.getByRole("alert")).toHaveCount(0);
     await f.panel.screenshot({ path: testInfo.outputPath("video-fixed-request-model-restored.png") });
   } finally { f.safe(); }
@@ -233,7 +237,7 @@ test("音乐歌词占完整行，纯音乐切换隐藏歌词，音频参数与�
     await f.panel.getByLabel("作品名", { exact: true }).fill("晨光");
     await lyrics.fill("[Verse]\n晨光照进窗\n[Chorus]\n一起出发");
     await f.panel.getByLabel("目标时长（秒）", { exact: true }).fill("120");
-    await f.panel.getByLabel("音频格式", { exact: true }).selectOption("wav");
+    await chooseParameterOption(f.panel.getByLabel("音频格式", { exact: true }), "wav");
     await expect(f.panel.getByLabel("当前参数价格", { exact: true })).toContainText("本次预计费用 0.8 CNY");
     await expect.poll(async () => (await f.saved()).parameters).toMatchObject({ title: "晨光", lyrics: "[Verse]\n晨光照进窗\n[Chorus]\n一起出发", duration: 120, audio_format: "wav" });
     await page.reload(); await f.open();
@@ -258,7 +262,7 @@ test("音乐歌词占完整行，纯音乐切换隐藏歌词，音频参数与�
     await expect(lyrics).toBeVisible();
     await expect(lyrics).toHaveValue("[Verse]\n晨光照进窗\n[Chorus]\n一起出发");
     await expectContained(f.panel, 720);
-    await expectContained(f.panel.locator(".parameter-grid"), 720);
+    for (const grid of await f.panel.locator(".parameter-grid:visible").all()) await expectContained(grid, 720);
     await expectContained(lyrics, 720);
     await f.panel.screenshot({ path: testInfo.outputPath("music-narrow-window-lyrics.png") });
   } finally { f.safe(); }
@@ -272,7 +276,7 @@ test("窄窗口长型号菜单、参数网格与费用说明不横向溢出", as
     if (await closeAgent.isVisible()) await closeAgent.click();
     await expectContained(f.panel, 720);
     await expectContained(f.panel.locator(".node-config-popover-body"), 720);
-    await expectContained(f.panel.locator(".parameter-grid"), 720);
+    for (const grid of await f.panel.locator(".parameter-grid:visible").all()) await expectContained(grid, 720);
     await f.picker.click();
     const menu = f.panel.locator(".node-model-select-options");
     await expect(menu).toBeVisible();
@@ -282,8 +286,46 @@ test("窄窗口长型号菜单、参数网格与费用说明不横向溢出", as
     await page.screenshot({ path: testInfo.outputPath("video-narrow-window-model-menu.png") });
     await page.keyboard.press("Escape");
     await expect(menu).toHaveCount(0);
-    await f.panel.getByText("价格与参数依据", { exact: true }).click();
+    await openParameterDetails(f.panel, "价格明细");
+    await openParameterDetails(f.panel, "价格与参数依据");
     await expectContained(f.panel.getByLabel("当前参数价格", { exact: true }), 720);
     await f.panel.screenshot({ path: testInfo.outputPath("video-narrow-window-parameters-price.png") });
+  } finally { f.safe(); }
+});
+
+test("更多参数输入非法seed保持原输入与焦点，错误期间保持展开且修正后保存恢复", async ({ page, request }) => {
+  const seededVideo: ModelDescriptor = { ...video, metadata: { ...video.metadata, source: "manual" }, parameters: [...video.parameters!,
+    { key: "seed", label: "验收随机种子", control: "number", valueType: "integer", min: 0, max: 100, step: 1 },
+  ] };
+  const f = await setup(page, request, "video", { model: seededVideo, parameters: { seed: 12 } });
+  try {
+    const more = f.panel.getByRole("button", { name: "更多参数", exact: true });
+    const seed = f.panel.getByLabel("验收随机种子", { exact: true });
+    await expect(more).toHaveAttribute("aria-expanded", "false");
+    await expect(seed).toBeHidden();
+    await more.click();
+    await seed.focus();
+    const originalInput = await seed.elementHandle();
+    await seed.press("ControlOrMeta+A");
+    await seed.pressSequentially("101");
+    await expect(seed).toBeFocused();
+    expect(await originalInput!.evaluate(element => element.isConnected && document.activeElement === element)).toBe(true);
+    await seed.pressSequentially("0");
+    await expect(seed).toHaveValue("1010");
+    await expect(seed).toBeFocused();
+    await expect(f.panel.getByRole("status", { name: "当前参数与目录数据", exact: true })).toContainText("当前值：1010");
+    await expect(f.panel).toContainText("含需修改的参数，修正前保持展开。");
+    await more.click();
+    await expect(more).toHaveAttribute("aria-expanded", "true");
+    await expect(seed).toBeVisible();
+    await seed.fill("13");
+    await expect(seed).toBeFocused();
+    expect(await originalInput!.evaluate(element => element.isConnected && document.activeElement === element)).toBe(true);
+    await expect(f.panel.getByRole("status", { name: "当前参数与目录数据", exact: true })).toHaveCount(0);
+    await expect(more).toHaveAttribute("aria-expanded", "true");
+    await expect.poll(async () => (await f.saved()).parameters.seed).toBe(13);
+    await page.reload(); await f.open();
+    await expect(more).toHaveAttribute("aria-expanded", "false");
+    await more.click(); await expect(seed).toHaveValue("13");
   } finally { f.safe(); }
 });
