@@ -68,4 +68,24 @@ describe.each(["jiasu", "cangyuan", "hosting"] as const)("%s verifies uploaded o
     expect(verification).toBeGreaterThanOrEqual(0);
     expect(generation).toBeGreaterThan(verification);
   });
+  it("follows a safe CDN redirect and accepts exact decompressed bytes with an alias MIME before one generation POST", async () => {
+    let reads = 0;
+    const f = fixture(supplier, () => ++reads === 1
+      ? new Response(null, { status: 302, headers: { location: "https://storage.test/verified-original.png", "set-cookie": "do-not-forward=private" } })
+      : new Response(bytes, { headers: { "content-type": "binary/octet-stream", "content-encoding": "gzip", "content-length": "24" } }));
+    expect((await f.adapter.submit(f.request)).providerTaskId).toBe("original-task");
+    expect(f.paidPosts()).toBe(1);
+    const gets = f.fetch.mock.calls.filter(([, init]) => init?.method === "GET");
+    expect(gets).toHaveLength(2); expect(gets[1]?.[0]).toBe("https://storage.test/verified-original.png");
+    for (const [, init] of gets) {
+      expect(init).toMatchObject({ redirect: "manual", credentials: "omit", referrerPolicy: "no-referrer" });
+      expect([...new Headers(init?.headers)]).toEqual([]);
+    }
+  });
+  it.each(["http://storage.test/original.png", "https://127.0.0.1/original.png"])("does not generate or fetch unsafe redirected delivery %s", async location => {
+    const f = fixture(supplier, () => new Response(null, { status: 302, headers: { location } }));
+    await expect(f.adapter.submit(f.request)).rejects.toThrow("素材准备失败，尚未提交生成");
+    expect(f.paidPosts()).toBe(0);
+    expect(f.fetch.mock.calls.filter(([, init]) => init?.method === "GET")).toHaveLength(1);
+  });
 });
