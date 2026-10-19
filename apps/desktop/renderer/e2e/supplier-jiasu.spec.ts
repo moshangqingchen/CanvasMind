@@ -56,7 +56,7 @@ async function setup(page: Page, request: APIRequestContext, model: ModelDescrip
 
 test("佳速九个图片型号菜单、精确质量尺寸、参数保存恢复", async ({ page, request }, testInfo) => {
   const f = await setup(page, request, images.find(m => m.id === "gpt-image-2-4k")!, images);
-  const picker = f.panel.getByRole("combobox", { name: "佳速验收 模型", exact: true });
+  const picker = f.panel.getByRole("combobox", { name: "佳速验收 模型", exact: false });
   await picker.click();
   for (const model of images) await expect(f.panel.getByRole("option", { name: model.name, exact: true })).toBeEnabled();
   await f.panel.getByRole("option", { name: images.find(m => m.id === "gpt-image-2-4k")!.name, exact: true }).click();

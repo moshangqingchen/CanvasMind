@@ -68,7 +68,7 @@ test("渠道可用性按实际模型展示历史，准备中和停用不沿用�
   await expect(monitor).toContainText("不是调用成功率承诺");
   await expect(monitor).not.toContainText("近期可用率");
   await expect(monitor.locator('[role="img"][data-status="unavailable"]')).toHaveCount(1);
-  await panel.getByRole("combobox", { name: "渠道监测 模型", exact: true }).click();
+  await panel.getByRole("combobox", { name: "渠道监测 模型", exact: false }).click();
   // The public monitoring route does not add a model that this Key did not scan.
   await expect(panel.getByRole("listbox").getByRole("option")).toHaveCount(2);
   await expect(panel.getByRole("listbox")).not.toContainText("gpt-image-2-2k");

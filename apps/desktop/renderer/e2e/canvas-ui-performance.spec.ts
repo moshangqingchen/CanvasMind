@@ -350,7 +350,7 @@ async function runCorePerformanceMatrix(browser: Browser, request: APIRequestCon
           if ((await inspector.getAttribute("aria-expanded")) === "true") await inspector.click();
           await page.getByRole("button", { name: "Fit View", exact: true }).click(); await page.waitForTimeout(550);
           const panel = page.getByRole("dialog", { name: "图像生成 1 模型与参数", exact: true });
-          await interactive(page.locator('.react-flow__node[data-id="ui-perf-1"] .node-head'), panel.getByRole("combobox", { name: "图像生成 1 模型", exact: true }), "dblclick");
+          await interactive(page.locator('.react-flow__node[data-id="ui-perf-1"] .node-head'), panel.getByRole("combobox", { name: "图像生成 1 模型", exact: false }), "dblclick");
           await panel.getByRole("button", { name: "关闭模型与参数面板", exact: true }).click();
           if ((await inspector.getAttribute("aria-expanded")) === "false") await inspector.click();
           liveWarmupComplete = true;
@@ -401,7 +401,7 @@ async function runCorePerformanceMatrix(browser: Browser, request: APIRequestCon
         for (let iteration = 0; iteration < (captureParameters ? 3 : 0); iteration++) {
           const panel = page.getByRole("dialog", { name: "图像生成 1 模型与参数", exact: true });
           await start();
-          const panelMs = await interactive(page.locator('.react-flow__node[data-id="ui-perf-1"] .node-head'), panel.getByRole("combobox", { name: "图像生成 1 模型", exact: true }), "dblclick");
+          const panelMs = await interactive(page.locator('.react-flow__node[data-id="ui-perf-1"] .node-head'), panel.getByRole("combobox", { name: "图像生成 1 模型", exact: false }), "dblclick");
           await stop("node-parameters", iteration, panelMs);
           await panel.getByRole("button", { name: "关闭模型与参数面板", exact: true }).click();
         }
@@ -812,7 +812,7 @@ test("120 个混合节点的交互与主要面板性能基准", async ({ page, r
     await start();
     // At far zoom the model footer is intentionally hidden. Activate the visible
     // header's equivalent action without changing the graph, viewport or timing.
-    const panelMs = await interactive(page.locator('.react-flow__node[data-id="ui-perf-1"] .node-head'), panel.getByRole("combobox", { name: "图像生成 1 模型", exact: true }), "dblclick");
+    const panelMs = await interactive(page.locator('.react-flow__node[data-id="ui-perf-1"] .node-head'), panel.getByRole("combobox", { name: "图像生成 1 模型", exact: false }), "dblclick");
     await stop("node-parameters", iteration, panelMs);
     } finally {
       // Retain diagnostic evidence even when the RAM gate rejects the sample.
@@ -821,7 +821,7 @@ test("120 个混合节点的交互与主要面板性能基准", async ({ page, r
     if (iteration === 0) await page.screenshot({ path: join(output!, `${phase}-parameters.png`) });
     if (profileEnabled || timelineEnabled) await startDiagnostic("model-picker-fake", iteration);
     await start();
-    const modelMs = await interactive(panel.getByRole("combobox", { name: "图像生成 1 模型", exact: true }), panel.getByRole("combobox", { name: "搜索模型名称或 ID", exact: true }));
+    const modelMs = await interactive(panel.getByRole("combobox", { name: "图像生成 1 模型", exact: false }), panel.getByRole("combobox", { name: "搜索模型名称或 ID", exact: true }));
     await stop("model-picker-fake", iteration, modelMs);
     if (profileEnabled || timelineEnabled) await stopDiagnostic("model-picker-fake", iteration);
     await expect(panel.getByRole("listbox").getByRole("option")).toHaveCount(2);
@@ -908,7 +908,7 @@ test("5000 个模拟型号的菜单压力基准（仅 UI，禁止生成）", asy
   await page.waitForTimeout(750);
   await page.getByRole("button", { name: "打开 目录压力 模型与参数", exact: true }).click();
   const panel = page.getByRole("dialog", { name: "目录压力 模型与参数", exact: true });
-  const picker = panel.getByRole("combobox", { name: "目录压力 模型", exact: true });
+  const picker = panel.getByRole("combobox", { name: "目录压力 模型", exact: false });
   await expect(picker).toBeVisible();
   const rows: Array<Record<string, unknown> & { system: { availableBeforeBytes: number; availableAfterBytes: number;
     minimumAvailableMemoryBytes: number; valid: boolean } }> = [];

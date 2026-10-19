@@ -1,7 +1,7 @@
 import { expect, test } from "./helpers/canvas-offline-test";
 import { parseTk1688Marketplace } from "@super-canvas/providers";
 import { CANGYUAN_IMAGE_CONNECTOR } from "../lib/provider-presets";
-import { chooseParameterOption, expectParameterValue, openParameterDetails, readParameterOptions } from "./helpers/parameter-controls";
+import { chooseParameterOption, chooseParameterSegment, expectParameterSegmentValue, expectParameterValue, openParameterDetails, readParameterOptions } from "./helpers/parameter-controls";
 
 const baseModel = "gpt-image-2.5-sunburst";
 const marketplace = {
@@ -89,7 +89,11 @@ for (const { variant, modelId, tiers: supportedTiers, size } of cases) {
     await expect(height).toBeVisible();
     await expect(width).toBeEditable();
     await expect(height).toBeEditable();
-    for (const tier of ["自动", "1K", "2K", "4K"]) {
+    if (await tiers.getAttribute("data-display") === "static") {
+      expect(supportedTiers).toEqual(["4K"]);
+      await expectParameterSegmentValue(tiers, "4K");
+      await expect(tiers.getByRole("button")).toHaveCount(0);
+    } else for (const tier of ["自动", "1K", "2K", "4K"]) {
       const button = tiers.getByRole("button", { name: tier, exact: true });
       if ((supportedTiers as readonly string[]).includes(tier)) await expect(button).toBeEnabled();
       else await expect(button).toHaveCount(0);
@@ -112,8 +116,8 @@ for (const { variant, modelId, tiers: supportedTiers, size } of cases) {
     }
     if (variant === "adobe-reference" || variant === "smart") await expect(panel.getByLabel("数量", { exact: true })).toHaveCount(0);
     const selectedTier = variant === "two-tiers" ? "2K" : "4K";
-    await tiers.getByRole("button", { name: selectedTier, exact: true }).click();
-    await expect(tiers.getByRole("button", { name: selectedTier, exact: true })).toHaveAttribute("aria-pressed", "true");
+    await chooseParameterSegment(tiers, selectedTier);
+    await expectParameterSegmentValue(tiers, selectedTier);
     await chooseParameterOption(preset, size);
     await expect(width).toHaveValue(size.split("x")[0]!);
     await expect(height).toHaveValue(size.split("x")[1]!);
@@ -139,7 +143,7 @@ for (const { variant, modelId, tiers: supportedTiers, size } of cases) {
     await openParameterDetails(panel, "自定义宽高");
     await expect(width).toHaveValue(size.split("x")[0]!);
     await expect(height).toHaveValue(size.split("x")[1]!);
-    await expect(tiers.getByRole("button", { name: selectedTier, exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expectParameterSegmentValue(tiers, selectedTier);
     await expectParameterValue(panel.getByLabel("质量", { exact: true }), "max");
     expect(submitted).toBe(0);
     await panel.getByLabel("质量", { exact: true }).scrollIntoViewIfNeeded();

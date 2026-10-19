@@ -215,18 +215,16 @@ test("窄屏参数标签保留未完成宽度、可选对齐和每卡滚动", as
 });
 
 for (const [fieldLabel, native, initialValue] of [["质量", false, "max"], ["隔离参数 1", true, "first"]] as const) {
-test(`${native ? "原生" : "自定义"}参数下拉首Esc关闭菜单，次Esc仅关闭活动参数卡`, async ({ page, request }) => {
+test(`${native ? "普通枚举" : "质量"}参数下拉首Esc关闭菜单，次Esc仅关闭活动参数卡`, async ({ page, request }) => {
   const f = await fixture(page, request, 220, native);
   await f.open(0); await f.open(1);
   const first = f.panel(0), second = f.panel(1);
   await openParameterDetails(second, "高级设置");
   const quality = second.getByRole("combobox", { name: fieldLabel, exact: true });
   await quality.click();
-  if (native) await expect.poll(() => quality.evaluate(element => element.matches(":open"))).toBe(true);
-  else await expect(quality).toHaveAttribute("aria-expanded", "true");
+  await expect(quality).toHaveAttribute("aria-expanded", "true");
   await page.keyboard.press("Escape");
-  if (native) await expect.poll(() => quality.evaluate(element => element.matches(":open"))).toBe(false);
-  else await expect(quality).toHaveAttribute("aria-expanded", "false");
+  await expect(quality).toHaveAttribute("aria-expanded", "false");
   await expect(quality).toBeFocused();
   await expect(first).toBeVisible(); await expect(second).toBeVisible();
   await expectParameterValue(quality, initialValue);

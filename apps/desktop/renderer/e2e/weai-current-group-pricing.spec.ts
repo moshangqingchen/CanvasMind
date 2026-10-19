@@ -215,7 +215,7 @@ test("WeAI 后台补全当前精确分组报价，保留完整型号、质量档
     await routeTrigger.click();
     await routes.locator(`[data-route-id="${connections[2]!.id}"]`).getByRole("button", { name: /^选择线路 /u }).click();
     await expect(quote).toContainText("0.03 USD / 次");
-    const modelPicker = panel.getByRole("combobox", { name: `${label} 模型`, exact: true });
+    const modelPicker = panel.getByRole("combobox", { name: new RegExp(`^${label} 模型(?: · |$)`, "u") });
     await modelPicker.click(); await page.getByRole("option", { name: /GPT Image 2 MEDIUM/u }).click();
     await expect(quote).toContainText("0.05 USD / 次");
     await expect(nodeModel).toContainText("GPT Image 2 MEDIUM");

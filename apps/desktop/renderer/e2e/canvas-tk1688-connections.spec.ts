@@ -84,7 +84,7 @@ async function fixture(page: Page, request: APIRequestContext, selectedUsage: "c
   const panel = page.getByRole("dialog", { name: `${label} 模型与参数`, exact: true });
   const group = panel.getByRole("combobox", { name: `${label} 模型群组`, exact: true });
   const apiConnection = panel.getByRole("combobox", { name: `${label} API 连接`, exact: true });
-  const picker = panel.getByRole("combobox", { name: `${label} 模型`, exact: true });
+  const picker = panel.getByRole("combobox", { name: `${label} 模型`, exact: false });
   const readNode = async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data;
   const chooseMerchant48 = async () => {
     await picker.click();

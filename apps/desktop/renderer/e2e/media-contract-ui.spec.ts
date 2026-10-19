@@ -119,7 +119,7 @@ async function setup(page: Page, request: APIRequestContext, kind: MediaKind, ov
   const panel = page.getByRole("dialog", { name: `${labels[kind]} 模型与参数`, exact: true });
   await page.goto(`/canvas/${canvas.id}`);
   await open();
-  const picker = panel.getByRole("combobox", { name: `${labels[kind]} 模型`, exact: true });
+  const picker = panel.getByRole("combobox", { name: `${labels[kind]} 模型`, exact: false });
   const safe = () => {
     expect({ submissions, upstreamRequests }).toEqual({ submissions: 0, upstreamRequests: 0 });
     expect(errors).toEqual([]);
@@ -327,5 +327,31 @@ test("更多参数输入非法seed保持原输入与焦点，错误期间保持�
     await page.reload(); await f.open();
     await expect(more).toHaveAttribute("aria-expanded", "false");
     await more.click(); await expect(seed).toHaveValue("13");
+  } finally { f.safe(); }
+});
+
+for (const kind of ["video", "image"] as const) test(`${kind}单比例静态仍可查看禁用自动比例标签与原因，展开说明不修改保存值`, async ({ page, request }) => {
+  // Manual presentation fixtures exercise both rendering paths; these are not
+  // supplier capability claims or requests to generate media.
+  const singleRatio: ModelDescriptor = { ...initialModel[kind], metadata: { source: "manual", canvasRunnable: true,
+    ...(kind === "image" ? { imageNativeParameterContract: true, imageFixedResolution: "2K" } : {}) }, parameters: [
+    { key: "aspect_ratio", label: "画面比例", control: "select", default: "16:9", options: [{ value: "16:9", label: "16:9" }] },
+  ] };
+  const f = await setup(page, request, kind, { model: singleRatio, parameters: { aspect_ratio: "16:9" } });
+  try {
+    const ratio = f.panel.getByLabel("画面比例", { exact: true });
+    await expect(ratio).toHaveRole("textbox");
+    await expect(ratio).toHaveAttribute("aria-readonly", "true");
+    await expectParameterValue(ratio, "16:9");
+    const wrapper = ratio.locator("..");
+    await expect(wrapper).toHaveAttribute("data-display", "static");
+    const before = (await f.saved()).parameters;
+    await wrapper.getByText("选项限制", { exact: true }).click();
+    await expect(wrapper.getByText("自动 · 跟随提示词，其次参考图", { exact: true })).toBeVisible();
+    await expect(wrapper.getByText("当前型号未声明此自动比例，请选择已列比例或模型默认。", { exact: true })).toBeVisible();
+    await expect.poll(async () => (await f.saved()).parameters).toEqual(before);
+    await page.reload(); await f.open();
+    await expectParameterValue(ratio, "16:9");
+    await expect(ratio).toHaveAttribute("aria-readonly", "true");
   } finally { f.safe(); }
 });

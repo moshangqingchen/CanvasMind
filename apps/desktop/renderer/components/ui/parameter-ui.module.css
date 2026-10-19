@@ -17,6 +17,14 @@
 .option[aria-selected="true"] .optionDetail { color:inherit; }
 .option > svg { flex:0 0 13px; }
 .description { display:block; min-width:0; color:var(--text-secondary); font-size:11px; line-height:1.5; overflow-wrap:anywhere; }
+.staticControl[data-display="static"] { display:grid; min-width:0; gap:5px; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; }
+.staticValue { display:flex; align-items:center; flex-wrap:wrap; min-width:0; min-height:28px; gap:5px 8px; padding:2px 0; color:var(--text); font-size:13px; line-height:1.5; overflow-wrap:anywhere; }
+.staticValue > small { color:var(--text-secondary); font-size:11px; }
+.staticValue:focus-visible, .staticControl[data-display="static"]:focus-visible { outline:2px solid var(--focus-ring); outline-offset:2px; }
+.staticRestrictions { min-width:0; color:var(--text-secondary); font-size:11px; line-height:1.5; overflow-wrap:anywhere; }
+.staticRestrictions > summary { width:fit-content; max-width:100%; cursor:pointer; }
+.staticRestrictions > ul { display:grid; gap:3px; margin:5px 0 0; padding-left:18px; }
+.staticRestrictions > summary:focus-visible { outline:2px solid var(--focus-ring); outline-offset:2px; }
 .segmented { display:flex; min-width:0; gap:3px; padding:3px; border:1px solid var(--line-strong); border-radius:8px; background:transparent; }
 .segmented > button { min-width:0; flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; min-height:32px; padding:5px 7px; border:1px solid transparent; border-radius:5px; background:transparent; color:var(--text-secondary); font:inherit; font-size:12px; line-height:1.4; cursor:pointer; }
 .segmented > button > :is(span, small) { max-width:100%; overflow-wrap:anywhere; }

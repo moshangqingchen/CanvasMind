@@ -112,7 +112,7 @@ test("极九2K/4K与high经历目录刷新、同型号重选、型号及分组�
   const saved = async () => (await (await request.get(`/api/canvas/${currentCanvas.id}`)).json()).graph.nodes[0].data;
   let active = page;
   const panel = () => active.getByRole("dialog", { name: `${label} 模型与参数`, exact: true });
-  const picker = () => panel().getByRole("combobox", { name: `${label} 模型`, exact: true });
+  const picker = () => panel().getByRole("combobox", { name: `${label} 模型`, exact: false });
   const groupControl = () => panel().getByLabel("当前线路", { exact: true });
   const quality = () => panel().getByRole("combobox", { name: "质量", exact: true });
   const tiers = () => panel().getByRole("group", { name: "自动与输出分辨率快捷档位", exact: true });

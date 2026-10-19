@@ -12,7 +12,7 @@ export interface SegmentedOption {
   title?: string;
 }
 
-export function Segmented({ label, value, options, onChange, disabled = false, className = "", describedBy }: {
+export function Segmented({ label, value, options, onChange, disabled = false, className = "", describedBy, singleOptionDisplay, singleOptionDescription }: {
   label: string;
   value: string;
   options: readonly SegmentedOption[];
@@ -20,7 +20,25 @@ export function Segmented({ label, value, options, onChange, disabled = false, c
   disabled?: boolean;
   className?: string;
   describedBy?: string;
+  /** Keep defaults interactive; opt in only for a known valid sole choice. */
+  singleOptionDisplay?: "static";
+  singleOptionDescription?: ReactNode;
 }) {
+  const legalOptions = singleOptionDisplay === "static" ? options.filter(option => !option.disabled) : [];
+  const staticOption = value && legalOptions.length === 1 && legalOptions[0]!.value === value ? legalOptions[0] : undefined;
+  if (staticOption) {
+    const restrictions = options.filter(option => option.disabled);
+    return <div role="group" aria-label={label} aria-describedby={describedBy} aria-disabled={disabled || undefined} tabIndex={-1}
+      className={`${styles.staticControl} ${className}`} data-display="static" data-value={value} title={staticOption.title}>
+      <div className={styles.staticValue}><span>{staticOption.label}</span>{staticOption.detail != null && <small>{staticOption.detail}</small>}</div>
+      {singleOptionDescription && <small className={styles.description}>{singleOptionDescription}</small>}
+      {restrictions.length > 0 && <details className={styles.staticRestrictions}>
+        <summary>选项限制</summary><ul>{restrictions.map((option, index) => <li key={`${option.value}:${index}`}>
+          <span>{option.label}</span>{option.title && <> · <span>{option.title}</span></>}
+        </li>)}</ul>
+      </details>}
+    </div>;
+  }
   const selectedIndex = options.findIndex(option => option.value === value && !option.disabled);
   const focusIndex = selectedIndex >= 0 ? selectedIndex : nextEnabledIndex(options, -1, "Home");
   return <div role="group" aria-label={label} aria-describedby={describedBy} className={`${styles.segmented} ${className}`}

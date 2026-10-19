@@ -164,7 +164,7 @@ async function openPanel(
       name: "面板测试 模型群组",
       exact: true,
     }),
-    model: panel.getByRole("combobox", { name: "面板测试 模型", exact: true }),
+    model: panel.getByRole("combobox", { name: "面板测试 模型", exact: false }),
     quantity: panel.getByRole("spinbutton", { name: "数量", exact: true }),
     assertNoRuns: () => expect(submitted).toBe(0),
   };

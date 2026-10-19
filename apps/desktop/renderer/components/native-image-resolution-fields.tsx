@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { ModelDescriptor, ModelParameterDescriptor, ModelParameterOption, ModelParameterValue } from "@super-canvas/providers";
-import { coerceParameterInput, parameterValueForModel, setParameterValue } from "../lib/model-parameters";
+import { coerceParameterInput, modelParameterAliases, parameterValueForModel, setParameterValue } from "../lib/model-parameters";
 import { declaredImageOutputDimensions, declaredImageReferenceDimensions, imageResolutionOptionLabel, nativeImageRatioOptionLabel } from "../lib/native-image-resolution";
 import { genimageImageRatioIssues } from "@super-canvas/providers/genimage-image-capabilities";
 import { mikotoImageRatioIssues } from "@super-canvas/providers/supplier-image-constraints";
@@ -42,22 +42,27 @@ function GenimageCustomSizeFields({ id, value, onChange }: { id: string; value: 
 }
 
 /** UI-only custom entry state stays separate from native parameter mapping. */
-export function NativeImageRatioFields({ id, value, options, ratio, inputLabel, independentSizePreferences = false, onChange }: {
+export function NativeImageRatioFields({ id, value, options, ratio, inputLabel, independentSizePreferences = false, panelPresentation = false, allowSingleOptionDisplay = true, onChange }: {
   id: string;
   value: string;
   options: readonly DropdownOption[];
   ratio: ModelParameterDescriptor;
   inputLabel: string;
   independentSizePreferences?: boolean;
+  panelPresentation?: boolean;
+  allowSingleOptionDisplay?: boolean;
   onChange: (value: string) => void;
 }) {
   const [editingCustomRatio, setEditingCustomRatio] = useState(false);
   const customRatioChoice = "__custom_ratio__";
   const customRatio = ratio.allowCustomValue === true && (editingCustomRatio || value !== "" && !options.some(option => option.value === value));
+  const singleOption = panelPresentation && allowSingleOptionDisplay && !ratio.allowCustomValue && ratio.options?.length === 1 && String(ratio.options[0]!.value) === value
+    ? options.find(option => option.value === value && !option.disabled) : undefined;
   return <>
     <Dropdown id={`${id}-ratio`} label="画面比例" value={customRatio ? customRatioChoice : value} required={ratio.required}
       title={ratio.description} description={independentSizePreferences ? "比例偏好与宽高分别保存；独立宽高不会随比例改写。" : undefined}
-      options={[...options, ...(ratio.allowCustomValue ? [{ value: customRatioChoice, label: "自定义比例" }] : [])]}
+      singleOptionDisplay={singleOption ? "static" : undefined}
+      options={singleOption ? options.filter(option => option.disabled || option === singleOption) : [...options, ...(ratio.allowCustomValue ? [{ value: customRatioChoice, label: "自定义比例" }] : [])]}
       onChange={raw => {
         if (raw === customRatioChoice) { setEditingCustomRatio(true); return; }
         setEditingCustomRatio(false); onChange(raw);
@@ -103,7 +108,7 @@ export function NativeImageResolutionSources(props: Parameters<typeof nativeImag
 }
 
 export function NativeImageResolutionFields({
-  id, model, resolution, ratio, parameters, onChange, hasExactSizeControl = false,
+  id, model, resolution, ratio, parameters, onChange, hasExactSizeControl = false, panelPresentation = false,
 }: {
   id: string;
   model?: ModelDescriptor | null;
@@ -112,6 +117,7 @@ export function NativeImageResolutionFields({
   parameters: Record<string, unknown>;
   onChange: (parameters: Record<string, unknown>) => void;
   hasExactSizeControl?: boolean;
+  panelPresentation?: boolean;
 }) {
   const genimageOpenSize = model?.metadata?.genimageNativeSizeOpen === true &&
     ["gpt-image-2", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"].includes(model.id) &&
@@ -138,6 +144,10 @@ export function NativeImageResolutionFields({
     : "仅显示供应商已公布的像素；未公布时以原图为准";
   const options = resolution.options ?? [];
   const missing = value !== "" && !options.some(option => String(option.value) === String(value));
+  const aliases = modelParameterAliases(model);
+  const hasSavedAlias = (key: string) => aliases.find(([canonical]) => canonical === key)?.[1].some(alias => parameters[alias] !== undefined) === true;
+  const hasRatioIssues = Boolean(genimageOpenSize && genimageImageRatioIssues(parameters).length || mikotoDeclaredTier && mikotoImageRatioIssues(parameters).length || pdogDeclaredTier && pdogImageSizeSelection(parameters).issues.length);
+  const fixedResolution = resolution.key === "__fixed_resolution";
   // These exact contracts explicitly accept auto even in an open ratio field;
   // an arbitrary open string descriptor does not establish that meaning.
   const ratioAutomatic: ModelParameterOption | undefined = ratio?.options?.find(option => String(option.value) === "auto") ??
@@ -162,14 +172,16 @@ export function NativeImageResolutionFields({
       <label id={`${id}-heading`} title={resolution.description}>分辨率</label>
     </div>
     <Segmented label="自动与输出分辨率快捷档位" className="parameter-native-resolution-shortcuts" value={String(value)}
+      disabled={panelPresentation && fixedResolution}
+      singleOptionDisplay={panelPresentation && !missing && !hasSavedAlias(resolution.key) && !hasRatioIssues ? "static" : undefined}
       options={[
         ...(options.some(option => String(option.value).toLowerCase() === "auto")
           ? options.filter(option => String(option.value).toLowerCase() === "auto").map(option => ({ value: String(option.value), label: imageResolutionOptionLabel(option) }))
           : [{ value: "__automatic_resolution_unavailable__", label: "自动", disabled: true, title: "当前型号未提供自动档位" }]),
         ...options.filter(option => String(option.value).toLowerCase() !== "auto").map(option => ({ value: String(option.value), label: imageResolutionOptionLabel(option),
-          disabled: resolution.key === "__fixed_resolution", title: resolution.key === "__fixed_resolution" ? "分辨率由当前完整型号固定" : undefined })),
+          disabled: fixedResolution && !panelPresentation, title: fixedResolution ? "分辨率由当前完整型号固定" : undefined })),
       ]}
-      onChange={raw => { const option = options.find(option => String(option.value) === raw); if (option) update(resolution, option.value); }} />
+      onChange={raw => { if (fixedResolution) return; const option = options.find(option => String(option.value) === raw); if (option) update(resolution, option.value); }} />
     {missing && <small role="status" className="parameter-help">
       当前档位：{imageResolutionOptionLabel({ value: String(value), label: String(value) })} · 目录档位：{options.map(imageResolutionOptionLabel).join(" / ") || "—"}
     </small>}
@@ -188,6 +200,7 @@ export function NativeImageResolutionFields({
     {ratio && <>
       <label className="parameter-native-ratio-label" htmlFor={`${id}-ratio`} title={ratio.description}>{independentSizePreferences ? "画面比例偏好" : "画面比例"}</label>
       <NativeImageRatioFields id={id} ratio={ratio} value={String(ratioValue)} inputLabel={ratioInputLabel} independentSizePreferences={independentSizePreferences}
+        panelPresentation={panelPresentation} allowSingleOptionDisplay={!hasSavedAlias(ratio.key) && !hasRatioIssues}
         options={[
           { value: ratioAutomatic ? "auto" : "__automatic_ratio_unavailable__", label: automaticRatioLabel,
             detail: options.find(option => String(option.value) === String(value)) ? `保持 ${imageResolutionOptionLabel(options.find(option => String(option.value) === String(value))!)}` : undefined,

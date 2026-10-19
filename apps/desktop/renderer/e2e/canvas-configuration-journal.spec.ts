@@ -87,7 +87,7 @@ for (const redo of [false, true]) {
         await route.fulfill({ status: 503, json: { error: "隔离测试：临时保存失败" } });
       } else await route.continue();
     });
-    await ui.panel.getByRole("combobox", { name: "日志回归 模型", exact: true }).click();
+    await ui.panel.getByRole("combobox", { name: "日志回归 模型", exact: false }).click();
     await ui.panel.getByRole("option", { name: "日志模型乙", exact: true }).click();
     await expect(ui.saveStatus).toContainText("保存失败");
     const failedEntries = await pendingConfigurations(page, ui.canvas.id);
@@ -116,7 +116,7 @@ for (const redo of [false, true]) {
     await expect.poll(savedModel).toBe(expectedModel);
     await page.reload();
     await page.getByRole("button", { name: "打开 日志回归 模型与参数", exact: true }).click();
-    await expect(ui.panel.getByRole("combobox", { name: "日志回归 模型", exact: true })).toContainText(redo ? "日志模型乙" : "日志模型甲");
+    await expect(ui.panel.getByRole("combobox", { name: "日志回归 模型", exact: false })).toContainText(redo ? "日志模型乙" : "日志模型甲");
     await expect(ui.saveStatus).toContainText("已保存");
     await expect.poll(savedModel).toBe(expectedModel);
     ui.assertNoSubmissions();
@@ -149,7 +149,7 @@ test("保存响应尚未返回时再次切换模型，旧响应保留新日志�
     return route.continue();
   });
   const chooseModel = async (name: string) => {
-    await ui.panel.getByRole("combobox", { name: "日志回归 模型", exact: true }).click();
+    await ui.panel.getByRole("combobox", { name: "日志回归 模型", exact: false }).click();
     await ui.panel.getByRole("option", { name, exact: true }).click();
   };
   const savedModel = async () => {
@@ -185,7 +185,7 @@ test("保存响应尚未返回时再次切换模型，旧响应保留新日志�
     await expect.poll(savedModel).toBe("journal-image-a");
     await page.reload();
     await page.getByRole("button", { name: "打开 日志回归 模型与参数", exact: true }).click();
-    await expect(ui.panel.getByRole("combobox", { name: "日志回归 模型", exact: true })).toContainText("日志模型甲");
+    await expect(ui.panel.getByRole("combobox", { name: "日志回归 模型", exact: false })).toContainText("日志模型甲");
     await expect(ui.saveStatus).toContainText("已保存");
     await expect.poll(savedModel).toBe("journal-image-a");
     ui.assertNoSubmissions();

@@ -5,7 +5,7 @@ import type { ModelDescriptor } from "@super-canvas/providers";
 import { fixture, labels, image } from "./helpers/param-panel-fixture";
 import { chooseParameterOption, expectParameterValue, openParameterDetails } from "./helpers/parameter-controls";
 
-const evidence = "D:/project development/超级画布/.codex-logs/2026-10-18-param-panel/stage2";
+const evidence = process.env.PARAM_PANEL_SCREENSHOT_DIR || "D:/project development/超级画布/.codex-logs/2026-10-18-param-panel/stage2";
 
 async function capturePanel(panel: Locator, name: string) {
   await mkdir(evidence, { recursive: true });
@@ -107,8 +107,11 @@ test("stage2 step4 线路键盘所有权、收起明细与管理前草稿提交"
   await trigger.focus(); await trigger.press("Enter");
   const routes = panel.getByRole("dialog", { name: `${labels.a} 候选线路`, exact: true });
   await expect(routes).toBeVisible();
-  await expect(routes).toContainText("同型号报价：0.125 CNY / 张");
-  await expect(routes).toContainText("切换后将使用：stage1-image");
+  const selectedRoute = routes.getByRole("button", { name: /^选择线路 /u, pressed: true });
+  await expect(selectedRoute.getByLabel("同型号报价", { exact: true })).toHaveText("0.125 CNY / 张");
+  await expect(selectedRoute.getByText("同型号", { exact: true })).toBeVisible();
+  await expect(panel.locator('div[aria-label="当前线路"]')).not.toContainText("余额未读取");
+  await capturePanel(panel, "stage3-route-picker-single.png");
   await page.keyboard.press("Control+Enter"); expect(f.submissions).toHaveLength(0);
   await page.keyboard.press("Escape"); await expect(routes).toHaveCount(0); await expect(trigger).toBeFocused();
   await expect(panel).toBeVisible();
@@ -142,10 +145,30 @@ test("stage2 step5 交互截图：比例、质量、宽高、线路与参数来�
   expect(f.submissions).toHaveLength(0); f.assertSafe();
 });
 
-test("stage2 step5 固定合同的自动项禁用、只读尺寸与独立偏好保存截图", async ({ page, request }) => {
+test("stage2 step5 固定合同的静态值、自动项限制、旧值修正与独立偏好保存截图", async ({ page, request }) => {
   let f = await fixture(page, request, { image: fixedContract, imageParameters: { size: "4096x4096", quality: "high" } });
   await f.open("a");
   let panel = f.panel("a");
+  const fixed = panel.getByRole("textbox", { name: "输出分辨率预设", exact: true });
+  await expectParameterValue(fixed, "4096x4096");
+  await expect(fixed).toHaveAttribute("aria-readonly", "true");
+  await expect(panel.getByRole("combobox", { name: "输出分辨率预设", exact: true })).toHaveCount(0);
+  const restrictions = fixed.locator("..").locator("details");
+  await restrictions.locator("summary").focus(); await page.keyboard.press("Enter");
+  await expect(restrictions).toHaveAttribute("open", "");
+  await expect(restrictions).toContainText("自动 · 跟随提示词，其次参考图");
+  await expect(restrictions).toContainText("当前渠道使用固定尺寸，自动比例不可用");
+  await expectParameterValue(panel.getByRole("textbox", { name: "质量", exact: true }), "high");
+  await openParameterDetails(panel, "查看宽高");
+  await expect(panel.getByLabel("图片宽度", { exact: true })).toHaveJSProperty("readOnly", true);
+  expect((await f.saved()).nodes.find(node => node.id === "a")?.data.parameters?.size).toBe("4096x4096");
+  await capturePanel(panel, "stage2-contract-fixed-no-auto.png");
+  f.assertSafe();
+
+  // An invalid saved value must retain the real dropdown and an explicit
+  // correction path. The disabled automatic row still ignores pointer input.
+  f = await fixture(page, request, { image: fixedContract, imageParameters: { size: "old-invalid-size", quality: "high" } });
+  await f.open("a"); panel = f.panel("a");
   await panel.getByRole("combobox", { name: "输出分辨率预设", exact: true }).click();
   const automatic = panel.getByRole("listbox").getByRole("option").first();
   await expect(automatic).toContainText("自动 · 跟随提示词，其次参考图"); await expect(automatic).toHaveAttribute("aria-disabled", "true");
@@ -154,8 +177,11 @@ test("stage2 step5 固定合同的自动项禁用、只读尺寸与独立偏好�
   // refuses aria-disabled controls; the UI must also ignore a physical press.
   const disabledBounds = (await automatic.boundingBox())!;
   await page.mouse.click(disabledBounds.x + disabledBounds.width / 2, disabledBounds.y + disabledBounds.height / 2);
-  expect((await f.saved()).nodes.find(node => node.id === "a")?.data.parameters?.size).toBe("4096x4096");
-  await capturePanel(panel, "stage2-contract-fixed-no-auto.png"); await page.keyboard.press("Escape");
+  expect((await f.saved()).nodes.find(node => node.id === "a")?.data.parameters?.size).toBe("old-invalid-size");
+  await capturePanel(panel, "stage2-contract-fixed-saved-invalid.png"); await page.keyboard.press("Escape");
+  await chooseParameterOption(panel.getByRole("combobox", { name: "输出分辨率预设", exact: true }), "4096x4096");
+  await expect.poll(async () => (await f.saved()).nodes.find(node => node.id === "a")?.data.parameters?.size).toBe("4096x4096");
+  await expectParameterValue(panel.getByRole("textbox", { name: "输出分辨率预设", exact: true }), "4096x4096");
   await openParameterDetails(panel, "查看宽高");
   await expect(panel.getByLabel("图片宽度", { exact: true })).toHaveJSProperty("readOnly", true);
   f.assertSafe();

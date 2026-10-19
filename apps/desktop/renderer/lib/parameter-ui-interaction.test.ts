@@ -1,7 +1,121 @@
-import { describe, expect, it } from "vitest";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { Dropdown } from "../components/ui/Dropdown";
+import { Segmented } from "../components/ui/Segmented";
 import { anchoredSurfacePlacement, appendTypeahead, nextEnabledIndex, typeaheadIndex } from "../components/ui/interactions";
 
 const options = [{ label: "自动" }, { label: "Low", disabled: true }, { label: "High" }, { label: "Highest" }, { label: "Medium" }];
+
+describe("opt-in single-choice parameter presentation", () => {
+  beforeAll(() => vi.stubGlobal("React", React));
+  afterAll(() => vi.unstubAllGlobals());
+
+  const png = [{ value: "png", label: "PNG" }];
+
+  it("keeps both defaults interactive even with only one option", () => {
+    const onChange = vi.fn();
+    const dropdown = renderToStaticMarkup(React.createElement(Dropdown, { label: "输出格式", value: "png", options: png, onChange }));
+    const segmented = renderToStaticMarkup(React.createElement(Segmented, { label: "生成模式", value: "png", options: png, onChange }));
+    expect(dropdown).toContain('role="combobox"');
+    expect(segmented).toContain("<button");
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("renders a valid sole dropdown value as readable text with its raw identity and restrictions", () => {
+    const onChange = vi.fn();
+    const html = renderToStaticMarkup(React.createElement(Dropdown, {
+      id: "fixed-quality", label: "质量", value: "high", required: true, singleOptionDisplay: "static", onChange,
+      describedBy: "field-source", description: "当前型号固定质量", options: [
+        { value: "high", label: "高", detail: "high" },
+        { value: "max", label: "最高", disabled: true, disabledReason: "当前渠道固定质量" },
+      ],
+    }));
+    expect(html).toContain('id="fixed-quality" role="textbox" aria-readonly="true"');
+    expect(html).toContain('tabindex="-1"');
+    expect(html).toContain('data-value="high"');
+    expect(html).toContain('aria-label="质量" aria-required="true"');
+    expect(html).toContain("field-source");
+    expect(html).toContain("当前型号固定质量");
+    expect(html).toContain("当前渠道固定质量");
+    expect(html).toContain(">高</span>");
+    expect(html).not.toContain("<button");
+    expect(html).not.toContain('role="combobox"');
+    expect(html).not.toContain('aria-haspopup');
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("keeps empty, unknown, disabled, invalid and multiple-choice dropdown values correctable", () => {
+    const onChange = vi.fn();
+    const cases = [
+      { value: "", options: png },
+      { value: "old-format", options: png },
+      { value: "jpeg", options: [...png, { value: "jpeg", label: "JPEG", disabled: true }] },
+      { value: "png", options: png, ariaInvalid: true },
+      { value: "png", options: [...png, { value: "jpeg", label: "JPEG" }] },
+    ];
+    for (const props of cases) {
+      const html = renderToStaticMarkup(React.createElement(Dropdown, { label: "输出格式", singleOptionDisplay: "static", onChange, ...props }));
+      expect(html).toContain('role="combobox"');
+      expect(html).toContain(`data-value="${props.value}"`);
+      expect(html).not.toContain('data-display="static"');
+    }
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("shows an already valid globally locked PNG and its explanation without changing it", () => {
+    const onChange = vi.fn();
+    const html = renderToStaticMarkup(React.createElement(Dropdown, {
+      label: "输出格式", value: "png", options: png, disabled: true, singleOptionDisplay: "static", onChange,
+      title: "透明模式使用 PNG，保留透明通道", singleOptionDescription: "透明模式使用 PNG，保留透明通道",
+    }));
+    expect(html).toContain('role="textbox" aria-readonly="true"');
+    expect(html).toContain('aria-disabled="true"');
+    expect(html).toContain('data-value="png"');
+    expect(html).toContain("透明模式使用 PNG，保留透明通道");
+    expect(html).not.toContain("<button");
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("keeps the segmented group identity and disabled reasons while replacing only a valid sole choice", () => {
+    const onChange = vi.fn();
+    const props = { label: "生成模式", value: "normal", singleOptionDisplay: "static" as const, onChange, options: [
+      { value: "normal", label: "普通模式" },
+      { value: "transparent", label: "透明模式", disabled: true, title: "当前型号没有透明选项" },
+    ] };
+    const html = renderToStaticMarkup(React.createElement(Segmented, props));
+    expect(html).toContain('role="group" aria-label="生成模式"');
+    expect(html).toContain('tabindex="-1"');
+    expect(html).toContain('data-value="normal"');
+    expect(html).toContain("普通模式");
+    expect(html).toContain("当前型号没有透明选项");
+    expect(html).not.toContain("<button");
+    for (const value of ["", "unknown", "transparent"]) {
+      const correction = renderToStaticMarkup(React.createElement(Segmented, { ...props, value }));
+      expect(correction).toContain("<button");
+      expect(correction).not.toContain('data-display="static"');
+    }
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("retains every disabled option label even when their reasons are identical", () => {
+    const onChange = vi.fn();
+    const choices = [
+      { value: "4K", label: "4K" },
+      { value: "1K", label: "1K", disabled: true, disabledReason: "固定档位", title: "固定档位" },
+      { value: "2K", label: "2K", disabled: true, disabledReason: "固定档位", title: "固定档位" },
+    ];
+    const props = { label: "分辨率", value: "4K", options: choices, singleOptionDisplay: "static" as const, onChange };
+    for (const html of [renderToStaticMarkup(React.createElement(Dropdown, props)), renderToStaticMarkup(React.createElement(Segmented, props))]) {
+      expect(html).toContain("<summary>选项限制</summary>");
+      expect(html).toContain(">1K</span>");
+      expect(html).toContain(">2K</span>");
+      expect(html.match(/固定档位/gu)).toHaveLength(2);
+      expect(html).not.toContain("<button");
+    }
+    expect(onChange).not.toHaveBeenCalled();
+  });
+});
 
 describe("parameter UI keyboard navigation", () => {
   it("cycles selectable rows, skips disabled rows, and reaches Home/End without dropping options", () => {

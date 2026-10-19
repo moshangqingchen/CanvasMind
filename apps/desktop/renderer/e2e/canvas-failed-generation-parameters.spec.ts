@@ -215,7 +215,7 @@ for (const failure of ["submission", "provider", "multi-selection", "marquee-sel
       await candidates.locator(`[data-route-id="${connection.id}"]`).getByRole("button", { name: /^选择线路 /u }).click();
       await expect(route).toHaveAttribute("aria-expanded", "false");
     }
-    const model = panel.getByRole("combobox", { name: "失败参数测试 模型", exact: true });
+    const model = panel.getByRole("combobox", { name: "失败参数测试 模型", exact: false });
     await model.click();
     await expect(model).toHaveAttribute("aria-expanded", "true");
     await panel.getByRole("option", { name: "失败回归模型乙", exact: true }).click();

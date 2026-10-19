@@ -187,7 +187,7 @@ test("第二阶段隔离视觉证据与完整控件", async ({ page, request }, 
   await shot("image-parameters-dimensions");
   await assertUnobstructed(quality); await expect(quality).toHaveValue("max");
   await shot("image-parameters-quality");
-  const picker = panel.getByRole("combobox", { name: "完整图片参数 模型", exact: true });
+  const picker = panel.getByRole("combobox", { name: "完整图片参数 模型", exact: false });
   await picker.click();
   await expect(panel.getByRole("combobox", { name: "搜索模型名称或 ID", exact: true })).toBeVisible();
   await expect(panel.getByRole("listbox").getByRole("option").first()).toHaveAttribute("aria-setsize", "13");

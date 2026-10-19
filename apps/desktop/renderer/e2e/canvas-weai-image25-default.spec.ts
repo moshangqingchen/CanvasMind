@@ -65,7 +65,7 @@ for (const entry of ["toolbar", "context-menu"]) {
       const quality = panel.getByLabel("质量", { exact: true });
       const size = panel.getByLabel("输出分辨率预设", { exact: true });
       await expect(supplier).toHaveValue("weai");
-      await expect(panel.getByRole("combobox", { name: "图片生成 模型", exact: true })).toContainText("Image 2.5 sunburst");
+      await expect(panel.getByRole("combobox", { name: "图片生成 模型", exact: false })).toContainText("Image 2.5 sunburst");
       await expect(quality).toHaveValue("max");
       await expect(size).toHaveValue("2880x2880");
       await expect.poll(() => scans).toBeGreaterThan(0);
@@ -90,7 +90,7 @@ for (const entry of ["toolbar", "context-menu"]) {
       await page.reload();
       await open();
       await expect(supplier).toHaveValue("custom-manual-default");
-      await expect(panel.getByRole("combobox", { name: "图片生成 模型", exact: true })).toContainText("手选图片模型");
+      await expect(panel.getByRole("combobox", { name: "图片生成 模型", exact: false })).toContainText("手选图片模型");
       expect(submissions).toBe(0);
       await page.screenshot({ path: info.outputPath("weai-default-and-manual-choice.png") });
     } finally {

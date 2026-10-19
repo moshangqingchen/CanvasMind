@@ -80,6 +80,7 @@ import { createNodeParameterQuote } from "../lib/node-parameter-quote";
 import { nodeParameterSummary } from "../lib/parameter-display";
 import { NodeParameterFooter } from "./node-parameter-footer";
 import { NodeParameterRoutePicker } from "./node-parameter-route-picker";
+import { NodeParameterRate } from "./node-parameter-rate";
 import { Disclosure } from "./ui/Disclosure";
 
 const ASSET_DRAG_TYPE = "application/x-super-canvas-asset";
@@ -860,7 +861,7 @@ export function GenerationNodeBody({
                 loadState={availabilityState} checkedAt={availabilitySnapshot.checkedAt} /> : undefined} />
           </div>
           <div className="node-config-model-quote" aria-label="当前型号单价">
-            <span>单价</span><strong data-testid="param-panel-unit-price">{currentUnitPrice || "—"}</strong>
+            <span>单价</span><NodeParameterRate label={currentUnitPrice} />
           </div>
         </div>
         <NodeParameterRoutePicker label={data.label} active={uiActive} connections={connectionOptions}
@@ -870,8 +871,9 @@ export function GenerationNodeBody({
           loadState={availabilityState} checkedAt={availabilitySnapshot.connectionId === currentConnection ? availabilitySnapshot.checkedAt : undefined} />}
         <DeferredPanelContent immediate={presentation === "parameters"}>
         <section className="node-config-parameter-section" aria-label="输出参数" key={`${currentConnection}:${data.model}`}>
-          <ModelResolutionShortcuts models={modelOptions} selected={selectedModel} onChange={id => data.onModelChange?.(id)} />
+          <ModelResolutionShortcuts panelPresentation models={modelOptions} selected={selectedModel} onChange={id => data.onModelChange?.(id)} />
           <NodeParameterFields
+            panelPresentation
             nodeId={nodeId}
             nodeType={nodeType}
             provider={data.provider ?? "fake"}

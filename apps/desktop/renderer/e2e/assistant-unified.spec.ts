@@ -52,7 +52,7 @@ for (const theme of ["dark", "light"] as const) test(`${theme} 合一输入与�
   await panel.getByRole("button", { name: "关闭智能体", exact: true }).click();
   await page.getByRole("button", { name: "打开 秋日主视觉 模型与参数", exact: true }).click();
   const nodePanel = page.getByRole("dialog", { name: "秋日主视觉 模型与参数", exact: true });
-  await expect(nodePanel.getByRole("combobox", { name: "秋日主视觉 模型", exact: true })).toContainText("fixture.image.full-id-b");
+  await expect(nodePanel.getByRole("combobox", { name: "秋日主视觉 模型", exact: false })).toContainText("fixture.image.full-id-b");
   for (const [label, value] of [["画面比例", "9:16"], ["质量", "standard"], ["种子", "77"]]) await expect(nodePanel.getByLabel(label!, { exact: true })).toHaveValue(value!);
   await expect(nodePanel.getByRole("group", { name: "自动与输出分辨率快捷档位", exact: true }).getByRole("button", { name: "2K", exact: true })).toHaveAttribute("aria-pressed", "true");
   await page.screenshot({ path: join(output, `${theme}-materialized-node-parameters.png`) });

@@ -172,7 +172,7 @@ async function setup(page: Page, request: APIRequestContext, initial: ModelDescr
   });
   const baseline = geometry(canvas);
   const panel = page.getByRole("dialog", { name: `${label} 模型与参数`, exact: true });
-  const picker = panel.getByRole("combobox", { name: `${label} 模型`, exact: true });
+  const picker = panel.getByRole("combobox", { name: `${label} 模型`, exact: false });
   const closeSidebar = async () => {
     const sidebar = page.getByRole("button", { name: "智能体面板", exact: true });
     if ((await sidebar.getAttribute("aria-expanded")) === "true") await sidebar.click();
@@ -359,7 +359,7 @@ test("分辨率切换收紧滑条但保留旧秒数，明确修正后按秒费�
   } finally { f.safe(); }
 });
 
-test("离散与固定时长只提供供应商下拉档位，并保存原始 seconds 参数键", async ({ page, request }, testInfo) => {
+test("离散时长下拉与固定时长静态展示保留供应商档位，并保存原始 seconds 参数键", async ({ page, request }, testInfo) => {
   const f = await setup(page, request, discrete);
   try {
     const duration = f.panel.getByLabel("视频时长", { exact: true });
@@ -372,14 +372,16 @@ test("离散与固定时长只提供供应商下拉档位，并保存原始 seco
     await expect.poll(f.savedParameters).toEqual({ duration: 10 });
 
     await f.choose(fixedSelect);
-    await expect(duration).toHaveRole("combobox");
+    await expect(duration).toHaveRole("textbox");
+    await expect(duration).toHaveAttribute("aria-readonly", "true");
     await expectParameterValue(duration, "30");
     expect((await readParameterOptions(duration)).filter(option => option.value).map(option => option.label)).toEqual(["30 秒"]);
     await expect.poll(f.savedParameters).toEqual({ duration: 30 });
 
     await f.choose(fixedSeconds);
     await expectParameterValue(duration, "30");
-    await expect(duration).toHaveRole("combobox");
+    await expect(duration).toHaveRole("textbox");
+    await expect(duration).toHaveAttribute("aria-readonly", "true");
     expect((await readParameterOptions(duration)).filter(option => option.value).map(option => option.label)).toEqual(["30 秒"]);
     await expect(f.panel.getByRole("slider")).toHaveCount(0);
     await expect.poll(f.savedParameters).toEqual({ seconds: 30 });

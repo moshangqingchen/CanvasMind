@@ -87,7 +87,7 @@ for (const width of [980, 1280, 1366, 1440, 1920]) {
       await expect(page.locator(".canvas-zoom-value")).toHaveText(`${(zoom < .55 ? 1 : zoom) * 100}%`);
       await page.getByRole("button", { name: `打开 ${NODE_LABEL} 模型与参数`, exact: true }).click();
       const panel = page.getByRole("dialog", { name: `${NODE_LABEL} 模型与参数`, exact: true });
-      const model = panel.getByRole("combobox", { name: `${NODE_LABEL} 模型`, exact: true });
+      const model = panel.getByRole("combobox", { name: `${NODE_LABEL} 模型`, exact: false });
       await expect(model).toHaveAttribute("title", `${MODEL_NAME} · layout-image-model`);
       const inspectorToggle = page.getByRole("button", { name: "智能体面板", exact: true });
       if (await inspectorToggle.getAttribute("aria-expanded") === "true") await inspectorToggle.click();

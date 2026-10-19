@@ -100,7 +100,7 @@ for (const [id, name, tierLabels] of [
       await expect.poll(async () => (await f.saved()).parameters).toEqual({ resolution, aspect_ratio: aspectRatio });
     };
     try {
-      const picker = f.panel.getByRole("combobox", { name: `${f.label} 模型`, exact: true });
+      const picker = f.panel.getByRole("combobox", { name: `${f.label} 模型`, exact: false });
       await expect(picker).toContainText(name);
       await expect(picker).toContainText(`ID: ${id}`);
       await expect(tiers.getByRole("button")).toHaveText(["自动", ...tierLabels]);

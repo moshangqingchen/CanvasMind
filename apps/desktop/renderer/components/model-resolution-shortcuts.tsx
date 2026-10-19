@@ -11,10 +11,12 @@ export function ModelResolutionShortcuts({
   models,
   selected,
   onChange,
+  panelPresentation = false,
 }: {
   models: readonly ModelDescriptor[];
   selected?: ModelDescriptor | null;
   onChange: (modelId: string) => void;
+  panelPresentation?: boolean;
 }) {
   const family = modelResolutionFamily(models, selected);
   if (!family.length) return null;
@@ -22,6 +24,7 @@ export function ModelResolutionShortcuts({
     <div className="field model-resolution-family">
       <label>型号分辨率与价格</label>
       <Segmented label="切换同渠道型号的分辨率" value={selected?.id ?? ""} className="model-resolution-segmented"
+        singleOptionDisplay={panelPresentation ? "static" : undefined}
         options={family.map(({ tier, model }) => {
           const price = model ? modelResolutionPrice(model) : "未提供";
           const currencyNote = "（币种未注明）";

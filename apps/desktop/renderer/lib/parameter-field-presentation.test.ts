@@ -120,3 +120,72 @@ describe("parameter evidence presentation", () => {
     expect(parameters).toEqual({ quality: 0.75 });
   });
 });
+
+describe("panel-only enum presentation", () => {
+  it.each(["video-generation", "image-generation"] as const)("keeps the disabled automatic ratio label and reason inspectable beside a sole static ratio in %s", nodeType => {
+    const ratio = field("aspect_ratio", { label: "单一比例", control: "select", default: "16:9", options: [{ value: "16:9", label: "16:9" }] });
+    const current = model([ratio], nodeType === "image-generation" ? { imageNativeParameterContract: true, imageFixedResolution: "2K" } : {});
+    const html = renderToStaticMarkup(createElement(NodeParameterFields, { nodeId: `fixed-ratio-${nodeType}`, nodeType, provider: "rest", model: current, parameters: { aspect_ratio: "16:9" }, panelPresentation: true, onChange: () => undefined, showAdvanced: false }));
+    expect(html).toMatch(/role="textbox"[^>]*data-value="16:9"/u);
+    expect(html).toContain("自动 · 跟随提示词，其次参考图");
+    expect(html).toContain("当前型号未声明此自动比例，请选择已列比例或模型默认。");
+    expect(html).toContain("选项限制");
+  });
+
+  it("uses the common dropdown for every closed enum only when the canvas panel opts in", () => {
+    const descriptors = [field("resolution", { control: "select", default: "720p", options: [{ value: "720p", label: "720p" }, { value: "1080p", label: "1080p" }] }),
+      field("n", { control: "select", valueType: "integer", default: 1, options: [{ value: 1, label: "1 个" }, { value: 2, label: "2 个" }] })];
+    const parameters = { resolution: "720p", n: 2 };
+    const props = { nodeId: "panel-enums", nodeType: "video-generation" as const, provider: "rest", model: model(descriptors), parameters, onChange: vi.fn(), showAdvanced: false };
+    const ordinaryEditor = renderToStaticMarkup(createElement(NodeParameterFields, props));
+    expect(ordinaryEditor.match(/<select /gu)).toHaveLength(2);
+    const panel = renderToStaticMarkup(createElement(NodeParameterFields, { ...props, panelPresentation: true }));
+    expect(panel).not.toContain("<select");
+    expect(panel.match(/role="combobox"/gu)).toHaveLength(2);
+    expect(panel).toContain('data-value="2"');
+    expect(parameters).toEqual({ resolution: "720p", n: 2 });
+    expect(props.onChange).not.toHaveBeenCalled();
+  });
+
+  it("shows a legal fixed duration statically while retaining invalid saved values and alias correction as dropdowns", () => {
+    const descriptor = field("duration", { label: "时长", control: "number", valueType: "integer", min: 30, max: 30, default: 30 });
+    const render = (parameters: Record<string, unknown>, metadata: ModelDescriptor["metadata"] = {}) => renderToStaticMarkup(createElement(NodeParameterFields, {
+      nodeId: "fixed-duration", nodeType: "video-generation", provider: "rest", model: model([descriptor], metadata), parameters, onChange: () => undefined, panelPresentation: true, showAdvanced: false,
+    }));
+    expect(render({ duration: 30 })).toMatch(/role="textbox"[^>]*data-value="30"[^>]*aria-label="时长"/u);
+    expect(render({ duration: 45 })).toContain('role="combobox"');
+    expect(render({ duration: 45 })).toContain('data-value="45"');
+    expect(render({ duration: 45 })).toContain('aria-invalid="true"');
+    expect(render({ duration: 30, seconds: 30 }, { jiasuVideoContract: true })).toContain('role="combobox"');
+  });
+
+  it("retains the canonical re-selection entry when a sole enum is displayed through a saved alias", () => {
+    const descriptor = field("duration", { control: "select", valueType: "integer", default: 30, options: [{ value: 30, label: "30 秒" }] });
+    const parameters = { seconds: 30 };
+    const html = renderToStaticMarkup(createElement(NodeParameterFields, { nodeId: "sole-alias", nodeType: "video-generation", provider: "rest", model: model([descriptor], { jiasuVideoContract: true }), parameters, panelPresentation: true, onChange: () => undefined, showAdvanced: false }));
+    expect(html).toContain('role="combobox"');
+    expect(html).toContain('data-value="30"');
+    expect(parameters).toEqual({ seconds: 30 });
+  });
+
+  it("renders transparent PNG as a readonly locked value while keeping other editors on their existing control", () => {
+    const descriptor = field("output_format", { label: "输出格式", control: "select", default: "png", options: ["png", "jpeg", "webp"].map(value => ({ value, label: value.toUpperCase() })) });
+    const props = { nodeId: "png-lock", nodeType: "image-generation" as const, provider: "rest", model: model([descriptor]), parameters: { background: "transparent", output_format: "png" }, transparentSupported: true, onChange: vi.fn(), showAdvanced: false };
+    const panel = renderToStaticMarkup(createElement(NodeParameterFields, { ...props, panelPresentation: true }));
+    expect(panel).toMatch(/role="textbox"[^>]*data-value="png"[^>]*aria-label="输出格式"[^>]*aria-disabled="true"/u);
+    expect(panel).toContain('aria-readonly="true"');
+    expect(panel).not.toContain("<select");
+    expect(renderToStaticMarkup(createElement(NodeParameterFields, props))).toContain("<select");
+    expect(props.onChange).not.toHaveBeenCalled();
+  });
+
+  it("places the panel duration value beside its label before the slider, and leaves the other editor layout unchanged", () => {
+    const descriptor = field("duration", { label: "时长", control: "number", valueType: "integer", min: 1, max: 30, step: 1, default: 5 });
+    const props = { nodeId: "duration-row", nodeType: "video-generation" as const, provider: "rest", model: model([descriptor]), parameters: { duration: 5 }, onChange: () => undefined, showAdvanced: false };
+    const panel = renderToStaticMarkup(createElement(NodeParameterFields, { ...props, panelPresentation: true }));
+    expect(panel.indexOf("<label")).toBeLessThan(panel.indexOf("<output"));
+    expect(panel.indexOf("<output")).toBeLessThan(panel.indexOf('type="range"'));
+    const ordinary = renderToStaticMarkup(createElement(NodeParameterFields, props));
+    expect(ordinary.indexOf('type="range"')).toBeLessThan(ordinary.indexOf("<output"));
+  });
+});

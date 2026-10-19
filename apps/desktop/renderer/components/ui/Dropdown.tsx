@@ -30,11 +30,14 @@ export interface DropdownProps {
   ariaInvalid?: boolean;
   required?: boolean;
   describedBy?: string;
+  /** Only the opting-in surface may replace an already valid sole choice. */
+  singleOptionDisplay?: "static";
+  singleOptionDescription?: ReactNode;
 }
 
 /** Option values are opaque: domain adapters retain validation and mapping. */
 export function Dropdown({ id, label, value, options, onChange, disabled = false, active = true,
-  description, title, className = "", ariaInvalid, required, describedBy }: DropdownProps) {
+  description, title, className = "", ariaInvalid, required, describedBy, singleOptionDisplay, singleOptionDescription }: DropdownProps) {
   const generatedId = useId();
   const controlId = id ?? `parameter-dropdown-${generatedId}`;
   const listId = `${controlId}-list`, selectedId = `${controlId}-selected`, descriptionId = `${controlId}-description`;
@@ -42,7 +45,9 @@ export function Dropdown({ id, label, value, options, onChange, disabled = false
   const [activeValue, setActiveValue] = useState(value);
   const host = useRef<HTMLDivElement>(null), trigger = useRef<HTMLButtonElement>(null), surface = useRef<HTMLDivElement>(null);
   const typeahead = useRef<TypeaheadState>({ text: "", at: 0 });
-  if ((!active || disabled) && open) setOpen(false);
+  const legalOptions = singleOptionDisplay === "static" ? options.filter(option => !option.disabled) : [];
+  const staticOption = value && !ariaInvalid && legalOptions.length === 1 && legalOptions[0]!.value === value ? legalOptions[0] : undefined;
+  if ((!active || disabled || staticOption) && open) setOpen(false);
   const entries = useMemo<readonly DropdownOption[]>(() => value && !options.some(option => option.value === value)
     ? [{ value, label: value, detail: "已保存值" }, ...options] : options, [options, value]);
   const selected = entries.find(option => option.value === value);
@@ -66,6 +71,33 @@ export function Dropdown({ id, label, value, options, onChange, disabled = false
     if (index >= 0) setActiveValue(entries[index]!.value);
     setOpen(true);
   };
+  if (staticOption) {
+    const singleDescriptionId = `${controlId}-single-description`, reasonsId = `${controlId}-restrictions`;
+    const restrictions = options.filter(option => option.disabled);
+    const selectedReason = staticOption.disabledReason !== description && staticOption.disabledReason !== singleOptionDescription
+      ? staticOption.disabledReason : undefined;
+    return <div ref={host} className={`${styles.dropdown} ${className}`} data-ui="dropdown" data-display="static">
+      <div id={controlId} role="textbox" aria-readonly="true" tabIndex={-1} className={styles.staticValue} data-value={value}
+        aria-label={label} aria-required={required || undefined} aria-disabled={disabled || undefined}
+        aria-describedby={[selectedId, description ? descriptionId : null, singleOptionDescription ? singleDescriptionId : null,
+          restrictions.length || selectedReason ? reasonsId : null, describedBy].filter(Boolean).join(" ")}
+        title={title ?? `${staticOption.label}${typeof staticOption.detail === "string" ? ` · ${staticOption.detail}` : ""}`}>
+        <span id={selectedId} className={styles.dropdownValue}>
+          {staticOption.icon && <span className={styles.optionIcon}>{staticOption.icon}</span>}
+          <span className={styles.optionLabel}>{staticOption.label}</span>
+          {staticOption.detail != null && <span className={styles.optionDetail}>{staticOption.detail}</span>}
+        </span>
+      </div>
+      {description && <small id={descriptionId} className={styles.description}>{description}</small>}
+      {singleOptionDescription && <small id={singleDescriptionId} className={styles.description}>{singleOptionDescription}</small>}
+      {(restrictions.length > 0 || selectedReason) && <details id={reasonsId} className={styles.staticRestrictions}>
+        <summary>选项限制</summary>
+        <ul>{restrictions.map((option, index) => <li key={`${option.value}:${index}`}>
+          <span>{option.label}</span>{option.disabledReason && <> · <span>{option.disabledReason}</span></>}
+        </li>)}{selectedReason && <li>{staticOption.label} · {selectedReason}</li>}</ul>
+      </details>}
+    </div>;
+  }
   return <div ref={host} className={`${styles.dropdown} ${className}`} data-ui="dropdown" data-node-config-layer-open={open ? "true" : undefined}
     onKeyDown={event => {
       if (event.nativeEvent.isComposing || event.keyCode === 229) return;

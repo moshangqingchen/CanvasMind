@@ -52,7 +52,7 @@ async function fixture(page: Page, request: APIRequestContext) {
   await page.goto(`/canvas/${canvas.id}`);
   await page.getByRole("button", { name: "打开 列表布局 模型与参数", exact: true }).click();
   const panel = page.getByRole("dialog", { name: "列表布局 模型与参数", exact: true });
-  const picker = panel.getByRole("combobox", { name: "列表布局 模型", exact: true });
+  const picker = panel.getByRole("combobox", { name: "列表布局 模型", exact: false });
   await expect(picker).toContainText(lastFamily);
   // Read the initial desktop drawer state after the canvas and picker are ready,
   // so its first-frame initialization cannot reopen it after this user action.

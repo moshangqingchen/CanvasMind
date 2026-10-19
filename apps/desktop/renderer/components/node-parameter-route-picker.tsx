@@ -4,7 +4,7 @@ import { useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent }
 import { Check, ChevronDown, ExternalLink } from "lucide-react";
 import type { SupplierBillingSnapshot } from "@super-canvas/db";
 import { billingCompact } from "../lib/supplier-billing-display";
-import { nodeParameterRoutePath, nodeParameterRouteRows, type NodeParameterRoute } from "../lib/node-parameter-routes";
+import { nodeParameterRouteBalance, nodeParameterRouteGroups, nodeParameterRoutePath, nodeParameterRouteRows, type NodeParameterRoute } from "../lib/node-parameter-routes";
 import { ModelPriceTable } from "./model-price-table";
 import { useAnchoredSurface } from "./ui/useAnchoredSurface";
 import styles from "./node-parameter-route-picker.module.css";
@@ -18,24 +18,26 @@ function RouteChoice({ row, balance, onChoose }: { row: RouteRow; balance: strin
   const reasonId = useId();
   const switchId = useId();
   const quoteId = useId();
+  const details = `${row.path}\n分组 ID：${connection.group}\n连接 ID：${connection.id}\n${balance}\n同型号报价：${row.comparisonPrice}\n切换后将使用：${row.switchModelName}（${row.switchModelId}）${row.unavailableReason ? `\n${row.unavailableReason}` : ""}`;
   return <li className={styles.row} data-route-id={connection.id} data-route-group={connection.group}>
     <button type="button" className={styles.choice} data-route-choice="true"
       aria-label={`选择线路 ${row.path}`} aria-pressed={row.current} aria-disabled={Boolean(row.unavailableReason)}
       aria-describedby={`${switchId} ${quoteId}${row.unavailableReason ? ` ${reasonId}` : ""}`}
+      title={details}
       onClick={() => { if (!row.unavailableReason) onChoose(connection.id); }}>
       <span className={styles.identity}>
-        <strong>{row.path}</strong>
-        {connection.groupLabel && connection.groupLabel !== connection.group && <small>分组 ID：{connection.group}</small>}
-        <small id={switchId}>切换后将使用：<span className={styles.modelId}>{row.switchModelId}</span></small>
-        {connection.switchModelName && connection.switchModelName !== row.switchModelId && <small>{connection.switchModelName}</small>}
-        <span className={styles.amount} id={quoteId}>同型号报价：{row.comparisonPrice}</span>
-        <small>{balance}</small>
+        <span className={styles.primary}><strong>{row.shortLabel}</strong>
+          <span className={styles.amount} id={quoteId} aria-label="同型号报价" title={row.comparisonPrice}>{row.comparisonPrice}</span>
+          {row.current && <Check size={13} className={styles.current} aria-label="当前线路" />}
+        </span>
+        <span className={styles.secondary}><small>{balance}</small>
+          <small id={switchId} aria-label={`切换后将使用：${row.switchModelName}（${row.switchModelId}）`}>{row.switchLabel}</small>
+        </span>
         {row.unavailableReason && <small id={reasonId}>{row.unavailableReason}</small>}
       </span>
-      {row.current && <Check size={15} className={styles.current} aria-label="当前线路" />}
     </button>
     <details className={styles.details} open={detailsOpen} onToggle={event => setDetailsOpen(event.currentTarget.open)}>
-      <summary>{row.path}价格明细</summary>
+      <summary aria-label={`${row.path}价格明细`}>价格明细</summary>
       {detailsOpen && (connection.modelDescriptor ? <ModelPriceTable model={connection.modelDescriptor} /> : <p>{connection.modelQuote ?? "—"}</p>)}
     </details>
   </li>;
@@ -70,9 +72,10 @@ export function NodeParameterRoutePicker({ label, active, connections, currentCo
   const triggerId = `${surfaceId}-trigger`;
   const current = connections.find(connection => connection.id === currentConnection);
   const path = nodeParameterRoutePath(connections, currentConnection);
-  const balanceFor = (connection?: NodeParameterRoute) => billingCompact(billingAccounts.find(account => account.id === connection?.supplierId)?.billing);
+  const billingFor = (connection?: NodeParameterRoute) => billingAccounts.find(account => account.id === connection?.supplierId)?.billing;
+  const compactBalance = nodeParameterRouteBalance(billingFor(current));
   // Closed cards do not calculate every candidate's tariffs or mount their tables.
-  const rows = useMemo(() => open && active ? nodeParameterRouteRows(connections, currentConnection) : [], [open, active, connections, currentConnection]);
+  const groups = useMemo(() => open && active ? nodeParameterRouteGroups(nodeParameterRouteRows(connections, currentConnection, currentModel)) : [], [open, active, connections, currentConnection, currentModel]);
 
   useAnchoredSurface({ open, active, onClose: () => setOpen(false), hostRef: host, triggerRef: trigger, surfaceRef: surface,
     minWidth: 320, maxWidth: 480, preferSidePlacement: true });
@@ -110,7 +113,7 @@ export function NodeParameterRoutePicker({ label, active, connections, currentCo
     onBlur={event => { if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}>
     <div className={styles.bar} aria-label="当前线路">
       <span className={styles.path} title={current ? `${path} · ${current.name} · ${current.id}` : currentConnection || "未配置 API"}>{path}</span>
-      <small className={styles.balance} title={balanceFor(current)}>{balanceFor(current)}</small>
+      {compactBalance && <small className={styles.balance} title={compactBalance}>{compactBalance}</small>}
       <button id={triggerId} ref={trigger} type="button" className={styles.trigger} aria-label={`${label} 线路`}
         aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? surfaceId : undefined}
         onClick={() => { focusIntent.current = "current"; setOpen(!open); }}>
@@ -121,11 +124,18 @@ export function NodeParameterRoutePicker({ label, active, connections, currentCo
     {current?.available === false && <p className={styles.warning} role="status">当前实际连接是 {current.name}（{current.group}），{current.unavailableReason ?? "该分组密钥不可用"}。请重新配置或选择其他可用分组。</p>}
     {open && active && <div ref={surface} id={surfaceId} popover="manual" className={styles.surface}
       role="dialog" aria-label={`${label} 候选线路`} aria-modal="false">
-      <header className={styles.heading}><strong>选择线路</strong><span>比对型号：{currentModel || "—"}</span></header>
+      <header className={styles.heading}><strong>选择线路</strong><span aria-label="报价比对型号" title={currentModel || "—"}>同型号报价</span></header>
       <ul className={styles.list} aria-label="候选线路">
-        {rows.map(row => <RouteChoice key={row.connection.id} row={row} balance={balanceFor(row.connection)} onChoose={choose} />)}
+        {groups.map(group => <li key={group.supplier} className={styles.supplier} data-route-supplier={group.supplier}>
+          <section role="group" aria-label={`${group.label} 线路`}>
+            <h4 className={styles.supplierHeading} title={group.supplier}>{group.label}</h4>
+            <ul className={styles.rows} aria-label={`${group.label} 候选连接`}>
+              {group.rows.map(row => <RouteChoice key={row.connection.id} row={row} balance={billingCompact(billingFor(row.connection))} onChoose={choose} />)}
+            </ul>
+          </section>
+        </li>)}
       </ul>
-      {rows.length === 0 && <p className={styles.empty}>暂无连接，请先配置供应商。</p>}
+      {groups.length === 0 && <p className={styles.empty}>暂无连接，请先配置供应商。</p>}
       <button type="button" className={styles.manage} aria-label="管理供应商与密钥" onClick={() => { setOpen(false); onManage(); }}>
         <ExternalLink size={14} />管理供应商与密钥
       </button>

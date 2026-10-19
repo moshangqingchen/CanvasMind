@@ -15,6 +15,7 @@ import {
   normalizedParametersForModel,
   parameterValueForModel,
   parameterDescriptorsForValues,
+  modelParameterAliases,
   setParameterValue,
   usesSecureSeedreamSizePrecedence,
 } from "../lib/model-parameters";
@@ -29,7 +30,7 @@ import {
 import { isImageRatioParameter, nativeImageResolutionControl } from "../lib/native-image-resolution";
 import { NativeImageResolutionFields, NativeImageResolutionSources, nativeImageResolutionSourceNotes } from "./native-image-resolution-fields";
 import { imageTransparencyEvidenceNote, type ImageTransparencyPresentation } from "../lib/image-transparency-presentation";
-import { Dropdown } from "./ui/Dropdown";
+import { Dropdown, type DropdownOption } from "./ui/Dropdown";
 import { Segmented } from "./ui/Segmented";
 import { Disclosure } from "./ui/Disclosure";
 import { Switch } from "./ui/Switch";
@@ -37,6 +38,7 @@ import { RatioIcon } from "./ui/RatioIcon";
 import { parameterOptionDisplayLabel } from "../lib/parameter-display";
 import { parameterPresentationGroups } from "../lib/parameter-field-presentation";
 import { NodeParameterSources } from "./node-parameter-sources";
+import styles from "./node-parameter-fields.module.css";
 
 interface NodeParameterFieldsProps {
   nodeId: string;
@@ -52,6 +54,8 @@ interface NodeParameterFieldsProps {
   hasReferenceVideo?: boolean;
   /** Plan snapshots must change only through explicit controls, not mounting. */
   normalizeAutomatically?: boolean;
+  /** Opt in only at the canvas parameter panel; plan editors keep their UI. */
+  panelPresentation?: boolean;
 }
 
 function controlId(nodeId: string, key: string) {
@@ -381,6 +385,8 @@ function DimensionsControl({
   showResolutionShortcuts = true,
   explicitRatio,
   independentSizePreferences = false,
+  panelPresentation = false,
+  allowSingleOptionDisplay = true,
 }: {
   id: string;
   descriptor: ModelParameterDescriptor;
@@ -396,6 +402,8 @@ function DimensionsControl({
   showResolutionShortcuts?: boolean;
   explicitRatio?: unknown;
   independentSizePreferences?: boolean;
+  panelPresentation?: boolean;
+  allowSingleOptionDisplay?: boolean;
 }) {
   const initial = useMemo(() => dimensionParts(value), [value]);
   const [width, setWidth] = useState(initial[0]);
@@ -487,8 +495,10 @@ function DimensionsControl({
       <div className="parameter-dimensions-heading">
         <label title={descriptor.description}>{descriptor.label}</label>
       </div>
-      {showResolutionShortcuts && (resolutionShortcuts.length > 0 || showAllResolutionTiers) ? (
+      {showResolutionShortcuts && (resolutionShortcuts.length > 0 || showAllResolutionTiers) &&
+        !(panelPresentation && readOnlyDimensions && !resolutionShortcuts.length) ? (
         <Segmented label="自动与输出分辨率快捷档位" className="parameter-resolution-segmented"
+          singleOptionDisplay={panelPresentation && allowSingleOptionDisplay ? "static" : undefined}
           value={fullyAutomatic ? "auto" : activeResolutionTier ?? ""}
           options={[
             { value: "auto", label: "自动", disabled: !autoOption, title: !autoOption ? "当前型号未提供自动尺寸选项" : undefined },
@@ -523,6 +533,7 @@ function DimensionsControl({
         <div className="parameter-ratio-dropdown">
         <label htmlFor={`${id}-preset`}>{independentSizePreferences ? "尺寸比例" : "画面比例"}</label>
         <Dropdown id={`${id}-preset`} label="输出分辨率预设" value={presetValue} options={presetOptions}
+          singleOptionDisplay={panelPresentation && readOnlyDimensions && allowSingleOptionDisplay ? "static" : undefined}
           onChange={next => {
             if (!next) { setCustomSizeOpen(true); return; }
             if (next === "auto") {
@@ -682,6 +693,8 @@ function ParameterControl({
   durationUpperBoundConfirmed,
   resolutionRangeUnverified,
   imageLayout,
+  panelPresentation,
+  hasParameterIssue,
 }: {
   nodeId: string;
   nodeType: GenerationNodeType;
@@ -696,6 +709,8 @@ function ParameterControl({
   durationUpperBoundConfirmed: boolean;
   resolutionRangeUnverified: boolean;
   imageLayout: boolean;
+  panelPresentation: boolean;
+  hasParameterIssue: boolean;
 }) {
   // The same node can be configured in the inspector and a popover at once.
   // Each rendered control needs its own ID so labels target the local input.
@@ -728,6 +743,31 @@ function ParameterControl({
     durationControl?.kind === "select" ? { ...descriptor, control: "select", options: selectOptions } : descriptor,
     value,
   );
+  const hasSavedAlias = modelParameterAliases(sizeAspectRatioContext.model).find(([key]) => key === descriptor.key)?.[1]
+    .some(alias => parameters[alias] !== undefined) === true;
+  const canDisplaySingleOption = panelPresentation && !hasParameterIssue && !hasSavedAlias && !savedSelectValueMissing;
+  const fixedOption = canDisplaySingleOption && descriptor.allowCustomValue !== true && selectOptions?.length === 1 && String(selectOptions[0]!.value) === String(value)
+    ? selectOptions[0] : undefined;
+  const pngLocked = panelPresentation && descriptor.key === "output_format" && parameters.background === "transparent" && String(value) === "png"
+    ? selectOptions?.find(option => String(option.value) === "png") : undefined;
+  const optionPresentation = (option: ModelParameterOption): DropdownOption => ({ value: String(option.value),
+    label: qualityControl ? parameterOptionDisplayLabel(descriptor.key, option.value, option.label) : option.label,
+    detail: qualityControl ? String(option.value) : undefined,
+    icon: ratioControl && /^\d+(?:\.\d+)?:\d+(?:\.\d+)?$/u.test(String(option.value)) ? <RatioIcon ratio={String(option.value)} /> : undefined });
+  const fullDropdownOptions: DropdownOption[] = [
+    ...(ratioControl ? [{ value: (selectOptions ?? []).some(option => String(option.value) === "auto") ? "auto" : "__automatic_ratio_unavailable__",
+      label: (() => { const option = selectOptions?.find(item => String(item.value) === "auto"); return option && /供应商|模型默认|上游默认/u.test(option.label) ? option.label : "自动 · 跟随提示词，其次参考图"; })(),
+      disabled: !(selectOptions ?? []).some(option => String(option.value) === "auto"),
+      disabledReason: !(selectOptions ?? []).some(option => String(option.value) === "auto") ? "当前型号未声明此自动比例，请选择已列比例或模型默认。" : undefined }] : []),
+    { value: "", label: descriptor.key === aspectRatioKey && parameters.size !== undefined && sizeAspectRatioContext.hasSizeControl ? "按精确尺寸" : "模型默认" },
+    ...(savedSelectValueMissing ? [{ value: String(value), label: `${String(value)}（已保存）`, disabled: nodeType === "video-generation" }] : []),
+    ...(selectOptions ?? []).filter(option => !ratioControl || String(option.value) !== "auto").map(optionPresentation),
+  ];
+  // The implicit default/clear action is unnecessary for a fixed value, but
+  // disabled choices still explain the exact contract and remain inspectable.
+  const dropdownOptions = pngLocked || fixedOption
+    ? fullDropdownOptions.filter(option => option.disabled || option.value === String((pngLocked ?? fixedOption)!.value))
+    : fullDropdownOptions;
   const update = (raw: string | boolean) => {
     let nextValue = coerceParameterInput(descriptor, raw, nodeType);
     if (
@@ -814,6 +854,8 @@ function ParameterControl({
         showResolutionShortcuts={!hasIndependentImageTier(sizeAspectRatioContext.model)}
         explicitRatio={parameters.aspect_ratio ?? parameters.aspectRatio ?? parameters.ratio}
         independentSizePreferences={hasIndependentImageTier(sizeAspectRatioContext.model) || sizeAspectRatioContext.model?.metadata?.imageOpenSizePreferences === true || usesSecureSeedreamSizePrecedence(sizeAspectRatioContext.model)}
+        panelPresentation={panelPresentation}
+        allowSingleOptionDisplay={!hasSavedAlias && !hasParameterIssue}
       />
       {savedSelectValueMissing && <small role="status" className="parameter-help parameter-wide">已保存：{String(value)}；目录尺寸：{(descriptor.options ?? []).map(option => option.label).join(" / ") || "—"}</small>}
       </>
@@ -830,13 +872,17 @@ function ParameterControl({
 
   return (
     <div
-      className={`field parameter-field${descriptor.key === "lyrics" || nodeType === "image-generation" && imageLayout && isImageRatioParameter(descriptor) ? " parameter-wide" : ""}${disabledReason ? " is-disabled" : ""}`}
+      className={`field parameter-field${descriptor.key === "lyrics" || nodeType === "image-generation" && imageLayout && isImageRatioParameter(descriptor) ? " parameter-wide" : ""}${disabledReason ? " is-disabled" : ""}${panelPresentation && durationControl?.kind === "range" ? ` ${styles.durationField}` : ""}`}
     >
-      <label htmlFor={id} title={disabledReason ?? descriptor.description}>
+      {!(panelPresentation && durationControl?.kind === "range") && <label htmlFor={id} title={disabledReason ?? descriptor.description}>
         {descriptor.label}
-      </label>
+      </label>}
       {durationControl?.kind === "range" ? (
-        <div className="parameter-duration-range">
+        <div className={`parameter-duration-range${panelPresentation ? ` ${styles.durationRange}` : ""}`}>
+          {panelPresentation && <div className={styles.durationHeading}>
+            <label htmlFor={id} title={disabledReason ?? descriptor.description}>{descriptor.label}</label>
+            <output htmlFor={id}>{durationControl.invalidValue !== undefined ? `${durationControl.invalidValue}（已保存）` : `${durationControl.value} 秒`}</output>
+          </div>}
           <div className="parameter-duration-track">
             <input
               id={id}
@@ -853,7 +899,7 @@ function ParameterControl({
               aria-describedby={`${id}-bounds${durationContext.userFallbackRange ? ` ${id}-source` : ""}${durationControl.invalidValue !== undefined ? ` ${id}-saved` : ""}`}
               onChange={(event) => update(event.target.value)}
             />
-            <output htmlFor={id}>{durationControl.invalidValue !== undefined ? `${durationControl.invalidValue}（已保存）` : `${durationControl.value} 秒`}</output>
+            {!panelPresentation && <output htmlFor={id}>{durationControl.invalidValue !== undefined ? `${durationControl.invalidValue}（已保存）` : `${durationControl.value} 秒`}</output>}
           </div>
           <small id={`${id}-bounds`} className="parameter-duration-bounds">
             <span>{durationControl.min} 秒</span>
@@ -870,13 +916,19 @@ function ParameterControl({
         </div>
       ) : durationControl?.kind === "unavailable" || nodeType === "video-generation" && descriptor.key === "resolution" && resolutionRangeUnverified && descriptor.allowCustomValue !== true && sizeAspectRatioContext.model?.metadata?.videoResolutionValueMode !== "derived-size" ? (
         <div className="parameter-duration-unavailable">
-          <select id={id} value={String(unverifiedValue)} disabled={Boolean(disabledReason)}
+          {panelPresentation ? <Dropdown id={id} label={descriptor.label} value={String(unverifiedValue)} disabled={Boolean(disabledReason)}
+            title={disabledReason ?? descriptor.description} describedBy={`${id}-unavailable`} required={descriptor.required}
+            ariaInvalid={unverifiedValueMissing || hasParameterIssue || undefined} onChange={update} options={[
+              { value: "", label: "供应商默认（未公开可选范围）" },
+              ...(confirmedDefault !== undefined ? [{ value: String(confirmedDefault), label: `${String(confirmedDefault)}（已公布默认值）` }] : []),
+              ...(unverifiedValueMissing ? [{ value: String(unverifiedValue), label: `${String(unverifiedValue)}（已保存）`, disabled: true }] : []),
+            ]} /> : <select id={id} value={String(unverifiedValue)} disabled={Boolean(disabledReason)}
             title={disabledReason ?? descriptor.description} aria-describedby={`${id}-unavailable`}
             aria-invalid={unverifiedValueMissing || undefined} onChange={event => update(event.target.value)}>
             <option value="">供应商默认（未公开可选范围）</option>
             {confirmedDefault !== undefined && <option value={String(confirmedDefault)}>{String(confirmedDefault)}（已公布默认值）</option>}
             {unverifiedValueMissing && <option value={String(unverifiedValue)} disabled>{String(unverifiedValue)}（已保存）</option>}
-          </select>
+          </select>}
           <small id={`${id}-unavailable`} role="status" className="parameter-help">
             当前值：{unverifiedValueMissing ? String(unverifiedValue) : "供应商默认"} · 目录范围：—。
             选择供应商默认会清除当前自定义值。
@@ -886,22 +938,13 @@ function ParameterControl({
         <ParameterSuggestions key={`${nodeId}:${modelId ?? ""}:${descriptor.key}`}
           id={id} descriptor={descriptor} presets={(selectOptions ?? []).map(option => ({ value: String(option.value), label: option.label }))}
           value={String(value)} disabledReason={disabledReason} update={update} ratio={ratioControl} />
-      ) : descriptor.control === "select" && (ratioControl || qualityControl) ? (
+      ) : descriptor.control === "select" && (ratioControl || qualityControl || panelPresentation) || panelPresentation && durationControl?.kind === "select" ? (
         <Dropdown id={id} label={descriptor.label} value={String(value)} disabled={Boolean(disabledReason)}
           title={disabledReason ?? descriptor.description} required={descriptor.required}
-          ariaInvalid={nodeType === "video-generation" && savedSelectValueMissing || undefined}
-          options={[
-            ...(ratioControl ? [{ value: (selectOptions ?? []).some(option => String(option.value) === "auto") ? "auto" : "__automatic_ratio_unavailable__",
-              label: (() => { const option = selectOptions?.find(item => String(item.value) === "auto"); return option && /供应商|模型默认|上游默认/u.test(option.label) ? option.label : "自动 · 跟随提示词，其次参考图"; })(),
-              disabled: !(selectOptions ?? []).some(option => String(option.value) === "auto"),
-              disabledReason: !(selectOptions ?? []).some(option => String(option.value) === "auto") ? "当前型号未声明此自动比例，请选择已列比例或模型默认。" : undefined }] : []),
-            { value: "", label: descriptor.key === aspectRatioKey && parameters.size !== undefined && sizeAspectRatioContext.hasSizeControl ? "按精确尺寸" : "模型默认" },
-            ...(savedSelectValueMissing ? [{ value: String(value), label: `${String(value)}（已保存）`, disabled: nodeType === "video-generation" }] : []),
-            ...(selectOptions ?? []).filter(option => !ratioControl || String(option.value) !== "auto").map(option => ({ value: String(option.value),
-              label: qualityControl ? parameterOptionDisplayLabel(descriptor.key, option.value, option.label) : option.label,
-              detail: qualityControl ? String(option.value) : undefined,
-              icon: ratioControl && /^\d+(?:\.\d+)?:\d+(?:\.\d+)?$/u.test(String(option.value)) ? <RatioIcon ratio={String(option.value)} /> : undefined })),
-          ]} onChange={update} />
+          ariaInvalid={nodeType === "video-generation" && savedSelectValueMissing || panelPresentation && hasParameterIssue || undefined}
+          singleOptionDisplay={canDisplaySingleOption || pngLocked ? "static" : undefined}
+          singleOptionDescription={pngLocked ? disabledReason : fixedOption ? "当前型号使用固定选项" : undefined}
+          options={dropdownOptions} onChange={update} />
       ) : durationControl?.kind === "select" || descriptor.control === "select" ? (
         <select
           id={id}
@@ -973,7 +1016,7 @@ function ParameterControl({
         </>
       )}
       {durationControl?.kind === "select" && savedSelectValueMissing && <small role="status" className="parameter-help">当前值：{String(value)} · 目录时长：{durationControl.options.map(option => option.label).join(" / ") || "—"}。</small>}
-      {disabledReason && <small className="parameter-help">{disabledReason}</small>}
+      {disabledReason && !pngLocked && <small className="parameter-help">{disabledReason}</small>}
     </div>
   );
 }
@@ -991,6 +1034,7 @@ export function NodeParameterFields({
   transparency,
   hasReferenceVideo = false,
   normalizeAutomatically = true,
+  panelPresentation = false,
 }: NodeParameterFieldsProps) {
   const undeclaredSavedImageFields = nodeType === "image-generation" ? [...new Set([
     ...undeclaredCOpenImageParameterKeys(model ?? undefined, parameters, operation),
@@ -1085,6 +1129,9 @@ export function NodeParameterFields({
   if (moreContainsIssues && !moreParametersOpen) setMoreParametersOpen(true);
   const nativeSourceProps = nativeResolution ? { model, resolution: nativeResolution.resolution, ratio: nativeResolution.ratio,
     parameters, hasExactSizeControl: sizeAspectRatioContext.hasSizeControl } : undefined;
+  const nativeSourceNotes = nativeSourceProps ? nativeImageResolutionSourceNotes(nativeSourceProps) : [];
+  const fixedSizeTierRestriction = panelPresentation && tk1688Resolution && !resolutionTierShortcuts(tk1688Resolution.descriptor).length
+    ? `当前渠道使用固定尺寸 ${tk1688Resolution.fixedSize.replace("x", " × ")}。自动：当前型号未提供自动尺寸选项；1K / 2K / 4K：当前渠道未声明支持此档位。` : undefined;
   const hasImageOutputMode = nodeType === "image-generation" && provider !== "cli";
   const renderControl = (descriptor: ModelParameterDescriptor) => <ParameterControl
     key={descriptor.key}
@@ -1100,6 +1147,8 @@ export function NodeParameterFields({
     durationUpperBoundConfirmed={durationUpperBoundConfirmed}
     resolutionRangeUnverified={model?.metadata?.resolutionRangeUnverified === true}
     imageLayout={provider !== "cli"}
+    panelPresentation={panelPresentation}
+    hasParameterIssue={parameterIssues.some(issue => issue.path.replace(/^parameters\./u, "").split(/[.[]/u)[0] === descriptor.key)}
     disabledReason={
       provider !== "cli" && descriptor.key === "output_format" && parameters.background === "transparent"
         ? "透明模式使用 PNG，保留透明通道"
@@ -1126,6 +1175,7 @@ export function NodeParameterFields({
           parameters={parameters}
           onChange={onChange}
           hasExactSizeControl={sizeAspectRatioContext.hasSizeControl}
+          panelPresentation={panelPresentation}
         />}
         {hasResolution && tk1688Resolution && (
           <DimensionsControl
@@ -1137,6 +1187,8 @@ export function NodeParameterFields({
             showAllResolutionTiers
             useSavedResolutionTier
             automaticOptions={tk1688Resolution.automaticOptions}
+            panelPresentation={panelPresentation}
+            allowSingleOptionDisplay={!["resolution", "aspect_ratio", "size_tier"].some(key => parameters[key] !== undefined)}
             update={() => onChange(
               tk1688ParametersForResolutionChange(tk1688Resolution, parameters),
             )}
@@ -1145,8 +1197,10 @@ export function NodeParameterFields({
         {hasOutputMode && (
           <div className="image-output-mode">
             <span>生成模式</span>
-            <Segmented label="生成模式" className="image-output-mode-options" value={parameters.background === "transparent" ? "transparent" : "normal"}
-              options={[{ value: "normal", label: "普通模式" }, ...(transparentSupported ? [{ value: "transparent", label: "透明模式" }] : [])]}
+            <Segmented label="生成模式" className={panelPresentation && !transparentSupported && parameters.background !== "transparent" ? undefined : "image-output-mode-options"} value={parameters.background === "transparent" ? "transparent" : "normal"}
+              singleOptionDisplay={panelPresentation ? "static" : undefined}
+              singleOptionDescription={panelPresentation && !transparentSupported ? "此型号只提供普通模式" : undefined}
+              options={[{ value: "normal", label: panelPresentation && !transparentSupported && parameters.background !== "transparent" ? "普通" : "普通模式" }, ...(transparentSupported ? [{ value: "transparent", label: "透明模式" }] : [])]}
               onChange={mode => onChange(imageModeParameters(parameters, transparentSupported, mode === "transparent" ? "transparent" : "normal"))} />
             {transparentSupported && parameters.background === "transparent" && <small>透明背景 · PNG 原图</small>}
             {!transparentSupported && parameters.background === "transparent" && <small role="status">已保存透明模式参数；原值继续保留，可选择普通模式。</small>}
@@ -1173,7 +1227,10 @@ export function NodeParameterFields({
       </div>}
       <NodeParameterSources model={model} descriptors={nativeResolution ? [...descriptors, nativeResolution.resolution] : descriptors} nodeType={nodeType}
         transparencyNote={imageTransparencyEvidenceNote(transparency)}
-        nativeSources={nativeSourceProps && nativeImageResolutionSourceNotes(nativeSourceProps).length ? <NativeImageResolutionSources {...nativeSourceProps} /> : undefined} />
+        nativeSources={nativeSourceNotes.length || fixedSizeTierRestriction ? <>
+          {nativeSourceProps && nativeSourceNotes.length > 0 && <NativeImageResolutionSources {...nativeSourceProps} />}
+          {fixedSizeTierRestriction && <p>{fixedSizeTierRestriction}</p>}
+        </> : undefined} />
       {showAdvanced ? (
         <AdvancedParametersEditor
           key={`${nodeId}:${parameterJson}`}

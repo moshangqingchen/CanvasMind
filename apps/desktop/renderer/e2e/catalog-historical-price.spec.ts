@@ -41,7 +41,7 @@ test("型号菜单、参数面板和供应商详情显示旧价格原采样时�
   const quote = panel.getByLabel("当前参数价格", { exact: true });
   await expect(quote).toContainText("上次价格");
   await expect(quote).toContainText(`采样时间 ${sampledAt}`);
-  await panel.getByRole("combobox", { name: "历史报价 模型", exact: true }).click();
+  await panel.getByRole("combobox", { name: "历史报价 模型", exact: false }).click();
   const historical = panel.getByRole("option").filter({ hasText: historicalId });
   await expect(historical).toContainText("上次价格");
   await expect(historical).toContainText(sampledAt);

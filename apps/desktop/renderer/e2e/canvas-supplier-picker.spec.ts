@@ -212,7 +212,7 @@ for (const zoom of [0.4, 1, 1.74])
     await expect(quality).toHaveValue("max");
     await quality.selectOption("low");
     await expect.poll(savedData).toMatchObject({ model: "gpt-image-2.5", qualityMode: "custom", parameters: { quality: "low" } });
-    await page.getByRole("combobox", { name: "选择测试 模型", exact: true }).click();
+    await page.getByRole("combobox", { name: "选择测试 模型", exact: false }).click();
     const modelOptions = page.getByRole("listbox", { name: "选择测试 模型 可选模型", exact: true });
     await expect(modelOptions).toContainText("ID: gpt-image-2");
     await expect(modelOptions).not.toContainText(/档位：|比例：|尺寸：|质量：/u);
@@ -221,7 +221,7 @@ for (const zoom of [0.4, 1, 1.74])
     await page.getByRole("option", { name: "图像模型", exact: true }).click();
     await expect(quality).toHaveValue("high");
     await expect.poll(savedData).toMatchObject({ model: "gpt-image-2", qualityMode: "highest", parameters: { quality: "high" } });
-    await page.getByRole("combobox", { name: "选择测试 模型", exact: true }).click();
+    await page.getByRole("combobox", { name: "选择测试 模型", exact: false }).click();
     await page.getByRole("option", { name: "另一图像模型", exact: true }).click();
     // First selection uses the model's highest quality; returning to a model
     // restores its own explicit choice, including the custom-quality mode.
@@ -259,11 +259,11 @@ for (const zoom of [0.4, 1, 1.74])
     await expect(group).toHaveValue("标准");
     await expect(quality).toHaveValue("low");
     await expect.poll(savedData).toMatchObject({ model: "gpt-image-2.5", qualityMode: "custom", parameters: { quality: "low" } });
-    await page.getByRole("combobox", { name: "选择测试 模型", exact: true }).click();
+    await page.getByRole("combobox", { name: "选择测试 模型", exact: false }).click();
     await page.getByRole("option", { name: "图像模型", exact: true }).click();
     await expect(quality).toHaveValue("high");
     await expect.poll(savedData).toMatchObject({ model: "gpt-image-2", qualityMode: "highest", parameters: { quality: "high" } });
-    await page.getByRole("combobox", { name: "选择测试 模型", exact: true }).click();
+    await page.getByRole("combobox", { name: "选择测试 模型", exact: false }).click();
     await page.getByRole("option", { name: "另一图像模型", exact: true }).click();
     await expect(quality).toHaveValue("low");
     await expect.poll(savedData).toMatchObject({ model: "gpt-image-2.5", qualityMode: "custom", parameters: { quality: "low" } });
@@ -319,7 +319,7 @@ test("同群组多连接保留身份，旧智能体 Key 的图片模型可选择
   await expect(panel.getByText(/当前实际连接是 未配置账户/)).toBeVisible();
   expect((await savedData()).connectionId).toBe(ids[2]);
   await connection.selectOption(ids[1]!);
-  const picker = panel.getByRole("combobox", { name: "多连接测试 模型", exact: true });
+  const picker = panel.getByRole("combobox", { name: "多连接测试 模型", exact: false });
   await expect(picker).toContainText("列表模型 000");
   await picker.click();
   const search = panel.getByRole("combobox", { name: "搜索模型名称或 ID", exact: true });
@@ -434,7 +434,7 @@ test("长目录暖开尺寸缓存随新报价与窄窗口重新测量", async ({
   await page.goto(`/canvas/${canvas.id}`);
   await page.getByRole("button", { name: "打开 测量缓存 模型与参数", exact: true }).click();
   const panel = page.getByRole("dialog", { name: "测量缓存 模型与参数", exact: true });
-  const picker = panel.getByRole("combobox", { name: "测量缓存 模型", exact: true });
+  const picker = panel.getByRole("combobox", { name: "测量缓存 模型", exact: false });
   await expect(picker).toContainText(selected.name);
   const sidebar = page.getByRole("button", { name: "智能体面板", exact: true });
   if (await sidebar.getAttribute("aria-expanded") === "true") await sidebar.click();

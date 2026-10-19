@@ -1,4 +1,4 @@
-import { chooseParameterOption, expectParameterValue, openParameterDetails, readParameterOptions } from "./helpers/parameter-controls";
+import { chooseParameterOption, expectParameterSegmentValue, expectParameterValue, openParameterDetails, readParameterOptions } from "./helpers/parameter-controls";
 import { idleCatalogCheckFixture } from "./helpers/catalog-check-fixture";
 import { expect, test, type APIRequestContext, type Page } from "./helpers/canvas-offline-test";
 import { readFileSync } from "node:fs";
@@ -113,10 +113,23 @@ for (const fixture of fixtures) test(`${fixture.supplier} 的 Banana 档位保�
   try {
     const tiers = f.panel.getByRole("group", { name: "自动与输出分辨率快捷档位", exact: true });
     const ratio = f.panel.getByRole("combobox", { name: "画面比例", exact: true });
-    const picker = f.panel.getByRole("combobox", { name: `${f.label} 模型`, exact: true });
+    const picker = f.panel.getByRole("combobox", { name: `${f.label} 模型`, exact: false });
     await expect(picker).toContainText(`ID: ${fixture.model.id}`);
     await expect(picker).toHaveAttribute("title", new RegExp(`${cleanModelDisplayName(fixture.model.name, fixture.model.metadata?.priceLabel)} · ${fixture.model.id}`.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
-    await expect(tiers.getByRole("button")).toHaveText(fixture.labels.includes("自动") ? fixture.labels : ["自动", ...fixture.labels]);
+    const staticTier = await tiers.getAttribute("data-display") === "static";
+    if (staticTier) {
+      expect(fixture.values).toHaveLength(1);
+      await expectParameterSegmentValue(tiers, fixture.values[0]!);
+      await expect(tiers.getByRole("button")).toHaveCount(0);
+      await expect(tiers).toContainText(fixture.labels[0]!);
+      const limits = tiers.locator("details");
+      await limits.locator("summary").focus(); await page.keyboard.press("Enter");
+      await expect(limits).toHaveAttribute("open", "");
+      await expect(limits.getByText("自动", { exact: true })).toBeVisible();
+      await expect(limits).toContainText("当前型号未提供自动档位");
+      await expect.poll(async () => (await f.saved()).parameters)
+        .toEqual({ [fixture.key]: fixture.values[0], [fixture.ratioKey]: "1:1" });
+    } else await expect(tiers.getByRole("button")).toHaveText(fixture.labels.includes("自动") ? fixture.labels : ["自动", ...fixture.labels]);
     if (fixture.customPixels) {
       expect(fixture.model.parameters?.find(parameter => parameter.key === "size"))
         .toMatchObject({ control: "dimensions", allowCustomValue: true, min: 1, step: 1 });
@@ -178,14 +191,20 @@ for (const fixture of fixtures) test(`${fixture.supplier} 的 Banana 档位保�
     // A provider's K labels can have unrelated wire values, such as low/medium.
     // Every button must preserve those values and both original parameter keys.
     for (let index = 0; index < fixture.values.length; index++) {
-      const choice = tiers.getByRole("button", { name: fixture.labels[index], exact: true });
-      await choice.click();
-      await expect(choice).toHaveAttribute("aria-pressed", "true");
+      if (staticTier) {
+        await tiers.click();
+        await expectParameterSegmentValue(tiers, fixture.values[index]!);
+      } else {
+        const choice = tiers.getByRole("button", { name: fixture.labels[index], exact: true });
+        await choice.click();
+        await expect(choice).toHaveAttribute("aria-pressed", "true");
+      }
       await expect.poll(async () => (await f.saved()).parameters)
         .toEqual({ [fixture.key]: fixture.values[index], [fixture.ratioKey]: "9:16" });
     }
     await page.reload(); await f.open();
-    await expect(tiers.getByRole("button", { name: fixture.labels.at(-1), exact: true })).toHaveAttribute("aria-pressed", "true");
+    if (staticTier) await expectParameterSegmentValue(tiers, fixture.values.at(-1)!);
+    else await expect(tiers.getByRole("button", { name: fixture.labels.at(-1), exact: true })).toHaveAttribute("aria-pressed", "true");
     await expectParameterValue(ratio, "9:16");
     await expect.poll(async () => (await f.saved()).parameters)
       .toEqual({ [fixture.key]: fixture.values.at(-1), [fixture.ratioKey]: "9:16" });

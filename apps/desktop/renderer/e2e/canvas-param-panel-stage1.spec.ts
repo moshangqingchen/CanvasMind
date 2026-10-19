@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { ModelDescriptor } from "@super-canvas/providers";
 import { expectParameterValue, openParameterDetails } from "./helpers/parameter-controls";
 
-const evidence = "D:/project development/超级画布/.codex-logs/2026-10-18-param-panel/stage2/legacy-stage1-regression-screenshots";
+const evidence = process.env.PARAM_PANEL_SCREENSHOT_DIR || "D:/project development/超级画布/.codex-logs/2026-10-18-param-panel/stage2/legacy-stage1-regression-screenshots";
 
 const image: ModelDescriptor = {
   id: "stage1-image", name: "参数层级图片模型", operations: ["image.generate", "image.edit"],
@@ -153,7 +153,7 @@ test("stage1 step1 自定义下拉与 ModelPicker 的 Enter/Escape 及 IME/repea
   await page.keyboard.press("Enter"); await expect(panel).toBeVisible();
   await expect(quality).toHaveAttribute("aria-expanded", "false"); await expectParameterValue(quality, "max");
   await quality.click(); await page.keyboard.press("Escape"); await expect(panel).toBeVisible();
-  const picker = panel.getByRole("combobox", { name: `${labels.a} 模型`, exact: true });
+  const picker = panel.getByRole("combobox", { name: `${labels.a} 模型`, exact: false });
   await picker.click();
   const search = panel.getByRole("combobox", { name: "搜索模型名称或 ID", exact: true });
   await expect(search).toBeFocused(); await search.press("Escape"); await expect(panel).toBeVisible();
@@ -205,7 +205,7 @@ test("stage1 step2 面板按钮运行先提交 W/H 草稿", async ({ page, reque
   f.assertSafe();
 });
 
-test("stage1 step2 线路浮层和原生下拉的 Escape 各自归还焦点且不关闭 owner", async ({ page, request }) => {
+test("stage1 step2 线路浮层和参数下拉的 Escape 各自归还焦点且不关闭 owner", async ({ page, request }) => {
   const f = await fixture(page, request); await f.open("video");
   const panel = f.panel("video");
   const trigger = panel.getByRole("button", { name: `${labels.video} 线路`, exact: true });
@@ -232,13 +232,12 @@ test("stage1 step2 线路浮层和原生下拉的 Escape 各自归还焦点且�
   await expect(manage).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(routes).toBeHidden(); await expect(trigger).toBeFocused(); await expect(panel).toBeVisible();
-  // Supplier selects have become one route picker. The video's remaining
-  // native resolution control retains its separate first-Escape ownership.
+  // The video resolution dropdown keeps its separate first-Escape ownership.
   const resolution = panel.getByRole("combobox", { name: "输出分辨率", exact: true });
-  await resolution.focus(); await resolution.press("Alt+ArrowDown");
-  await expect.poll(() => resolution.evaluate(element => element.matches(":open"))).toBe(true);
+  await resolution.focus(); await resolution.press("Enter");
+  await expect(resolution).toHaveAttribute("aria-expanded", "true");
   await page.keyboard.press("Escape");
-  await expect.poll(() => resolution.evaluate(element => element.matches(":open"))).toBe(false);
+  await expect(resolution).toHaveAttribute("aria-expanded", "false");
   await expect(resolution).toBeFocused(); await expect(panel).toBeVisible();
   await page.keyboard.press("Escape"); await expect(panel).toHaveCount(0);
   expect(f.submissions).toHaveLength(0); f.assertSafe();
@@ -247,7 +246,7 @@ test("stage1 step2 线路浮层和原生下拉的 Escape 各自归还焦点且�
 test("stage1 step2 侧开模型菜单在双卡和并排智能体中保持 owner、键盘和视口边界", async ({ page, request }) => {
   const f = await fixture(page, request); await f.open("a"); await f.open("b");
   const supplemental = join(evidence, "supplemental"); await mkdir(supplemental, { recursive: true });
-  const panel = f.panel("b"), picker = panel.getByRole("combobox", { name: `${labels.b} 模型`, exact: true });
+  const panel = f.panel("b"), picker = panel.getByRole("combobox", { name: `${labels.b} 模型`, exact: false });
   const search = panel.getByRole("combobox", { name: "搜索模型名称或 ID", exact: true });
   const menu = panel.locator(".node-model-select-options");
   const options = panel.getByRole("listbox", { name: `${labels.b} 模型 可选模型`, exact: true });
@@ -276,7 +275,7 @@ test("stage1 step2 侧开模型菜单在双卡和并排智能体中保持 owner�
   await f.panel("a").locator(".node-config-header").click({ position: { x: 40, y: 20 } });
   await expect(menu).toHaveCount(0);
   await expect(page.locator('.canvas-parameter-dock[data-parameter-node-id="a"]')).toHaveAttribute("data-active", "true");
-  await expect(f.panel("a").getByRole("combobox", { name: `${labels.a} 模型`, exact: true })).toHaveAttribute("aria-expanded", "false");
+  await expect(f.panel("a").getByRole("combobox", { name: `${labels.a} 模型`, exact: false })).toHaveAttribute("aria-expanded", "false");
   await f.closeAll();
   const agent = page.getByRole("button", { name: "智能体面板", exact: true });
   await agent.click(); await expect(agent).toHaveAttribute("aria-expanded", "true");

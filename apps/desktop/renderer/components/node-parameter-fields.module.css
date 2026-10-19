@@ -1,0 +1,30 @@
+.durationField {
+  grid-column: 1 / -1;
+}
+
+.durationField .durationRange {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.durationHeading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  margin-bottom: 7px;
+}
+
+.durationHeading label {
+  min-width: 0;
+  margin: 0;
+}
+
+.durationHeading output {
+  flex: 0 0 auto;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}

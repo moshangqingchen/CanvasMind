@@ -136,9 +136,9 @@
 }
 .canvas-editor .node-config-supplier-quote { display:block; font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
 .canvas-editor .node-config-popover-portal .node-config-model-header {
-  grid-template-columns:minmax(0,1fr) minmax(64px,32%);
+  grid-template-columns:minmax(0,1fr) fit-content(58%);
   align-items:start;
-  gap:12px;
+  gap:10px;
   margin:0 0 16px;
   padding:0 0 16px;
 }
@@ -161,8 +161,9 @@
   font-size:18px;
   line-height:1.35;
   font-weight:650;
-  white-space:normal;
-  overflow-wrap:anywhere;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
 }
 .canvas-editor .node-config-model-header [id$="-selected-id"] {
   font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
@@ -170,7 +171,6 @@
 }
 .canvas-editor .node-config-model-quote { min-width:0; display:grid; gap:6px; padding-top:2px; text-align:right; }
 .canvas-editor .node-config-model-quote > span { font-size:11px; color:var(--text-secondary); }
-.canvas-editor .node-config-model-quote > strong { color:var(--text); font-size:15px; line-height:1.45; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
 .canvas-editor .node-config-popover-portal .node-model-select-trigger > svg { flex:0 0 auto; }
 .canvas-editor .node-config-popover-portal .node-model-select-trigger [id$="-selected-id"] { font-size:12px; }
 .canvas-editor .node-config-parameter-section { display:grid; gap:12px; margin-top:24px; }

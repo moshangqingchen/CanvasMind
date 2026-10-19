@@ -284,7 +284,7 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
   return <div ref={host} className={`node-model-select ${styles.picker}`} data-open={open || undefined} data-dialog-return-focus-id={id} onKeyDown={keyDown}
     onBlur={event => { if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}>
     <button id={id} ref={trigger} type="button" className={`node-model-select-trigger ${styles.trigger}`} role="combobox"
-      aria-label={label} aria-haspopup="listbox" aria-expanded={open} aria-controls={open ? listId : undefined}
+      aria-label={inlineChevron ? `${label} · ${selected ? cleanModelDisplayName(selected.name, selected.metadata?.priceLabel) : value || "自动模型"}` : label} aria-haspopup="listbox" aria-expanded={open} aria-controls={open ? listId : undefined}
       aria-describedby={selected ? `${listId}-selected-name ${listId}-selected-id${tk1688ModelFamily(selected) ? ` ${listId}-selected-route` : ""}${capabilities[selected.id]?.transparent || capabilities[selected.id]?.mask ? ` ${listId}-selected-capabilities` : ""}` : undefined}
       title={triggerTitle}
       onClick={() => setOpen(!open)}>

@@ -7,6 +7,7 @@ import {
 } from "./helpers/canvas-offline-test";
 import type { ModelDescriptor } from "@super-canvas/providers";
 import type { ProviderConnectionView } from "../lib/client-api";
+import { mkdir } from "node:fs/promises";
 import { chooseParameterOption, expectParameterValue, openParameterDetails } from "./helpers/parameter-controls";
 
 const models = ["甲", "乙"].map((suffix, index) => ({
@@ -191,7 +192,7 @@ async function fixture(page: Page, request: APIRequestContext, suffix: string) {
     panels.push({
       panel,
       route: panel.getByRole("button", { name: `${label} 线路`, exact: true }),
-      model: panel.getByRole("combobox", { name: `${label} 模型`, exact: true }),
+      model: panel.getByRole("combobox", { name: new RegExp(`^${label} 模型(?: · |$)`, "u") }),
     });
   }
   return {
@@ -231,7 +232,8 @@ test("新增供应商并关闭设置后，两个参数面板的下拉、模型�
     await expect(panel.panel).toBeVisible();
     await panel.route.click();
     const routes = panel.panel.getByRole("dialog", { name: / 候选线路$/u });
-    await expect(routes.locator(`[data-route-id="${added.connections[0]}"]`)).toContainText("新添加交互供应商");
+    await expect(routes.getByRole("group", { name: "新添加交互供应商 线路", exact: true })).toBeVisible();
+    await expect(routes.locator(`[data-route-id="${added.connections[0]}"]`).getByRole("button", { name: /^选择线路 /u })).toHaveAttribute("title", /新添加交互供应商/u);
     await chooseRoute(panel.panel, added.connections[0]);
     await chooseRoute(panel.panel, added.connections[1]);
     await expect(panel.panel.getByLabel("当前线路", { exact: true })).toContainText(ui.alternateGroup);
@@ -312,9 +314,10 @@ test("线路预览准确恢复目标分组上次型号，失败保存先写日�
   const row = routes.locator(`[data-route-id="${ui.original.connections[1]}"]`);
   // Both groups contain the same comparison ID, but switching must restore B,
   // not replace the target group's saved selection with comparison model A.
-  await expect(routes).toContainText(`比对型号：${models[0]!.id}`);
-  await expect(row).toContainText(`切换后将使用：${models[1]!.id}`);
-  await expect(row).toContainText("同型号报价：—");
+  await expect(routes.getByLabel("报价比对型号", { exact: true })).toHaveAttribute("title", models[0]!.id);
+  await expect(row).toContainText(`切换后将使用：${models[1]!.name}`);
+  await expect(row.getByRole("button", { name: /^选择线路 /u })).toHaveAttribute("title", new RegExp(`切换后将使用：${models[1]!.name}（${models[1]!.id}）`, "u"));
+  await expect(row.getByLabel("同型号报价", { exact: true })).toHaveText("—");
   expect(blockedSaves).toBe(0);
   expect(saves).toBe(0);
   expect(await journal()).toBeUndefined();
@@ -415,22 +418,28 @@ test("视频供应商比较与切换选择完整型号所在分组，不借用�
   await page.getByRole("button", { name: `打开 ${label} 模型与参数`, exact: true }).click();
   const panel = page.getByRole("dialog", { name: `${label} 模型与参数`, exact: true });
   const routeTrigger = panel.getByRole("button", { name: `${label} 线路`, exact: true });
-  const routePath = panel.getByLabel("当前线路", { exact: true });
+  const routePath = panel.locator('div[aria-label="当前线路"]');
   await expect(routePath).toContainText("当前视频");
   await routeTrigger.click();
   const candidates = panel.getByRole("dialog", { name: `${label} 候选线路`, exact: true });
   const targetRow = candidates.locator(`[data-route-id="${targetConnection.id}"]`);
-  await expect(targetRow).toContainText("跨组目标视频供应商");
-  await expect(targetRow).toContainText("同型号报价：2 CNY / 次");
+  await expect(candidates.getByRole("group", { name: "跨组目标视频供应商 线路", exact: true })).toBeVisible();
+  await expect(targetRow.getByLabel("同型号报价", { exact: true })).toHaveText("2 CNY / 次");
   await expect(targetRow).toContainText("余额未读取");
-  await expect(targetRow).toContainText(`切换后将使用：${exactId}`);
+  expect(await targetRow.getByText("余额未读取", { exact: true }).evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+  await expect(targetRow.getByText("同型号", { exact: true })).toBeVisible();
+  await expect(targetRow.getByRole("button", { name: /^选择线路 /u })).toHaveAttribute("title", new RegExp(exactId, "u"));
   const missingRow = candidates.locator(`[data-route-id="${missingConnection.id}"]`);
-  await expect(missingRow).toContainText("跨组无完整型号供应商");
-  await expect(missingRow).toContainText("同型号报价：—");
+  await expect(candidates.getByRole("group", { name: "跨组无完整型号供应商 线路", exact: true })).toBeVisible();
+  await expect(missingRow.getByLabel("同型号报价", { exact: true })).toHaveText("—");
   await expect(missingRow).not.toContainText("0.02 CNY");
+  await expect(routePath).not.toContainText("余额未读取");
+  const groupedRouteDirectory = "D:/project development/超级画布/.codex-logs/2026-10-18-param-panel/stage3";
+  await mkdir(groupedRouteDirectory, { recursive: true });
+  await candidates.screenshot({ path: `${groupedRouteDirectory}/stage3-route-picker-grouped.png` });
   await chooseRoute(panel, targetConnection.id);
   await expect(routePath).toContainText("seedance-官方token版");
-  await expect(panel.getByRole("combobox", { name: `${label} 模型`, exact: true })).toContainText(exactId);
+  await expect(panel.getByRole("combobox", { name: new RegExp(`^${label} 模型(?: · |$)`, "u") })).toContainText(exactId);
   await expect(panel.getByTestId("param-panel-unit-price")).toContainText("2 CNY / 次");
   await expect.poll(async () => {
     const saved = await (await request.get(`/api/canvas/${canvas.id}`)).json();
@@ -458,7 +467,7 @@ test("视频供应商比较与切换选择完整型号所在分组，不借用�
   const tokenQuote = panel.getByTestId("param-panel-unit-price");
   await expect(routePath).toContainText("跨组目标视频供应商");
   await expect(tokenQuote).toContainText("Token 计价");
-  await expect(routePath).toContainText("余额未读取");
+  await expect(routePath).not.toContainText("余额未读取");
   await openParameterDetails(panel, "价格明细");
   const tokenDetails = panel.getByRole("region", { name: "型号报价", exact: true });
   await expect(tokenDetails).toContainText("CNY / 1M tokens");
