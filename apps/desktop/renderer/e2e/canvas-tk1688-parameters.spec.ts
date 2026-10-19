@@ -1,6 +1,7 @@
 import { expect, test } from "./helpers/canvas-offline-test";
 import { parseTk1688Marketplace } from "@super-canvas/providers";
 import { CANGYUAN_IMAGE_CONNECTOR } from "../lib/provider-presets";
+import { chooseParameterOption, chooseParameterSegment, expectParameterSegmentValue, expectParameterValue, openParameterDetails, readParameterOptions } from "./helpers/parameter-controls";
 
 const baseModel = "gpt-image-2.5-sunburst";
 const marketplace = {
@@ -76,18 +77,23 @@ for (const { variant, modelId, tiers: supportedTiers, size } of cases) {
     const open = () => page.getByRole("button", { name: "打开 词元市场规格 模型与参数", exact: true }).click();
     await open();
     const panel = page.getByRole("dialog", { name: "词元市场规格 模型与参数" });
-    const values = async (label: string) => panel.getByLabel(label, { exact: true }).locator("option")
-      .evaluateAll(options => options.map(option => (option as HTMLOptionElement).value).filter(Boolean));
+    const values = async (label: string) => (await readParameterOptions(panel.getByLabel(label, { exact: true })))
+      .filter(option => option.value && !option.disabled && !option.value.startsWith("__")).map(option => option.value);
     const tiers = panel.getByRole("group", { name: "自动与输出分辨率快捷档位" });
     const preset = panel.getByLabel("输出分辨率预设", { exact: true });
     const width = panel.getByLabel("图片宽度", { exact: true });
     const height = panel.getByLabel("图片高度", { exact: true });
+    await openParameterDetails(panel, "自定义宽高");
     await expect(preset).toBeVisible();
     await expect(width).toBeVisible();
     await expect(height).toBeVisible();
     await expect(width).toBeEditable();
     await expect(height).toBeEditable();
-    for (const tier of ["自动", "1K", "2K", "4K"]) {
+    if (await tiers.getAttribute("data-display") === "static") {
+      expect(supportedTiers).toEqual(["4K"]);
+      await expectParameterSegmentValue(tiers, "4K");
+      await expect(tiers.getByRole("button")).toHaveCount(0);
+    } else for (const tier of ["自动", "1K", "2K", "4K"]) {
       const button = tiers.getByRole("button", { name: tier, exact: true });
       if ((supportedTiers as readonly string[]).includes(tier)) await expect(button).toBeEnabled();
       else await expect(button).toHaveCount(0);
@@ -104,39 +110,41 @@ for (const { variant, modelId, tiers: supportedTiers, size } of cases) {
       // must update both saved tier aliases without retaining an old 4K value.
       await tiers.getByRole("button", { name: "4K", exact: true }).click();
       await tiers.getByRole("button", { name: "1K", exact: true }).click();
-      await preset.selectOption("1024x1024");
+      await chooseParameterOption(preset, "1024x1024");
       await expect.poll(async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data.parameters)
         .toMatchObject({ size: "1024x1024", size_tier: "1K", resolution: "1K" });
     }
     if (variant === "adobe-reference" || variant === "smart") await expect(panel.getByLabel("数量", { exact: true })).toHaveCount(0);
     const selectedTier = variant === "two-tiers" ? "2K" : "4K";
-    await tiers.getByRole("button", { name: selectedTier, exact: true }).click();
-    await expect(tiers.getByRole("button", { name: selectedTier, exact: true })).toHaveAttribute("aria-pressed", "true");
-    await preset.selectOption(size);
+    await chooseParameterSegment(tiers, selectedTier);
+    await expectParameterSegmentValue(tiers, selectedTier);
+    await chooseParameterOption(preset, size);
     await expect(width).toHaveValue(size.split("x")[0]!);
     await expect(height).toHaveValue(size.split("x")[1]!);
+    await openParameterDetails(panel, "价格明细");
     await expect(panel.getByLabel("当前参数价格", { exact: true })).toContainText(/¥\d+(?:\.\d+)?|\d+(?:\.\d+)? CNY/u);
     await expect(panel.getByLabel("当前参数价格", { exact: true })).not.toContainText(/USD|\$/u);
     const qualityOptions = await values("质量");
     expect(qualityOptions).toEqual(["auto", "low", "medium", "high", "xhigh", "max"]);
-    await expect(panel.getByLabel("质量", { exact: true })).toHaveValue("max");
+    await expectParameterValue(panel.getByLabel("质量", { exact: true }), "max");
     // An untouched default may remain implicit in the stored graph. Exercise
     // a deliberate selection before checking persistence of that exact value.
-    await panel.getByLabel("质量", { exact: true }).selectOption("high");
-    await panel.getByLabel("质量", { exact: true }).selectOption("max");
-    await panel.getByLabel("返回格式", { exact: true }).selectOption("b64_json");
+    await chooseParameterOption(panel.getByLabel("质量", { exact: true }), "high");
+    await chooseParameterOption(panel.getByLabel("质量", { exact: true }), "max");
+    await chooseParameterOption(panel.getByLabel("返回格式", { exact: true }), "b64_json");
     const expectedParameters = { response_format: "b64_json", size, size_tier: selectedTier, resolution: selectedTier, quality: "max" };
     await expect.poll(async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data)
       .toMatchObject({ model: modelId, parameters: expectedParameters });
     const saved = (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data.parameters;
     expect(saved).toMatchObject(expectedParameters);
     await page.reload(); await open();
-    await expect(panel.getByLabel("返回格式", { exact: true })).toHaveValue("b64_json");
-    await expect(preset).toHaveValue(size);
+    await expectParameterValue(panel.getByLabel("返回格式", { exact: true }), "b64_json");
+    await expectParameterValue(preset, size);
+    await openParameterDetails(panel, "自定义宽高");
     await expect(width).toHaveValue(size.split("x")[0]!);
     await expect(height).toHaveValue(size.split("x")[1]!);
-    await expect(tiers.getByRole("button", { name: selectedTier, exact: true })).toHaveAttribute("aria-pressed", "true");
-    await expect(panel.getByLabel("质量", { exact: true })).toHaveValue("max");
+    await expectParameterSegmentValue(tiers, selectedTier);
+    await expectParameterValue(panel.getByLabel("质量", { exact: true }), "max");
     expect(submitted).toBe(0);
     await panel.getByLabel("质量", { exact: true }).scrollIntoViewIfNeeded();
     await panel.screenshot({ path: testInfo.outputPath(`tk1688-${variant}-parameters.png`) });

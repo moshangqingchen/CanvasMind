@@ -2,6 +2,7 @@ import { idleCatalogCheckFixture } from "./helpers/catalog-check-fixture";
 import { readFileSync } from "node:fs";
 import { expect, test } from "./helpers/canvas-offline-test";
 import type { ModelDescriptor } from "@super-canvas/providers";
+import { chooseParameterOption, expectParameterValue, openParameterDetails, readParameterOptions } from "./helpers/parameter-controls";
 
 const fixture = JSON.parse(readFileSync(new URL("../lib/fixtures/mikoto-installed-r4-one-k-safe.json", import.meta.url), "utf8")) as {
   rows: { model: ModelDescriptor }[];
@@ -56,8 +57,9 @@ for (const modelId of ["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"]) {
     const preset = panel.getByRole("combobox", { name: "输出分辨率预设", exact: true });
     await expect(tiers.getByRole("button")).toHaveText(["自动", "1K"]);
     await expect(tiers.getByRole("button", { name: "1K", exact: true })).toHaveAttribute("aria-pressed", "true");
-    await expect(quality).toHaveValue("high"); await expect(ratio).toHaveCount(0);
-    expect(await quality.locator('option:not([value=""])').evaluateAll(options => options.map(option => (option as HTMLOptionElement).value))).toEqual(["auto", "low", "medium", "high", "xhigh", "max"]);
+    await expectParameterValue(quality, "high"); await expect(ratio).toHaveCount(0);
+    expect((await readParameterOptions(quality)).filter(option => option.value && !option.disabled && !option.value.startsWith("__")).map(option => option.value)).toEqual(["auto", "low", "medium", "high", "xhigh", "max"]);
+    await openParameterDetails(panel, "自定义宽高");
     await expect(width).toHaveValue("4097"); await expect(height).toHaveValue("2051");
     await expect(width).toHaveJSProperty("readOnly", false);
     for (const input of [width, height]) {
@@ -65,19 +67,22 @@ for (const modelId of ["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"]) {
       await expect(input).not.toHaveAttribute("max", /.+/);
       await expect(input).not.toHaveAttribute("min", "256");
     }
-    await expect(preset.locator('option[value="1360x768"]')).toContainText("1K · 16:9");
-    await preset.selectOption("1360x768");
+    const ratioOptions = await readParameterOptions(preset);
+    expect(ratioOptions.find(option => option.value === "1360x768")?.label).toContain("16:9");
+    expect(ratioOptions.find(option => option.value === "1360x768")?.label).toContain("1K");
+    await chooseParameterOption(preset, "1360x768");
     await expect.poll(saved).toMatchObject({ size: "1360x768", size_tier: "1K", aspect_ratio: "16:9", quality: "high" });
-    await preset.selectOption("768x1360");
+    await chooseParameterOption(preset, "768x1360");
     await expect.poll(saved).toMatchObject({ size: "768x1360", size_tier: "1K", aspect_ratio: "9:16", quality: "high" });
     await width.fill("2051"); await height.fill("2049"); await height.press("Tab");
     await expect.poll(saved).toMatchObject({ size: "2051x2049", size_tier: "1K", quality: "high" });
     await expect.poll(async () => (await saved()).aspect_ratio).toBeUndefined();
-    await quality.selectOption("auto");
+    await chooseParameterOption(quality, "auto");
     await expect.poll(saved).toMatchObject({ size: "2051x2049", size_tier: "1K", quality: "auto" });
-    await quality.selectOption("high");
+    await chooseParameterOption(quality, "high");
     await page.reload(); await open();
-    await expect(quality).toHaveValue("high"); await expect(ratio).toHaveCount(0);
+    await expectParameterValue(quality, "high"); await expect(ratio).toHaveCount(0);
+    await openParameterDetails(panel, "自定义宽高");
     await expect(width).toHaveValue("2051"); await expect(height).toHaveValue("2049");
     await expect(tiers.getByRole("button", { name: "1K", exact: true })).toHaveAttribute("aria-pressed", "true");
     await panel.screenshot({ path: testInfo.outputPath(`${modelId}-g5-parameters.png`) });

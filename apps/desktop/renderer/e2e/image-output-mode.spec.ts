@@ -1,7 +1,9 @@
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
+import { mkdir } from "node:fs/promises";
 import type { ModelDescriptor } from "@super-canvas/providers";
 import type { ProviderConnectionView } from "../lib/client-api";
 import { CANGYUAN_IMAGE_CONNECTOR } from "../lib/provider-presets";
+import { chooseParameterOption, expectParameterValue } from "./helpers/parameter-controls";
 
 const label = "生成模式验收";
 const image2: ModelDescriptor = {
@@ -90,7 +92,25 @@ async function setup(page: Page, request: APIRequestContext, kind: "secure" | "m
     expect(errors).toEqual([]);
     expect(modelReads).toBeGreaterThan(0);
   };
-  return { panel, normal, transparent, saved, open, connections, safe };
+  return { panel, mode, normal, transparent, saved, open, connections, safe };
+}
+
+async function expectLockedPng(panel: Locator) {
+  const format = panel.getByLabel("输出格式", { exact: true });
+  await expectParameterValue(format, "png");
+  await expect(format).toHaveRole("textbox");
+  await expect(format).toHaveAttribute("aria-readonly", "true");
+  await expect(format).toHaveAttribute("aria-disabled", "true");
+  await expect(format).toHaveAccessibleDescription(/透明模式使用 PNG，保留透明通道/u);
+  await expect(format.locator("..")).toHaveAttribute("data-display", "static");
+  await expect(format.locator("..").getByRole("combobox")).toHaveCount(0);
+}
+
+async function expectStaticNormalMode(f: Awaited<ReturnType<typeof setup>>) {
+  await expect(f.mode).toHaveAttribute("data-display", "static");
+  await expect(f.mode).toHaveAttribute("data-value", "normal");
+  await expect(f.mode).toContainText("普通模式");
+  await expect(f.normal).toHaveCount(0);
 }
 
 async function expectEncoding(f: Awaited<ReturnType<typeof setup>>, background: "opaque" | "transparent" | null, format: string, compression: number | null = null) {
@@ -110,6 +130,11 @@ test("生成模式与编码按型号保存，未支持型号保持普通，返�
     await expect(f.transparent).toHaveAttribute("aria-pressed", "true");
     await expect.poll(async () => (await f.saved()).parameters).toMatchObject({ background: "transparent", output_format: "png" });
     await expect.poll(async () => Object.hasOwn((await f.saved()).parameters, "output_compression")).toBe(false);
+    await expect(f.panel.getByText("透明背景 · PNG 原图", { exact: true })).toBeVisible();
+    await expectLockedPng(f.panel);
+    const deliveryDirectory = "D:/project development/超级画布/.codex-logs/2026-10-18-param-panel/stage3";
+    await mkdir(deliveryDirectory, { recursive: true });
+    await f.panel.screenshot({ path: `${deliveryDirectory}/stage3-transparent-mode.png` });
     await page.reload(); await f.open();
     await expect(f.transparent).toHaveAttribute("aria-pressed", "true");
     await expect(f.panel.getByText("透明背景 · PNG 原图", { exact: true })).toBeVisible();
@@ -120,7 +145,7 @@ test("生成模式与编码按型号保存，未支持型号保持普通，返�
 
     await f.transparent.click();
     await expect.poll(async () => (await f.saved()).parameters.background).toBe("transparent");
-    const picker = f.panel.getByRole("combobox", { name: `${label} 模型`, exact: true });
+    const picker = f.panel.getByRole("combobox", { name: `${label} 模型`, exact: false });
     await expect(picker.getByText("可透明", { exact: true })).toBeVisible();
     await expect(picker.getByText("可编辑", { exact: true })).toHaveCount(0);
     await picker.click();
@@ -130,14 +155,14 @@ test("生成模式与编码按型号保存，未支持型号保持普通，返�
     await expect.poll(async () => (await f.saved()).model).toBe(image25.id);
     await expect(f.transparent).toHaveCount(0);
     await expect(picker.getByText("可透明", { exact: true })).toHaveCount(0);
-    await expect(f.normal).toHaveAttribute("aria-pressed", "true");
+    await expectStaticNormalMode(f);
     await expect.poll(async () => Object.hasOwn((await f.saved()).parameters, "background")).toBe(false);
     await expectEncoding(f, null, "png");
     await page.reload(); await f.open();
     await expect(picker).toContainText(image25.name);
     await expect(f.transparent).toHaveCount(0);
-    await expect(f.normal).toHaveAttribute("aria-pressed", "true");
-    await f.panel.getByLabel("输出格式", { exact: true }).selectOption("jpeg");
+    await expectStaticNormalMode(f);
+    await chooseParameterOption(f.panel.getByLabel("输出格式", { exact: true }), "jpeg");
     await expectEncoding(f, null, "jpeg");
 
     await picker.click();
@@ -146,7 +171,7 @@ test("生成模式与编码按型号保存，未支持型号保持普通，返�
     await expect(f.transparent).toHaveAttribute("aria-pressed", "true");
     await expect(f.normal).toHaveAttribute("aria-pressed", "false");
     await expectEncoding(f, "transparent", "png");
-    await expect(f.panel.getByLabel("输出格式", { exact: true })).toBeDisabled();
+    await expectLockedPng(f.panel);
     await page.reload(); await f.open();
     await expect(f.transparent).toHaveAttribute("aria-pressed", "true");
     await expectEncoding(f, "transparent", "png");
@@ -154,7 +179,7 @@ test("生成模式与编码按型号保存，未支持型号保持普通，返�
     // Explicitly replace the remembered transparent selection, then verify that
     // each model restores its own mode/encoding rather than a shared reset.
     await f.normal.click();
-    await f.panel.getByLabel("输出格式", { exact: true }).selectOption("webp");
+    await chooseParameterOption(f.panel.getByLabel("输出格式", { exact: true }), "webp");
     await expectEncoding(f, "opaque", "webp");
     await picker.click(); await f.panel.getByRole("option", { name: image25.name, exact: true }).click();
     await expect(f.transparent).toHaveCount(0);
@@ -166,51 +191,66 @@ test("生成模式与编码按型号保存，未支持型号保持普通，返�
     await expect(f.normal).toHaveAttribute("aria-pressed", "true");
     await expectEncoding(f, "opaque", "webp");
     await f.panel.screenshot({ path: info.outputPath("image-output-mode.png") });
+    const format = f.panel.getByLabel("输出格式", { exact: true });
+    await format.click();
+    const formatList = f.panel.getByRole("listbox", { name: "输出格式选项", exact: true });
+    await expect(formatList).toBeVisible();
+    expect(await formatList.getByRole("option").evaluateAll(options => options.map(option => option.getAttribute("data-value")).filter(Boolean)))
+      .toEqual(["png", "jpeg", "webp"]);
+    await f.panel.screenshot({ path: `${deliveryDirectory}/stage3-output-format-expanded.png` });
+    await format.press("Escape");
+    await expectEncoding(f, "opaque", "webp");
   } finally { f.safe(); }
 });
 
 test("生成模式与编码按精确分组保存，未支持组保持普通，返回恢复明确选择", async ({ page, request }, info) => {
   const f = await setup(page, request, "monster");
   try {
-    const picker = f.panel.getByRole("combobox", { name: `${label} 模型`, exact: true });
+    const picker = f.panel.getByRole("combobox", { name: `${label} 模型`, exact: false });
     await expect(picker.getByText("可透明", { exact: true })).toBeVisible();
     await expectEncoding(f, "opaque", "jpeg", 80);
     await f.transparent.click();
     await expectEncoding(f, "transparent", "png");
-    const group = f.panel.getByRole("combobox", { name: `${label} 模型群组`, exact: true });
-    await group.selectOption(b1);
+    const chooseConnection = async (index: number) => {
+      await f.panel.getByRole("button", { name: `${label} 线路`, exact: true }).click();
+      const routes = f.panel.getByRole("dialog", { name: `${label} 候选线路`, exact: true });
+      await routes.locator(`[data-route-id="${f.connections[index]!.id}"]`).getByRole("button", { name: /^选择线路 /u }).click();
+      await expect(routes).toHaveCount(0);
+    };
+    const group = f.panel.getByLabel("当前线路", { exact: true });
+    await chooseConnection(1);
     await expect.poll(async () => (await f.saved()).connectionId).toBe(f.connections[1]!.id);
     await expect(f.transparent).toHaveCount(0);
     await expect(picker.getByText("可透明", { exact: true })).toHaveCount(0);
-    await expect(f.normal).toHaveAttribute("aria-pressed", "true");
+    await expectStaticNormalMode(f);
     await expect.poll(async () => Object.hasOwn((await f.saved()).parameters, "background")).toBe(false);
     await expectEncoding(f, null, "png");
     await page.reload(); await f.open();
-    await expect(group).toHaveValue(b1);
+    await expect(group).toContainText(b1);
     await expect(f.transparent).toHaveCount(0);
-    await expect(f.normal).toHaveAttribute("aria-pressed", "true");
-    await f.panel.getByLabel("输出格式", { exact: true }).selectOption("jpeg");
+    await expectStaticNormalMode(f);
+    await chooseParameterOption(f.panel.getByLabel("输出格式", { exact: true }), "jpeg");
     await expectEncoding(f, null, "jpeg");
 
-    await group.selectOption(b4);
+    await chooseConnection(0);
     await expect.poll(async () => (await f.saved()).connectionId).toBe(f.connections[0]!.id);
     await expect(f.transparent).toBeVisible();
     await expect(picker.getByText("可透明", { exact: true })).toBeVisible();
     await expect(f.transparent).toHaveAttribute("aria-pressed", "true");
     await expect(f.normal).toHaveAttribute("aria-pressed", "false");
     await expectEncoding(f, "transparent", "png");
-    await expect(f.panel.getByLabel("输出格式", { exact: true })).toBeDisabled();
+    await expectLockedPng(f.panel);
     await page.reload(); await f.open();
-    await expect(group).toHaveValue(b4);
+    await expect(group).toContainText(b4);
     await expect(f.transparent).toHaveAttribute("aria-pressed", "true");
     await expectEncoding(f, "transparent", "png");
     await f.normal.click();
-    await f.panel.getByLabel("输出格式", { exact: true }).selectOption("webp");
+    await chooseParameterOption(f.panel.getByLabel("输出格式", { exact: true }), "webp");
     await expectEncoding(f, "opaque", "webp");
-    await group.selectOption(b1);
+    await chooseConnection(1);
     await expect(f.transparent).toHaveCount(0);
     await expectEncoding(f, null, "jpeg");
-    await group.selectOption(b4);
+    await chooseConnection(0);
     await expect(f.normal).toHaveAttribute("aria-pressed", "true");
     await expectEncoding(f, "opaque", "webp");
     await page.reload(); await f.open();
@@ -223,7 +263,7 @@ test("生成模式与编码按精确分组保存，未支持组保持普通，�
 test("可编辑只标注蒙版局部编辑，普通参考图型号不继承标注", async ({ page, request }, info) => {
   const f = await setup(page, request, "fri");
   try {
-    const picker = f.panel.getByRole("combobox", { name: `${label} 模型`, exact: true });
+    const picker = f.panel.getByRole("combobox", { name: `${label} 模型`, exact: false });
     await expect(picker.getByText("可编辑", { exact: true })).toBeVisible();
     await expect(picker.getByText("可透明", { exact: true })).toHaveCount(0);
     await picker.click();
@@ -250,7 +290,7 @@ test("可编辑只标注蒙版局部编辑，普通参考图型号不继承标�
 test("新增实测 Synora 线路同时启用透明模式与能力标注", async ({ page, request }, info) => {
   const f = await setup(page, request, "synora");
   try {
-    const picker = f.panel.getByRole("combobox", { name: `${label} 模型`, exact: true });
+    const picker = f.panel.getByRole("combobox", { name: `${label} 模型`, exact: false });
     await expect(picker.getByText("可透明", { exact: true })).toBeVisible();
     await expect(picker.getByText("可编辑", { exact: true })).toHaveCount(0);
     await f.transparent.click();

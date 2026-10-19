@@ -3,6 +3,7 @@ import sharp from "sharp";
 import type {ModelDescriptor} from "@super-canvas/providers";
 import type {ProviderConnectionView} from "../lib/client-api";
 import {CANGYUAN_IMAGE_CONNECTOR} from "../lib/provider-presets";
+import {chooseParameterOption,openParameterDetails} from "./helpers/parameter-controls";
 
 test.beforeAll(() => {
   expect(process.env.PLAYWRIGHT_BASE_URL, "透明参考图回归只能使用隔离数据目录").toBeFalsy();
@@ -42,23 +43,35 @@ test("新旧辰途2.5组分别保存透明PNG，参考图证据与低档推定�
   await page.goto(`/canvas/${canvas.id}`);await open();
   const panel=page.getByRole("dialog",{name:`${label} 模型与参数`,exact:true});
   const transparent=panel.getByRole("button",{name:"透明模式",exact:true});
+  const chooseGroup=async(group:string)=>{
+    const connection=connections.find(item=>item.config.modelGroup===group)!;
+    await panel.getByRole("button",{name:`${label} 线路`,exact:true}).click();
+    const routes=panel.getByRole("dialog",{name:`${label} 候选线路`,exact:true});
+    const row=routes.locator(`[data-route-id="${connection.id}"]`);
+    await expect(row).toHaveAttribute("data-route-group",group);
+    await row.getByRole("button",{name:/^选择线路 /u}).click();
+    await expect(routes).toHaveCount(0);
+  };
   try{
-    await expect(transparent).toBeVisible();await expect(panel.getByLabel("透明模式依据",{exact:true})).toContainText("参考编辑");
+    await expect(transparent).toBeVisible();await openParameterDetails(panel,"参数与来源");
+    await expect(panel.getByLabel("透明模式依据",{exact:true})).toBeVisible();
+    await expect(panel.getByLabel("透明模式依据",{exact:true})).toContainText("参考编辑");
     await transparent.click();await expect.poll(async()=> (await saved()).parameters).toMatchObject({background:"transparent",output_format:"png",quality:"max",size:"3840x2160"});
     await expect.poll(async()=>Object.hasOwn((await saved()).parameters,"output_compression")).toBe(false);
     await panel.getByRole("button",{name:"1K",exact:true}).click();
     await expect.poll(async()=> (await saved()).parameters).toMatchObject({background:"transparent",output_format:"png",size_tier:"1K"});
     await expect(panel.getByLabel("透明模式依据",{exact:true})).toContainText("推定");
     const newerParameters={...(await saved()).parameters};
-    const group=panel.getByRole("combobox",{name:`${label} 模型群组`,exact:true});
-    await group.selectOption(older);await expect.poll(async()=> (await saved()).connectionId).toBe(connections[1]!.id);
+    await chooseGroup(older);await expect.poll(async()=> (await saved()).connectionId).toBe(connections[1]!.id);
     await panel.getByRole("button",{name:"普通模式",exact:true}).click();
-    await panel.getByLabel("输出格式",{exact:true}).selectOption("webp");
+    await chooseParameterOption(panel.getByLabel("输出格式",{exact:true}),"webp");
     await expect.poll(async()=> (await saved()).parameters.output_format).toBe("webp");
-    await group.selectOption(newer);await expect.poll(async()=> (await saved()).parameters).toEqual(newerParameters);
+    await chooseGroup(newer);await expect.poll(async()=> (await saved()).parameters).toEqual(newerParameters);
     await page.reload();await open();await expect(transparent).toHaveAttribute("aria-pressed","true");
     await expect.poll(async()=> (await saved()).parameters).toEqual(newerParameters);
     await expect(panel.getByLabel("输出格式",{exact:true})).toBeDisabled();
+    await openParameterDetails(panel,"参数与来源");
+    await expect(panel.getByLabel("透明模式依据",{exact:true})).toBeVisible();
     await expect(panel.getByLabel("透明模式依据",{exact:true})).toContainText("推定");
     await panel.screenshot({path:info.outputPath("image-reference-transparent.png")});
   }finally{expect({posts,upstream}).toEqual({posts:0,upstream:0});expect(reads).toBeGreaterThan(0);expect(errors).toEqual([]);}

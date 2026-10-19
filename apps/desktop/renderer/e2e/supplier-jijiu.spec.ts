@@ -80,7 +80,7 @@ async function setup(page: Page, request: APIRequestContext, kind: "image" | "vi
   expect(createdCanvas.ok()).toBeTruthy();
   const canvas = await createdCanvas.json();
   const panel = page.getByRole("dialog", { name: `${label} 模型与参数`, exact: true });
-  const picker = panel.getByRole("combobox", { name: `${label} 模型`, exact: true });
+  const picker = panel.getByRole("combobox", { name: `${label} 模型`, exact: false });
   const groupControl = panel.getByRole("combobox", { name: `${label} 模型群组`, exact: true });
   const summary = panel.getByLabel("官网与 Key 目录对照", { exact: true });
   const open = async (expectedGroup = initialGroup) => {

@@ -87,7 +87,7 @@ for (const width of [980, 1280, 1366, 1440, 1920]) {
       await expect(page.locator(".canvas-zoom-value")).toHaveText(`${(zoom < .55 ? 1 : zoom) * 100}%`);
       await page.getByRole("button", { name: `打开 ${NODE_LABEL} 模型与参数`, exact: true }).click();
       const panel = page.getByRole("dialog", { name: `${NODE_LABEL} 模型与参数`, exact: true });
-      const model = panel.getByRole("combobox", { name: `${NODE_LABEL} 模型`, exact: true });
+      const model = panel.getByRole("combobox", { name: `${NODE_LABEL} 模型`, exact: false });
       await expect(model).toHaveAttribute("title", `${MODEL_NAME} · layout-image-model`);
       const inspectorToggle = page.getByRole("button", { name: "智能体面板", exact: true });
       if (await inspectorToggle.getAttribute("aria-expanded") === "true") await inspectorToggle.click();
@@ -100,7 +100,13 @@ for (const width of [980, 1280, 1366, 1440, 1920]) {
       // Retain screen-safe controls and independent scrolling at every zoom.
       await expect.poll(async () => (await floatingPanelGeometry(panel)).floatingError).toBeLessThanOrEqual(1);
       await expect(panel.getByRole("button", { name: "关闭模型与参数面板" })).toBeInViewport({ ratio: 1 });
-      await expect(panel.getByRole("button", { name: "管理供应商与密钥" })).toBeInViewport({ ratio: 1 });
+      await expect(panel.locator(":scope > header").getByRole("button")).toHaveCount(1);
+      const routeMenu = panel.getByLabel("线路菜单", { exact: true });
+      await routeMenu.click();
+      const manage = panel.getByRole("button", { name: "管理供应商与密钥", exact: true });
+      await expect(manage).toBeInViewport({ ratio: 1 });
+      await manage.click({ trial: true });
+      await routeMenu.click();
       await expect(panel.locator(".node-config-provider-header > span").first()).toHaveCSS("font-size", "12px");
       const body = panel.locator(".node-config-popover-body");
       await expect(body).toHaveCSS("overflow-y", "auto");

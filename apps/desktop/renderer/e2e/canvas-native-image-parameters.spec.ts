@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import type { ModelDescriptor } from "@super-canvas/providers";
 import type { ProviderConnectionView } from "../lib/client-api";
 import { miaowuCatalogFromPricing, miaowuConnectorForModels } from "../lib/miaowu-catalog";
+import { chooseParameterOption, expectParameterValue, openParameterDetails, readParameterOptions } from "./helpers/parameter-controls";
 
 // Public directory data only. This regression never uses an account key or
 // submits generation; each canvas lives in the Playwright isolated profile.
@@ -89,6 +90,7 @@ for (const [id, name, tierLabels] of [
     const width = f.panel.getByLabel("图片宽度", { exact: true });
     const height = f.panel.getByLabel("图片高度", { exact: true });
     const assertDimensions = async (w: number, h: number) => {
+      await openParameterDetails(f.panel, "查看宽高");
       await expect(width).toHaveValue(String(w));
       await expect(height).toHaveValue(String(h));
       await expect(width).toHaveJSProperty("readOnly", true);
@@ -98,26 +100,34 @@ for (const [id, name, tierLabels] of [
       await expect.poll(async () => (await f.saved()).parameters).toEqual({ resolution, aspect_ratio: aspectRatio });
     };
     try {
-      const picker = f.panel.getByRole("combobox", { name: `${f.label} 模型`, exact: true });
+      const picker = f.panel.getByRole("combobox", { name: `${f.label} 模型`, exact: false });
       await expect(picker).toContainText(name);
       await expect(picker).toContainText(`ID: ${id}`);
-      await expect(tiers.getByRole("button")).toHaveText([...tierLabels]);
+      await expect(tiers.getByRole("button")).toHaveText(["自动", ...tierLabels]);
+      await expect(tiers.getByRole("button", { name: "自动", exact: true })).toBeDisabled();
       await expect(f.panel.getByRole("button", { name: "1080p", exact: true })).toHaveCount(0);
       await expect(f.panel.getByRole("option", { name: "1080p", exact: true })).toHaveCount(0);
       await expect(f.panel.getByRole("combobox", { name: "质量", exact: true })).toHaveCount(0);
       await expect(f.panel.getByRole("combobox", { name: "输出分辨率", exact: true })).toHaveCount(0);
       await expect(tiers.getByRole("button", { name: "标准", exact: true })).toHaveAttribute("aria-pressed", "true");
-      await expect(ratio).toHaveValue("1:1");
-      expect(await ratio.locator("option").evaluateAll(options => options.map(option => (option as HTMLOptionElement).value).filter(Boolean)))
+      await expectParameterValue(ratio, "1:1");
+      await ratio.click();
+      const ratioList = f.panel.getByRole("listbox", { name: "画面比例选项", exact: true });
+      expect(await ratioList.getByRole("option").evaluateAll(options => options.map(option => option.getAttribute("data-value"))
+        .filter(value => value && value !== "__automatic_ratio_unavailable__")))
         .toEqual(["1:1", "16:9", "9:16", "4:3", "3:4"]);
+      await expect(ratioList.getByRole("option").first()).toHaveAttribute("aria-disabled", "true");
+      await expect(ratioList.getByRole("option").filter({ hasText: "标准 · 1:1 · 1080 × 1080" })).toHaveCount(1);
+      await ratio.press("Escape");
       await assertDimensions(1080, 1080);
-      await expect(ratio.getByRole("option", { name: "标准 · 1:1 · 1080 × 1080", exact: true })).toHaveCount(1);
       await assertNative("1080p", "1:1");
 
       await tiers.getByRole("button", { name: "2K", exact: true }).click();
       await assertDimensions(1440, 1440);
-      await expect(ratio.getByRole("option", { name: "2K · 1:1 · 1440 × 1440", exact: true })).toHaveCount(1);
-      await ratio.selectOption("16:9");
+      await ratio.click();
+      await expect(ratioList.getByRole("option").filter({ hasText: "2K · 1:1 · 1440 × 1440" })).toHaveCount(1);
+      await ratio.press("Escape");
+      await chooseParameterOption(ratio, "16:9");
       await assertDimensions(2560, 1440);
       await assertNative("2K", "16:9");
       const highest = id === "gpt-image-2.5-sunburs" ? "4K" : "2K";
@@ -125,12 +135,12 @@ for (const [id, name, tierLabels] of [
         await tiers.getByRole("button", { name: "4K", exact: true }).click();
         await assertDimensions(3840, 2160);
       }
-      await ratio.selectOption("9:16");
+      await chooseParameterOption(ratio, "9:16");
       await assertDimensions(highest === "4K" ? 2160 : 1440, highest === "4K" ? 3840 : 2560);
       await assertNative(highest, "9:16");
       await page.reload(); await f.open();
       await expect(tiers.getByRole("button", { name: highest, exact: true })).toHaveAttribute("aria-pressed", "true");
-      await expect(ratio).toHaveValue("9:16");
+      await expectParameterValue(ratio, "9:16");
       await assertDimensions(highest === "4K" ? 2160 : 1440, highest === "4K" ? 3840 : 2560);
       await f.panel.screenshot({ path: testInfo.outputPath(`${id}-native-image-parameters.png`) });
 
@@ -149,12 +159,12 @@ test("视频保留 1080p 分辨率名称及原生保存值", async ({ page, requ
   const f = await setup(page, request, "wan3.0-video", "video");
   try {
     const resolution = f.panel.getByRole("combobox", { name: "输出分辨率", exact: true });
-    await expect(resolution.getByRole("option", { name: "1080p", exact: true })).toHaveCount(1);
+    expect((await readParameterOptions(resolution)).filter(option => option.value === "1080p" && option.label === "1080p")).toHaveLength(1);
     await expect(f.panel.getByRole("group", { name: "自动与输出分辨率快捷档位", exact: true })).toHaveCount(0);
-    await resolution.selectOption("1080p");
+    await chooseParameterOption(resolution, "1080p");
     await expect.poll(async () => (await f.saved()).parameters.resolution).toBe("1080p");
     await page.reload(); await f.open();
-    await expect(resolution).toHaveValue("1080p");
+    await expectParameterValue(resolution, "1080p");
     await f.panel.screenshot({ path: testInfo.outputPath("video-native-1080p-parameters.png") });
   } finally { f.safe(); }
 });

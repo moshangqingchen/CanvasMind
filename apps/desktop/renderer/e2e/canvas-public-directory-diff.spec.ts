@@ -70,7 +70,7 @@ async function fixture(page: Page, request: APIRequestContext, nodeType: "video-
   expect(canvasResponse.ok()).toBeTruthy();
   const canvas = await canvasResponse.json();
   const panel = page.getByRole("dialog", { name: "目录差异 模型与参数", exact: true });
-  const picker = panel.getByRole("combobox", { name: "目录差异 模型", exact: true });
+  const picker = panel.getByRole("combobox", { name: "目录差异 模型", exact: false });
   const openPicker = async () => {
     const sidebar = page.getByRole("button", { name: "智能体面板", exact: true });
     if ((await sidebar.getAttribute("aria-expanded")) === "true") await sidebar.click();

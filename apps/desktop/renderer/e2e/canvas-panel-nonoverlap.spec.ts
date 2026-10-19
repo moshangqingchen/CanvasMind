@@ -90,7 +90,7 @@ for (const scenario of [
     await expect(page.locator(".canvas-zoom-value")).toHaveText(`${scenario.zoom * 100}%`);
     await page.getByRole("button", { name: `打开 ${label} 模型与参数`, exact: true }).click();
     const panel = page.getByRole("dialog", { name: `${label} 模型与参数`, exact: true });
-    await expect(panel.getByRole("combobox", { name: `${label} 模型`, exact: true })).toContainText(model.name);
+    await expect(panel.getByRole("combobox", { name: `${label} 模型`, exact: false })).toContainText(model.name);
     const sidebar = page.getByRole("button", { name: "智能体面板", exact: true });
     if (await sidebar.getAttribute("aria-expanded") === "true") await sidebar.click();
     await expect(sidebar).toHaveAttribute("aria-expanded", "false");

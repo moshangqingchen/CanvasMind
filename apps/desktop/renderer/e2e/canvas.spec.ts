@@ -2264,13 +2264,13 @@ test.describe("超级画布完整验收", () => {
       const panel = page.getByRole("dialog", { name: `${label} 模型与参数` });
       const groups = await panel.getByLabel(`${label} 模型群组`).locator("option").allTextContents();
       expect(groups).toContain(included); expect(groups).toContain("综合组"); expect(groups).not.toContain(excluded);
-      await panel.getByRole("combobox", { name: `${label} 模型`, exact: true }).click();
+      await panel.getByRole("combobox", { name: `${label} 模型`, exact: false }).click();
       await expect(panel.getByRole("option", { name: modelName })).toBeVisible();
       await expect(panel.getByRole("option", { name: modelName === "图片型号" ? "视频型号" : "图片型号" })).toHaveCount(0);
       // In the lower half of the viewport the searchable menu opens upwards,
       // over the panel header. Dismiss that menu before closing its parent.
       await panel.getByRole("combobox", { name: "搜索模型名称或 ID", exact: true }).press("Escape");
-      await expect(panel.getByRole("combobox", { name: `${label} 模型`, exact: true })).toHaveAttribute("aria-expanded", "false");
+      await expect(panel.getByRole("combobox", { name: `${label} 模型`, exact: false })).toHaveAttribute("aria-expanded", "false");
       await panel.getByRole("button", { name: "关闭模型与参数面板" }).click();
     }
     expect(submissions).toBe(0);
@@ -2291,7 +2291,7 @@ test.describe("超级画布完整验收", () => {
     await imageEditor.pressSequentially("节点内的电影感城市海报", { delay: 5 });
 
     const imageConfigPopover = await openNodeParameters(imageNode, connection);
-    await imageConfigPopover.getByRole("combobox", { name: "E2E 图片生成 模型", exact: true }).click();
+    await imageConfigPopover.getByRole("combobox", { name: "E2E 图片生成 模型", exact: false }).click();
     await imageConfigPopover.getByRole("option", { name: "E2E Image Cinematic", exact: true }).click();
     await imageConfigPopover.getByLabel("图片宽度", { exact: true }).fill("2160");
     await imageConfigPopover.getByLabel("图片高度", { exact: true }).fill("3840");
@@ -2313,7 +2313,7 @@ test.describe("超级画布完整验收", () => {
     await expect(videoEditor).toBeVisible();
     await videoEditor.pressSequentially("镜头缓慢向前推进", { delay: 5 });
     const videoConfig = await openNodeParameters(videoNode);
-    await expect(videoConfig.getByRole("combobox", { name: "E2E 视频生成 模型", exact: true })).toContainText("Fake");
+    await expect(videoConfig.getByRole("combobox", { name: "E2E 视频生成 模型", exact: false })).toContainText("Fake");
     const videoDuration = videoConfig.getByRole("slider", { name: "时长（秒）", exact: true });
     await videoDuration.press("End");
     await videoDuration.press("ArrowLeft");
@@ -2369,7 +2369,7 @@ test.describe("超级画布完整验收", () => {
       "节点内的电影感城市海报",
     );
     const restoredInspector = await openNodeParameters(restoredImage);
-    await expect(restoredInspector.getByRole("combobox", { name: "E2E 图片生成 模型", exact: true })).toContainText("E2E Image Cinematic");
+    await expect(restoredInspector.getByRole("combobox", { name: "E2E 图片生成 模型", exact: false })).toContainText("E2E Image Cinematic");
     await expect(restoredInspector.getByLabel("图片宽度", { exact: true })).toHaveValue("2160");
     await expect(restoredInspector.getByLabel("图片高度", { exact: true })).toHaveValue("3840");
     await expect(restoredInspector.getByLabel("质量")).toHaveValue("high");
@@ -4614,7 +4614,7 @@ test.describe("超级画布完整验收", () => {
     await page.getByRole("button", { name: "打开 E2E 图片生成 模型与参数", exact: true }).click();
     const panel = page.getByRole("dialog", { name: "E2E 图片生成 模型与参数", exact: true });
     await expect(panel.getByRole("combobox", { name: "E2E 图片生成 模型群组", exact: true })).toContainText(CANGYUAN_BACKUP_IMAGE_GROUP);
-    await expect(panel.getByRole("combobox", { name: "E2E 图片生成 模型", exact: true })).toContainText("codex-gpt-image-2-1k");
+    await expect(panel.getByRole("combobox", { name: "E2E 图片生成 模型", exact: false })).toContainText("codex-gpt-image-2-1k");
     await expect(panel.getByLabel("画面比例", { exact: true })).toHaveValue("auto");
     await expect(panel.getByRole("group", { name: "自动与输出分辨率快捷档位", exact: true })
       .getByRole("button", { name: "2K", exact: true })).toHaveAttribute("aria-pressed", "true");

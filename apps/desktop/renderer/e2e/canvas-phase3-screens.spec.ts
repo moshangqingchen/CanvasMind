@@ -364,7 +364,7 @@ for (const size of sizes) {
     await ready(width); await ready(height); await shot("image-parameters-dimensions", panel);
     const quality = panel.getByLabel("质量", { exact: true });
     await quality.scrollIntoViewIfNeeded(); await expect(quality).toHaveValue("max"); await ready(quality); await shot("image-parameters-quality", panel);
-    await panel.getByRole("combobox", { name: "完整图片参数 模型", exact: true }).click();
+    await panel.getByRole("combobox", { name: "完整图片参数 模型", exact: false }).click();
     await expect(panel.getByRole("combobox", { name: "搜索模型名称或 ID", exact: true })).toBeVisible();
     await ready(panel.getByRole("combobox", { name: "搜索模型名称或 ID", exact: true }));
     await shot("model-picker", panel);

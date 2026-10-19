@@ -93,7 +93,7 @@ for (const deliverWhileRunning of [false, true]) test(`Miaowu canvas updates the
   await page.goto(`/canvas/${canvas.id}`);
   await page.getByRole("button", { name: "打开 喵呜升级验收 模型与参数", exact: true }).click();
   const panel = page.getByRole("dialog", { name: "喵呜升级验收 模型与参数", exact: true });
-  const picker = panel.getByRole("combobox", { name: "喵呜升级验收 模型", exact: true });
+  const picker = panel.getByRole("combobox", { name: "喵呜升级验收 模型", exact: false });
   await picker.click();
   const directory = panel.getByLabel("官网与 Key 目录对照", { exact: true });
   await expectDirectoryStat(directory, "官网目录", "8");

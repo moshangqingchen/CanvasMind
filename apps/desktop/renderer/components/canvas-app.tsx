@@ -51,6 +51,7 @@ import { acknowledgeSubmissions, forgetSubmission, hiddenResult, hideRemovedResu
 import { acknowledgeCanvasDraft, canvasDraftRecovery, discardCanvasDraft, readCanvasDraft, writeCanvasDraft } from "../lib/canvas-drafts";
 import { trackCanvasSave, waitForCanvasSaves } from "../lib/canvas-save-barrier";
 import { flushPendingEditorEdits } from "../lib/pending-editor-edits";
+import { isNodeConfigRunChord, nodeConfigOwnerElement } from "../lib/node-config-interaction";
 import { registerDesktopSave } from "../lib/desktop-client";
 import { useSupplierVerificationRevision } from "../lib/use-supplier-verification-revision";
 import { isGenimageNativeImageContractModel } from "./node-parameter-fields";
@@ -251,7 +252,8 @@ import {
 import { localizeRunError } from "../lib/error-localization";
 import { weAiImageGenerationDefault } from "../lib/new-image-generation-default";
 import { withCurrentImageRequestParameters } from "../lib/image-request-parameters";
-import { rememberModelParameters, savedModelParameters, transferableJijiuModelParameters } from "../lib/saved-model-parameters";
+import { rememberModelParameters, savedModelParameters } from "../lib/saved-model-parameters";
+import { nodeConnectionSelection, preferredConnectionModel, runnableConnectionModels } from "../lib/node-connection-selection";
 import { removeUnreturnedGeneratedResults } from "../lib/generated-result-sync";
 import {
   collectReferencedAssetIds,
@@ -1548,15 +1550,7 @@ function modelForConnectionAndNode(
   nodeType: "image-generation" | "video-generation" | "music-generation",
   preferredId?: string,
 ): ModelDescriptor | null {
-  const compatible = modelDescriptorsForConnection(connection).filter((model) =>
-    modelSupportsNodeType(model, nodeType) && !modelCanvasUnavailableReason(model),
-  );
-  return (
-    modelDescriptorForSavedSelection(compatible, preferredId) ??
-    compatible.find((model) => model.isDefault) ??
-    compatible[0] ??
-    null
-  );
+  return preferredConnectionModel(runnableConnectionModels(modelDescriptorsForConnection(connection), nodeType), preferredId);
 }
 
 function connectionIsConfigured(connection: ProviderConnectionView): boolean {
@@ -5470,18 +5464,10 @@ function CanvasShell({
       }
       const connection = connections.find((item) => item.id === connectionId);
       if (!connection) return;
-      const previousSelection = nodeType === "image-generation"
-        ? savedModelParameters(modelParameterSelections, connectionId) : undefined;
-      const transferredSelection = nodeType === "image-generation" && !previousSelection
-        ? transferableJijiuModelParameters(node.data, connections.find(item => item.id === node.data.connectionId), connection,
-          modelForConnectionAndNode(connection, nodeType, node.data.model)) : undefined;
-      const configuredModel = modelForConnectionAndNode(
-        connection,
-        nodeType,
-        previousSelection?.model ?? transferredSelection?.model ?? defaultModelForConnection(connection),
+      const { configuredModel, restoredSelection } = nodeConnectionSelection(
+        node.data, nodeType, connections.find(item => item.id === node.data.connectionId), connection,
+        preferredId => modelForConnectionAndNode(connection, nodeType, preferredId), modelParameterSelections,
       );
-      const restoredSelection = configuredModel && previousSelection?.model === configuredModel.id
-        ? previousSelection : transferredSelection;
       const nextParameters = connection.provider === "cli" && configuredModel
         ? resolveModelParameters(configuredModel, {}, cliOperationForNode(nodeType, directLinkedAssetsForNode(node.id, useCanvasStore.getState().nodes, useCanvasStore.getState().edges, assets).some(asset => asset.kind === "image"))).parameters
         : restoredSelection
@@ -6980,6 +6966,10 @@ function CanvasShell({
         return;
       }
       if (inPromptEditor) return;
+      // A retained parameter card owns its node independently of selectedId.
+      // Let its local handler run (or reject IME/repeated/child-popup chords)
+      // before this capture listener can submit the canvas selection instead.
+      if (isNodeConfigRunChord(event) && nodeConfigOwnerElement(target)) return;
       const modalOpen = Boolean(
         document.querySelector(
           '[role="dialog"]:not(.node-config-popover), .connection-menu, .canvas-create-menu, .project-menu, .project-context-menu',
@@ -7727,6 +7717,16 @@ function CanvasShell({
   const presentedNodes = useMemo(() => {
     const imageCapabilitiesForPresentation = createModelImageCapabilityCache();
     const modelOptionsBySelection = new Map<string, ModelDescriptor[]>();
+    const routePreviewOwners = new Set(liveParameterIds);
+    const noRouteSelections: ReturnType<typeof rememberModelParameters> = [];
+    const routeModelsByConnection = new WeakMap<ProviderConnectionView, Map<string, ModelDescriptor[]>>();
+    const routeModelsForConnection = (connection: ProviderConnectionView, nodeType: "image-generation" | "video-generation" | "music-generation") => {
+      let byType = routeModelsByConnection.get(connection);
+      if (!byType) { byType = new Map(); routeModelsByConnection.set(connection, byType); }
+      let models = byType.get(nodeType);
+      if (!models) { models = runnableConnectionModels(resolveModelsForPresentation(connection), nodeType); byType.set(nodeType, models); }
+      return models;
+    };
     const listedModelsForPresentation = { ...connectionModels, items: connectionModelItemsForDisplay(connectionModels) };
     const nodeById = new Map(nodeDefinitions.map((node) => [node.id, node] as const));
     const assetById = new Map(
@@ -7827,6 +7827,8 @@ function CanvasShell({
           node.data.parameters as Readonly<Record<string, unknown>> | undefined,
         ) ?? null;
       const editingConnection = connections.find(connection => connection.id === node.data.connectionId);
+      const hasRoutePreview = routePreviewOwners.has(node.id);
+      const routeSelections = hasRoutePreview && generationType === "image-generation" ? rememberModelParameters(node.data) : noRouteSelections;
       const directoryKey = `${node.data.connectionId ?? ""}:${generationType ?? ""}`;
       if (!catalogDirectories.has(directoryKey)) catalogDirectories.set(directoryKey,
         catalogPickerDirectory(editingConnection, supplierDirectories, modelOptions, generationType,
@@ -7923,6 +7925,7 @@ function CanvasShell({
                     supplier: "fake",
                     supplierLabel: "Fake（离线演示）",
                     group: "默认群组",
+                    switchModelId: hasRoutePreview ? node.data.model : undefined,
                   },
                 ]
               : []),
@@ -7931,6 +7934,12 @@ function CanvasShell({
               const compatibleModels = generationType
                 ? models.filter(model => modelSupportsNodeType(model, generationType))
                 : [];
+              const switchModel = hasRoutePreview
+                ? generationType && connection.id !== node.data.connectionId
+                  ? nodeConnectionSelection(node.data, generationType, editingConnection, connection,
+                    preferredId => preferredConnectionModel(routeModelsForConnection(connection, generationType), preferredId), routeSelections).configuredModel
+                  : compatibleModels.find(model => model.id === node.data.model)
+                : undefined;
               return {
                 id: connection.id,
                 name: connection.name,
@@ -7947,6 +7956,8 @@ function CanvasShell({
                 modelQuote: modelPickerPriceData(compatibleModels.find(model => model.id === node.data.model)),
                 modelDescriptor: compatibleModels.find(model => model.id === node.data.model),
                 modelMatch: compatibleModels.some(model => model.id === node.data.model && !modelCanvasUnavailableReason(model)),
+                switchModelId: hasRoutePreview ? connection.id === node.data.connectionId ? node.data.model : switchModel?.id : undefined,
+                switchModelName: switchModel?.name,
                 unavailableReason: connection.provider === "cli" && !cliConnectionReady(connection) ? `${cliStatusLabel(connection)}，请在个人 AI 网站设置中接入` : generationType && !connectionSupportsNodeType(connection, generationType, models) ? `当前分组未声明${generationType === "image-generation" ? "图片" : "视频"}型号` : undefined,
               };
             }),
@@ -8109,6 +8120,7 @@ function CanvasShell({
     deleteNode,
     durationReadFailures,
     nodeDefinitions,
+    liveParameterIds,
     linkedAssetDurations,
     modelLoadError,
     onConfigurationOpenChange,

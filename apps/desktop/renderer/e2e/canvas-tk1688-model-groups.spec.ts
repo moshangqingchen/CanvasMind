@@ -41,7 +41,7 @@ test("词元先选择基础型号再比较商家，保留完整型号并保存�
   const openPanel = () => page.getByRole("button", { name: "打开 词元分组选型 模型与参数", exact: true }).click();
   await openPanel();
   const panel = page.getByRole("dialog", { name: "词元分组选型 模型与参数" });
-  const picker = panel.getByRole("combobox", { name: "词元分组选型 模型", exact: true });
+  const picker = panel.getByRole("combobox", { name: "词元分组选型 模型", exact: false });
   await expect(picker).toContainText("商家 47 · 渠道 261");
   await picker.click();
   const list = panel.getByRole("listbox");

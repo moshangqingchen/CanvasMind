@@ -120,7 +120,7 @@ for (const { history, kind, failed } of [
       await expect(page.locator(`.react-flow__node[data-id="${created.id}"]`)).toContainText("复用后继续修改的提示词");
       await page.getByRole("button", { name: `打开 ${kind === "video" ? "视频生成" : "图片生成"} 模型与参数`, exact: true }).click();
       const panel = page.getByRole("dialog", { name: `${kind === "video" ? "视频生成" : "图片生成"} 模型与参数`, exact: true });
-      await expect(panel.getByRole("combobox", { name: `${kind === "video" ? "视频生成" : "图片生成"} 模型`, exact: true })).toContainText("原任务模型");
+      await expect(panel.getByRole("combobox", { name: `${kind === "video" ? "视频生成" : "图片生成"} 模型`, exact: false })).toContainText("原任务模型");
       await expect(panel.getByLabel("质量", { exact: true })).toHaveValue("low");
       expect((await snapshot()).nodes.find((node: { id: string }) => node.id === created.id).data).toMatchObject(fixture.configuration);
       expect(submissions).toBe(0);

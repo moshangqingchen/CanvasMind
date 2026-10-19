@@ -104,7 +104,7 @@ test("one passed 4K probe exposes every ratio, preserves auto, and anchors the p
   await body.hover({ position: { x: 16, y: 16 } });
   await page.mouse.wheel(0, -5000);
   await expect(body).toHaveJSProperty("scrollTop", 0);
-  const modelSelect = panel.getByRole("combobox", { name: "比例验收 模型", exact: true });
+  const modelSelect = panel.getByRole("combobox", { name: "比例验收 模型", exact: false });
   await expect(modelSelect).toBeInViewport({ ratio: 1 });
   await expect(panel.getByLabel("比例验收 供应商", { exact: true })).toBeInViewport({ ratio: 1 });
   await expect(panel.getByLabel("比例验收 模型群组", { exact: true })).toBeInViewport({ ratio: 1 });
@@ -131,7 +131,7 @@ test("one passed 4K probe exposes every ratio, preserves auto, and anchors the p
   await panel.getByRole("option", { name: "简单型号", exact: true }).click();
   await assertFloating();
   await expect(body).toHaveJSProperty("scrollTop", 0);
-  await panel.getByRole("combobox", { name: "比例验收 模型", exact: true }).click();
+  await panel.getByRole("combobox", { name: "比例验收 模型", exact: false }).click();
   await panel.getByRole("option", { name: "比例验收", exact: true }).click();
   await panel.getByRole("group", { name: "自动与输出分辨率快捷档位" }).getByRole("button", { name: "4K", exact: true }).click();
   await size.selectOption("auto");

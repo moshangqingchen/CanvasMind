@@ -1,5 +1,6 @@
 import { expect, test, type APIRequestContext } from "./helpers/canvas-offline-test";
 import { cangyuanMusicModel } from "@super-canvas/providers";
+import { chooseParameterOption } from "./helpers/parameter-controls";
 
 type Graph = { nodes: Array<{ id: string; data: Record<string, unknown> }>; edges: Array<Record<string, unknown>> };
 async function graph(request: APIRequestContext, id: string): Promise<Graph> {
@@ -38,7 +39,7 @@ test("音乐入口、Ctrl+K 与官方歌曲参数可编辑并持久化，界面�
   await lyrics.fill("[Verse]\n晨光照进窗\n[Chorus]\n一起出发");
   await panel.getByLabel("目标时长（秒）", { exact: true }).fill("90");
   await panel.getByLabel("节奏 BPM", { exact: true }).fill("72");
-  await panel.getByLabel("音频格式", { exact: true }).selectOption("wav");
+  await chooseParameterOption(panel.getByLabel("音频格式", { exact: true }), "wav");
   await expect.poll(async () => (await graph(request, id)).nodes.find(node => node.data.nodeType === "music-generation")?.data.parameters).toMatchObject({ instrumental: false, title: "晨光", duration: 90, bpm: 72, audio_format: "wav", lyrics: "[Verse]\n晨光照进窗\n[Chorus]\n一起出发" });
   await page.reload();
   const restored = page.locator(".react-flow__node").filter({ has: page.getByRole("button", { name: "打开 音乐生成 模型与参数", exact: true }) });

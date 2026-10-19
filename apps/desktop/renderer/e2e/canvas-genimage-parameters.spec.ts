@@ -1,6 +1,7 @@
 import { expect, test } from "./helpers/canvas-offline-test";
 import { bindScannedModelProtocols } from "../lib/scanned-model-protocols";
 import { CANGYUAN_IMAGE_CONNECTOR } from "../lib/provider-presets";
+import { chooseParameterOption, expectParameterValue, openParameterDetails } from "./helpers/parameter-controls";
 
 test("基因形象声明参数可选择、保存和恢复，打开面板不提交生成", async ({ page, request }, testInfo) => {
   expect(process.env.PLAYWRIGHT_BASE_URL).toBeFalsy();
@@ -40,10 +41,12 @@ test("基因形象声明参数可选择、保存和恢复，打开面板不提�
   const width = panel.getByLabel("图片宽度", { exact: true });
   const height = panel.getByLabel("图片高度", { exact: true });
   const saved = async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data.parameters;
-  await expect(panel.getByLabel("质量", { exact: true })).toHaveValue("max");
+  await expectParameterValue(panel.getByLabel("质量", { exact: true }), "max");
   await expect(tiers.getByRole("button")).toHaveText(["自动", "1K", "2K", "4K"]);
   await expect(ratio).toHaveCount(0);
   await expect.poll(saved).toMatchObject({ size: "4K", quality: "max", aspect_ratio: "16:9" });
+  await openParameterDetails(panel, "自定义宽高");
+  await openParameterDetails(panel, "自定义宽高与尺寸参数");
   await expect(width).toHaveJSProperty("readOnly", false);
   await expect(height).toHaveJSProperty("readOnly", false);
   await expect(width).not.toHaveAttribute("max", /.+/);
@@ -51,17 +54,21 @@ test("基因形象声明参数可选择、保存和恢复，打开面板不提�
   await width.fill("4096"); await height.fill("2304"); await height.press("Tab");
   await expect.poll(saved).toMatchObject({ size: "4096x2304", quality: "max" });
   await page.reload(); await open();
+  await openParameterDetails(panel, "自定义宽高");
+  await openParameterDetails(panel, "自定义宽高与尺寸参数");
   await expect(width).toHaveValue("4096"); await expect(height).toHaveValue("2304");
   await expect(ratio).toHaveCount(0);
-  await expect(panel.getByLabel("质量", { exact: true })).toHaveValue("max");
+  await expectParameterValue(panel.getByLabel("质量", { exact: true }), "max");
   await tiers.getByRole("button", { name: "2K", exact: true }).click();
   await expect.poll(saved).toMatchObject({ size: "4096x2304", size_tier: "2K", quality: "max" });
-  await panel.getByLabel("输出分辨率预设", { exact: true }).selectOption("2720x1536");
+  await chooseParameterOption(panel.getByLabel("输出分辨率预设", { exact: true }), "2720x1536");
   await expect.poll(saved).toMatchObject({ size: "2720x1536", size_tier: "2K", quality: "max" });
   await expect(ratio).toHaveCount(0);
   await width.fill("2048"); await height.fill("1152"); await height.press("Tab");
   await expect.poll(saved).toMatchObject({ size: "2048x1152", quality: "max" });
   await page.reload(); await open();
+  await openParameterDetails(panel, "自定义宽高");
+  await openParameterDetails(panel, "自定义宽高与尺寸参数");
   await expect(width).toHaveValue("2048"); await expect(height).toHaveValue("1152");
   expect({ submissions, upstreamRequests, errors }).toEqual({ submissions: 0, upstreamRequests: 0, errors: [] });
   await page.screenshot({ path: testInfo.outputPath("genimage-parameters.png") });

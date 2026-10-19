@@ -3,6 +3,7 @@ import { expect, test, type APIRequestContext, type Locator, type Page } from "@
 import { remainingVideoModel, type ModelDescriptor } from "@super-canvas/providers";
 import type { CanvasResponse, ProviderConnectionView } from "../lib/client-api";
 import { CANGYUAN_IMAGE_CONNECTOR } from "../lib/provider-presets";
+import { chooseParameterOption, expectParameterValue, openParameterDetails, readParameterOptions } from "./helpers/parameter-controls";
 
 const checkedAt = "2026-10-09T02:00:00.000Z";
 const label = "视频时长验收";
@@ -171,7 +172,7 @@ async function setup(page: Page, request: APIRequestContext, initial: ModelDescr
   });
   const baseline = geometry(canvas);
   const panel = page.getByRole("dialog", { name: `${label} 模型与参数`, exact: true });
-  const picker = panel.getByRole("combobox", { name: `${label} 模型`, exact: true });
+  const picker = panel.getByRole("combobox", { name: `${label} 模型`, exact: false });
   const closeSidebar = async () => {
     const sidebar = page.getByRole("button", { name: "智能体面板", exact: true });
     if ((await sidebar.getAttribute("aria-expanded")) === "true") await sidebar.click();
@@ -180,6 +181,7 @@ async function setup(page: Page, request: APIRequestContext, initial: ModelDescr
   const open = async () => {
     await page.getByRole("button", { name: `打开 ${label} 模型与参数`, exact: true }).click();
     await expect(panel).toBeVisible();
+    await openParameterDetails(panel, "价格明细");
     await expect(picker).toContainText(initial.name);
     // Wait for actual canvas/model controls before closing the first-frame
     // desktop drawer; do the same after reload before shrinking the viewport.
@@ -191,6 +193,7 @@ async function setup(page: Page, request: APIRequestContext, initial: ModelDescr
     await picker.click();
     await panel.getByRole("option", { name: model.name, exact: true }).click();
     await expect(picker).toContainText(model.name);
+    await openParameterDetails(panel, "价格明细");
   };
   const assertUnmoved = async () => expect(geometry(await saved())).toEqual(baseline);
   const safe = () => {
@@ -302,7 +305,7 @@ test("连续视频时长通过键盘和鼠标选择，按次费用不随秒数�
     expect(typeof (await f.savedParameters())?.duration).toBe("number");
     await page.setViewportSize({ width: 620, height: 980 });
     await expectContained(f.panel, 620);
-    await expectContained(f.panel.locator(".parameter-grid"), 620);
+    for (const grid of await f.panel.locator(".parameter-grid:visible").all()) await expectContained(grid, 620);
     await expectContained(range, 620);
     await expectContained(slider, 620);
     await slider.click({ trial: true });
@@ -323,12 +326,14 @@ test("分辨率切换收紧滑条但保留旧秒数，明确修正后按秒费�
     await expect(slider).toHaveValue("30");
     await expect(price).toContainText("分辨率=720p · 0.2 CNY / 秒");
     await expect(price).toContainText("本次预计费用 6 CNY");
-    await resolution.selectOption("1080p");
+    await chooseParameterOption(resolution, "1080p");
     await expect(slider).toHaveAttribute("max", "12");
     await expect(slider).toHaveAttribute("aria-invalid", "true");
     await expect(f.panel.locator(".parameter-duration-saved")).toContainText("当前值：30 · 目录范围：4–12 秒");
     await expect.poll(f.savedParameters).toEqual({ resolution: "1080p", duration: 30 });
-    await expect(price).not.toContainText("本次预计费用");
+    await expect(price).toContainText("本次预计费用 —");
+    await expect(f.panel.getByTestId("param-panel-unit-price")).toContainText("0.2–0.4 CNY / 秒");
+    await expect(f.panel.getByTestId("param-panel-total-price")).toHaveText("—");
     await slider.press("End");
     await expect(slider).toHaveValue("12");
     await expect(slider).toHaveAttribute("aria-valuetext", "12 秒");
@@ -340,11 +345,11 @@ test("分辨率切换收紧滑条但保留旧秒数，明确修正后按秒费�
     await expect(price).toContainText("本次预计费用 4.4 CNY");
     await expect.poll(f.savedParameters).toEqual({ resolution: "1080p", duration: 11 });
     await page.reload(); await f.open();
-    await expect(resolution).toHaveValue("1080p");
+    await expectParameterValue(resolution, "1080p");
     await expect(slider).toHaveValue("11");
     await expect(slider).toHaveAttribute("max", "12");
     await expect(price).toContainText("本次预计费用 4.4 CNY");
-    await resolution.selectOption("720p");
+    await chooseParameterOption(resolution, "720p");
     await expect(slider).toHaveAttribute("max", "30");
     await expect(slider).toHaveValue("11");
     await expect(price).toContainText("本次预计费用 2.2 CNY");
@@ -354,28 +359,30 @@ test("分辨率切换收紧滑条但保留旧秒数，明确修正后按秒费�
   } finally { f.safe(); }
 });
 
-test("离散与固定时长只提供供应商下拉档位，并保存原始 seconds 参数键", async ({ page, request }, testInfo) => {
+test("离散时长下拉与固定时长静态展示保留供应商档位，并保存原始 seconds 参数键", async ({ page, request }, testInfo) => {
   const f = await setup(page, request, discrete);
   try {
     const duration = f.panel.getByLabel("视频时长", { exact: true });
-    await expect(duration).toHaveJSProperty("tagName", "SELECT");
-    expect(await duration.locator('option:not([value=""])').evaluateAll(options => options.map(option => (option as HTMLOptionElement).value)))
+    await expect(duration).toHaveRole("combobox");
+    expect((await readParameterOptions(duration)).filter(option => option.value).map(option => option.value))
       .toEqual(["5", "10"]);
     await expect(f.panel.getByRole("slider")).toHaveCount(0);
-    await duration.selectOption("10");
-    await expect(duration).toHaveValue("10");
+    await chooseParameterOption(duration, "10");
+    await expectParameterValue(duration, "10");
     await expect.poll(f.savedParameters).toEqual({ duration: 10 });
 
     await f.choose(fixedSelect);
-    await expect(duration).toHaveJSProperty("tagName", "SELECT");
-    await expect(duration).toHaveValue("30");
-    await expect(duration.locator('option:not([value=""])')).toHaveText(["30 秒"]);
+    await expect(duration).toHaveRole("textbox");
+    await expect(duration).toHaveAttribute("aria-readonly", "true");
+    await expectParameterValue(duration, "30");
+    expect((await readParameterOptions(duration)).filter(option => option.value).map(option => option.label)).toEqual(["30 秒"]);
     await expect.poll(f.savedParameters).toEqual({ duration: 30 });
 
     await f.choose(fixedSeconds);
-    await expect(duration).toHaveValue("30");
-    await expect(duration).toHaveJSProperty("tagName", "SELECT");
-    await expect(duration.locator('option:not([value=""])')).toHaveText(["30 秒"]);
+    await expectParameterValue(duration, "30");
+    await expect(duration).toHaveRole("textbox");
+    await expect(duration).toHaveAttribute("aria-readonly", "true");
+    expect((await readParameterOptions(duration)).filter(option => option.value).map(option => option.label)).toEqual(["30 秒"]);
     await expect(f.panel.getByRole("slider")).toHaveCount(0);
     await expect.poll(f.savedParameters).toEqual({ seconds: 30 });
     await f.assertUnmoved();
@@ -387,12 +394,12 @@ test("未知上限、非法历史值与自动哨兵建议不伪造视频时长�
   const f = await setup(page, request, unknownMaximum, { duration: 45 });
   try {
     const duration = f.panel.getByLabel("视频时长", { exact: true });
-    await expect(duration).toHaveJSProperty("tagName", "SELECT");
-    await expect(duration).toHaveValue("45");
+    await expect(duration).toHaveRole("combobox");
+    await expectParameterValue(duration, "45");
     await expect(duration).toHaveAttribute("aria-invalid", "true");
     await expect(duration).not.toHaveAttribute("max");
     await expect(f.panel.getByRole("slider")).toHaveCount(0);
-    await expect(duration.locator('option:not([disabled])')).toHaveText(["供应商默认（未公开可选范围）"]);
+    expect((await readParameterOptions(duration)).filter(option => !option.disabled).map(option => option.label)).toEqual(["供应商默认（未公开可选范围）"]);
     await expect.poll(f.savedParameters).toEqual({ duration: 45 });
 
     await f.choose(legacyValue);
@@ -405,14 +412,14 @@ test("未知上限、非法历史值与自动哨兵建议不伪造视频时长�
     await f.panel.getByRole("button", { name: "使用 5 秒", exact: true }).click();
     await expect(f.panel.getByRole("slider", { name: "视频时长", exact: true })).toHaveValue("5");
     await f.choose(suggestedValues);
-    await expect(duration).toHaveJSProperty("tagName", "SELECT");
-    await expect(duration).toHaveValue("5");
+    await expect(duration).toHaveRole("combobox");
+    await expectParameterValue(duration, "5");
     await expect(f.panel.getByRole("slider")).toHaveCount(0);
-    await expect(duration.locator('option:not([disabled])')).toHaveText(["供应商默认（未公开可选范围）"]);
+    expect((await readParameterOptions(duration)).filter(option => !option.disabled).map(option => option.label)).toEqual(["供应商默认（未公开可选范围）"]);
     await expect.poll(f.savedParameters).toEqual({ duration: 5 });
     await f.choose(unverifiedMaximum);
-    await expect(duration).toHaveJSProperty("tagName", "SELECT");
-    await expect(duration).toHaveValue("5");
+    await expect(duration).toHaveRole("combobox");
+    await expectParameterValue(duration, "5");
     await expect(duration).not.toHaveAttribute("max");
     await expect(f.panel.getByRole("slider")).toHaveCount(0);
     await expect(f.panel.locator(".parameter-duration-bounds")).toHaveCount(0);
@@ -426,17 +433,17 @@ test("失效历史枚举保留并提示，下拉只允许当前供应商档位",
   const f = await setup(page, request, discrete, { duration: 35 });
   try {
     const duration = f.panel.getByLabel("视频时长", { exact: true });
-    await expect(duration).toHaveJSProperty("tagName", "SELECT");
-    await expect(duration).toHaveValue("35");
+    await expect(duration).toHaveRole("combobox");
+    await expectParameterValue(duration, "35");
     await expect(duration).toHaveAttribute("aria-invalid", "true");
     await expect(f.panel.getByText("当前值：35 · 目录时长：5 秒 / 10 秒。", { exact: true })).toBeVisible();
-    expect(await duration.locator('option:not([disabled])').evaluateAll(options => options.map(option => (option as HTMLOptionElement).value))).toEqual(["", "5", "10"]);
+    expect((await readParameterOptions(duration)).filter(option => !option.disabled).map(option => option.value)).toEqual(["", "5", "10"]);
     await expect.poll(f.savedParameters).toEqual({ duration: 35 });
-    await duration.selectOption("10");
+    await chooseParameterOption(duration, "10");
     await expect(duration).not.toHaveAttribute("aria-invalid", "true");
     await expect.poll(f.savedParameters).toEqual({ duration: 10 });
     await page.reload(); await f.open();
-    await expect(duration).toHaveValue("10");
+    await expectParameterValue(duration, "10");
     await f.assertUnmoved();
   } finally { f.safe(); }
 });
@@ -455,7 +462,9 @@ test("非Seedance开放参数保留旧38秒与720p，明确清空时长解除别
     await expect(resolution).toHaveValue("720p");
     await expect(f.panel.getByRole("spinbutton")).toHaveCount(1);
     await expect(f.panel.getByRole("slider")).toHaveCount(0);
-    await expect(price).not.toContainText("本次预计费用");
+    await expect(price).toContainText("本次预计费用 —");
+    await expect(f.panel.getByTestId("param-panel-unit-price")).toContainText("1.1 CNY / 次");
+    await expect(f.panel.getByTestId("param-panel-total-price")).toHaveText("—");
     await expect.poll(f.savedParameters).toMatchObject({ duration: 38, seconds: 35, resolution: "720p" });
     await page.reload(); await f.open();
     await expect(duration).toHaveValue("38");
@@ -497,13 +506,16 @@ test("佳速全参真人采用用户1至30秒兜底，保留旧38并明确修正
     await expect(duration).toHaveAttribute("aria-invalid", "true");
     await expect(f.panel.locator(".parameter-duration-range output")).toHaveText("38（已保存）");
     await expect(f.panel.locator('[data-duration-source="user-fallback"]')).toContainText("用户兜底范围：1–30 秒");
-    await expect(f.panel.locator('[data-duration-source="user-fallback"]')).toContainText("供应商未公布完整范围");
+    await openParameterDetails(f.panel, "参数与来源");
+    await expect(f.panel.locator(".parameter-sources")).toContainText("供应商未公布完整范围；已公布的限制仍优先适用。");
     await expect(resolution).toHaveValue("720p");
     await expect(resolution).toHaveAttribute("type", "text");
     await expect(resolution).not.toHaveAttribute("aria-invalid", "true");
     await expect(f.panel.getByRole("status", { name: "当前参数与目录数据" })).not.toContainText("输出分辨率 · 当前值：720p");
     await expect(f.panel.getByRole("status", { name: "当前参数与目录数据" })).not.toContainText(/未确认|不支持|不可运行/u);
-    await expect(prices).not.toContainText("本次预计费用");
+    await expect(prices).toContainText("本次预计费用 —");
+    await expect(f.panel.getByTestId("param-panel-unit-price")).toContainText("1.1 CNY / 次");
+    await expect(f.panel.getByTestId("param-panel-total-price")).toHaveText("—");
     await expect.poll(f.savedParameters).toMatchObject({ duration: 38, seconds: 35, resolution: "720p" });
     await page.reload(); await f.open();
     await expect(duration).toHaveAttribute("aria-invalid", "true");
@@ -629,7 +641,9 @@ for (const reference of [
         await expect(savedDuration).toHaveAttribute("aria-invalid", "true");
         await expect(f.panel.locator(".parameter-duration-saved")).toContainText("当前值：29 · 目录范围：4–18 秒");
         await expect(f.panel.getByRole("status", { name: "当前参数与目录数据" })).toContainText("目录范围：4–18 秒");
-        await expect(price).not.toContainText("本次预计费用");
+        await expect(price).toContainText("本次预计费用 —");
+        await expect(f.panel.getByTestId("param-panel-unit-price")).toContainText("5.5 CNY / 次");
+        await expect(f.panel.getByTestId("param-panel-total-price")).toHaveText("—");
         await expect.poll(f.savedParameters).toEqual({ duration: 29, ...reference.parameters });
         await f.panel.screenshot({ path: testInfo.outputPath("video-duration-reference-invalid-no-estimate.png") });
         await f.panel.getByRole("button", { name: "使用 5 秒", exact: true }).click();

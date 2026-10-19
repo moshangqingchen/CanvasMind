@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from "./helpers/canvas-offline-test";
 import type { CanvasNode } from "../components/types";
+import { chooseParameterOption, expectParameterValue, openParameterDetails } from "./helpers/parameter-controls";
 
 const models = [
   { id: "gpt-image-2", name: "失败回归模型甲" },
@@ -18,23 +19,6 @@ const models = [
     { key: "n", label: "数量", control: "number", default: 1, min: 1, max: 4 },
   ],
 }));
-
-async function chooseNativeOption(page: Page, select: Locator, value: string) {
-  // selectOption bypasses the pointer sequence that previously closed native
-  // dropdowns when canvas selection changed between pointerdown and click.
-  await select.click();
-  await expect.poll(() => select.evaluate((element) => element.matches(":open"))).toBe(true);
-  const index = await select.locator("option").evaluateAll(
-    (options, target) => options.findIndex((option) => (option as HTMLOptionElement).value === target),
-    value,
-  );
-  expect(index).toBeGreaterThanOrEqual(0);
-  await page.keyboard.press("Home");
-  for (let indexToChoose = 0; indexToChoose < index; indexToChoose++)
-    await page.keyboard.press("ArrowDown");
-  await page.keyboard.press("Enter");
-  await expect(select).toHaveValue(value);
-}
 
 async function dragSelectedNodesFromGap(page: Page, source: Locator, result: Locator) {
   const selection = page.locator(".react-flow__nodesselection-rect");
@@ -139,7 +123,7 @@ for (const failure of ["submission", "provider", "multi-selection", "marquee-sel
     const panel = page.getByRole("dialog", { name: "失败参数测试 模型与参数", exact: true });
     await expect(panel).toBeVisible();
     await expect(source.locator(".node-config-summary strong")).toHaveText("失败参数供应商甲 · 失败回归模型甲");
-    await page.getByRole("button", { name: "运行 失败参数测试 节点", exact: true }).click();
+    await source.getByRole("button", { name: "运行 失败参数测试 节点", exact: true }).click();
     const result = page.locator(".react-flow__node:has(.generated-result-state.failed)");
     await expect(result).toHaveCount(1);
     await expect(result.locator(".result-error-summary")).toContainText("隔离测试：");
@@ -216,22 +200,29 @@ for (const failure of ["submission", "provider", "multi-selection", "marquee-sel
     await expect(panel).toBeVisible();
     if (failure === "marquee-selection") await dragSelectedNodesFromGap(page, source, result);
 
-    const supplier = panel.getByRole("combobox", { name: "失败参数测试 供应商", exact: true });
-    const group = panel.getByRole("combobox", { name: "失败参数测试 模型群组", exact: true });
-    await expect.poll(() => supplier.evaluate((element) => {
+    const route = panel.getByRole("button", { name: "失败参数测试 线路", exact: true });
+    const candidates = panel.getByRole("dialog", { name: "失败参数测试 候选线路", exact: true });
+    await expect.poll(() => route.evaluate((element) => {
       const bounds = element.getBoundingClientRect();
       const hit = document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
       return { inside: hit === element || element.contains(hit), hitClass: hit?.className ?? "" };
     })).toMatchObject({ inside: true });
-    await chooseNativeOption(page, supplier, connections[2]!.supplierKey);
-    await chooseNativeOption(page, group, "标准");
-    const model = panel.getByRole("combobox", { name: "失败参数测试 模型", exact: true });
+    // Exercise the real route trigger and row pointer sequence after selecting
+    // the failed result; selecting a supplier/group is now one connection ID.
+    for (const connection of [connections[2]!, connections[3]!]) {
+      await route.click();
+      await expect(candidates).toBeVisible();
+      await candidates.locator(`[data-route-id="${connection.id}"]`).getByRole("button", { name: /^选择线路 /u }).click();
+      await expect(route).toHaveAttribute("aria-expanded", "false");
+    }
+    const model = panel.getByRole("combobox", { name: "失败参数测试 模型", exact: false });
     await model.click();
     await expect(model).toHaveAttribute("aria-expanded", "true");
     await panel.getByRole("option", { name: "失败回归模型乙", exact: true }).click();
     await expect(model).toHaveAttribute("aria-expanded", "false");
     const quality = panel.getByRole("combobox", { name: "质量", exact: true });
-    await chooseNativeOption(page, quality, "low");
+    await chooseParameterOption(quality, "low");
+    await openParameterDetails(panel, "高级设置");
     const quantity = panel.getByRole("spinbutton", { name: "数量", exact: true });
     await quantity.click();
     await expect(quantity).toBeFocused();
@@ -254,10 +245,13 @@ for (const failure of ["submission", "provider", "multi-selection", "marquee-sel
     await page.reload();
     await expect(result).toHaveCount(1);
     await page.getByRole("button", { name: "打开 失败参数测试 模型与参数", exact: true }).click();
-    await expect(supplier).toHaveValue(connections[2]!.supplierKey);
-    await expect(group).toHaveValue("标准");
+    await expect(panel.getByLabel("当前线路", { exact: true })).toContainText("失败参数供应商乙 › 标准");
+    await route.click();
+    await expect(candidates.locator(`[data-route-id="${connections[3]!.id}"]`).getByRole("button", { name: /^选择线路 /u })).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("Escape");
+    await openParameterDetails(panel, "高级设置");
     await expect(model).toContainText("失败回归模型乙");
-    await expect(quality).toHaveValue("low");
+    await expectParameterValue(quality, "low");
     await expect(quantity).toHaveValue("2");
     expect(submissions).toBe(1);
   });

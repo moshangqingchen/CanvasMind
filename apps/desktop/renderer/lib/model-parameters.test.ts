@@ -1,10 +1,12 @@
 import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { jiasuVideoRequestIssues, remainingVideoModel, type ModelDescriptor } from "@super-canvas/providers";
 import { applyJiasuImageCapabilities, jiasuImageRequestIssues, normalizeJiasuImageParameters } from "@super-canvas/providers/jiasu-image-contract";
 import type { CanvasNode } from "../components/types";
 import type { ProviderConnectionView } from "./client-api";
-import { NativeImageResolutionFields } from "../components/native-image-resolution-fields";
+import { NativeImageResolutionFields, NativeImageRatioFields } from "../components/native-image-resolution-fields";
+import { Segmented } from "../components/ui/Segmented";
 import { setParameterValueWithSizeExclusivity } from "../components/node-parameter-fields";
 import { validateModelParameters } from "@super-canvas/providers/cli-contracts";
 import {
@@ -303,17 +305,27 @@ describe("Jiasu saved image aliases", () => {
       const element = node as React.ReactElement<Record<string, unknown>>;
       return [element, ...elements(element.props.children as React.ReactNode)];
     };
-    const render = () => elements(NativeImageResolutionFields({ id: "jiasu-control", model, parameters: selected,
-      resolution: model.parameters!.find(parameter => parameter.key === "resolution")!, ratio: model.parameters!.find(parameter => parameter.key === "ratio")!,
-      onChange: parameters => { selected = parameters; } }));
+    const render = () => {
+      const props = { id: "jiasu-control", model, parameters: selected,
+        resolution: model.parameters!.find(parameter => parameter.key === "resolution")!, ratio: model.parameters!.find(parameter => parameter.key === "ratio")!,
+        onChange: (parameters: Record<string, unknown>) => { selected = parameters; } };
+      // Render the actual hook-based UI; inspect only its domain callback props
+      // separately to verify that explicit choices still repair saved aliases.
+      const html = renderToStaticMarkup(React.createElement(NativeImageResolutionFields, props));
+      expect(html).toContain('role="combobox"');
+      expect(html).toContain('aria-label="画面比例"');
+      return elements(NativeImageResolutionFields(props));
+    };
     const old = render();
-    expect(old.find(element => element.type === "select")?.props.value).toBe("9:16");
+    expect(old.find(element => element.type === NativeImageRatioFields)?.props.value).toBe("9:16");
     expect(old.find(element => element.props.role === "status")?.props.children).toEqual(expect.arrayContaining([expect.stringContaining("4K")]));
-    const chooseResolution = old.find(element => element.type === "button")?.props.onClick as () => void;
-    chooseResolution();
+    const resolutionControl = old.find(element => element.type === Segmented)!;
+    expect(resolutionControl.props.options).toEqual(expect.arrayContaining([expect.objectContaining({ label: "自动", disabled: true })]));
+    const chooseResolution = resolutionControl.props.onChange as (value: string) => void;
+    chooseResolution("1K");
     expect(selected).toEqual({ resolution: "1K", aspect_ratio: "9:16", aspectRatio: "9:16", quality: "auto" });
-    const chooseRatio = render().find(element => element.type === "select")?.props.onChange as (event: { target: { value: string } }) => void;
-    chooseRatio({ target: { value: "16:9" } });
+    const chooseRatio = render().find(element => element.type === NativeImageRatioFields)?.props.onChange as (value: string) => void;
+    chooseRatio("16:9");
     expect(selected).toEqual({ resolution: "1K", ratio: "16:9", quality: "auto" });
     expect(issues(model, normalizedParametersForModel("image-generation", "openai", model, selected))).toEqual([]);
     expect(original).toEqual({ image_size: "4K", size_tier: "4K", aspect_ratio: "9:16", aspectRatio: "9:16", quality: "auto" });

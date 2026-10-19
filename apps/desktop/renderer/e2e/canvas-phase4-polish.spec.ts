@@ -238,7 +238,7 @@ test("根参数卡首次打开不强制写滚动位置，切换真实型号仍�
   await openCanvas(page, f);
   const panel = await openParameters(page);
   const body = panel.locator(".node-config-popover-body");
-  const picker = panel.getByRole("combobox", { name: "完整图片参数 模型", exact: true });
+  const picker = panel.getByRole("combobox", { name: "完整图片参数 模型", exact: false });
   await expect(picker).toContainText(models[0]!.name);
   await expect.poll(() => modelRequests.length).toBeGreaterThan(0);
   expect(new URL(modelRequests[0]!).pathname).toBe(`/api/providers/${connection.id}/models`);

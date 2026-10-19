@@ -172,6 +172,9 @@ export interface CanvasNodeData extends Record<string, unknown> {
     /** Candidate model from this connection's existing directory; never the current supplier's tariff. */
     modelDescriptor?: ModelDescriptor;
     modelMatch?: boolean;
+    /** Exact model the existing connection-change command will restore or select. */
+    switchModelId?: string;
+    switchModelName?: string;
     group: string;
     /** Display label only; group keeps its original connection-scope identity. */
     groupLabel?: string;

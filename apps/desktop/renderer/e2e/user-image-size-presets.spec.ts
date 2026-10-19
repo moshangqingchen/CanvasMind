@@ -2,6 +2,7 @@ import { idleCatalogCheckFixture } from "./helpers/catalog-check-fixture";
 import { expect, test } from "@playwright/test";
 import type { ModelDescriptor } from "@super-canvas/providers";
 import type { ProviderConnectionView } from "../lib/client-api";
+import { chooseParameterOption, expectParameterValue, openParameterDetails, readParameterOptions } from "./helpers/parameter-controls";
 
 // These are the user's requested application presets, not measured supplier
 // outputs. Keep the screenshot values independent of the preset implementation.
@@ -90,6 +91,7 @@ test("开放图片尺寸恢复自动、1K/2K/4K 和截图比例，宽高、保�
   const open = async () => {
     await page.getByRole("button", { name: `打开 ${label} 模型与参数`, exact: true }).click();
     await expect(panel).toBeVisible();
+    await openParameterDetails(panel, "自定义宽高");
     const sidebar = page.getByRole("button", { name: "智能体面板", exact: true });
     if (await sidebar.getAttribute("aria-expanded") === "true") await sidebar.click();
   };
@@ -106,39 +108,40 @@ test("开放图片尺寸恢复自动、1K/2K/4K 和截图比例，宽高、保�
       await expect(tiers.getByRole("button", { name: tier, exact: true })).toBeEnabled();
     await expect(width).toHaveJSProperty("readOnly", false);
     await expect(width).toHaveAttribute("step", "1");
-    await expect(quality).toHaveValue("max");
+    await expectParameterValue(quality, "max");
 
     await tiers.getByRole("button", { name: "4K", exact: true }).click();
     for (const [ratio, pixels] of screenshot4KPresets) {
       const [w, h] = pixels.split("x");
-      await expect(size.locator(`option[value="${pixels}"]`)).toContainText(`4K · ${ratio} · ${w} × ${h}`);
-      await size.selectOption(pixels);
+      const option = (await readParameterOptions(size)).find(option => option.value === pixels);
+      expect(option?.label).toContain(ratio); expect(option?.label).toContain(`4K · ${w} × ${h}`);
+      await chooseParameterOption(size, pixels);
       await expect(width).toHaveValue(w!);
       await expect(height).toHaveValue(h!);
       await expect(tiers.getByRole("button", { name: "4K", exact: true })).toHaveAttribute("aria-pressed", "true");
       await expect.poll(saved).toMatchObject({ size: pixels, size_tier: "4K", quality: "max" });
     }
-    await size.selectOption("3840x2160");
+    await chooseParameterOption(size, "3840x2160");
     await tiers.getByRole("button", { name: "2K", exact: true }).click();
     await expect(tiers.getByRole("button", { name: "2K", exact: true })).toHaveAttribute("aria-pressed", "true");
-    await expect(size.locator("option:checked")).toContainText("2K · 16:9");
-    await size.selectOption("2048x2048");
+    await expect(size).toContainText("16:9"); await expect(size).toContainText("2K");
+    await chooseParameterOption(size, "2048x2048");
     await expect.poll(saved).toMatchObject({ size: "2048x2048", size_tier: "2K" });
     await tiers.getByRole("button", { name: "1K", exact: true }).click();
-    await size.selectOption("1024x1024");
+    await chooseParameterOption(size, "1024x1024");
     await expect.poll(saved).toMatchObject({ size: "1024x1024", size_tier: "1K" });
     await tiers.getByRole("button", { name: "自动", exact: true }).click();
-    await expect(size).toHaveValue("auto");
+    await expectParameterValue(size, "auto");
     await expect.poll(async () => ({ parameters: await saved() })).toMatchObject({ parameters: { size: "auto" } });
     expect((await saved()).size_tier).toBeUndefined();
 
     await tiers.getByRole("button", { name: "4K", exact: true }).click();
-    await size.selectOption("3840x2160");
+    await chooseParameterOption(size, "3840x2160");
     await width.fill("3501");
     await height.fill("2301");
     await height.press("Tab");
     await expect.poll(saved).toMatchObject({ size: "3501x2301", quality: "max" });
-    await expect(size).toHaveValue("");
+    await expectParameterValue(size, "");
     const customParameters = await saved();
     await page.reload();
     await open();
@@ -147,22 +150,22 @@ test("开放图片尺寸恢复自动、1K/2K/4K 和截图比例，宽高、保�
     expect(await saved()).toEqual(customParameters);
 
     await tiers.getByRole("button", { name: "4K", exact: true }).click();
-    await size.selectOption("3840x2160");
+    await chooseParameterOption(size, "3840x2160");
     await expect.poll(saved).toMatchObject({ size: "3840x2160", size_tier: "4K", quality: "max" });
     const beforeRefresh = modelReads;
     await page.reload();
     await open();
     await expect.poll(() => modelReads).toBeGreaterThan(beforeRefresh);
-    await expect(size).toHaveValue("3840x2160");
+    await expectParameterValue(size, "3840x2160");
     await expect(width).toHaveValue("3840");
     await expect(height).toHaveValue("2160");
     await expect(tiers.getByRole("button", { name: "4K", exact: true })).toHaveAttribute("aria-pressed", "true");
-    await expect(quality).toHaveValue("max");
+    await expectParameterValue(quality, "max");
     await panel.screenshot({ path: testInfo.outputPath("user-image-4k-size-presets.png") });
     await quality.scrollIntoViewIfNeeded();
     await panel.screenshot({ path: testInfo.outputPath("user-image-4k-quality-max.png") });
 
-    const run = page.getByRole("button", { name: `运行 ${label} 节点`, exact: true });
+    const run = panel.getByRole("button", { name: `运行 ${label} 节点`, exact: true });
     await expect(run).toBeEnabled();
     await run.click();
     await expect.poll(() => submissions.length).toBe(1);

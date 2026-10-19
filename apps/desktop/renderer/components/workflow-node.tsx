@@ -25,7 +25,6 @@ import {
   AlignVerticalSpaceBetween,
   CircleAlert,
   Brush,
-  ExternalLink,
   Film,
   Image as ImageIcon,
   LoaderCircle,
@@ -51,12 +50,8 @@ import { cleanModelDisplayName, currentSupplierUnitPrice } from "../lib/model-di
 import { modelPickerPriceCompact, modelPickerPriceData } from "../lib/model-picker-data";
 import { SupplierBillingSummary } from "./supplier-billing-summary";
 import { useSupplierBillingOverview } from "../lib/client-supplier-billing";
-import { billingCompact } from "../lib/supplier-billing-display";
-import { choosePickerConnection, pickerConnectionGroups, pickerConnectionLabel } from "../lib/model-picker";
 import { ModelPicker } from "./model-picker";
 import { ModelPriceDetails } from "./model-price-details";
-import { ModelPriceTable } from "./model-price-table";
-import { InformationGrid } from "./information-layout";
 import {
   fetchCangyuanAvailability,
 } from "../lib/client-api";
@@ -79,6 +74,14 @@ import { canvasMotionEnabled } from "./canvas-motion";
 import { DeferredPanelContent } from "./deferred-panel-content";
 import { nodePortTop } from "../lib/node-port-layout";
 import { acquireNodeConfigSurfaceMarkers } from "../lib/node-config-surface-markers";
+import { createGenerationNodeRunAction } from "../lib/generation-node-actions";
+import { isNodeConfigRunChord, nodeConfigChildLayerOpen, nodeConfigRunShortcutScope } from "../lib/node-config-interaction";
+import { createNodeParameterQuote } from "../lib/node-parameter-quote";
+import { nodeParameterSummary } from "../lib/parameter-display";
+import { NodeParameterFooter } from "./node-parameter-footer";
+import { NodeParameterRoutePicker } from "./node-parameter-route-picker";
+import { NodeParameterRate } from "./node-parameter-rate";
+import { Disclosure } from "./ui/Disclosure";
 
 const ASSET_DRAG_TYPE = "application/x-super-canvas-asset";
 
@@ -569,7 +572,7 @@ export function GenerationNodeBody({
       // the root card must not permanently block its ordinary close shortcut.
       if (event.target instanceof HTMLSelectElement &&
           (presentation !== "parameters" || event.target.matches(":open"))) return;
-      if (event.target instanceof Element && event.target.closest(".node-model-select[data-open]")) return;
+      if (nodeConfigChildLayerOpen(event.target instanceof Element ? event.target : null, settingsPopoverRef.current)) return;
       event.stopImmediatePropagation();
       closeSettings();
       if (presentation !== "parameters") settingsTrigger.current?.focus();
@@ -591,7 +594,7 @@ export function GenerationNodeBody({
     data.nodeType === "video-generation"
       ? "video-generation"
       : data.nodeType === "music-generation" ? "music-generation" : "image-generation";
-  const parameters = data.parameters ?? {};
+  const parameters = useMemo(() => data.parameters ?? {}, [data.parameters]);
   const maskEnabled = nodeType === "image-generation" && hasImageMask(parameters);
   const maskSource = data.linkedAssets?.find(asset => asset.kind === "image");
   const maskSourceChanged = Boolean(maskEnabled && parameters.maskAssetId && maskSource && parameters.maskSourceAssetId !== maskSource.id);
@@ -613,9 +616,14 @@ export function GenerationNodeBody({
     setPreviousMenuContext(menuContext);
     setModelMenuOpen(false);
   }
-  // Deactivation closes top-layer menus. Becoming active must not clear a
-  // menu opened by the very pointer event that focused this retained card.
-  if (!uiActive && modelMenuOpen) setModelMenuOpen(false);
+  // Only an active -> inactive transition closes a menu. The first click on
+  // an inactive card may schedule its local open before its owner activates;
+  // clearing every inactive render would swallow that same physical click.
+  const [previousUiActive, setPreviousUiActive] = useState(uiActive);
+  if (previousUiActive !== uiActive) {
+    setPreviousUiActive(uiActive);
+    if (!uiActive) setModelMenuOpen(false);
+  }
   const previousScrollContext = useRef<readonly [boolean, string, string | undefined] | null>(null);
   useLayoutEffect(() => {
     const next = [settingsOpen, currentConnection, data.model] as const;
@@ -634,19 +642,9 @@ export function GenerationNodeBody({
   const connectionAvailable = Boolean(
     currentConnectionOption && currentConnectionOption.available !== false,
   );
-  const supplierOptions = Array.from(
-    new Map(
-      connectionOptions.map((connection) => [
-        connection.supplier,
-        connection.supplierLabel,
-      ]),
-    ),
-  );
   const currentSupplier = currentConnectionOption?.supplier ?? "";
-  const groupOptions = pickerConnectionGroups(connectionOptions, currentSupplier);
   const currentGroup = currentConnectionOption?.group ?? "";
   const currentGroupLabel = currentConnectionOption?.groupLabel ?? currentGroup;
-  const currentGroupConnections = groupOptions.find(group => group.group === currentGroup)?.connections ?? [];
   const connectionName = currentConnectionOption
     ? currentConnectionOption.provider === "langframe" && currentGroupLabel !== currentGroup
       ? `${currentConnectionOption.supplierLabel} · ${currentGroupLabel}`
@@ -666,16 +664,20 @@ export function GenerationNodeBody({
   const modelPriceLabelBase = useMemo(() => selectedModel?.metadata?.langframeCatalog === true ? "—" : modelPickerPriceData(selectedModel), [selectedModel]);
   const modelPriceCompactBase = useMemo(() => selectedModel?.metadata?.langframeCatalog === true ? "—" : modelPickerPriceCompact(selectedModel), [selectedModel]);
   const hasReferenceVideo = data.linkedAssets?.some(asset => asset.kind === "video") === true;
-  const priceParameters = { ...parameters,
+  const priceParameters = useMemo(() => ({ ...parameters,
     has_reference_video: selectedModel?.metadata?.langframeCatalog === true && data.linkedAssets === undefined
       ? parameters.has_reference_video : hasReferenceVideo,
     has_reference_image: data.linkedAssets?.some(asset => asset.kind === "image") === true,
     has_reference_audio: data.linkedAssets?.some(asset => asset.kind === "audio") === true,
-  };
-  const priceModel = selectedModel && nodeType === "video-generation" ? {
+  }), [parameters, selectedModel, data.linkedAssets, hasReferenceVideo]);
+  const priceModel = useMemo(() => selectedModel && nodeType === "video-generation" ? {
     ...selectedModel,
     parameters: parameterDescriptorsForValues(nodeType, data.provider ?? "fake", selectedModel, parameters, undefined, { hasReferenceVideo }),
-  } : selectedModel;
+  } : selectedModel, [selectedModel, nodeType, data.provider, parameters, hasReferenceVideo]);
+  // Closed canvas nodes do not need a request estimate. The retained panel owns it.
+  const parameterQuote = useMemo(() => settingsOpen ? createNodeParameterQuote(priceModel, {
+    ...priceParameters, prompt: renderPromptParts(data.parts ?? []),
+  }) : undefined, [settingsOpen, priceModel, priceParameters, data.parts]);
   const currentUnitPrice = selectedModel?.metadata?.langframeCatalog === true ? currentSupplierUnitPrice(priceModel, priceParameters) : modelPriceCompactBase;
   const modelPriceLabel = selectedModel?.metadata?.langframeCatalog === true ? currentUnitPrice : modelPriceLabelBase;
   const modelPriceCompact = selectedModel?.metadata?.langframeCatalog === true ? currentUnitPrice : modelPriceCompactBase;
@@ -696,42 +698,23 @@ export function GenerationNodeBody({
         : "idle";
   const availabilityOptions = { category: nodeType === "video-generation" ? "video" : "image", group: currentGroup };
   const selectedAvailability = selectedModel ? cangyuanAvailabilityForModel(selectedModel, availabilityItems, availabilityOptions) : undefined;
-  const parameterControlsUnavailable =
-    selectedModel?.metadata?.parameterControlsUnavailable === true;
-  const summary =
-    nodeType === "music-generation" ? [parameters.instrumental ? "纯音乐" : "歌曲", parameters.audio_format ? String(parameters.audio_format).toUpperCase() : "MP3", parameters.duration ? `目标 ${parameters.duration}s` : null].filter(Boolean).join(" · ") : nodeType === "video-generation"
-      ? parameterControlsUnavailable
-        ? ""
-        : [
-            parameters.duration ? `${parameters.duration}s` : null,
-            parameters.aspect_ratio ?? parameters.ratio,
-            parameters.resolution,
-          ]
-            .filter(Boolean)
-            .join(" · ")
-      : [
-          parameters.image_size ?? parameters.size_tier,
-          parameters.size === "auto" && parameters.size_tier
-            ? "自动比例"
-            : (parameters.aspect_ratio ?? parameters.size),
-          parameters.quality,
-        ]
-          .filter(Boolean)
-          .join(" · ");
-  const running = ["queued", "submitting", "running", "archiving"].includes(
-    data.status ?? "",
-  );
+  const running = ["queued", "submitting", "running", "archiving"].includes(data.status ?? "");
+  const requestSummary = nodeParameterSummary(nodeType, selectedModel, parameters);
 
   const selectNode = (event?: { ctrlKey: boolean; metaKey: boolean }) =>
     data.onSelect?.(Boolean(event?.ctrlKey || event?.metaKey));
-  const commitPromptBeforeRun = () => {
+  const commitBeforeRun = useCallback(() => {
     // The editor batches updates briefly for smooth typing. Blur commits the
-    // latest transaction immediately so Run cannot submit stale prompt text.
-    const active = document.activeElement;
-    if (active instanceof HTMLElement && active.closest(".tiptap-prompt")) {
-      active.blur();
+    // latest transaction; local W/H drafts also commit on native blur.
+    const focused = document.activeElement;
+    if (focused instanceof HTMLElement && (focused.closest(".tiptap-prompt") || settingsPopoverRef.current?.contains(focused))) {
+      focused.blur();
     }
-  };
+  }, []);
+  const runAction = createGenerationNodeRunAction({
+    connectionAvailable, maskProblem, running, nodeType,
+    onRun: data.onRun, onRunDownstream: data.onRunDownstream,
+  });
 
   useEffect(() => {
     if (!uiActive || !modelMenuOpen) return;
@@ -809,6 +792,7 @@ export function GenerationNodeBody({
       ref={attachSettingsPopover}
       id={`${presentation === "parameters" ? "canvas-parameters" : "node-parameters"}-${nodeId}`}
       data-config-node-id={nodeId}
+      data-config-active={uiActive}
       role="dialog"
       tabIndex={-1}
       aria-label={`${data.label} 模型与参数`}
@@ -821,6 +805,14 @@ export function GenerationNodeBody({
       // clicks must not select that node and reopen the inspector mid-popup.
       onClick={(event) => event.stopPropagation()}
       onDoubleClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => {
+        if (!isNodeConfigRunChord(event.nativeEvent)) return;
+        const scope = nodeConfigRunShortcutScope(event.nativeEvent);
+        const childOwnsKey = nodeConfigChildLayerOpen(event.target instanceof Element ? event.target : null, settingsPopoverRef.current);
+        event.preventDefault();
+        event.stopPropagation();
+        if (uiActive && scope && !childOwnsKey) runAction.run(scope, commitBeforeRun);
+      }}
       onFocusCapture={() => {
         if (presentation === "parameters") { if (!active) onRequestFocus?.(); }
         else data.onConfigurationFocus?.();
@@ -852,97 +844,12 @@ export function GenerationNodeBody({
         >
           <X size={14} />
         </button>
-        <button
-          className="node-config-manage-api"
-          title="管理供应商与密钥"
-          aria-label="管理供应商与密钥"
-          type="button"
-          onClick={() => {
-            closeSettings();
-            data.onOpenApiSettings?.();
-          }}
-        >
-          <ExternalLink size={12} /> 管理供应商与密钥
-        </button>
       </header>
       <div className="node-config-popover-body" ref={settingsBody}>
-        <div className="node-config-connections">
-          <div className="node-config-provider-selectors">
-            <label className="node-config-provider-header">
-              <span>供应商</span>
-              <select
-                aria-label={`${data.label} 供应商`}
-                value={currentSupplier}
-                title={currentConnectionOption?.supplierLabel}
-                onChange={(event) => {
-                  const next = choosePickerConnection(connectionOptions, currentConnection, event.target.value);
-                  if (next) data.onConnectionChange?.(next.id);
-                }}
-              >
-                {!currentSupplier && <option value="">{currentConnection ? "原连接已不可用，请选择" : "请选择供应商"}</option>}
-                {supplierOptions.map(([supplier, label]) => (
-                  <option key={supplier} value={supplier}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="node-config-provider-header">
-              <span>群组</span>
-              <select
-                aria-label={`${data.label} 模型群组`}
-                value={currentGroup}
-                title={currentGroupLabel}
-                onChange={(event) => {
-                  const next = choosePickerConnection(connectionOptions, currentConnection, currentSupplier, event.target.value);
-                  if (next) data.onConnectionChange?.(next.id);
-                }}
-              >
-                {!currentGroup && <option value="">请选择群组</option>}
-                {groupOptions.map((group) => (
-                  <option key={group.group} value={group.group} disabled={!group.available && group.group !== currentGroup}>
-                    {group.label}{group.connections.length > 1 ? `（${group.connections.length} 个连接）` : ""}{!group.available ? "（连接未就绪）" : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {currentGroupConnections.length > 1 && <label className="node-config-provider-header" style={{ gridColumn: "1 / -1" }}>
-              <span>连接</span>
-              <select aria-label={`${data.label} API 连接`} value={currentConnection}
-                onChange={event => data.onConnectionChange?.(event.target.value)}>
-                {currentGroupConnections.map(connection => <option key={connection.id} value={connection.id}
-                  disabled={connection.available === false && connection.id !== currentConnection}>
-                  {pickerConnectionLabel(connection, currentGroupConnections)}{connection.available === false ? `（${connection.unavailableReason ?? "密钥不可用"}）` : ""}
-                </option>)}
-              </select>
-            </label>}
-          </div>
-          <div className="supplier-quote-summary" aria-label="当前供应商报价"><InformationGrid items={[
-            { label: "供应商", value: currentConnectionOption?.supplierLabel ?? "供应商" },
-            { label: selectedModel?.metadata?.langframeCatalog === true ? "当前参数价" : "概括价", value: currentUnitPrice },
-            { label: "余额", value: billingCompact(billingAccounts.find(account => account.id === currentConnectionOption?.supplierId)?.billing) },
-          ]} /></div>
-          {supplierOptions.length > 1 && <details className="supplier-candidate-quotes"><summary>供应商候选报价</summary>
-            <table aria-label="供应商候选报价"><thead><tr><th scope="col">供应商</th><th scope="col">概括价</th><th scope="col">余额</th></tr></thead>
-              {supplierOptions.map(([supplier, label]) => {
-                const candidate = choosePickerConnection(connectionOptions, currentConnection, supplier);
-                const candidateModel = supplier === currentSupplier ? selectedModel : candidate?.modelDescriptor;
-                const legacyQuote = candidate?.modelQuote ?? "—";
-                return <tbody key={supplier}>
-                  <tr><th scope="row">{label}</th><td><span className="supplier-candidate-summary">{candidateModel ? modelPickerPriceCompact(candidateModel) : legacyQuote}</span></td>
-                    <td>{billingCompact(billingAccounts.find(account => account.id === candidate?.supplierId)?.billing)}</td></tr>
-                  {(candidateModel ? modelPickerPriceData(candidateModel) !== "—" : legacyQuote !== "—") && <tr className="supplier-candidate-detail"><td colSpan={3}>
-                    <details><summary>{label}价格明细</summary>{candidateModel ? <ModelPriceTable model={candidateModel} /> : <p>{legacyQuote}</p>}</details>
-                  </td></tr>}
-                </tbody>;
-              })}
-            </table>
-          </details>}
-        </div>
         <div className="node-config-model-field node-config-model-header">
-          <span>模型</span>
           <div className="node-config-model-control" ref={modelSelectRef}>
             <ModelPicker key={currentConnection} id={`node-inline-model-${nodeId}`} label={`${data.label} 模型`}
+              preferSidePlacement inlineChevron
               connectionId={currentConnection} models={modelOptions} value={data.model ?? ""}
               capabilities={connectionAvailable ? data.modelImageCapabilities : undefined}
               onChange={id => data.onModelChange?.(id)} open={uiActive && modelMenuOpen} onOpenChange={setModelMenuOpen}
@@ -953,24 +860,20 @@ export function GenerationNodeBody({
                 availability={cangyuanAvailabilityForModel(model, availabilityItems, availabilityOptions)}
                 loadState={availabilityState} checkedAt={availabilitySnapshot.checkedAt} /> : undefined} />
           </div>
+          <div className="node-config-model-quote" aria-label="当前型号单价">
+            <span>单价</span><NodeParameterRate label={currentUnitPrice} />
+          </div>
         </div>
-
+        <NodeParameterRoutePicker label={data.label} active={uiActive} connections={connectionOptions}
+          currentConnection={currentConnection} currentModel={data.model} billingAccounts={billingAccounts}
+          onChange={id => data.onConnectionChange?.(id)} onManage={() => { closeSettings(); data.onOpenApiSettings?.(); }} />
         {cangyuanAvailabilityEnabled && <CangyuanModelAvailability availability={selectedAvailability}
           loadState={availabilityState} checkedAt={availabilitySnapshot.connectionId === currentConnection ? availabilitySnapshot.checkedAt : undefined} />}
-
-        {currentConnection && !currentConnectionOption && <div className="node-config-connection-warning" role="status">原连接已归档或删除（{currentConnection}）。节点选择已保留，请恢复连接或手动选择其他连接。</div>}
-        {currentConnectionOption?.available === false ? (
-          <div className="node-config-connection-warning" role="status">
-            当前实际连接是 {currentConnectionOption.name}（{currentConnectionOption.group}），{currentConnectionOption.unavailableReason ?? "该分组密钥不可用"}。请重新配置或选择其他可用分组。
-          </div>
-        ) : null}
         <DeferredPanelContent immediate={presentation === "parameters"}>
         <section className="node-config-parameter-section" aria-label="输出参数" key={`${currentConnection}:${data.model}`}>
-          <div className="node-config-section-heading">
-            <strong>输出参数</strong>
-          </div>
-          <ModelResolutionShortcuts models={modelOptions} selected={selectedModel} onChange={id => data.onModelChange?.(id)} />
+          <ModelResolutionShortcuts panelPresentation models={modelOptions} selected={selectedModel} onChange={id => data.onModelChange?.(id)} />
           <NodeParameterFields
+            panelPresentation
             nodeId={nodeId}
             nodeType={nodeType}
             provider={data.provider ?? "fake"}
@@ -986,12 +889,18 @@ export function GenerationNodeBody({
             }
           />
         </section>
-        <ModelPriceDetails model={priceModel} parameters={{ ...priceParameters, prompt: renderPromptParts(data.parts ?? []) }} />
+        <Disclosure className="node-config-detail-section" label="价格明细">
+          <ModelPriceDetails quote={parameterQuote} />
+        </Disclosure>
         </DeferredPanelContent>
         {currentConnectionOption?.supplierId && <DeferredPanelContent>
-          <SupplierBillingSummary key={currentConnectionOption?.supplierId} compact supplierId={currentConnectionOption?.supplierId} />
+          <Disclosure className="node-config-detail-section" label="账号余额与消耗">
+            <SupplierBillingSummary key={currentConnectionOption?.supplierId} compact supplierId={currentConnectionOption?.supplierId} />
+          </Disclosure>
         </DeferredPanelContent>}
       </div>
+      <NodeParameterFooter label={data.label} quote={parameterQuote} summary={requestSummary}
+        runAction={runAction} beforeRun={commitBeforeRun} reasonId={`node-run-reason-${presentation}-${nodeId}`} />
     </section>
   ) : null;
 
@@ -1043,9 +952,10 @@ export function GenerationNodeBody({
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => {
           event.stopPropagation();
-          if (!event.nativeEvent.isComposing && (event.ctrlKey || event.metaKey) && event.key === "Enter") {
+          if (isNodeConfigRunChord(event.nativeEvent)) {
+            const scope = nodeConfigRunShortcutScope(event.nativeEvent);
             event.preventDefault();
-            if (connectionAvailable && !maskProblem) (event.shiftKey ? data.onRunDownstream : data.onRun)?.();
+            if (scope) runAction.run(scope, commitBeforeRun);
           }
         }}
       >
@@ -1065,7 +975,7 @@ export function GenerationNodeBody({
           type="button"
           aria-label={`打开 ${data.label} 模型与参数`}
           aria-haspopup="dialog"
-          title={`${connectionName} · ${modelName}${modelPriceLabel !== "—" ? ` · ${modelPriceLabel}` : ""} · ${summary || "使用 API 默认参数"}`}
+          title={`${connectionName} · ${modelName}${modelPriceLabel !== "—" ? ` · ${modelPriceLabel}` : ""} · ${requestSummary || "使用 API 默认参数"}`}
           // Defer source selection until the native click has been delivered.
           // Selecting on pointerdown can reconcile this node before pointerup
           // and swallow the first click that was meant to open its parameters.
@@ -1101,16 +1011,16 @@ export function GenerationNodeBody({
           className="node-run-button"
           type="button"
           aria-label={`运行 ${data.label} 节点`}
-          title={maskProblem ?? (connectionAvailable ? (running ? "创建新的独立任务，当前任务继续生成（Ctrl+Enter）" : "运行节点（Ctrl+Enter）") : "当前 API 连接不可用")}
-          disabled={!connectionAvailable || Boolean(maskProblem)}
+          title={runAction.title}
+          disabled={runAction.disabled}
           onClick={(event) => {
             event.stopPropagation();
-            if (connectionAvailable && !maskProblem) data.onRun?.();
+            runAction.run("node", commitBeforeRun);
           }}
-          onPointerDown={commitPromptBeforeRun}
+          onPointerDown={commitBeforeRun}
         >
           <Play size={12} />
-          <span>{running ? (nodeType === "image-generation" ? "再生成一张" : "再生成一个") : "运行"}</span>
+          <span>{runAction.label}</span>
         </button>
       </div>
     </div>

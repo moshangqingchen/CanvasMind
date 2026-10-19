@@ -5,42 +5,33 @@ import {
   modelResolutionFamily,
   modelResolutionPrice,
 } from "../lib/model-resolution-family";
+import { Segmented } from "./ui/Segmented";
 
 export function ModelResolutionShortcuts({
   models,
   selected,
   onChange,
+  panelPresentation = false,
 }: {
   models: readonly ModelDescriptor[];
   selected?: ModelDescriptor | null;
   onChange: (modelId: string) => void;
+  panelPresentation?: boolean;
 }) {
   const family = modelResolutionFamily(models, selected);
   if (!family.length) return null;
   return (
     <div className="field model-resolution-family">
-      <label>分辨率与价格</label>
-      <div
-        className="parameter-dimensions-shortcuts"
-        role="group"
-        aria-label="切换同渠道型号的分辨率"
-      >
-        {family.map(({ tier, model }) => {
+      <label>型号分辨率与价格</label>
+      <Segmented label="切换同渠道型号的分辨率" value={selected?.id ?? ""} className="model-resolution-segmented"
+        singleOptionDisplay={panelPresentation ? "static" : undefined}
+        options={family.map(({ tier, model }) => {
           const price = model ? modelResolutionPrice(model) : "未提供";
           const currencyNote = "（币种未注明）";
           const unknownCurrency = price.endsWith(currencyNote);
-          return (
-            <button
-              key={tier}
-              type="button"
-              className="parameter-dimensions-shortcut model-resolution-choice"
-              disabled={!model}
-              aria-pressed={model?.id === selected?.id}
-              title={model ? `${model.id} · ${price}` : "当前分组未提供此档位"}
-              onClick={() => model && onChange(model.id)}
-            >
-              <strong>{tier}</strong>
-              <small>
+          return { value: model?.id ?? `__unavailable_model_${tier}__`, label: tier, disabled: !model,
+            title: model ? `${model.id} · ${price}` : "当前分组未提供此档位",
+            detail: <>
                 {unknownCurrency ? (
                   <>
                     {price.slice(0, -currencyNote.length)}
@@ -51,11 +42,8 @@ export function ModelResolutionShortcuts({
                 ) : (
                   price
                 )}
-              </small>
-            </button>
-          );
-        })}
-      </div>
+              </> };
+        })} onChange={modelId => { if (family.some(item => item.model?.id === modelId)) onChange(modelId); }} />
       <span className="field-note">按所选档位切换当前分组的对应型号。</span>
     </div>
   );
