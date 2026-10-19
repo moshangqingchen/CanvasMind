@@ -31,6 +31,7 @@ import type {
 } from "./types.js";
 import { CanvasRevisionConflictError } from "./types.js";
 import { applyImageDesignReview } from "./image-design-review.js";
+import { collectReferencedAssetIds } from "./asset-references.js";
 import {
   catalogObservationModeSetting,
   assertCatalogPipelineState,
@@ -629,6 +630,13 @@ export class MemoryRepository implements Repository {
         currentRevision,
       );
     }
+    const previousReferences = new Set(collectReferencedAssetIds(previous?.graph));
+    for (const id of collectReferencedAssetIds(input.graph)) {
+      const asset = this.assets.get(id);
+      if (!previousReferences.has(id) && asset?.deleted && asset.metadata.rollbackCleanup === true) {
+        throw new Error(`素材 ${id} 已由未引用回滚清理，请重新导入后再保存；当前画布未修改`);
+      }
+    }
     // Leaving a canvas flushes the full snapshot even when no edit occurred.
     // Keep that durability/CAS path, without creating an identical autosave.
     if (previous && input.reason === "autosave" &&
@@ -749,16 +757,16 @@ export class MemoryRepository implements Repository {
     }
   }
 
-  async deleteUnreferencedAssets(ids: readonly string[], references: (graph: JsonObject) => readonly string[]): Promise<{ deletedIds: string[]; referencedIds: string[] }> {
+  async deleteUnreferencedAssets(ids: readonly string[]): Promise<{ deletedIds: string[]; referencedIds: string[] }> {
     const referenced = new Set<string>();
     // No await between inspection and tombstones. Retained revisions also own originals.
     for (const record of [...this.canvases.values(), ...this.revisions.values()])
-      for (const id of references(record.graph)) referenced.add(id);
+      for (const id of collectReferencedAssetIds(record.graph)) referenced.add(id);
     const unique = [...new Set(ids)];
     const deletedIds = unique.filter(id => !referenced.has(id));
     for (const id of deletedIds) {
       const asset = this.assets.get(id);
-      if (asset) this.assets.set(id, { ...asset, deleted: true });
+      if (asset) this.assets.set(id, { ...asset, deleted: true, metadata: { ...asset.metadata, rollbackCleanup: true } });
     }
     return { deletedIds, referencedIds: unique.filter(id => referenced.has(id)) };
   }

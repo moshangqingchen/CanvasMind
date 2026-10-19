@@ -463,7 +463,7 @@ export interface Repository {
   deleteAsset(id: string): Promise<void>;
   deleteAssets(ids: readonly string[]): Promise<void>;
   /** Atomic rollback cleanup; graph inspection must be synchronous and fail closed. */
-  deleteUnreferencedAssets(ids: readonly string[], references: (graph: JsonObject) => readonly string[]): Promise<{ deletedIds: string[]; referencedIds: string[] }>;
+  deleteUnreferencedAssets(ids: readonly string[]): Promise<{ deletedIds: string[]; referencedIds: string[] }>;
   listConnections(): Promise<ProviderConnectionRecord[]>;
   getConnection(id: string): Promise<ProviderConnectionRecord | null>;
   saveConnection(

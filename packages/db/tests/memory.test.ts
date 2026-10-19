@@ -8,9 +8,9 @@ describe("MemoryRepository", () => {
     for (const id of ["used", "old", "unused"]) await repository.saveAsset({
       id, name: id, kind: "image", mimeType: "image/png", size: 1, storageKey: id, metadata: {},
     });
-    await repository.saveCanvas({ id: "other", graph: { refs: ["old"] } });
-    await repository.saveCanvas({ id: "other", graph: { refs: ["used"] } });
-    const result = await repository.deleteUnreferencedAssets(["used", "old", "unused"], graph => graph.refs as string[]);
+    await repository.saveCanvas({ id: "other", graph: { nodes: [{ data: { assetId: "old" } }] } });
+    await repository.saveCanvas({ id: "other", graph: { nodes: [{ data: { assetId: "used" } }] } });
+    const result = await repository.deleteUnreferencedAssets(["used", "old", "unused"]);
     expect(result).toEqual({ deletedIds: ["unused"], referencedIds: ["used", "old"] });
     expect((await repository.getAsset("used"))?.deleted).toBe(false);
     expect((await repository.getAsset("old"))?.deleted).toBe(false);

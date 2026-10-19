@@ -1,8 +1,6 @@
 import { z } from "zod";
 import { jsonError, repository, storage } from "../../../../lib/server";
 import { deleteStoredAssetObjects } from "../../../../lib/asset-cleanup";
-import { collectReferencedAssetIds } from "../../../../lib/project-transfer";
-import type { CanvasDocument } from "../../../../components/types";
 
 const requestSchema = z.object({
   assetIds: z.array(z.string().trim().min(1).max(200)).min(1).max(500),
@@ -27,8 +25,7 @@ export async function POST(request: Request) {
   let skippedIds: string[] = [];
   try {
     if (parsed.data.onlyUnreferenced) {
-      const result = await repository.deleteUnreferencedAssets(requestedIds,
-        graph => collectReferencedAssetIds(graph as unknown as CanvasDocument));
+      const result = await repository.deleteUnreferencedAssets(requestedIds);
       deletedIds = result.deletedIds;
       skippedIds = result.referencedIds;
       const deleting = new Set(deletedIds);

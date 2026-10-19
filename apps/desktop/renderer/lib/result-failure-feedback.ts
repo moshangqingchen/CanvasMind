@@ -18,12 +18,13 @@ const messages: Record<Exclude<FeedbackKind, "unknown">, { cause: string; action
 };
 
 /** Require the recorded local non-submission evidence; a missing task ID is insufficient. */
-export function isUnsubmittedReferenceFailure(value: unknown): boolean {
+export function isUnsubmittedReferenceFailure(value: unknown, acceptedTaskId?: string): boolean {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const error = value as Record<string, unknown>;
   const charge = error.charge && typeof error.charge === "object" && !Array.isArray(error.charge)
     ? error.charge as Record<string, unknown> : undefined;
-  return error.code === "LOCAL_REFERENCE_ASSET_PREFLIGHT_FAILED" && error.source === "local_validation" &&
+  if (acceptedTaskId?.trim() || (typeof error.providerTaskId === "string" && error.providerTaskId.trim()) || error.cloudTaskEvidence || error.taskEvidence) return false;
+  return ["LOCAL_REFERENCE_ASSET_PREFLIGHT_FAILED", "MATERIAL_PREPARATION_FAILED"].includes(String(error.code)) && error.source === "local_validation" &&
     error.submissionMayHaveOccurred === false && charge?.status === "not_charged" && charge.source === "not_submitted" &&
     (charge.amount === undefined || charge.amount === 0);
 }
@@ -39,7 +40,7 @@ function classifyText(text: string): FeedbackKind | undefined {
 }
 
 /** Presentation only: retains raw evidence and never changes retry or billing decisions. */
-export function resultFailureFeedback(error?: LocalizedRunError | null, rawError?: unknown) {
+export function resultFailureFeedback(error?: LocalizedRunError | null, rawError?: unknown, acceptedTaskId?: string) {
   const original = rawError && typeof rawError === "object" ? rawError as Record<string, unknown> : undefined;
   const originalText = typeof rawError === "string" ? rawError : undefined;
   const originalMessage = typeof original?.message === "string" ? original.message : originalText;
@@ -47,8 +48,10 @@ export function resultFailureFeedback(error?: LocalizedRunError | null, rawError
   const code = typeof original?.code === "string" ? original.code : error?.code;
   const providerMessage = originalProviderMessage ?? error?.providerMessage;
   const raw = providerMessage ?? originalMessage ?? error?.localMessage ?? error?.message ?? "未记录原始错误。";
-  if (isUnsubmittedReferenceFailure(original ?? error))
-    return { kind: "references" as const, raw, ...messages.references };
+  if (isUnsubmittedReferenceFailure(original ?? error, acceptedTaskId))
+    return { kind: "references" as const, raw, ...messages.references,
+      ...(code === "MATERIAL_PREPARATION_FAILED" ? { cause: "素材准备失败，尚未提交生成。",
+        action: "本次未产生生成费用。请检查素材与当前渠道，重试时程序会先重新准备并校验素材。" } : {}) };
   // Supplier evidence must not compete with a translated label such as
   // “余额不足” attached to an insufficient_quota response by older localization.
   const translatedFallback = providerMessage ? "" : [original?.type, error?.type, error?.message].filter(value => typeof value === "string").join(" ");

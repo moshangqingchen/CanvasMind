@@ -1,3 +1,5 @@
+import { collectReferencedAssetIds } from "@super-canvas/db/asset-references";
+export { collectReferencedAssetIds } from "@super-canvas/db/asset-references";
 import { readImageDesignReview, validateGraph, type ImageReviewStatus } from "@super-canvas/core";
 import { Unzip, UnzipInflate, Zip, ZipPassThrough, strToU8 } from "fflate";
 import { z } from "zod";
@@ -248,64 +250,6 @@ function normalizeGraph(
       graphValidation.errors.map((issue) => issue.message).join("；"),
     );
   return parsed.data as CanvasDocument;
-}
-
-function addAssetId(target: Set<string>, value: unknown): void {
-  if (typeof value === "string" && value.trim()) target.add(value);
-}
-
-function addAssetIds(target: Set<string>, value: unknown): void {
-  if (!Array.isArray(value)) return;
-  for (const item of value) addAssetId(target, item);
-}
-
-/** Returns only durable asset references stored in a serialized graph. */
-export function collectReferencedAssetIds(graph: CanvasDocument): string[] {
-  const ids = new Set<string>();
-  for (const node of graph.nodes as CanvasNode[]) {
-    const data = node.data;
-    addAssetId(ids, data?.assetId);
-    addAssetId(ids, data?.designSourceAssetId);
-    for (const parameters of [data?.parameters, data?.generatedParameters]) {
-      if (!isRecord(parameters)) continue;
-      addAssetId(ids, parameters.maskAssetId);
-      addAssetId(ids, parameters.maskSourceAssetId);
-    }
-    if (isRecord(data?.generatedDetails)) {
-      const details = data.generatedDetails;
-      if (isRecord(details.imageMask)) {
-        addAssetId(ids, details.imageMask.maskAssetId);
-        addAssetId(ids, details.imageMask.maskSourceAssetId);
-      }
-      addAssetIds(ids, details.inputAssetIds);
-      if (Array.isArray(details.inputAssets)) for (const asset of details.inputAssets)
-        if (isRecord(asset)) addAssetId(ids, asset.id);
-    }
-    addAssetIds(ids, data?.lastOutputAssetIds);
-    addAssetIds(ids, data?.materializedOutputAssetIds);
-    if (isRecord(data?.graphicDesignBrief)) {
-      const brief = data.graphicDesignBrief;
-      addAssetIds(ids, brief.customerImageAssetIds);
-      for (const key of ["references", "customerImages"]) {
-        if (Array.isArray(brief[key])) {
-          for (const image of brief[key]) {
-            if (isRecord(image)) addAssetId(ids, image.assetId);
-          }
-        }
-      }
-    }
-    if (Array.isArray(data?.parts)) {
-      for (const part of data.parts) {
-        if (part?.type === "asset") addAssetId(ids, part.assetId);
-      }
-    }
-    if (Array.isArray(data?.generatedPromptParts)) {
-      for (const part of data.generatedPromptParts) {
-        if (part?.type === "asset") addAssetId(ids, part.assetId);
-      }
-    }
-  }
-  return [...ids].sort();
 }
 
 function remapParts(

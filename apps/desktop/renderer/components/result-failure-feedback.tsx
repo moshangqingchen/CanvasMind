@@ -18,7 +18,7 @@ export function ResultFailureFeedback({ error, rawError, taskId, runId, status, 
   recoveryAction?: string;
   context?: Record<string, unknown>;
 }) {
-  const feedback = resultFailureFeedback(error, rawError);
+  const feedback = resultFailureFeedback(error, rawError, taskId);
   const diagnostic = runErrorDiagnostic(error);
   const original = rawError && typeof rawError === "object" ? rawError as Record<string, unknown> : undefined;
   const recordedType = typeof original?.type === "string" && original.type.trim() ? original.type : error?.type;
@@ -43,7 +43,7 @@ export function ResultFailureFeedback({ error, rawError, taskId, runId, status, 
         </dl>
         <div><strong>{error?.source === "local_validation" ? "本地校验原文" : "供应商原始错误"}</strong><pre>{feedback.raw}</pre></div>
         {diagnostic ? <p>{diagnostic}</p> : null}
-        <FailureDiagnosis error={error} status={status} providerTaskStatus={providerTaskStatus} recoveryAction={recoveryAction} />
+        <FailureDiagnosis error={error} rawError={rawError} providerTaskId={taskId} status={status} providerTaskStatus={providerTaskStatus} recoveryAction={recoveryAction} />
         <button type="button" className={styles.copyIcon} aria-label="复制错误详情" title="复制错误详情" onClick={() => copy(JSON.stringify({ error: rawError ?? error, ...context, runId, taskId }, null, 2), "错误详情")}><Copy size={12} aria-hidden="true" /></button>
         {error?.actionUrl ? <a className="generated-result-error-doc nodrag nopan" href={error.actionUrl} target="_blank" rel="noreferrer"><ExternalLink size={11} aria-hidden="true" />{error.actionLabel ?? "前往供应商官网"}</a> : null}
         {error?.docsUrl ? <a className="generated-result-error-doc nodrag nopan" href={error.docsUrl} target="_blank" rel="noreferrer"><ExternalLink size={11} aria-hidden="true" />API 错误文档</a> : null}
