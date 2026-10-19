@@ -18,7 +18,7 @@ import { evaluateImageParameters } from "@super-canvas/providers/image-parameter
 import { chuangxiangImageEvidence } from "@super-canvas/providers/chuangxiang-image-capabilities";
 import { genimageImageRatioIssues, isGenimageImageConnection } from "@super-canvas/providers/genimage-image-capabilities";
 import { isChuangxiangMidjourneyConnection } from "@super-canvas/providers/chuangxiang-midjourney-contract";
-import { CloudGenerationUncertainError, cloudSubmissionId, isCloudSubmission, readCloudGenerationConfig, runCloudGeneration, testCloudGeneration, uploadCloudReferences, type CloudGenerationConfig } from "./cloud-generation.js";
+import { CloudGenerationUncertainError, cloudSubmissionId, isCloudSubmission, queryCloudGeneration, readCloudGenerationConfig, runCloudGeneration, testCloudGeneration, uploadCloudReferences, type CloudGenerationConfig } from "./cloud-generation.js";
 import {
   extractPromptAssetIds,
   getEdgeTargetPortId,
@@ -2996,8 +2996,7 @@ export class RunService {
     // A known supplier task only needs its saved receipt for polling/archival.
     // Re-reading, validating or uploading original references can strand paid
     // jobs after inputs were removed or their reference channel went offline.
-    // Cloud jobs still reconstruct the adapter request for their query-only transport.
-    const resumingTask = Boolean(nodeRun.providerTaskId) && !isCloudSubmission(nodeRun.providerTaskId);
+    const resumingTask = Boolean(nodeRun.providerTaskId);
     const connectedRoles = new Map<
       string,
       "reference" | "firstFrame" | "lastFrame"
@@ -3517,7 +3516,21 @@ export class RunService {
       inputJson,
     });
     let task: ProviderTask;
-    if (nodeRun.providerTaskId && !isCloudSubmission(nodeRun.providerTaskId)) {
+    if (isCloudSubmission(nodeRun.providerTaskId)) {
+      try {
+        const cloud = isRecord(inputJson.cloudGeneration) ? inputJson.cloudGeneration : frozenConnection?.cloudGeneration;
+        if (!isRecord(cloud) || typeof cloud.endpoint !== "string" || typeof cloud.encryptedToken !== "string")
+          throw new Error("原任务的云端连接配置缺失，已停止，不能回退本机重复生成");
+        if (savedTask) task = savedTask;
+        else {
+          if (!adapter.restoreCloudTask) throw new Error("此供应商缺少原云任务响应解析入口；已保留原任务，禁止重新提交");
+          const response = await queryCloudGeneration(nodeRun.providerTaskId!, cloud as unknown as CloudGenerationConfig, { signal, progress: submissionProgress });
+          task = await adapter.restoreCloudTask(request, response);
+        }
+      } catch (cause) {
+        throw new NeedsAttentionError(cause instanceof Error ? cause.message : "原云任务查询失败，已停止重复提交", { code: "cloud_recovery_failed", cause });
+      }
+    } else if (nodeRun.providerTaskId) {
       task =
         savedTask ??
         (await this.restoreProviderTask(
@@ -3580,7 +3593,7 @@ export class RunService {
       // the remote task id without changing the cancellation status so the
       // reconciler can keep sending provider cancellation requests.
       await this.repository.updateNodeRun(nodeRunId, {
-        providerTaskId: task.providerTaskId,
+        providerTaskId: inputJson.cloudGeneration ? cloudSubmissionId(request.idempotencyKey) : task.providerTaskId,
         inputJson: taskSnapshot,
       });
       const [cancelledRun, cancelledNode] = await Promise.all([

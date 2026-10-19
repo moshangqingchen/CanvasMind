@@ -3700,8 +3700,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         }, { phase: "submit", onResponseEvidence: captureRequestEvidence, timeoutMs: configuredRequestTimeout(connection, this.submitTimeoutMs, "imageSubmitTimeoutMs"), maxResponseBytes: 128 * 1024 * 1024, idempotent: false });
       if (!(await this.extractOutputs({ response, protocol: "openai-images" })).length)
         throw new ProviderHttpError("极九已响应但没有返回图片；请核对原请求记录，避免重复提交。", { kind: "invalid_response", phase: "submit", retryable: false, submissionMayHaveOccurred: true, ...(upstreamRequestEvidence ? { upstreamRequestEvidence } : {}) });
-      return { providerTaskId: `openai:${request.idempotencyKey}`, id: `openai:${request.idempotencyKey}`, status: "succeeded",
-        result: { response, protocol: "openai-images", ...(upstreamRequestEvidence ? { upstreamRequestEvidence } : {}) } };
+      return this.completedImageTask(request, response, "openai-images", undefined, upstreamRequestEvidence);
     }
     const baseUrl = (this.profile === "openai" ? hangImageBaseUrl({ ...connection.settings, baseUrl: connection.baseUrl }, selectedModel) ??
       hangGptImageBaseUrl({ ...connection.settings, baseUrl: connection.baseUrl }, selectedModel) : undefined) ?? configuredBaseUrl(
@@ -4148,6 +4147,11 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       );
     }
 
+    return this.completedImageTask(request, response, protocol, requestedOutputFormat.format, upstreamRequestEvidence);
+  }
+
+  private completedImageTask(request: NormalizedRequest, response: unknown, protocol: OpenAIImageTaskResult["protocol"],
+    outputFormat?: ImageFormatDescriptor["format"], upstreamRequestEvidence?: ProviderRequestEvidence): ProviderTask {
     const taskPrefix = this.profile === "weai" ? "weai" : "openai";
     return {
       providerTaskId: `${taskPrefix}:${request.idempotencyKey}`,
@@ -4156,10 +4160,41 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       result: {
         response,
         ...(upstreamRequestEvidence ? { upstreamRequestEvidence } : {}),
-        outputFormat: requestedOutputFormat.format,
+        ...(outputFormat ? { outputFormat } : {}),
         protocol,
-      } satisfies OpenAIImageTaskResult,
+      },
     };
+  }
+
+  public async restoreCloudTask(request: NormalizedRequest, response: unknown): Promise<ProviderTask> {
+    const connection = await this.connections.resolve(request.connectionId);
+    const model = request.model ?? configuredImageModel(connection, this.defaultModel, this.profile);
+    const source = imageEditingConnection(connection);
+    const withMarker = async (adapter: NonNullable<ReturnType<OpenAIImageAdapter["documentedBananaAdapter"]>>, marker: string) => {
+      const task = await adapter.restoreCloudTask(request, response);
+      return { ...task, result: { ...(task.result as Record<string, unknown>), [marker]: true } };
+    };
+    // All native adapters below inherit REST's response-only parser. Their
+    // submit overrides (validation, image downloads/uploads) are never called.
+    const banana = this.documentedBananaAdapter(connection, model);
+    if (banana) return withMarker(banana, "bananaImage");
+    if (this.profile === "openai" && isJiasuImageConnection(source.config, model)) {
+      const task = await new JiasuImageAdapter(this.connections, { fetch: this.fetchImpl }, model).restoreCloudTask(request, response);
+      return { ...task, result: { ...(task.result as Record<string, unknown>), jiasuImage: true } };
+    }
+    const native = this.profile === "openai" && (
+      isPdogImageConnection(source.config, model) ? { adapter: connection.settings?.pdogImageMode === "sync" ? new PdogImageAdapter(this.connections, { fetch: this.fetchImpl }, "sync") : this.pdog, marker: "pdogImage" } :
+      isChuangxiangImageConnection(source.config, model) ? { adapter: this.chuangxiang, marker: "chuangxiangCurrentImages" } :
+      isChuangxiangMidjourneyConnection(source.config, model) ? { adapter: this.chuangxiangMidjourney, marker: "chuangxiangMidjourneyImages" } :
+      isSecureSkillImageConnection(source.config, model) ? { adapter: this.secureSkill, marker: "secureSkillImage" } :
+      isSecureSkillSeedreamConnection(source.config, model) ? { adapter: this.secureSeedream, marker: "secureSkillSeedream" } : undefined);
+    if (native) {
+      const task = await native.adapter.restoreCloudTask(request, response);
+      return { ...task, result: { ...(task.result as Record<string, unknown>), [native.marker]: true } };
+    }
+    const protocol: OpenAIImageTaskResult["protocol"] = isRecord(response) && Array.isArray(response.candidates)
+      ? "gemini-generate-content" : isRecord(response) && Array.isArray(response.choices) ? "frimodel-chat-completions" : "openai-images";
+    return this.completedImageTask(request, response, protocol, imageFormat(request.parameters?.output_format)?.format);
   }
 
   public async poll(task: ProviderTask): Promise<ProviderTask> {

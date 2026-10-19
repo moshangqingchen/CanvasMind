@@ -243,6 +243,17 @@ export class LangframeAdapter implements ProviderAdapter {
           remote: error.details.responseBody ?? {}, status: "running", submissionUncertain: true, submissionError: error.message,
           ...(error.details.upstreamRequestEvidence ? { upstreamRequestEvidence: error.details.upstreamRequestEvidence } : {}) } };
     }
+    return this.completedTask(request, task);
+  }
+
+  async restoreCloudTask(request: NormalizedRequest, response: unknown): Promise<ProviderTask> {
+    const config = langframeConnector(imageOperation(request) ? "image" : "video");
+    return this.completedTask(request, await this.transport(this.connections, config).restoreCloudTask(request, response));
+  }
+
+  private async completedTask(request: NormalizedRequest, original: ProviderTask): Promise<ProviderTask> {
+    let task = original;
+    const clientTaskId = `lf-${createHash("sha256").update(`${request.connectionId}\0${request.idempotencyKey}`).digest("hex")}`;
     const envelope = record(task.result) ? task.result : {};
     const outputs = await this.extractOutputs({ ...envelope, langframe: true });
     let status = taskStatus(envelope.remote, task.status);
