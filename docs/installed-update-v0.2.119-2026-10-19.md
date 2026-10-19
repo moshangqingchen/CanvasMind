@@ -40,3 +40,19 @@
 - `docs/installed-update-v0.2.119-2026-10-19.md`
 
 完整中文报告（含原样失败、安装回执、备份核对和停止边界）：[final-report.md](../.codex-logs/2026-10-19-release-v0.2.119/final-report.md)。证据目录为 `.codex-logs/2026-10-19-release-v0.2.119/`。本记录没有补做任何应用操作、正式 profile 读取或 API 请求。
+
+## 启动后只读文件核对（Claude，2026-10-19）
+
+Codex 的启动后验收因输入监视命中而停止。之后 Claude 对正在运行的 0.2.119 做了一次只读文件快照，对照备份 `backups/before-local-update-v0.2.119-20261019T104747298Z`。核对脚本是 0.2.118 同名脚本的改编版，只改了备份路径和历史取消记录复核文件的位置：[after-start-readonly-files.mjs](../.codex-logs/2026-10-19-release-v0.2.119/after-start-readonly-files.mjs)。
+
+采样时间为 **11:13:47.842Z – 11:13:49.088Z**，距启动约 12 分钟，第一次读取即得到一致的快照。结果**全部通过**：
+
+- 主库 SHA-256 仍为 `b69bdaf6660b70288a4e367432b0ed64882e26c7677b8b3f66e8ae20afa91183`，与安装前基线相同；
+- 18 条核验证据的规范化哈希 `3b522ff4…a105` 不变；
+- 19 份 sidecar 和 19 份证据文件逐个 SHA 不变；
+- 182 条连接的完整保护字段和密钥上下文不变；
+- 历史 `cancel_requested` 节点及其父 run 不变；
+- 各业务集合和应用设置都没有变化；
+- 5 个项目文件夹完全一致。
+
+本次只读文件：没有读取草稿或日志内容，没有调用应用 API，没有操作窗口或截图，也没有写入正式资料。快照只代表采样那一刻的状态。安装版“换线路”弹层的界面截图尚未补做。应用保持运行。完整结果见 `.codex-logs/2026-10-19-release-v0.2.119/after-start-readonly-check.private.json` 和 `after-start-readonly-summary.json`。
