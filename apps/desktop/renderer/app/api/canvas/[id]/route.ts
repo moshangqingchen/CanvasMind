@@ -8,6 +8,7 @@ import {
   validateCanvasGraphSemantics,
 } from "../../../../lib/api-validation";
 import { repository, jsonError, safeJsonObject } from "../../../../lib/server";
+import { projectCoordinator, ProjectMutationError } from "../../../../lib/project-coordinator";
 
 export async function GET(
   _: Request,
@@ -35,7 +36,7 @@ export async function PUT(
   if (graphIssues.length > 0) return graphValidationError(graphIssues);
 
   try {
-    const canvas = await repository.saveCanvas({
+    const canvas = await projectCoordinator(repository).saveCanvas({
       id: parsedId.data,
       title: parsed.data.title,
       graph: safeJsonObject(parsed.data.graph),
@@ -44,6 +45,7 @@ export async function PUT(
     });
     return Response.json(canvas);
   } catch (error) {
+    if (error instanceof ProjectMutationError) return jsonError(error.message, error.status);
     // The persistent development repository can outlive a hot-reloaded module.
     // Preserve the typed error contract even when its class identity changes.
     if (error instanceof CanvasRevisionConflictError || (

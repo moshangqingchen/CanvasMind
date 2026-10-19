@@ -5,9 +5,10 @@ import {
   validateCanvasGraphSemantics,
 } from "../../../lib/api-validation";
 import { jsonError, repository, safeJsonObject } from "../../../lib/server";
+import { projectCoordinator, ProjectMutationError } from "../../../lib/project-coordinator";
 
 export async function GET() {
-  const canvas = await repository.ensureDefaultCanvas();
+  const canvas = await projectCoordinator(repository).run(() => repository.ensureDefaultCanvas());
   return Response.json(canvas);
 }
 
@@ -19,14 +20,15 @@ export async function POST(request: Request) {
   if (graphIssues.length > 0) return graphValidationError(graphIssues);
 
   try {
-    const canvas = await repository.saveCanvas({
+    const canvas = await projectCoordinator(repository).saveCanvas({
       id: parsed.data.id ?? crypto.randomUUID(),
       title: parsed.data.title,
       graph: safeJsonObject(parsed.data.graph),
       reason: "manual",
     });
     return Response.json(canvas, { status: 201 });
-  } catch {
+  } catch (error) {
+    if (error instanceof ProjectMutationError) return jsonError(error.message, error.status);
     return jsonError("画布创建失败", 500);
   }
 }

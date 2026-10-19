@@ -4,6 +4,7 @@ import { CanvasRevisionConflictError } from "@super-canvas/db";
 const mocks = vi.hoisted(() => ({
   repository: {
     getCanvas: vi.fn(),
+    listCanvases: vi.fn(),
     saveCanvas: vi.fn(),
     flush: vi.fn(),
   },
@@ -40,6 +41,7 @@ const context = { params: Promise.resolve({ id: "canvas-1" }) };
 
 beforeEach(() => {
   vi.resetAllMocks();
+  mocks.repository.listCanvases.mockResolvedValue([{ id: "canvas-1", title: "Canvas", graph, revision: 8 }]);
 });
 
 describe("PUT /api/canvas/[id]", () => {

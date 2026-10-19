@@ -30,7 +30,8 @@ vi.mock("../../../../lib/project-service", () => ({
   }),
 }));
 
-vi.mock("@super-canvas/storage", () => ({
+vi.mock("@super-canvas/storage", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@super-canvas/storage")>(),
   getProjectFileStore: () => ({
     deleteProject: mocks.deleteProject,
     renameProject: mocks.renameProject,

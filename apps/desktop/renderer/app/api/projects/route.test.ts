@@ -7,6 +7,12 @@ const mocks = vi.hoisted(() => ({
     saveCanvas: vi.fn(),
   },
   ensureProjectDirectory: vi.fn(),
+  ensureProject: vi.fn(),
+}));
+
+vi.mock("@super-canvas/storage", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@super-canvas/storage")>(),
+  getProjectFileStore: () => ({ ensureProject: mocks.ensureProject }),
 }));
 
 vi.mock("../../../lib/server", () => ({
@@ -116,6 +122,23 @@ describe("/api/projects", () => {
         graph: expect.objectContaining({ nodes: [], edges: [] }),
       }),
     );
-    expect(mocks.ensureProjectDirectory).toHaveBeenCalledWith(canvasFixture);
+    expect(mocks.ensureProject).toHaveBeenCalledWith(canvasFixture.title);
+  });
+
+  it("returns 201 and 409 for two concurrent creates of the same name", async () => {
+    const saved: typeof canvasFixture[] = [];
+    mocks.repository.listCanvases.mockImplementation(async () => [...saved]);
+    mocks.repository.saveCanvas.mockImplementation(async input => {
+      const canvas = { ...canvasFixture, ...input };
+      saved.push(canvas);
+      return canvas;
+    });
+    const create = () => POST(new Request("http://localhost/api/projects", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: "并发项目" }),
+    }));
+    const responses = await Promise.all([create(), create()]);
+    expect(responses.map(response => response.status)).toEqual([201, 409]);
+    expect(saved).toHaveLength(1);
+    expect(mocks.ensureProject).toHaveBeenCalledOnce();
   });
 });

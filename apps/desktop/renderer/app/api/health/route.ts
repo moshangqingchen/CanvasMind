@@ -1,4 +1,5 @@
 import { repository, storage } from "../../../lib/server";
+import { projectCoordinator } from "../../../lib/project-coordinator";
 
 const SCAN_STATUSES = new Set([
   "live",
@@ -71,7 +72,7 @@ export async function GET() {
   const headers = new Headers({ "Cache-Control": "no-store" });
   try {
     const [canvas, , connections] = await Promise.all([
-      repository.ensureDefaultCanvas(),
+      projectCoordinator(repository).run(() => repository.ensureDefaultCanvas()),
       storage.healthCheck?.(),
       repository.listConnections().catch(() => []),
     ]);

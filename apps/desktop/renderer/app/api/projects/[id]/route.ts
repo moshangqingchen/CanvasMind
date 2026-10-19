@@ -7,6 +7,7 @@ import {
   parseRouteIdentifier,
 } from "../../../../lib/api-validation";
 import { jsonError, repository, safeJsonObject } from "../../../../lib/server";
+import { projectCoordinator } from "../../../../lib/project-coordinator";
 import {
   normalizedProjectTitle,
   projectSummary,
@@ -35,6 +36,7 @@ export async function PATCH(
   );
   if (!parsed.success) return parsed.response;
 
+  return projectCoordinator(repository).run(async () => {
   const canvas = await repository.getCanvas(parsedId.data);
   if (!canvas) return jsonError("项目不存在", 404);
   const title = parsed.data.title.trim();
@@ -89,7 +91,7 @@ export async function PATCH(
   }
 
   try {
-    const saved = await repository.saveCanvas({
+    const saved = await projectCoordinator(repository).saveCanvas({
       id: canvas.id,
       title,
       graph: safeJsonObject(canvas.graph),
@@ -108,6 +110,7 @@ export async function PATCH(
       return jsonError("项目刚刚发生变化，请稍后重试重命名", 409);
     return jsonError("项目重命名失败，项目文件夹已恢复原名", 500);
   }
+  });
 }
 
 export async function DELETE(
@@ -118,6 +121,7 @@ export async function DELETE(
   const parsedId = parseRouteIdentifier(params.id, "项目 ID");
   if (!parsedId.success) return parsedId.response;
 
+  return projectCoordinator(repository).run(async () => {
   const canvas = await repository.getCanvas(parsedId.data);
   if (!canvas) return jsonError("项目不存在", 404);
   const canvases = await repository.listCanvases();
@@ -156,5 +160,6 @@ export async function DELETE(
     nextProjectId: remaining[0]?.id ?? null,
     folderDeleted,
     ...(warning ? { warning } : {}),
+  });
   });
 }
