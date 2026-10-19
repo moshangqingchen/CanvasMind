@@ -123,3 +123,33 @@ At D:\project development\超级画布\.codex-logs\2026-10-18-release-v0.2.117\a
 本轮没有正式安装版截图可列，不声称这些界面无截断、重叠、溢出或对齐问题。隔离 fixture 图片此前逐张检查的结果只属于测试证据，不能替代真实安装版验收。只读可行性源码依据见 [安装版只读复核](../.codex-logs/2026-10-18-release-v0.2.117/installed-readonly-api-ui-extra-review.md)。本轮使用 [computer-use 技能](C:/Users/Administrator/.codex/plugins/cache/openai-bundled/computer-use/26.1013.40934/skills/computer-use/SKILL.md)准备只读截图工具；停止前没有调用正式窗口截图或输入。
 
 停止后的工作仅为 D 盘证据、仓库文档和构建产物身份整理，没有重跑长测试或触碰正式应用。未提交、推送、发布 GitHub Release。按用户“中途检测到用户输入就立即停手”的边界，启动后验收保持未完成。
+
+## 启动后只读文件核对
+
+用户本轮明确将剩余验收改为活跃应用下只读文件核对，不再要求窗口/API/截图或无输入等待。本节是先前“用户输入停止”记录后的新采样；原历史记录保留。版本、修复和测试适配已由 Claude 提交为 945c317、5318eec、f52faf3；本次仅追加本节，未提交。
+
+采样时间：**2026-10-19T04:37:15.992Z — 2026-10-19T04:37:17.197Z**，对照第三次有效备份 `backups/before-local-update-v0.2.117-20261019T023031939Z`。一次取得一致快照，0 次重试；主库前后 SHA 相同，38 个存储文件整轮前后二次逐 SHA 核对，未锁文件。
+
+**保护检查未通过，已停止继续读取正式资料，未回滚。**
+
+- 18 条完整核验证据全部原样，原 safe-proof 规范化聚合哈希仍为 `3b522ff4ee8e116fe6f96b5d63d962e298ff2b5e22cb0562ed394c9b60eda105`；19/19 历史证据文件全在且 SHA/长度不变。
+- 19/19 sidecar 全在，但 **18 个内容变化、1 个不变**；主库 anchor 可完整读取，不是本次半写快照。
+- 182 条连接无增删，44 条完整行不变；138 条变化 = **18 条仅 updatedAt + 113 条目录字段 + 7 条含协议模板**，共 **120 条完整 config 不同**。7 条包括 connector.modelOverrides 的 auth/operationOverrides/output/statusMap/submit，以及 connector.submit.mappings、connector.test 等，不能笼统放行。
+- 原列明保护子集、182 条 encryptedSecret 密文哈希、Key/分组归属字段、secrets.bin 及浏览器主密钥绑定哈希均不变；这不等于全部协议/鉴权配置不变。
+- 历史 `cancel_requested` 节点与父 `cancelled` 记录全文、父子关系均原样，没有 providerTaskId。
+- runs/nodeRuns 各593、assets601、canvases4、revisions24，以及其他业务集合的计数及内容均不变；未观察到新增使用资料。18 条仅更新时间可作为非内容元数据变化单列，但不能证明操作者。suppliers10条 catalog.groups/updatedAt 与15个pipeline marker的30个叶字段变化，与目录投影形态一致，仍未证明具体写入原因。草稿/journal 内容不在本轮读取范围。
+
+源码存在自动目录管线整体替换 connector 的路径，但本次保存的是逐字段类型/哈希，未采集新字段明文或触发日志；不能确认这7条均由该路径写入，也不能断言是本版回归或用户操作。旧连接白名单未覆盖模板，完整 config 比较才发现本次差异。按用户要求交 Claude 和用户判断，**不回滚、不修复、不刷新、不写正式资料、不关闭或操作窗口**。
+
+逐项 SHA、全部138条连接字段清单、7条协议模板逐字段证据及归因限制见[启动后只读文件报告](../.codex-logs/2026-10-18-release-v0.2.117/after-start-readonly-check.md)。本结论只对应上述采样窗口，不代表持续监控或安装版 UI/API 验收。
+
+### Claude 复核：变化来源
+
+Claude 只读查看了目录管线 sidecar（`profile/data/catalog-pipeline/`）。这些文件记录的检查模式是 `daily`。上一轮检查在 `2026-10-18T04:38Z` 前后；本轮从 `2026-10-19T04:14Z` 开始，即应用启动后约 1 分钟，到 `04:38Z` 仍在继续写入。上面的 sidecar、目录字段、supplier `catalog.groups` 和 pipeline marker 变化，与这次**每日供应商目录自动检查**一致。该功能自 0.2.108 起就有，按用户 2026-10-16/17 的决定默认每日运行并原子发布，0.2.117 没有改动这部分代码。
+
+用安装前备份与当前主库逐字段对比协议模板。在 Claude 复核时，有协议字段变化的连接为 3 条（Codex 采样时为 7 条，管线仍在写入，数量会变化）：
+- 赛博阿飞「图片视频模型综合分组」：新出现的 `grok-imagine-image`、`grok-imagine-image-quality` 增加了 bearer 鉴权、`b64_json` / `url` 输出和状态映射的调用模板；
+- 赛博阿飞「image-2稳定生图」：新出现的 `gpt-image-2-4K` 增加了生成 / 编辑的调用模板；
+- 赛博阿飞「gpt-纯血pro-0.3 · 画布」：`connector.test`（`GET /v1/models`）被移除。
+
+前两项是为目录中新发现的型号补上调用模板，原有型号的模板没有被改写。第三项会影响该连接的“测试连接”入口，是否符合预期交给用户判断。核验证据、密钥、Key 归属和历史任务记录均未变化。结论：安装没有造成资料损坏，以上差异来自应用的每日目录检查，与 0.2.117 无关。
