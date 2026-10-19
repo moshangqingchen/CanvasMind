@@ -21,7 +21,7 @@ export async function smokeBundledVideo(api) {
       } },
     ],
   } });
-  const submitted = await api("/api/runs", { canvasId: canvas.id, clientRequestId: crypto.randomUUID(), scope: "all" });
+  const submitted = await api("/api/runs", { canvasId: canvas.id, clientRequestId: crypto.randomUUID(), expectedRevision: canvas.revision, scope: "all" });
   let run;
   for (let attempt = 0; attempt < 100; attempt++) {
     run = await api(`/api/runs/${submitted.run.id}`);
