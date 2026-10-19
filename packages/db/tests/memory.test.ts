@@ -3,6 +3,23 @@ import { MemoryRepository } from "../src/memory.js";
 import { CanvasRevisionConflictError } from "../src/types.js";
 
 describe("MemoryRepository", () => {
+  it("lists isolated canvas names without reading or cloning graph payloads", async () => {
+    class NameOnlyRepository extends MemoryRepository {
+      rejectGraphReads() {
+        for (const canvas of this.exportSnapshotView().canvases ?? []) {
+          Object.defineProperty(canvas, "graph", { get() { throw new Error("Graph must not be read for names"); } });
+        }
+      }
+    }
+    const repository = new NameOnlyRepository();
+    await repository.saveCanvas({ id: "one", title: "First", graph: { nodes: [] } });
+    await repository.saveCanvas({ id: "two", title: "Second", graph: { nodes: [] } });
+    repository.rejectGraphReads();
+    const titles = await repository.listCanvasTitles();
+    expect(titles).toEqual([{ id: "one", title: "First" }, { id: "two", title: "Second" }]);
+    titles[0]!.title = "caller mutation";
+    expect((await repository.listCanvasTitles())[0]?.title).toBe("First");
+  });
   it("atomically protects current and retained revision references during rollback", async () => {
     const repository = new MemoryRepository();
     for (const id of ["used", "old", "unused"]) await repository.saveAsset({

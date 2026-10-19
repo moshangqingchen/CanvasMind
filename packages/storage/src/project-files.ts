@@ -12,6 +12,8 @@ import {
 import { existsSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { webmMediaKind } from "./webm-media.js";
+import { cleanSegment, normalizeProjectName } from "./project-name.js";
+export { normalizeProjectName } from "./project-name.js";
 import {
   dirname,
   extname,
@@ -126,26 +128,6 @@ function configuredRoot(): string {
   return (
     candidates.find((candidate) => existsSync(candidate)) ?? candidates[0]!
   );
-}
-
-function cleanSegment(
-  value: string,
-  fallback: string,
-  maxLength: number,
-): string {
-  let cleaned = value
-    .trim()
-    .replace(/[<>:"/\\|?*\u0000-\u001f\u007f]/gu, "_")
-    .slice(0, maxLength)
-    .replace(/[. ]+$/gu, "");
-  // Windows treats these names as devices even when followed by an extension.
-  if (/^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/iu.test(cleaned))
-    cleaned = `_${cleaned}`.slice(0, maxLength).replace(/[. ]+$/gu, "");
-  return cleaned || fallback;
-}
-
-export function normalizeProjectName(value: string): string {
-  return cleanSegment(value, "未命名项目", 120);
 }
 
 function normalizedMimeType(value: string): string {

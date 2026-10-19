@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   repository: {
     getCanvas: vi.fn(),
     listCanvases: vi.fn(),
+    listCanvasTitles: vi.fn(),
     saveCanvas: vi.fn(),
     flush: vi.fn(),
   },
@@ -42,6 +43,8 @@ const context = { params: Promise.resolve({ id: "canvas-1" }) };
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.repository.listCanvases.mockResolvedValue([{ id: "canvas-1", title: "Canvas", graph, revision: 8 }]);
+  mocks.repository.listCanvasTitles.mockResolvedValue([{ id: "canvas-1", title: "Canvas" }]);
+  mocks.repository.getCanvas.mockResolvedValue({ id: "canvas-1", title: "Canvas", graph, revision: 8 });
 });
 
 describe("PUT /api/canvas/[id]", () => {
@@ -71,6 +74,7 @@ describe("PUT /api/canvas/[id]", () => {
   it("preserves a genuine conflict if the graph changes during the durability check", async () => {
     mocks.repository.saveCanvas.mockRejectedValue(new CanvasRevisionConflictError(7, 8));
     mocks.repository.getCanvas
+      .mockResolvedValueOnce({ id: "canvas-1", title: "Canvas", graph, revision: 8 })
       .mockResolvedValueOnce({ id: "canvas-1", title: "Canvas", graph, revision: 8 })
       .mockResolvedValueOnce({ id: "canvas-1", title: "Canvas", graph: { ...graph, viewport: { x: 20, y: 0, zoom: 1 } }, revision: 9 });
     const response = await PUT(request(7), context);
@@ -111,6 +115,7 @@ describe("PUT /api/canvas/[id]", () => {
   });
 
   it("returns a typed 409 response for a stale revision", async () => {
+    mocks.repository.getCanvas.mockResolvedValue({ id: "canvas-1", title: "Canvas", graph: { ...graph, viewport: { x: 42, y: 0, zoom: 1 } }, revision: 5 });
     mocks.repository.saveCanvas.mockRejectedValue(
       new CanvasRevisionConflictError(3, 5),
     );
@@ -142,6 +147,7 @@ describe("PUT /api/canvas/[id]", () => {
   });
 
   it("recognizes a conflict from a repository surviving a module reload", async () => {
+    mocks.repository.getCanvas.mockResolvedValue({ id: "canvas-1", title: "Canvas", graph: { ...graph, viewport: { x: 42, y: 0, zoom: 1 } }, revision: 5 });
     mocks.repository.saveCanvas.mockRejectedValue(Object.assign(new Error("conflict"), {
       code: "CANVAS_REVISION_CONFLICT", expectedRevision: 3, currentRevision: 5,
     }));

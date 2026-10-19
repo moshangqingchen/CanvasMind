@@ -119,11 +119,11 @@ describe("durable project rename recovery", () => {
 
   it.each(["rename", "delete"])("does not let a legacy graph save undo a concurrent %s", async operation => {
     const f = await fixture();
-    const original = f.repository.listCanvases.bind(f.repository);
+    const original = f.repository.getCanvas.bind(f.repository);
     let captured!: () => void, release!: () => void;
     const entered = new Promise<void>(resolve => { captured = resolve; });
     const hold = new Promise<void>(resolve => { release = resolve; });
-    vi.spyOn(f.repository, "listCanvases").mockImplementationOnce(async () => { const value = await original(); captured(); await hold; return value; });
+    vi.spyOn(f.repository, "getCanvas").mockImplementationOnce(async id => { const value = await original(id); captured(); await hold; return value; });
     const saving = f.coordinator.saveCanvas({ id: f.canvas.id, title: f.canvas.title, graph, reason: "autosave" });
     // Attach rejection handling before releasing the old snapshot.
     const result = saving.then(value => ({ value }), error => ({ error }));

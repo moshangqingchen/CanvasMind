@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   repository: {
-    listCanvases: vi.fn(async () => [{ id: "canvas-1" }]),
+    listCanvasTitles: vi.fn(async () => [{ id: "canvas-1" }]),
     ensureDefaultCanvas: vi.fn(async () => ({ id: "canvas-1" })),
     listConnections: vi.fn(
       async (): Promise<

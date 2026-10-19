@@ -566,6 +566,10 @@ export class MemoryRepository implements Repository {
     return [...this.canvases.values()].map(clone);
   }
 
+  async listCanvasTitles(): Promise<Array<Pick<CanvasRecord, "id" | "title">>> {
+    return [...this.canvases.values()].map(({ id, title }) => ({ id, title }));
+  }
+
   async getCanvas(id: string, expectedRevision?: number, acceptChangedRevision?: (canvas: CanvasRecord) => boolean): Promise<CanvasRecord | null> {
     const record = this.canvases.get(id);
     if (!record) return null;

@@ -3,17 +3,15 @@ import { randomUUID } from "node:crypto";
 import { lstat, readdir, realpath } from "node:fs/promises";
 import { relative } from "node:path";
 import type { CanvasRecord, Repository } from "@super-canvas/db";
-import { getProjectFileStore, normalizeProjectName, ProjectFileAccessError, type ProjectFileStore } from "@super-canvas/storage";
+import { getProjectFileStore, ProjectFileAccessError, type ProjectFileStore } from "@super-canvas/storage";
 import { ProjectRenameJournal, type ProjectRenameIntent } from "./project-rename-journal";
+import { normalizeProjectName, projectTitleKey } from "./project-title";
+export { projectTitleKey } from "./project-title";
 
 export class ProjectMutationError extends ProjectFileAccessError {
   constructor(message: string, status = 409, readonly code = "PROJECT_NAME_CONFLICT") {
     super(message, status);
   }
-}
-
-export function projectTitleKey(title: string): string {
-  return normalizeProjectName(title).normalize("NFC").toLocaleLowerCase();
 }
 
 class ProjectReadNeedsRecovery extends Error {}
@@ -109,7 +107,7 @@ export class ProjectCoordinator {
     await this.repository.flush?.();
     const canvas = await this.repository.getCanvas(intent.canvasId);
     if (!canvas || (canvas.title !== intent.oldTitle && canvas.title !== intent.newTitle)) throw new Error("数据库标题与重命名意图不一致");
-    const canvases = await this.repository.listCanvases();
+    const canvases = await this.repository.listCanvasTitles();
     const reserved = new Set([projectTitleKey(intent.oldTitle), projectTitleKey(intent.newTitle)]);
     if (canvases.some(other => other.id !== canvas.id && reserved.has(projectTitleKey(other.title)))) throw new Error("重命名目录已被其他项目占用");
     const rootStat = await lstat(this.files.root);
@@ -134,7 +132,7 @@ export class ProjectCoordinator {
 
   ensureDefaultCanvas(): Promise<CanvasRecord> {
     return this.run(async () => {
-      const existing = await this.repository.listCanvases();
+      const existing = await this.repository.listCanvasTitles();
       if (!existing.length && (await new ProjectRenameJournal(this.files.root).entries()).length) throw this.pending(new Error("存在待处理的项目重命名，不能创建默认项目"));
       const canvas = await this.repository.ensureDefaultCanvas();
       if (!existing.some(previous => previous.id === canvas.id)) await this.files.ensureProject(canvas.title);
@@ -143,7 +141,7 @@ export class ProjectCoordinator {
   }
 
   async saveCanvas(input: Parameters<Repository["saveCanvas"]>[0], ensureDirectory = false): Promise<CanvasRecord> {
-    const current = (await this.repository.listCanvases()).find(canvas => canvas.id === input.id);
+    const current = await this.repository.getCanvas(input.id);
     if (current && (input.title === undefined || input.title === current.title)) {
       // Do not put graph saves behind directory streams or the name queue. An
       // internal CAS and omitted title prevent concurrent delete resurrection
@@ -157,8 +155,7 @@ export class ProjectCoordinator {
       return saved;
     }
     return this.run(async () => {
-      const canvases = await this.repository.listCanvases();
-      const previous = canvases.find(canvas => canvas.id === input.id);
+      const [canvases, previous] = await Promise.all([this.repository.listCanvasTitles(), this.repository.getCanvas(input.id)]);
       const title = input.title ?? previous?.title ?? "未命名画布";
       // Let the repository preserve its revision conflict / lost-response path.
       const revisionMatches = input.expectedRevision === undefined || input.expectedRevision === (previous?.revision ?? 0);

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MemoryRepository } from "@super-canvas/db";
 import { ProjectFileStore } from "@super-canvas/storage";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProjectCoordinator } from "./project-coordinator";
 
 const roots: string[] = [];
@@ -18,6 +18,19 @@ const graph = { schemaVersion: 1, nodes: [], edges: [], viewport: { x: 0, y: 0, 
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
 
 describe("project identity coordination", () => {
+  it("reads only the target canvas for graph-only saves and keeps revision CAS", async () => {
+    const { coordinator, repository } = await fixture();
+    const canvas = await coordinator.saveCanvas({ id: "target", title: "Target", graph });
+    const list = vi.spyOn(repository, "listCanvases").mockRejectedValue(new Error("Full canvas listing forbidden"));
+    const titles = vi.spyOn(repository, "listCanvasTitles").mockRejectedValue(new Error("Names are not needed for a graph-only save"));
+    const get = vi.spyOn(repository, "getCanvas");
+    const saved = await coordinator.saveCanvas({ id: canvas.id, title: canvas.title, graph: { ...graph, viewport: { x: 20, y: 0, zoom: 1 } }, expectedRevision: canvas.revision });
+    expect(get).toHaveBeenCalledWith(canvas.id);
+    expect(list).not.toHaveBeenCalled();
+    expect(titles).not.toHaveBeenCalled();
+    await expect(coordinator.saveCanvas({ id: canvas.id, graph, expectedRevision: canvas.revision })).rejects.toMatchObject({ code: "CANVAS_REVISION_CONFLICT" });
+    expect(saved.revision).toBe(canvas.revision + 1);
+  });
   it("rejects a shared-to-exclusive lock upgrade without waiting on itself or poisoning later changes", async () => {
     const { coordinator } = await fixture();
     const canvas = await coordinator.saveCanvas({ id: "a", title: "原名", graph });

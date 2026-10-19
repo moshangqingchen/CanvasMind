@@ -13,6 +13,7 @@ import { collectReferencedAssetIds } from "./project-transfer";
 import type { CanvasDocument } from "../components/types";
 import { completeMediaPayload, mediaKindForMime, normalizeMimeType, sanitizedAssetExtension, validateMediaMagic } from "../app/api/assets/media-utils";
 import { projectCoordinator } from "./project-coordinator";
+import { projectTitleKey } from "./project-title";
 
 export type ProjectFileView = Omit<ProjectMediaFile, "relativePath"> & {
   contentUrl: string; previewUrl: string; assetId?: string; canDelete: boolean;
@@ -21,8 +22,8 @@ export type ProjectFileView = Omit<ProjectMediaFile, "relativePath"> & {
 async function uniqueProjectDirectory(canvasId: string): Promise<CanvasRecord> {
   const canvas = await repository.getCanvas(canvasId);
   if (!canvas) throw new ProjectFileAccessError("项目不存在", 404);
-  const titleKey = normalizeProjectName(canvas.title).normalize("NFC").toLocaleLowerCase();
-  if ((await repository.listCanvases()).some(other => other.id !== canvasId && normalizeProjectName(other.title).normalize("NFC").toLocaleLowerCase() === titleKey))
+  const titleKey = projectTitleKey(canvas.title);
+  if ((await repository.listCanvasTitles()).some(other => other.id !== canvasId && projectTitleKey(other.title) === titleKey))
     throw new ProjectFileAccessError("历史同名项目共用文件夹，无法安全区分当前项目文件，请先处理重名项目");
   return canvas;
 }

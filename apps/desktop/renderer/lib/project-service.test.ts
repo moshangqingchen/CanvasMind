@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
     getAsset: vi.fn(),
     getRun: vi.fn(),
     listCanvases: vi.fn(),
+    listCanvasTitles: vi.fn(),
     listRuns: vi.fn(),
     listAssets: vi.fn(),
     saveAsset: vi.fn(),
@@ -82,6 +83,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.repository.getCanvas.mockResolvedValue(canvas);
   mocks.repository.listCanvases.mockResolvedValue([canvas]);
+  mocks.repository.listCanvasTitles.mockImplementation(async () => (await mocks.repository.listCanvases()).map(({ id, title }: { id: string; title: string }) => ({ id, title })));
   mocks.repository.listRuns.mockResolvedValue([]);
   mocks.repository.listAssets.mockResolvedValue([]);
   mocks.store.projectDirectory.mockReturnValue("isolated-project-folder");
@@ -100,6 +102,14 @@ beforeEach(() => {
 describe("scoped project files", () => {
   const file = { fileId: "a".repeat(64), name: "Picture--image.png", kind: "image", mimeType: "image/png", size: 4,
     modifiedAt: "2026-10-05T00:00:00.000Z", section: "finished", subfolder: "图片", relativePath: "成品/图片/Picture--image.png" };
+  it("checks project-file names without listing full canvas graphs", async () => {
+    mocks.repository.listCanvases.mockRejectedValue(new Error("Full canvas listing forbidden"));
+    mocks.repository.listCanvasTitles.mockResolvedValue([{ id: canvas.id, title: canvas.title }]);
+    mocks.store.fileMetadata.mockResolvedValue(file);
+    expect(await projectFileMetadata(canvas.id, file.fileId)).toMatchObject({ fileId: file.fileId });
+    expect(mocks.repository.listCanvasTitles).toHaveBeenCalledOnce();
+    expect(mocks.repository.listCanvases).not.toHaveBeenCalled();
+  });
   it("returns only directory media with scoped URLs and no raw file paths", async () => {
     mocks.store.listFiles.mockResolvedValue({ files: [file], ignoredFiles: 1 });
     mocks.repository.listAssets.mockResolvedValue([{ id: "image", name: "Picture", kind: "image", metadata: { canvasId: canvas.id } },

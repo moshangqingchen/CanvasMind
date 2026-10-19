@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   repository: {
     listCanvases: vi.fn(),
+    listCanvasTitles: vi.fn(),
+    getCanvas: vi.fn(),
     ensureDefaultCanvas: vi.fn(),
     saveCanvas: vi.fn(),
   },
@@ -58,6 +60,8 @@ const canvasFixture = {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.repository.listCanvases.mockResolvedValue([canvasFixture]);
+  mocks.repository.listCanvasTitles.mockImplementation(async () => (await mocks.repository.listCanvases()).map(({ id, title }: { id: string; title: string }) => ({ id, title })));
+  mocks.repository.getCanvas.mockResolvedValue(null);
   mocks.ensureProjectDirectory.mockResolvedValue(undefined);
 });
 
