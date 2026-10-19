@@ -33,6 +33,7 @@ export function nodeParameterRouteRows(connections: readonly NodeParameterRoute[
       (comparableLabel(candidate.groupLabel ?? candidate.group, candidate.supplierLabel) || (candidate.groupLabel ?? candidate.group)) === comparableGroup);
     const switchModelId = connection.switchModelId ?? "—";
     const switchModelName = connection.switchModelName?.trim() || switchModelId;
+    const sameModel = Boolean(connection.switchModelId && currentModel && connection.switchModelId === currentModel);
     return {
       connection,
       connectionLabel,
@@ -45,7 +46,8 @@ export function nodeParameterRouteRows(connections: readonly NodeParameterRoute[
       comparisonPrice: connection.modelDescriptor ? modelPickerPriceCompact(connection.modelDescriptor) : connection.modelQuote ?? "—",
       switchModelId,
       switchModelName,
-      switchLabel: connection.switchModelId ? currentModel && switchModelId === currentModel ? "同型号" : `切换后将使用：${switchModelName}` : undefined,
+      sameModel,
+      switchLabel: connection.switchModelId ? sameModel ? "同型号" : `切换后将使用：${switchModelName}` : undefined,
       unavailableReason: connection.available === false ? connection.unavailableReason ?? "密钥未配置或不可用" : undefined,
     };
   });

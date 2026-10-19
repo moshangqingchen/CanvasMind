@@ -65,13 +65,34 @@ describe("parameter route menu display projection", () => {
     expect(rows[0]?.shortLabel).toBe("图片组 · 主连接");
     expect(rows[0]?.path).toBe("供应商 A › 图片组 › 供应商 A · 主连接");
     expect(rows[0]?.switchLabel).toBe("同型号");
+    expect(rows[0]?.sameModel).toBe(true);
     expect(rows[1]?.shortLabel).toBe("图片组");
     expect(rows[1]?.switchLabel).toBe("切换后将使用：共同显示名");
     expect(rows[1]?.switchModelId).toBe("different-model");
+    expect(rows[1]?.sameModel).toBe(false);
     expect(rows[2]?.switchLabel).toBeUndefined();
+    expect(rows[2]?.sameModel).toBe(false);
     expect(rows[3]?.shortLabel).toBe("图片组 · 主连接");
     expect(nodeParameterRouteRows([candidates[2]!], "unknown", "—")[0]?.switchLabel).toBeUndefined();
     expect(nodeParameterRouteRows([{ ...candidates[2]!, switchModelId: "", switchModelName: "过期名称" }], "unknown")[0]?.switchLabel).toBeUndefined();
+  });
+
+  it("marks only existing exact full switch IDs as the same model, never fallback placeholders or display names", () => {
+    const route = (switchModelId?: string): NodeParameterRoute => ({ ...connections[0]!, switchModelId, switchModelName: "共同显示名" });
+    for (const [switchModelId, currentModel, sameModel] of [
+      ["current-model", "current-model", true],
+      ["current-model-4K", "current-model", false],
+      ["different-model", "current-model", false],
+      ["different-model", "共同显示名", false],
+      [undefined, "—", false],
+      [undefined, undefined, false],
+      ["", "", false],
+      ["current-model", undefined, false],
+    ] as const) {
+      const row = nodeParameterRouteRows([route(switchModelId)], "", currentModel)[0]!;
+      expect(row.sameModel).toBe(sameModel);
+      expect(row.switchLabel === "同型号").toBe(sameModel);
+    }
   });
 
   it("uses the longer normalized group or connection prefix once, retaining unrelated names separately", () => {
