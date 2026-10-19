@@ -6,6 +6,8 @@ import {
   type Page,
 } from "./helpers/canvas-offline-test";
 import type { ModelDescriptor } from "@super-canvas/providers";
+import type { ProviderConnectionView } from "../lib/client-api";
+import { chooseParameterOption, expectParameterValue, openParameterDetails } from "./helpers/parameter-controls";
 
 const models = ["甲", "乙"].map((suffix, index) => ({
   id: `gpt-image-panel-${index}`,
@@ -28,22 +30,11 @@ const models = ["甲", "乙"].map((suffix, index) => ({
   })),
 }));
 
-async function chooseNativeWithMouse(page: Page, select: Locator, value: string) {
-  await select.click();
-  await expect
-    .poll(() => select.evaluate((element) => element.matches(":open")))
-    .toBe(true);
-  const index = await select.locator("option").evaluateAll(
-    (options, target) =>
-      options.findIndex((option) => (option as HTMLOptionElement).value === target),
-    value,
-  );
-  expect(index).toBeGreaterThanOrEqual(0);
-  await page.keyboard.press("Home");
-  for (let item = 0; item < index; item++) await page.keyboard.press("ArrowDown");
-  await page.keyboard.press("Enter");
-  await expect(select).toHaveValue(value);
-  await expect.poll(() => select.evaluate((element) => element.matches(":open"))).toBe(false);
+async function chooseRoute(panel: Locator, connectionId: string) {
+  const routes = panel.getByRole("dialog", { name: / 候选线路$/u });
+  if (!await routes.isVisible()) await panel.getByRole("button", { name: / 线路$/u }).click();
+  await routes.locator(`[data-route-id="${connectionId}"]`).getByRole("button", { name: /^选择线路 /u }).click();
+  await expect(routes).toHaveCount(0);
 }
 
 async function clickExposedControl(control: Locator) {
@@ -118,6 +109,19 @@ async function fixture(page: Page, request: APIRequestContext, suffix: string) {
   });
   const mainGroup = `${suffix} 高质量`;
   const alternateGroup = `${suffix} 标准`;
+  const fixtureConnectionIds = new Set<string>();
+  await page.route(/\/api\/providers(?:\?.*)?$/u, async route => {
+    if (route.request().method() !== "GET") return route.continue();
+    const response = await route.fetch();
+    const rows: ProviderConnectionView[] = await response.json();
+    // The API owns saved catalog facts; a browser-only /models response does
+    // not persist them into another connection's selection/preview directory.
+    await route.fulfill({ response, json: rows.map(row => fixtureConnectionIds.has(row.id) ? {
+      ...row, config: { ...row.config, modelCatalogModels: models, scannedModelIds: models.map(model => model.id),
+        modelScanStatus: "live", modelScanAttemptStatus: "live", modelScanComplete: true,
+        modelScanCheckedAt: "2026-10-18T08:00:00Z", modelScanLastSuccessAt: "2026-10-18T08:00:00Z" },
+    } : row) });
+  });
   async function createSupplier(name: string, supplierKey?: string) {
     const response = await request.post("/api/suppliers", {
       data: { name, siteUrl: "https://panel-after-supplier.invalid", apiUrl: "https://panel-after-supplier.invalid", ...(supplierKey ? { supplierKey } : {}) },
@@ -138,12 +142,12 @@ async function fixture(page: Page, request: APIRequestContext, suffix: string) {
           customGroup: true,
           modelGroup: group,
           defaultModel: models[0]!.id,
-          modelCatalogModels: models,
-          modelScanStatus: "live",
         },
       } });
       expect(response.ok()).toBeTruthy();
-      connections.push((await response.json()).id);
+      const connectionId = (await response.json()).id;
+      connections.push(connectionId);
+      fixtureConnectionIds.add(connectionId);
     }
     return { ...supplier, connections };
   }
@@ -186,14 +190,15 @@ async function fixture(page: Page, request: APIRequestContext, suffix: string) {
     await expect(panel).toBeVisible();
     panels.push({
       panel,
-      supplier: panel.getByRole("combobox", { name: `${label} 供应商`, exact: true }),
-      group: panel.getByRole("combobox", { name: `${label} 模型群组`, exact: true }),
+      route: panel.getByRole("button", { name: `${label} 线路`, exact: true }),
       model: panel.getByRole("combobox", { name: `${label} 模型`, exact: true }),
     });
   }
   return {
     panels,
     labels,
+    original,
+    canvas,
     createSupplier,
     mainGroup,
     alternateGroup,
@@ -224,9 +229,12 @@ test("新增供应商并关闭设置后，两个参数面板的下拉、模型�
   await expect(settings).toBeHidden();
   for (const panel of ui.panels) {
     await expect(panel.panel).toBeVisible();
-    await expect(panel.supplier.locator('option[value="cyberafei"]')).toHaveCount(1);
-    await chooseNativeWithMouse(page, panel.supplier, added.supplierKey);
-    await chooseNativeWithMouse(page, panel.group, ui.alternateGroup);
+    await panel.route.click();
+    const routes = panel.panel.getByRole("dialog", { name: / 候选线路$/u });
+    await expect(routes.locator(`[data-route-id="${added.connections[0]}"]`)).toContainText("新添加交互供应商");
+    await chooseRoute(panel.panel, added.connections[0]);
+    await chooseRoute(panel.panel, added.connections[1]);
+    await expect(panel.panel.getByLabel("当前线路", { exact: true })).toContainText(ui.alternateGroup);
     await panel.model.click();
     await expect(panel.model).toHaveAttribute("aria-expanded", "true");
     await panel.panel.getByRole("option", { name: models[1]!.name, exact: true }).click();
@@ -247,7 +255,7 @@ test("新增供应商并关闭设置后，两个参数面板的下拉、模型�
     await active.model.click();
     await expect(active.panel.getByRole("listbox")).toBeVisible();
     // A different panel remains clickable while its neighbor's list is open.
-    await chooseNativeWithMouse(page, ui.panels[0]!.group, ui.mainGroup);
+    await chooseRoute(ui.panels[0]!.panel, added.connections[0]);
     await active.model.click();
     await expect(active.model).toHaveAttribute("aria-expanded", "true");
     ui.releaseScans();
@@ -261,6 +269,74 @@ test("新增供应商并关闭设置后，两个参数面板的下拉、模型�
   } finally {
     ui.releaseScans();
   }
+  ui.assertNoRuns();
+});
+
+test("线路预览准确恢复目标分组上次型号，失败保存先写日志再刷新保留", async ({ page, request }) => {
+  const ui = await fixture(page, request, "线路预览日志");
+  const first = ui.panels[0]!;
+  const saveStatus = page.getByRole("button", { name: "画布自动保存状态", exact: true });
+  const saved = async () => {
+    const response = await request.get(`/api/canvas/${ui.canvas.id}`);
+    return (await response.json()).graph.nodes.find((node: { id: string }) => node.id === "panel-0").data;
+  };
+  const journal = () => page.evaluate(({ canvasId }) => {
+    const entries = JSON.parse(localStorage.getItem("super-canvas:node-configuration-journal:v1") ?? "[]") as {
+      canvasId: string; nodeId: string; data: { connectionId: string; model: string; parameters: Record<string, unknown> };
+    }[];
+    return entries.find(entry => entry.canvasId === canvasId && entry.nodeId === "panel-0");
+  }, { canvasId: ui.canvas.id });
+  await chooseRoute(first.panel, ui.original.connections[1]);
+  await first.model.click();
+  await first.panel.getByRole("option", { name: models[1]!.name, exact: true }).click();
+  await chooseParameterOption(first.panel.getByLabel("交互参数 1", { exact: true }), "second");
+  await expect.poll(saved).toMatchObject({ connectionId: ui.original.connections[1], model: models[1]!.id, parameters: { panel_parameter_0: "second" } });
+  await chooseRoute(first.panel, ui.original.connections[0]);
+  await expect.poll(saved).toMatchObject({ connectionId: ui.original.connections[0], model: models[0]!.id });
+  await expect(saveStatus).toContainText("已保存");
+  await expect.poll(journal).toBeUndefined();
+
+  let failSaves = false;
+  let blockedSaves = 0;
+  let saves = 0;
+  await page.route(`**/api/canvas/${ui.canvas.id}`, async route => {
+    if (route.request().method() === "PUT") saves++;
+    if (failSaves && route.request().method() === "PUT") {
+      blockedSaves++;
+      return route.fulfill({ status: 503, json: { error: "隔离测试：保留线路选择日志" } });
+    }
+    return route.continue();
+  });
+  await first.route.click();
+  const routes = first.panel.getByRole("dialog", { name: / 候选线路$/u });
+  const row = routes.locator(`[data-route-id="${ui.original.connections[1]}"]`);
+  // Both groups contain the same comparison ID, but switching must restore B,
+  // not replace the target group's saved selection with comparison model A.
+  await expect(routes).toContainText(`比对型号：${models[0]!.id}`);
+  await expect(row).toContainText(`切换后将使用：${models[1]!.id}`);
+  await expect(row).toContainText("同型号报价：—");
+  expect(blockedSaves).toBe(0);
+  expect(saves).toBe(0);
+  expect(await journal()).toBeUndefined();
+  expect(await saved()).toMatchObject({ connectionId: ui.original.connections[0], model: models[0]!.id });
+  failSaves = true;
+  await row.getByRole("button", { name: /^选择线路 /u }).click();
+  await expect(first.model).toContainText(models[1]!.id);
+  await expectParameterValue(first.panel.getByLabel("交互参数 1", { exact: true }), "second");
+  await expect(saveStatus).toContainText("保存失败");
+  await expect.poll(async () => (await journal())?.data).toMatchObject({ connectionId: ui.original.connections[1], model: models[1]!.id, parameters: { panel_parameter_0: "second" } });
+  expect(blockedSaves).toBeGreaterThan(0);
+  failSaves = false;
+  await first.panel.getByRole("button", { name: "关闭模型与参数面板", exact: true }).click();
+  await page.keyboard.press("Control+s");
+  await expect(saveStatus).toContainText("已保存");
+  await expect.poll(saved).toMatchObject({ connectionId: ui.original.connections[1], model: models[1]!.id, parameters: { panel_parameter_0: "second" } });
+  await expect.poll(journal).toBeUndefined();
+  await page.reload();
+  await page.getByRole("button", { name: `打开 ${ui.labels[0]} 模型与参数`, exact: true }).click();
+  await expect(first.model).toContainText(models[1]!.id);
+  await expectParameterValue(first.panel.getByLabel("交互参数 1", { exact: true }), "second");
+  await expect(first.panel.getByLabel("当前线路", { exact: true })).toContainText(ui.alternateGroup);
   ui.assertNoRuns();
 });
 
@@ -323,7 +399,7 @@ test("视频供应商比较与切换选择完整型号所在分组，不借用�
   ]);
   const targetConnection = await connection(target, "seedance-官方token版", [video(exactId, 2)]);
   const missing = await supplier("跨组无完整型号供应商");
-  await connection(missing, "同名图片与相似视频", [
+  const missingConnection = await connection(missing, "同名图片与相似视频", [
     { ...video(exactId, 0.02), operations: ["image.generate"], outputKinds: ["image"] }, video(alternateId, 0.03),
   ]);
   const label = "跨组视频回归";
@@ -338,20 +414,24 @@ test("视频供应商比较与切换选择完整型号所在分组，不借用�
   await page.goto(`/canvas/${canvas.id}`);
   await page.getByRole("button", { name: `打开 ${label} 模型与参数`, exact: true }).click();
   const panel = page.getByRole("dialog", { name: `${label} 模型与参数`, exact: true });
-  const suppliers = panel.getByRole("combobox", { name: `${label} 供应商`, exact: true });
-  const group = panel.getByRole("combobox", { name: `${label} 模型群组`, exact: true });
-  await expect(group).toHaveValue("当前视频");
-  await expect(suppliers.locator(`option[value="${target.supplierKey}"]`)).toHaveText("跨组目标视频供应商");
-  await expect(suppliers.locator(`option[value="${missing.supplierKey}"]`)).toHaveText("跨组无完整型号供应商");
-  await panel.getByText("供应商候选报价", { exact: true }).click();
-  const candidates = panel.getByRole("table", { name: "供应商候选报价", exact: true });
-  await expect(candidates.locator("tbody > tr:not(.supplier-candidate-detail)").filter({ hasText: "跨组目标视频供应商" })).toContainText("2 CNY / 次");
-  await expect(candidates.locator("tbody > tr:not(.supplier-candidate-detail)").filter({ hasText: "跨组目标视频供应商" })).toContainText("余额未读取");
-  await expect(candidates.locator("tbody > tr:not(.supplier-candidate-detail)").filter({ hasText: "跨组无完整型号供应商" })).toContainText("—");
-  await chooseNativeWithMouse(page, suppliers, target.supplierKey);
-  await expect(group).toHaveValue("seedance-官方token版");
+  const routeTrigger = panel.getByRole("button", { name: `${label} 线路`, exact: true });
+  const routePath = panel.getByLabel("当前线路", { exact: true });
+  await expect(routePath).toContainText("当前视频");
+  await routeTrigger.click();
+  const candidates = panel.getByRole("dialog", { name: `${label} 候选线路`, exact: true });
+  const targetRow = candidates.locator(`[data-route-id="${targetConnection.id}"]`);
+  await expect(targetRow).toContainText("跨组目标视频供应商");
+  await expect(targetRow).toContainText("同型号报价：2 CNY / 次");
+  await expect(targetRow).toContainText("余额未读取");
+  await expect(targetRow).toContainText(`切换后将使用：${exactId}`);
+  const missingRow = candidates.locator(`[data-route-id="${missingConnection.id}"]`);
+  await expect(missingRow).toContainText("跨组无完整型号供应商");
+  await expect(missingRow).toContainText("同型号报价：—");
+  await expect(missingRow).not.toContainText("0.02 CNY");
+  await chooseRoute(panel, targetConnection.id);
+  await expect(routePath).toContainText("seedance-官方token版");
   await expect(panel.getByRole("combobox", { name: `${label} 模型`, exact: true })).toContainText(exactId);
-  await expect(panel.getByLabel("当前供应商报价", { exact: true })).toContainText("2 CNY / 次");
+  await expect(panel.getByTestId("param-panel-unit-price")).toContainText("2 CNY / 次");
   await expect.poll(async () => {
     const saved = await (await request.get(`/api/canvas/${canvas.id}`)).json();
     return saved.graph.nodes.find((node: { id: string }) => node.id === "cross-group-video").data;
@@ -374,11 +454,12 @@ test("视频供应商比较与切换选择完整型号所在分组，不借用�
   catalogs.set(targetConnection.id, [tokenModel]);
   await page.reload();
   await page.getByRole("button", { name: `打开 ${label} 模型与参数`, exact: true }).click();
-  await expect(group).toHaveValue("seedance-官方token版");
-  const tokenQuote = panel.getByLabel("当前供应商报价", { exact: true });
-  await expect(tokenQuote).toContainText("跨组目标视频供应商");
+  await expect(routePath).toContainText("seedance-官方token版");
+  const tokenQuote = panel.getByTestId("param-panel-unit-price");
+  await expect(routePath).toContainText("跨组目标视频供应商");
   await expect(tokenQuote).toContainText("Token 计价");
-  await expect(tokenQuote).toContainText("余额未读取");
+  await expect(routePath).toContainText("余额未读取");
+  await openParameterDetails(panel, "价格明细");
   const tokenDetails = panel.getByRole("region", { name: "型号报价", exact: true });
   await expect(tokenDetails).toContainText("CNY / 1M tokens");
   for (const value of ["output", "720p", "false", "true"]) await expect(tokenDetails).toContainText(value);
@@ -399,12 +480,12 @@ test(`框选被 ${interruption} 中断后移除遮挡，参数面板仍能下拉
   await page.getByRole("tab", { name: ui.labels[0], exact: true }).click();
   const pane = page.locator(".react-flow__pane");
   const paneBounds = await pane.boundingBox();
-  const supplierBounds = await first.supplier.boundingBox();
+  const routeBounds = await first.route.boundingBox();
   const bodyBounds = await first.panel.locator(".node-config-popover-body").boundingBox();
   const viewport = page.locator(".react-flow__viewport");
   const beforeGestureViewport = await viewport.getAttribute("style");
   expect(paneBounds).not.toBeNull();
-  expect(supplierBounds).not.toBeNull();
+  expect(routeBounds).not.toBeNull();
   expect(bodyBounds).not.toBeNull();
   // Capture the browser's actual mouse pointer ID instead of assuming 1.
   await pane.evaluate((element) => {
@@ -447,7 +528,7 @@ test(`框选被 ${interruption} 中断后移除遮挡，参数面板仍能下拉
       // React Flow's edge zone is 40px. Use its slowest real auto-pan speed
       // so capture assertions cannot push both panels into the same edge clamp.
       ? paneBounds!.x + 39
-      : supplierBounds!.x - 15;
+      : routeBounds!.x - 15;
     await page.mouse.move(selectionEndX, bodyBounds!.y + bodyBounds!.height - 30, { steps: 12 });
     await expect(page.locator(".react-flow__selection")).toBeVisible();
     if (interruption !== "pointercancel") {
@@ -531,7 +612,7 @@ test(`框选被 ${interruption} 中断后移除遮挡，参数面板仍能下拉
   // Restore both slots after the first model action proves pointer recovery.
   const sidebar = page.getByRole("button", { name: "智能体面板", exact: true });
   if ((await sidebar.getAttribute("aria-expanded")) === "true") await sidebar.click();
-  await chooseNativeWithMouse(page, first.group, ui.alternateGroup);
+  await chooseRoute(first.panel, ui.original.connections[1]);
   const neighboringBody = ui.panels[1]!.panel.locator(".node-config-popover-body");
   const neighboringScroll = await neighboringBody.evaluate((element) => element.scrollTop);
   const body = await wheelPanel(page, first.panel, 700);

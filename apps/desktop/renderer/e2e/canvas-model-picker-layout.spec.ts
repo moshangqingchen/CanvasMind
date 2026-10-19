@@ -64,7 +64,8 @@ async function fixture(page: Page, request: APIRequestContext) {
     list: panel.getByRole("listbox"),
     menu: panel.locator(".node-model-select-options"),
     search: panel.getByRole("combobox", { name: "搜索模型名称或 ID", exact: true }),
-    supplier: panel.getByRole("combobox", { name: "列表布局 供应商", exact: true }),
+    route: panel.getByRole("button", { name: "列表布局 线路", exact: true }),
+    routes: panel.getByRole("dialog", { name: "列表布局 候选线路", exact: true }),
     readNode: async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data,
     readPosition: async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].position,
     assertNoRuns: () => { expect(submissions).toBe(0); expect(errors).toEqual([]); },
@@ -106,28 +107,32 @@ async function expectAllOptionsVisible(list: Locator) {
   })).toBe(true);
 }
 
-async function clickUncoveredSupplier(page: Page, supplier: Locator, picker: Locator, menu: Locator) {
+async function clickUncoveredRoute(page: Page, route: Locator, routes: Locator, picker: Locator, menu: Locator) {
   const menuBounds = await menu.boundingBox();
-  const supplierBounds = await supplier.boundingBox();
+  const supplierBounds = await route.boundingBox();
   expect(menuBounds).not.toBeNull();
   expect(supplierBounds).not.toBeNull();
   expect(menuBounds!.x + menuBounds!.width <= supplierBounds!.x
     || menuBounds!.x >= supplierBounds!.x + supplierBounds!.width
     || menuBounds!.y + menuBounds!.height <= supplierBounds!.y
     || menuBounds!.y >= supplierBounds!.y + supplierBounds!.height).toBe(true);
-  await expect.poll(() => supplier.evaluate(element => {
+  await expect.poll(() => route.evaluate(element => {
     const bounds = element.getBoundingClientRect();
-    return document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2) === element;
+    const hit = document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+    return hit === element || element.contains(hit);
   })).toBe(true);
-  await supplier.click();
+  await route.click();
   await expect(picker).toHaveAttribute("aria-expanded", "false");
-  await expect(supplier).toBeFocused();
-  await expect.poll(() => supplier.evaluate(element => element.matches(":open"))).toBe(true);
+  await expect(route).toHaveAttribute("aria-expanded", "true");
+  await expect(routes).toBeVisible();
+  await expect(routes.locator('button[data-route-choice][aria-pressed="true"]')).toBeFocused();
   await page.keyboard.press("Escape");
+  await expect(routes).toBeHidden();
+  await expect(route).toBeFocused();
 }
 
 for (const viewport of [{ width: 1440, height: 1080 }, { width: 1280, height: 720 }]) {
-  test(`${viewport.width}×${viewport.height} 完整展示八个型号，供应商仍能直接打开`, async ({ page, request }, testInfo) => {
+  test(`${viewport.width}×${viewport.height} 完整展示八个型号，线路仍能直接打开`, async ({ page, request }, testInfo) => {
     await page.setViewportSize(viewport);
     const ui = await fixture(page, request);
     await expectPanelClearOfTools(page, ui.panel);
@@ -137,7 +142,7 @@ for (const viewport of [{ width: 1440, height: 1080 }, { width: 1280, height: 72
     await expectAllOptionsVisible(ui.list);
     await expectMenuInViewport(ui.menu);
     await page.screenshot({ path: testInfo.outputPath(`all-models-${viewport.width}x${viewport.height}.png`) });
-    await clickUncoveredSupplier(page, ui.supplier, ui.picker, ui.menu);
+    await clickUncoveredRoute(page, ui.route, ui.routes, ui.picker, ui.menu);
     expect((await ui.readNode()).model).toBe(lastFamily);
     ui.assertNoRuns();
   });

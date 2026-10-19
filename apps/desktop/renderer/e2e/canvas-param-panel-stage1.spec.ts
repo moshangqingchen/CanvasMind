@@ -2,8 +2,9 @@ import { expect, test, type APIRequestContext, type Locator, type Page } from ".
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ModelDescriptor } from "@super-canvas/providers";
+import { expectParameterValue, openParameterDetails } from "./helpers/parameter-controls";
 
-const evidence = "D:/project development/超级画布/.codex-logs/2026-10-18-param-panel/stage1";
+const evidence = "D:/project development/超级画布/.codex-logs/2026-10-18-param-panel/stage2/legacy-stage1-regression-screenshots";
 
 const image: ModelDescriptor = {
   id: "stage1-image", name: "参数层级图片模型", operations: ["image.generate", "image.edit"],
@@ -119,6 +120,7 @@ async function fixture(page: Page, request: APIRequestContext) {
   const open = async (id: keyof typeof labels) => {
     await owner(id).getByRole("button", { name: `打开 ${labels[id]} 模型与参数`, exact: true }).click();
     await expect(panel(id)).toBeVisible();
+    await openParameterDetails(panel(id), "自定义宽高");
   };
   const closeAll = async () => {
     const buttons = page.getByRole("button", { name: "关闭模型与参数面板", exact: true });
@@ -144,11 +146,12 @@ test("stage1 step1 Ctrl+Enter 运行面板 owner 恰一次并先提交 W/H 草�
   expect(f.submissions).toHaveLength(1); f.assertSafe();
 });
 
-test("stage1 step1 原生下拉与 ModelPicker 的 Enter/Escape 及 IME/repeat 不运行", async ({ page, request }) => {
+test("stage1 step1 自定义下拉与 ModelPicker 的 Enter/Escape 及 IME/repeat 不运行", async ({ page, request }) => {
   const f = await fixture(page, request); await f.open("a");
   const panel = f.panel("a"), quality = panel.getByRole("combobox", { name: "质量", exact: true });
-  await quality.click(); await expect.poll(() => quality.evaluate(element => element.matches(":open"))).toBe(true);
+  await quality.click(); await expect(quality).toHaveAttribute("aria-expanded", "true");
   await page.keyboard.press("Enter"); await expect(panel).toBeVisible();
+  await expect(quality).toHaveAttribute("aria-expanded", "false"); await expectParameterValue(quality, "max");
   await quality.click(); await page.keyboard.press("Escape"); await expect(panel).toBeVisible();
   const picker = panel.getByRole("combobox", { name: `${labels.a} 模型`, exact: true });
   await picker.click();
@@ -202,24 +205,41 @@ test("stage1 step2 面板按钮运行先提交 W/H 草稿", async ({ page, reque
   f.assertSafe();
 });
 
-test("stage1 step2 线路菜单与原生下拉分层处理 Escape 并恢复焦点", async ({ page, request }) => {
-  const f = await fixture(page, request); await f.open("a");
-  const panel = f.panel("a"), menu = panel.locator(".node-config-route-menu");
-  const summary = panel.getByLabel("线路菜单", { exact: true });
-  await summary.click(); await expect(menu).toHaveAttribute("open", "");
+test("stage1 step2 线路浮层和原生下拉的 Escape 各自归还焦点且不关闭 owner", async ({ page, request }) => {
+  const f = await fixture(page, request); await f.open("video");
+  const panel = f.panel("video");
+  const trigger = panel.getByRole("button", { name: `${labels.video} 线路`, exact: true });
+  const routes = panel.getByRole("dialog", { name: `${labels.video} 候选线路`, exact: true });
+  await trigger.click(); await expect(routes).toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(menu).not.toHaveAttribute("open"); await expect(summary).toBeFocused(); await expect(panel).toBeVisible();
-  await summary.press("Enter"); await expect(menu).toHaveAttribute("open", "");
-  await summary.press("Tab"); await expect(panel.getByRole("button", { name: "管理供应商与密钥", exact: true })).toBeFocused();
-  await page.keyboard.press("Tab");
-  const supplier = panel.getByRole("combobox", { name: `${labels.a} 供应商`, exact: true });
-  await expect(supplier).toBeFocused(); await supplier.press("Alt+ArrowDown");
-  await expect.poll(() => supplier.evaluate(element => element.matches(":open"))).toBe(true);
+  await expect(routes).toBeHidden(); await expect(trigger).toBeFocused(); await expect(panel).toBeVisible();
+  await trigger.press("Enter"); await expect(routes).toBeVisible();
+  const current = routes.locator('button[data-route-choice][aria-pressed="true"]');
+  await expect(current).toBeFocused();
+  await current.press("Control+k");
+  const commands = page.getByRole("dialog", { name: "快捷操作", exact: true });
+  const commandSearch = commands.getByRole("combobox", { name: "搜索画布操作", exact: true });
+  await expect(commandSearch).toBeFocused(); await expect(routes).toBeHidden();
+  await commandSearch.press("Escape");
+  await expect(commands).toBeHidden(); await expect(trigger).toBeFocused(); await expect(panel).toBeVisible();
+  await trigger.press("Enter"); await expect(routes).toBeVisible(); await expect(current).toBeFocused();
+  await current.press("Tab"); await expect(current.locator("..").locator("summary")).toBeFocused();
+  const manage = routes.getByRole("button", { name: "管理供应商与密钥", exact: true });
+  const tabBudget = await routes.locator("button[data-route-choice]").count() * 3 + 4;
+  for (let index = 0; index < tabBudget && !await manage.evaluate(element => element === document.activeElement); index++) {
+    await page.keyboard.press("Tab");
+  }
+  await expect(manage).toBeFocused();
   await page.keyboard.press("Escape");
-  await expect.poll(() => supplier.evaluate(element => element.matches(":open"))).toBe(false);
-  await expect(menu).toHaveAttribute("open", ""); await expect(panel).toBeVisible();
+  await expect(routes).toBeHidden(); await expect(trigger).toBeFocused(); await expect(panel).toBeVisible();
+  // Supplier selects have become one route picker. The video's remaining
+  // native resolution control retains its separate first-Escape ownership.
+  const resolution = panel.getByRole("combobox", { name: "输出分辨率", exact: true });
+  await resolution.focus(); await resolution.press("Alt+ArrowDown");
+  await expect.poll(() => resolution.evaluate(element => element.matches(":open"))).toBe(true);
   await page.keyboard.press("Escape");
-  await expect(menu).not.toHaveAttribute("open"); await expect(summary).toBeFocused(); await expect(panel).toBeVisible();
+  await expect.poll(() => resolution.evaluate(element => element.matches(":open"))).toBe(false);
+  await expect(resolution).toBeFocused(); await expect(panel).toBeVisible();
   await page.keyboard.press("Escape"); await expect(panel).toHaveCount(0);
   expect(f.submissions).toHaveLength(0); f.assertSafe();
 });
@@ -283,14 +303,16 @@ for (const [chord, scope] of [["Meta+Enter", "node"], ["Control+Shift+Enter", "d
   });
 }
 
-test("stage1 step2 顶部底栏详情采用同一当前参数报价且缺价不编造", async ({ page, request }) => {
+test("stage1 step2 顶部单价和底栏总价分别正确，详情默认折叠且缺价不编造", async ({ page, request }) => {
   const f = await fixture(page, request); await f.open("a");
   const panel = f.panel("a"); await panel.getByRole("spinbutton", { name: "数量", exact: true }).fill("3");
   const header = panel.getByTestId("param-panel-unit-price"), footer = panel.getByTestId("param-panel-total-price");
-  await expect(header).toHaveText("0.375 CNY"); await expect(footer).toHaveText("0.375 CNY");
+  await expect(header).toContainText("0.125 CNY"); await expect(header).toContainText("/ 张");
+  await expect(header).not.toContainText("0.375"); await expect(footer).toHaveText("0.375 CNY");
   const detail = panel.getByLabel("当前参数价格", { exact: true });
-  const disclosure = detail.locator("xpath=ancestor::details[1]");
-  if (await disclosure.getAttribute("open") === null) await disclosure.locator("summary").first().click();
+  await expect(detail).toBeHidden();
+  await openParameterDetails(panel, "价格明细");
+  await expect(detail).toBeVisible();
   await expect(detail.getByText("本次预计费用", { exact: false })).toContainText("0.375 CNY");
   await f.closeAll(); await f.open("unknown");
   await expect(f.panel("unknown").getByTestId("param-panel-unit-price")).toHaveText("—");

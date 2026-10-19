@@ -75,6 +75,12 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
   const listMeasurements = useRef<ModelListMeasurements>({ width: 0, viewportHeight: 480, heights: new Map() });
   const menu = useRef<HTMLDivElement>(null);
   const selected = models.find(model => model.id === value);
+  const selectedCapabilities = selected ? capabilities[selected.id] : undefined;
+  const triggerTitle = [
+    selected ? `${cleanModelDisplayName(selected.name, selected.metadata?.priceLabel)} · ${selected.id}` : value || "自动模型",
+    selectedCapabilities?.transparent ? imageTransparencyEvidenceNote(selectedCapabilities.transparency) ?? "支持透明 PNG 输出" : undefined,
+    selectedCapabilities?.mask ? "支持涂抹蒙版、局部修改" : undefined,
+  ].filter(Boolean).join("\n");
   // A closed trigger only needs the selected model. Defer catalog-wide display,
   // grouping and filtering work until its menu is actually requested.
   const displayModels = useMemo(() => open ? displayPickerModels(models, catalogDirectory?.models) : [], [open, models, catalogDirectory?.models]);
@@ -275,12 +281,12 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
     else setActive(event.key === "Home" ? 0 : event.key === "End" ? Math.max(0, options.length - 1) :
       Math.min(Math.max(0, options.length - 1), Math.max(0, activeIndex + (event.key === "ArrowDown" ? 1 : -1))));
   };
-  return <div ref={host} className={`node-model-select ${styles.picker}`} data-open={open || undefined} onKeyDown={keyDown}
+  return <div ref={host} className={`node-model-select ${styles.picker}`} data-open={open || undefined} data-dialog-return-focus-id={id} onKeyDown={keyDown}
     onBlur={event => { if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}>
     <button id={id} ref={trigger} type="button" className={`node-model-select-trigger ${styles.trigger}`} role="combobox"
       aria-label={label} aria-haspopup="listbox" aria-expanded={open} aria-controls={open ? listId : undefined}
       aria-describedby={selected ? `${listId}-selected-name ${listId}-selected-id${tk1688ModelFamily(selected) ? ` ${listId}-selected-route` : ""}${capabilities[selected.id]?.transparent || capabilities[selected.id]?.mask ? ` ${listId}-selected-capabilities` : ""}` : undefined}
-      title={selected ? `${cleanModelDisplayName(selected.name, selected.metadata?.priceLabel)} · ${selected.id}` : value || "自动模型"}
+      title={triggerTitle}
       onClick={() => setOpen(!open)}>
       {selected ? <ModelIdentity model={selected} capabilities={capabilities[selected.id]} detailsId={`${listId}-selected`} inlineChevron={inlineChevron} /> : <span className={inlineChevron ? styles.nameWithChevron : undefined}>{value || "自动模型"}{inlineChevron && <ChevronDown size={15} aria-hidden="true" />}</span>}
       {selected && badge?.(selected)}{!inlineChevron && <ChevronDown size={15} aria-hidden="true" />}

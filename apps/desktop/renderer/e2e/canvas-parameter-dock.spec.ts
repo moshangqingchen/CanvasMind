@@ -1,5 +1,7 @@
 import { expect, test, type APIRequestContext, type Page } from "./helpers/canvas-offline-test";
 import type { ModelDescriptor } from "@super-canvas/providers";
+import { expectParameterValue, openParameterDetails } from "./helpers/parameter-controls";
+import { CANGYUAN_IMAGE_CONNECTOR } from "../lib/provider-presets";
 
 const model: ModelDescriptor = {
   id: "fake-parameter-dock-image", name: "隔离图片参数模型", operations: ["image.generate"],
@@ -19,12 +21,15 @@ const model: ModelDescriptor = {
   ],
 };
 
-async function fixture(page: Page, request: APIRequestContext, farNodeCount = 220) {
+async function fixture(page: Page, request: APIRequestContext, farNodeCount = 220, declaredNative = false) {
   expect(process.env.PLAYWRIGHT_BASE_URL).toBeFalsy();
   await page.setViewportSize({ width: 1920, height: 1080 });
+  const provider = declaredNative ? "rest" : "fake";
   const connectionResponse = await request.post("/api/providers", { data: {
-    provider: "fake", name: "隔离浮动参数卡",
-    config: { usage: "canvas", defaultModel: model.id, connector: { auth: { type: "none" }, models: [model] } },
+    provider, name: "隔离浮动参数卡", ...(declaredNative ? { apiKey: "isolated-native-menu" } : {}),
+    config: { usage: "canvas", defaultModel: model.id,
+      ...(declaredNative ? { baseUrl: "https://native-dock-menu.invalid" } : {}),
+      connector: { ...(declaredNative ? structuredClone(CANGYUAN_IMAGE_CONNECTOR) : {}), auth: { type: "none" }, models: [model] } },
   } });
   expect(connectionResponse.ok()).toBeTruthy();
   const connection = await connectionResponse.json();
@@ -48,7 +53,7 @@ async function fixture(page: Page, request: APIRequestContext, farNodeCount = 22
   const generators = ["甲", "乙"].map((name, index) => ({
     id: `dock-${index}`, type: "workflow", position: { x: 120 + index * 460, y: 160 },
     style: { width: 360, height: 260 }, data: {
-      nodeType: "image-generation", label: `图像${name}`, provider: "fake", connectionId: connection.id,
+      nodeType: "image-generation", label: `图像${name}`, provider, connectionId: connection.id,
       model: model.id, qualityMode: "custom", parameters: { size: "2048x2048", quality: "max", n: 1 },
       parts: [{ type: "text", text: "未选中时直接打开参数。\n保留原始提示词，不因点击参数而切换编辑器。" }],
       inputs: [{ id: "prompt", kind: "text", label: "提示词" }], outputs: [{ id: "images", kind: "image", label: "图片" }],
@@ -71,6 +76,7 @@ async function fixture(page: Page, request: APIRequestContext, farNodeCount = 22
   const open = async (index: number) => {
     await page.getByRole("button", { name: `打开 图像${index ? "乙" : "甲"} 模型与参数`, exact: true }).click();
     await expect(panel(index)).toBeVisible();
+    await openParameterDetails(panel(index), "自定义宽高");
     await expect(panel(index).getByLabel("图片宽度", { exact: true })).toBeEditable();
   };
   const saved = async () => {
@@ -101,6 +107,7 @@ test("未选中节点首次真实鼠标点击即打开参数，owner离屏裁剪
     await expect(panel).toHaveCount(0);
   } finally { await page.mouse.up(); }
   await expect(panel).toBeVisible();
+  await openParameterDetails(panel, "自定义宽高");
   await expect(panel.getByLabel("图片宽度", { exact: true })).toBeEditable();
   await expect(owner).toHaveClass(/\bselected\b/u);
   await expect(owner.locator(".tiptap-prompt")).toHaveCount(0);
@@ -179,7 +186,7 @@ test("窄屏参数标签保留未完成宽度、可选对齐和每卡滚动", as
   await expect(secondTab).toBeFocused();
   await secondTab.press("Home");
   await expect(first).toBeVisible(); await expect(second).toBeHidden();
-  const alignment = first.getByRole("checkbox", { name: "16 倍数对齐", exact: true });
+  const alignment = first.getByRole("switch", { name: "16 倍数对齐", exact: true });
   await alignment.check();
   await first.getByLabel("图片宽度", { exact: true }).fill("");
   const body = first.locator(".node-config-popover-body");
@@ -207,23 +214,28 @@ test("窄屏参数标签保留未完成宽度、可选对齐和每卡滚动", as
   f.assertSafe();
 });
 
-test("原生参数下拉首Esc关闭菜单，次Esc仅关闭活动参数卡", async ({ page, request }) => {
-  const f = await fixture(page, request);
+for (const [fieldLabel, native, initialValue] of [["质量", false, "max"], ["隔离参数 1", true, "first"]] as const) {
+test(`${native ? "原生" : "自定义"}参数下拉首Esc关闭菜单，次Esc仅关闭活动参数卡`, async ({ page, request }) => {
+  const f = await fixture(page, request, 220, native);
   await f.open(0); await f.open(1);
   const first = f.panel(0), second = f.panel(1);
-  const quality = second.getByRole("combobox", { name: "质量", exact: true });
+  await openParameterDetails(second, "高级设置");
+  const quality = second.getByRole("combobox", { name: fieldLabel, exact: true });
   await quality.click();
-  await expect.poll(() => quality.evaluate(element => element.matches(":open"))).toBe(true);
+  if (native) await expect.poll(() => quality.evaluate(element => element.matches(":open"))).toBe(true);
+  else await expect(quality).toHaveAttribute("aria-expanded", "true");
   await page.keyboard.press("Escape");
-  await expect.poll(() => quality.evaluate(element => element.matches(":open"))).toBe(false);
+  if (native) await expect.poll(() => quality.evaluate(element => element.matches(":open"))).toBe(false);
+  else await expect(quality).toHaveAttribute("aria-expanded", "false");
   await expect(quality).toBeFocused();
   await expect(first).toBeVisible(); await expect(second).toBeVisible();
-  await expect(quality).toHaveValue("max");
+  await expectParameterValue(quality, initialValue);
   await page.keyboard.press("Escape");
   await expect(second).toHaveCount(0);
   await expect(first).toBeVisible();
   f.assertSafe();
 });
+}
 
 for (const focusScope of ["card", "field"] as const) {
   test(`非模态参数${focusScope === "card" ? "卡片" : "字段"}内Ctrl+K打开命令，Esc逐层恢复焦点和宽度草稿`, async ({ page, request }) => {

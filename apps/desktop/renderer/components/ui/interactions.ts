@@ -1,5 +1,6 @@
 export interface NavigableOption {
   label?: string;
+  value?: string;
   disabled?: boolean;
 }
 
@@ -30,7 +31,7 @@ export function typeaheadIndex(options: readonly NavigableOption[], current: num
   for (let offset = 0; offset < options.length; offset++) {
     const index = (start + offset + options.length) % options.length;
     const option = options[index];
-    if (!option?.disabled && option?.label?.toLocaleLowerCase().startsWith(query)) return index;
+    if (!option?.disabled && (option?.label?.toLocaleLowerCase().startsWith(query) || option?.value?.toLocaleLowerCase().startsWith(query))) return index;
   }
   return current;
 }

@@ -22,6 +22,7 @@ describe("parameter UI keyboard navigation", () => {
     expect(typeaheadIndex(options, 0, "l")).toBe(0);
     expect(typeaheadIndex(options, 3, "m")).toBe(4);
     expect(typeaheadIndex(options, 4, "自动")).toBe(0);
+    expect(typeaheadIndex([{ label: "高", value: "high" }, { label: "最高", value: "max" }], 0, "m")).toBe(1);
     expect(typeaheadIndex([], -1, "h")).toBe(-1);
   });
 

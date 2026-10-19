@@ -26,7 +26,7 @@
 .disclosure { min-width:0; }
 .disclosure .disclosureTrigger { display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; min-width:0; min-height:32px; padding:5px 0; border:0; background:transparent; color:var(--text-secondary); font:inherit; font-size:12px; text-align:left; cursor:pointer; }
 .disclosureTrigger > span { min-width:0; overflow-wrap:anywhere; }
-.disclosureTrigger > svg { flex:0 0 auto; transition:transform .12s; }
+.disclosureTrigger > svg { flex:0 0 auto; }
 .disclosureTrigger[aria-expanded="true"] > svg { transform:rotate(180deg); }
 .disclosureContent { min-width:0; padding-top:6px; }
 .disclosureContent[hidden] { display:none !important; }
@@ -40,4 +40,3 @@
 .switch > label > input[type="checkbox"][role="switch"]:disabled { opacity:.5; cursor:not-allowed; }
 .ratioIcon { display:block; flex:0 0 auto; color:inherit; }
 .dropdownTrigger:focus-visible, .segmented > button:focus-visible, .disclosureTrigger:focus-visible, .switch > label > input:focus-visible { outline:2px solid var(--focus-ring); outline-offset:2px; }
-@media (prefers-reduced-motion:reduce) { .disclosureTrigger > svg { transition:none; } }

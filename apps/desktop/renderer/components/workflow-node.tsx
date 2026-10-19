@@ -50,12 +50,8 @@ import { cleanModelDisplayName, currentSupplierUnitPrice } from "../lib/model-di
 import { modelPickerPriceCompact, modelPickerPriceData } from "../lib/model-picker-data";
 import { SupplierBillingSummary } from "./supplier-billing-summary";
 import { useSupplierBillingOverview } from "../lib/client-supplier-billing";
-import { billingCompact } from "../lib/supplier-billing-display";
-import { choosePickerConnection, pickerConnectionGroups, pickerConnectionLabel } from "../lib/model-picker";
 import { ModelPicker } from "./model-picker";
 import { ModelPriceDetails } from "./model-price-details";
-import { ModelPriceTable } from "./model-price-table";
-import { InformationGrid } from "./information-layout";
 import {
   fetchCangyuanAvailability,
 } from "../lib/client-api";
@@ -83,7 +79,8 @@ import { isNodeConfigRunChord, nodeConfigChildLayerOpen, nodeConfigRunShortcutSc
 import { createNodeParameterQuote } from "../lib/node-parameter-quote";
 import { nodeParameterSummary } from "../lib/parameter-display";
 import { NodeParameterFooter } from "./node-parameter-footer";
-import { NodeParameterRouteMenu } from "./node-parameter-route-menu";
+import { NodeParameterRoutePicker } from "./node-parameter-route-picker";
+import { Disclosure } from "./ui/Disclosure";
 
 const ASSET_DRAG_TYPE = "application/x-super-canvas-asset";
 
@@ -618,9 +615,14 @@ export function GenerationNodeBody({
     setPreviousMenuContext(menuContext);
     setModelMenuOpen(false);
   }
-  // Deactivation closes top-layer menus. Becoming active must not clear a
-  // menu opened by the very pointer event that focused this retained card.
-  if (!uiActive && modelMenuOpen) setModelMenuOpen(false);
+  // Only an active -> inactive transition closes a menu. The first click on
+  // an inactive card may schedule its local open before its owner activates;
+  // clearing every inactive render would swallow that same physical click.
+  const [previousUiActive, setPreviousUiActive] = useState(uiActive);
+  if (previousUiActive !== uiActive) {
+    setPreviousUiActive(uiActive);
+    if (!uiActive) setModelMenuOpen(false);
+  }
   const previousScrollContext = useRef<readonly [boolean, string, string | undefined] | null>(null);
   useLayoutEffect(() => {
     const next = [settingsOpen, currentConnection, data.model] as const;
@@ -639,19 +641,9 @@ export function GenerationNodeBody({
   const connectionAvailable = Boolean(
     currentConnectionOption && currentConnectionOption.available !== false,
   );
-  const supplierOptions = Array.from(
-    new Map(
-      connectionOptions.map((connection) => [
-        connection.supplier,
-        connection.supplierLabel,
-      ]),
-    ),
-  );
   const currentSupplier = currentConnectionOption?.supplier ?? "";
-  const groupOptions = pickerConnectionGroups(connectionOptions, currentSupplier);
   const currentGroup = currentConnectionOption?.group ?? "";
   const currentGroupLabel = currentConnectionOption?.groupLabel ?? currentGroup;
-  const currentGroupConnections = groupOptions.find(group => group.group === currentGroup)?.connections ?? [];
   const connectionName = currentConnectionOption
     ? currentConnectionOption.provider === "langframe" && currentGroupLabel !== currentGroup
       ? `${currentConnectionOption.supplierLabel} · ${currentGroupLabel}`
@@ -707,11 +699,6 @@ export function GenerationNodeBody({
   const selectedAvailability = selectedModel ? cangyuanAvailabilityForModel(selectedModel, availabilityItems, availabilityOptions) : undefined;
   const running = ["queued", "submitting", "running", "archiving"].includes(data.status ?? "");
   const requestSummary = nodeParameterSummary(nodeType, selectedModel, parameters);
-  const routeLabel = currentConnectionOption
-    ? [currentConnectionOption.supplierLabel, currentGroupLabel,
-      currentGroupConnections.length > 1 ? pickerConnectionLabel(currentConnectionOption, currentGroupConnections) : null]
-      .filter(Boolean).join(" › ")
-    : currentConnection ? "原连接已不可用" : "未配置线路";
 
   const selectNode = (event?: { ctrlKey: boolean; metaKey: boolean }) =>
     data.onSelect?.(Boolean(event?.ctrlKey || event?.metaKey));
@@ -876,101 +863,14 @@ export function GenerationNodeBody({
             <span>单价</span><strong data-testid="param-panel-unit-price">{currentUnitPrice || "—"}</strong>
           </div>
         </div>
-        <div className="node-config-connections">
-          <div className="node-config-route-bar" aria-label="当前线路">
-            <span className="node-config-route-label">线路</span>
-            <span className="node-config-route-path" title={routeLabel}>{routeLabel}</span>
-            <span className="node-config-route-balance" title="供应商账号余额">
-              {billingCompact(billingAccounts.find(account => account.id === currentConnectionOption?.supplierId)?.billing)}
-            </span>
-            <NodeParameterRouteMenu active={uiActive} onManage={() => { closeSettings(); data.onOpenApiSettings?.(); }} />
-          </div>
-          <div className="node-config-provider-selectors">
-            <label className="node-config-provider-header">
-              <span>供应商</span>
-              <select
-                aria-label={`${data.label} 供应商`}
-                value={currentSupplier}
-                title={currentConnectionOption?.supplierLabel}
-                onChange={(event) => {
-                  const next = choosePickerConnection(connectionOptions, currentConnection, event.target.value);
-                  if (next) data.onConnectionChange?.(next.id);
-                }}
-              >
-                {!currentSupplier && <option value="">{currentConnection ? "原连接已不可用，请选择" : "请选择供应商"}</option>}
-                {supplierOptions.map(([supplier, label]) => (
-                  <option key={supplier} value={supplier}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="node-config-provider-header">
-              <span>群组</span>
-              <select
-                aria-label={`${data.label} 模型群组`}
-                value={currentGroup}
-                title={currentGroupLabel}
-                onChange={(event) => {
-                  const next = choosePickerConnection(connectionOptions, currentConnection, currentSupplier, event.target.value);
-                  if (next) data.onConnectionChange?.(next.id);
-                }}
-              >
-                {!currentGroup && <option value="">请选择群组</option>}
-                {groupOptions.map((group) => (
-                  <option key={group.group} value={group.group} disabled={!group.available && group.group !== currentGroup}>
-                    {group.label}{group.connections.length > 1 ? `（${group.connections.length} 个连接）` : ""}{!group.available ? "（连接未就绪）" : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {currentGroupConnections.length > 1 && <label className="node-config-provider-header" style={{ gridColumn: "1 / -1" }}>
-              <span>连接</span>
-              <select aria-label={`${data.label} API 连接`} value={currentConnection}
-                onChange={event => data.onConnectionChange?.(event.target.value)}>
-                {currentGroupConnections.map(connection => <option key={connection.id} value={connection.id}
-                  disabled={connection.available === false && connection.id !== currentConnection}>
-                  {pickerConnectionLabel(connection, currentGroupConnections)}{connection.available === false ? `（${connection.unavailableReason ?? "密钥不可用"}）` : ""}
-                </option>)}
-              </select>
-            </label>}
-          </div>
-          <div className="supplier-quote-summary" aria-label="当前供应商报价"><InformationGrid items={[
-            { label: "供应商", value: currentConnectionOption?.supplierLabel ?? "供应商" },
-            { label: selectedModel?.metadata?.langframeCatalog === true ? "当前参数价" : "概括价", value: currentUnitPrice },
-            { label: "余额", value: billingCompact(billingAccounts.find(account => account.id === currentConnectionOption?.supplierId)?.billing) },
-          ]} /></div>
-          {supplierOptions.length > 1 && <details className="supplier-candidate-quotes"><summary>供应商候选报价</summary>
-            <table aria-label="供应商候选报价"><thead><tr><th scope="col">供应商</th><th scope="col">概括价</th><th scope="col">余额</th></tr></thead>
-              {supplierOptions.map(([supplier, label]) => {
-                const candidate = choosePickerConnection(connectionOptions, currentConnection, supplier);
-                const candidateModel = supplier === currentSupplier ? selectedModel : candidate?.modelDescriptor;
-                const legacyQuote = candidate?.modelQuote ?? "—";
-                return <tbody key={supplier}>
-                  <tr><th scope="row">{label}</th><td><span className="supplier-candidate-summary">{candidateModel ? modelPickerPriceCompact(candidateModel) : legacyQuote}</span></td>
-                    <td>{billingCompact(billingAccounts.find(account => account.id === candidate?.supplierId)?.billing)}</td></tr>
-                  {(candidateModel ? modelPickerPriceData(candidateModel) !== "—" : legacyQuote !== "—") && <tr className="supplier-candidate-detail"><td colSpan={3}>
-                    <details><summary>{label}价格明细</summary>{candidateModel ? <ModelPriceTable model={candidateModel} /> : <p>{legacyQuote}</p>}</details>
-                  </td></tr>}
-                </tbody>;
-              })}
-            </table>
-          </details>}
-        </div>
+        <NodeParameterRoutePicker label={data.label} active={uiActive} connections={connectionOptions}
+          currentConnection={currentConnection} currentModel={data.model} billingAccounts={billingAccounts}
+          onChange={id => data.onConnectionChange?.(id)} onManage={() => { closeSettings(); data.onOpenApiSettings?.(); }} />
         {cangyuanAvailabilityEnabled && <CangyuanModelAvailability availability={selectedAvailability}
           loadState={availabilityState} checkedAt={availabilitySnapshot.connectionId === currentConnection ? availabilitySnapshot.checkedAt : undefined} />}
-
-        {currentConnection && !currentConnectionOption && <div className="node-config-connection-warning" role="status">原连接已归档或删除（{currentConnection}）。节点选择已保留，请恢复连接或手动选择其他连接。</div>}
-        {currentConnectionOption?.available === false ? (
-          <div className="node-config-connection-warning" role="status">
-            当前实际连接是 {currentConnectionOption.name}（{currentConnectionOption.group}），{currentConnectionOption.unavailableReason ?? "该分组密钥不可用"}。请重新配置或选择其他可用分组。
-          </div>
-        ) : null}
         <DeferredPanelContent immediate={presentation === "parameters"}>
         <section className="node-config-parameter-section" aria-label="输出参数" key={`${currentConnection}:${data.model}`}>
-          <div className="node-config-section-heading">
-            <strong>输出参数</strong>
-          </div>
+<div className="node-config-section-heading"><strong>输出参数</strong></div>
           <ModelResolutionShortcuts models={modelOptions} selected={selectedModel} onChange={id => data.onModelChange?.(id)} />
           <NodeParameterFields
             nodeId={nodeId}
@@ -988,16 +888,14 @@ export function GenerationNodeBody({
             }
           />
         </section>
-        <details className="node-config-detail-section" open>
-          <summary>价格明细</summary>
+        <Disclosure className="node-config-detail-section" label="价格明细">
           <ModelPriceDetails quote={parameterQuote} />
-        </details>
+        </Disclosure>
         </DeferredPanelContent>
         {currentConnectionOption?.supplierId && <DeferredPanelContent>
-          <details className="node-config-detail-section" open>
-            <summary>账号余额与消耗</summary>
+          <Disclosure className="node-config-detail-section" label="账号余额与消耗">
             <SupplierBillingSummary key={currentConnectionOption?.supplierId} compact supplierId={currentConnectionOption?.supplierId} />
-          </details>
+          </Disclosure>
         </DeferredPanelContent>}
       </div>
       <NodeParameterFooter label={data.label} quote={parameterQuote} summary={requestSummary}

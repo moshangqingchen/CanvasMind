@@ -171,18 +171,6 @@
 .canvas-editor .node-config-model-quote { min-width:0; display:grid; gap:6px; padding-top:2px; text-align:right; }
 .canvas-editor .node-config-model-quote > span { font-size:11px; color:var(--text-secondary); }
 .canvas-editor .node-config-model-quote > strong { color:var(--text); font-size:15px; line-height:1.45; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
-.canvas-editor .node-config-route-bar { min-width:0; display:flex; align-items:center; gap:7px; padding:8px 0; border-bottom:1px solid var(--line); }
-.canvas-editor .node-config-route-label { color:var(--text-secondary); font-size:11px; flex:0 0 auto; }
-.canvas-editor .node-config-route-path { min-width:0; flex:1; font-size:12px; color:var(--text-secondary); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-.canvas-editor .node-config-route-balance { flex:0 1 88px; min-width:0; color:var(--text-secondary); font-size:11px; font-variant-numeric:tabular-nums; text-align:right; overflow-wrap:anywhere; }
-.canvas-editor .node-config-route-menu { position:relative; flex:0 0 28px; min-width:0; }
-.canvas-editor .node-config-route-menu > summary { display:grid; place-items:center; width:28px; height:28px; padding:0; border:1px solid var(--line); border-radius:6px; color:var(--text-secondary); cursor:pointer; list-style:none; }
-.canvas-editor .node-config-route-menu > summary::-webkit-details-marker { display:none; }
-.canvas-editor .node-config-route-menu-content { position:absolute; z-index:4; top:calc(100% + 6px); right:0; width:220px; max-width:calc(100cqw - 32px); padding:6px; border:1px solid var(--line); border-radius:8px; background:var(--surface-floating); box-shadow:var(--shadow-e2); }
-.canvas-editor .node-config-route-menu-content > button { display:flex; align-items:center; gap:8px; width:100%; min-height:36px; padding:6px 8px; border:0; border-radius:4px; background:transparent; color:var(--text); font:inherit; font-size:12px; text-align:left; cursor:pointer; }
-.canvas-editor .node-config-route-menu-content > button:hover { background:var(--panel-2); }
-.canvas-editor .node-config-route-menu > summary:focus-visible,
-.canvas-editor .node-config-route-menu-content > button:focus-visible { outline:2px solid var(--focus-ring); outline-offset:2px; }
 .canvas-editor .node-config-popover-portal .node-model-select-trigger > svg { flex:0 0 auto; }
 .canvas-editor .node-config-popover-portal .node-model-select-trigger [id$="-selected-id"] { font-size:12px; }
 .canvas-editor .node-config-parameter-section { display:grid; gap:12px; margin-top:24px; }

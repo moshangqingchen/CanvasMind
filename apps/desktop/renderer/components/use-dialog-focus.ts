@@ -2,6 +2,7 @@
 import { useEffect, useRef } from "react";
 interface DialogFocusEntry {
   previousFocus: HTMLElement | null;
+  fallbackFocus: HTMLElement | null;
   returnFocus: () => HTMLElement | null | undefined;
   parent: DialogFocusEntry | undefined;
 }
@@ -29,6 +30,7 @@ function getReturnFocus(entry: DialogFocusEntry): HTMLElement | null {
     const requested = current.returnFocus();
     if (requested?.isConnected) return requested;
     if (current.previousFocus?.isConnected) return current.previousFocus;
+    if (current.fallbackFocus?.isConnected) return current.fallbackFocus;
   }
   return null;
 }
@@ -50,10 +52,14 @@ export function useDialogFocus(
   useEffect(() => {
     if (!open) return;
 
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    // Nonmodal child surfaces may close and unmount when this dialog takes
+    // focus. Their stable trigger remains a valid return point after dismissal.
+    const fallbackId = previousFocus?.closest<HTMLElement>("[data-dialog-return-focus-id]")
+      ?.getAttribute("data-dialog-return-focus-id");
     const entry: DialogFocusEntry = {
-      previousFocus: document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null,
+      previousFocus,
+      fallbackFocus: fallbackId ? document.getElementById(fallbackId) : null,
       returnFocus: () => returnFocusRef.current,
       parent: openDialogs.at(-1),
     };

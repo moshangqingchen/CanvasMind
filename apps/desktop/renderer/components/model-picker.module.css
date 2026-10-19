@@ -1,6 +1,9 @@
 /* Shared model menu:stable geometry, quiet identity and bounded rows. */
 .picker { min-width:0; position:relative; }
 .trigger { min-height:52px; height:auto; padding:8px 12px; }
+/* Catalog refresh may replace the label between press and release. Keep the
+   button as the pointer target; capability notes also live in its title. */
+.trigger * { pointer-events:none; }
 .identity { display:grid; grid-template-columns:minmax(0, 1fr) fit-content(65%); gap:4px 12px; min-width:0; overflow:hidden; text-align:left; }
 .heading { display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; min-width:0; grid-column:1; }
 .name { min-width:0; max-width:100%; color:var(--text); font-size:13px; font-weight:600; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }

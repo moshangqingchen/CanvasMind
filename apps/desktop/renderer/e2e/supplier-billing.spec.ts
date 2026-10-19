@@ -2,6 +2,7 @@ import { expect, test, type Page, type APIRequestContext } from "@playwright/tes
 import type { ModelDescriptor } from "@super-canvas/providers";
 import type { SupplierRecord } from "../lib/client-suppliers";
 import type { ProviderConnectionView } from "../lib/client-api";
+import { openParameterDetails } from "./helpers/parameter-controls";
 
 async function fixture(page: Page, request: APIRequestContext) {
   const suppliers: SupplierRecord[] = [], connections: ProviderConnectionView[] = [];
@@ -154,23 +155,20 @@ test("画布供应商选择显示对应报价余额，切换后刷新对应账�
   if (await agent.getAttribute("aria-expanded") === "true") await agent.click();
   await page.getByRole("button", { name: "打开 账务测试 模型与参数", exact: true }).click();
   const panel = page.getByRole("dialog", { name: "账务测试 模型与参数" });
-  const select = panel.getByRole("combobox", { name: "账务测试 供应商", exact: true });
-  for (const supplier of data.suppliers) {
-    const option = select.locator(`option[value="${supplier.supplierKey}"]`);
-    await expect(option).toHaveText(supplier.name);
-    await expect(option).toHaveAttribute("value", supplier.supplierKey);
-  }
-  const candidates = panel.locator("details.supplier-candidate-quotes");
-  await candidates.locator(":scope > summary").click();
-  const candidateTable = candidates.getByRole("table", { name: "供应商候选报价", exact: true });
-  for (const [name, price, balance] of [["报价甲", "0.4 CNY / 张", "余额 10 CNY"], ["报价乙", "0.8 USD / 张", "余额 22 USD"]] as const) {
-    const row = candidateTable.getByRole("rowheader", { name, exact: true }).locator("..");
+  await panel.getByRole("button", { name: "账务测试 线路", exact: true }).click();
+  const candidates = panel.getByRole("dialog", { name: "账务测试 候选线路", exact: true });
+  const candidateList = candidates.getByRole("list", { name: "候选线路", exact: true });
+  for (const [index, [name, price, balance]] of ([["报价甲", "0.4 CNY / 张", "余额 10 CNY"], ["报价乙", "0.8 USD / 张", "余额 22 USD"]] as const).entries()) {
+    const row = candidateList.locator(`[data-route-id="${data.connections[index]!.id}"]`);
     await expect(row).toBeVisible();
-    await expect(row.getByRole("cell")).toHaveText([price, balance]);
-    for (const cell of await row.getByRole("cell").all()) await expect(cell).toBeVisible();
+    await expect(row).toContainText(name);
+    await expect(row).toHaveAttribute("data-route-group", "创作组");
+    await expect(row).toContainText(`同型号报价：${price}`);
+    await expect(row).toContainText(balance);
+    await expect(row).toContainText("切换后将使用：gpt-image-2.5");
   }
-  await candidateTable.scrollIntoViewIfNeeded();
-  const candidateBounds = await candidateTable.evaluate(element => {
+  await candidateList.scrollIntoViewIfNeeded();
+  const candidateBounds = await candidateList.evaluate(element => {
     const table = element.getBoundingClientRect(), dialog = element.closest('[role="dialog"]')!.getBoundingClientRect();
     return { inside: table.left >= dialog.left - 1 && table.right <= dialog.right + 1 && table.top >= dialog.top - 1 && table.bottom <= dialog.bottom + 1,
       overflow: element.scrollWidth - element.clientWidth, pageOverflow: document.documentElement.scrollWidth - innerWidth };
@@ -178,9 +176,11 @@ test("画布供应商选择显示对应报价余额，切换后刷新对应账�
   expect(candidateBounds.inside).toBe(true);
   expect(candidateBounds.overflow).toBeLessThanOrEqual(1);
   expect(candidateBounds.pageOverflow).toBeLessThanOrEqual(1);
-  await expect(panel.getByLabel("当前供应商报价")).toContainText("0.4 CNY");
-  await select.selectOption(data.suppliers[1]!.supplierKey);
-  await expect(panel.getByLabel("当前供应商报价")).toContainText("0.8 USD");
+  await expect(panel.getByTestId("param-panel-unit-price")).toContainText("0.4 CNY");
+  await candidateList.locator(`[data-route-id="${data.connections[1]!.id}"]`).getByRole("button", { name: /^选择线路 /u }).click();
+  await expect(candidates).toHaveCount(0);
+  await expect(panel.getByTestId("param-panel-unit-price")).toContainText("0.8 USD");
+  await openParameterDetails(panel, "账号余额与消耗");
   const billing = panel.getByRole("region", { name: "供应商余额与消耗" });
   await expect(billing).toContainText("22 USD");
   await expect(billing).toContainText("今日消耗 未读取");
@@ -192,7 +192,8 @@ test("画布供应商选择显示对应报价余额，切换后刷新对应账�
   await panel.getByRole("button", { name: "关闭模型与参数面板", exact: true }).click();
   await expect(panel).toHaveCount(0);
   await page.getByRole("button", { name: "打开 账务测试 模型与参数", exact: true }).click();
-  await expect(panel.getByLabel("当前供应商报价")).toContainText("0.8 USD");
+  await expect(panel.getByTestId("param-panel-unit-price")).toContainText("0.8 USD");
+  await openParameterDetails(panel, "账号余额与消耗");
   await expect(billing).toContainText("9.6 USD");
   await expect(billing).toContainText("今日消耗 0.4 USD");
   expect(data.refreshes).toEqual([data.suppliers[1]!.id]); expect(data.forbidden).toEqual([]);
