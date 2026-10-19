@@ -28,7 +28,10 @@ export async function POST(request: Request) {
     });
     return Response.json(canvas, { status: 201 });
   } catch (error) {
+    if (error instanceof CanvasAssetReferenceError || (error instanceof Error && "code" in error && error.code === "CANVAS_ASSET_ROLLBACK_CLEANED"))
+      return Response.json({ error: error.message, code: "CANVAS_ASSET_ROLLBACK_CLEANED" }, { status: 409 });
     if (error instanceof ProjectMutationError) return Response.json({ error: error.message, code: error.code }, { status: error.status });
     return jsonError("画布创建失败", 500);
   }
 }
+import { CanvasAssetReferenceError } from "@super-canvas/db";

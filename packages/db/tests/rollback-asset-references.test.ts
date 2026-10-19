@@ -5,6 +5,7 @@ import { expect, it } from "vitest";
 import { collectReferencedAssetIds } from "../src/asset-references.js";
 import { MemoryRepository } from "../src/memory.js";
 import { FileRepository } from "../src/file.js";
+import { CanvasAssetReferenceError } from "../src/types.js";
 
 const asset = (id: string) => ({ id, name: id, kind: "image" as const, mimeType: "image/png", size: 1, storageKey: id, metadata: {} });
 const graph = (assetId: string) => ({ nodes: [{ data: { assetId } }], edges: [] });
@@ -24,7 +25,8 @@ it("blocks new references only to rollback-cleaned assets and permits restoring 
   const repository = new MemoryRepository();
   await repository.saveAsset(asset("rollback")); await repository.saveAsset(asset("manual"));
   await repository.deleteUnreferencedAssets(["rollback"]); await repository.deleteAsset("manual");
-  await expect(repository.saveCanvas({ id: "late", graph: graph("rollback") })).rejects.toThrow("未引用回滚清理");
+  await expect(repository.saveCanvas({ id: "late", graph: graph("rollback") })).rejects.toBeInstanceOf(CanvasAssetReferenceError);
+  await expect(repository.saveCanvas({ id: "late", graph: graph("rollback") })).rejects.toMatchObject({ code: "CANVAS_ASSET_ROLLBACK_CLEANED", assetId: "rollback" });
   await expect(repository.saveCanvas({ id: "legacy-prompt-late", graph: { nodes: [{ data: { prompt: [{ type: "asset", assetId: "rollback" }] } }] } })).rejects.toThrow("未引用回滚清理");
   expect(await repository.getCanvas("late")).toBeNull();
   await expect(repository.saveCanvas({ id: "manual", graph: graph("manual") })).resolves.toMatchObject({ id: "manual" });

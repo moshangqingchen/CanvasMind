@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { canvasDraftRecovery, draftAfterAcknowledgement, type CanvasDraft } from "./canvas-drafts";
+import { canvasDraftRecovery, draftAfterAcknowledgement, draftAfterRejection, type CanvasDraft } from "./canvas-drafts";
 
 const graph = { schemaVersion: 1, nodes: [], edges: [] };
 const draft: CanvasDraft = { canvasId: "a", title: "草稿", graph, baseRevision: 4, version: 2 };
 
 describe("canvas draft recovery", () => {
+  it("discards only the rejected snapshot, retaining older fallback and newer local edits", () => {
+    expect(draftAfterRejection(draft, 2)).toBeUndefined();
+    expect(draftAfterRejection(draft, 3)).toBe(draft);
+    expect(draftAfterRejection(draft, 1)).toBe(draft);
+    expect(draft.baseRevision).toBe(4);
+  });
   it("recovers an unsaved draft only against the same server revision", () => {
     expect(canvasDraftRecovery(draft, { title: "原稿", graph, revision: 4 })).toBe("recover");
     expect(canvasDraftRecovery(draft, { title: "原稿", graph, revision: 5 })).toBe("conflict");

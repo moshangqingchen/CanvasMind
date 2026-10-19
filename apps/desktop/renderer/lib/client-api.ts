@@ -553,7 +553,7 @@ export async function saveCanvas(
     }
     const message = canvasErrorMessage(payload, "画布保存失败");
     if (!hadUncertainAttempt && ([400, 401, 403, 404, 413, 415, 422].includes(response.status) ||
-      response.status === 409 && payload?.code === "PROJECT_NAME_CONFLICT"))
+      response.status === 409 && ["PROJECT_NAME_CONFLICT", "CANVAS_ASSET_ROLLBACK_CLEANED"].includes(String(payload?.code))))
       throw new CanvasSaveRejectedError(message, typeof payload?.code === "string" ? payload.code : undefined);
     throw new Error(message);
   }

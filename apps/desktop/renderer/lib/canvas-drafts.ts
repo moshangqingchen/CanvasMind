@@ -102,6 +102,21 @@ export function discardCanvasDraft(canvasId: string): Promise<void> {
   });
 }
 
+/** Delete only the rejected version; even an older draft may be a valid fallback after a failed put. */
+export function draftAfterRejection(draft: CanvasDraft | undefined, rejectedVersion: number): CanvasDraft | undefined {
+  return draft?.version === rejectedVersion ? undefined : draft;
+}
+
+export function discardRejectedCanvasDraft(canvasId: string, version: number): Promise<void> {
+  return transact(canvasId, "readwrite", (store, key, done) => {
+    const request = store.get(key);
+    request.onsuccess = () => {
+      if (!draftAfterRejection(request.result as CanvasDraft | undefined, version)) store.delete(key);
+      done(undefined);
+    };
+  });
+}
+
 /** Compare JSON data independently of object insertion order; array order remains meaningful. */
 function canonicalJson(value: unknown): string | undefined {
   return JSON.stringify(value, (_key, item: unknown) => {

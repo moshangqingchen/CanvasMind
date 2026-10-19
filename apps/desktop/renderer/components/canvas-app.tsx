@@ -48,7 +48,7 @@ import { newNodePlacement } from "../lib/new-node-placement";
 import { placeCanvasBatch, repairCanvasBatch } from "../lib/canvas-placement";
 import { sortCanvasArrangementItems } from "../lib/canvas-arrangement";
 import { acknowledgeSubmissions, forgetSubmission, hiddenResult, hideRemovedResults, readSubmissions, linkSubmission, needsTaskReconciliation, rememberSubmission, restoreSubmissions } from "../lib/submission-journal";
-import { acknowledgeCanvasDraft, canvasDraftRecovery, discardCanvasDraft, readCanvasDraft, writeCanvasDraft } from "../lib/canvas-drafts";
+import { acknowledgeCanvasDraft, canvasDraftRecovery, discardCanvasDraft, discardRejectedCanvasDraft, readCanvasDraft, writeCanvasDraft } from "../lib/canvas-drafts";
 import { trackCanvasSave, waitForCanvasSaves } from "../lib/canvas-save-barrier";
 import { flushPendingEditorEdits } from "../lib/pending-editor-edits";
 import { isNodeConfigRunChord, nodeConfigOwnerElement } from "../lib/node-config-interaction";
@@ -177,6 +177,7 @@ import {
   saveCanvas,
   uploadAsset,
   CanvasSaveConflictError,
+  CanvasSaveRejectedError,
   type CanvasResponse,
   type ProviderConnectionView,
   requestAppUpdate,
@@ -3094,6 +3095,9 @@ function CanvasShell({
         clearPersistedNodeConfigurations(request.pendingNodeConfigurations);
         return saved;
       } catch (error) {
+        if (error instanceof CanvasSaveRejectedError && error.code === "CANVAS_ASSET_ROLLBACK_CLEANED" && request.draftVersion !== undefined) {
+          await discardRejectedCanvasDraft(request.canvasId, request.draftVersion).catch(() => setDraftStorageError(true));
+        }
         if (error instanceof CanvasSaveConflictError) {
           const conflict: CanvasSaveConflictState = {
             expectedRevision,
@@ -9720,7 +9724,30 @@ function CanvasShell({
       );
     } catch (error) {
       let cleanupFailed = 0;
-      if (uploadedForRollback.length > 0 && (!importSaveStarted || importSaveDefinitelyRejected(error))) {
+      let rollbackAllowed = !importSaveStarted;
+      let draftRecoveryFailed = false;
+      if (importSaveStarted && importSaveDefinitelyRejected(error)) {
+        try {
+          if (!instanceActive.current || activeProjectIdRef.current !== canvasId || canvasRevision.current === null)
+            throw new Error("画布已关闭");
+          // saveRequest recorded the import before sending it. Restore the
+          // still-visible editor and its configuration journal durably before
+          // removing any temporary original it might otherwise recover.
+          flushPendingEditorEdits();
+          const current = useCanvasStore.getState();
+          const graph = serializableGraph(current.nodes, current.edges, current.viewport, current.drawings);
+          const version = Math.max(Date.now(), draftVersion.current + 1);
+          draftVersion.current = version;
+          const restored = { canvasId, graph, title: current.title, draftVersion: version,
+            pendingNodeConfigurations: synchronizePendingNodeConfigurations(canvasId, graph.nodes) };
+          await writeCanvasDraft({ canvasId, graph, title: current.title, baseRevision: canvasRevision.current, version });
+          if (!instanceActive.current || activeProjectIdRef.current !== canvasId || draftVersion.current !== version)
+            throw new Error("草稿写入期间画布或编辑已变化");
+          if (saveConflictRef.current) conflictedSave.current = restored;
+          rollbackAllowed = true;
+        } catch { draftRecoveryFailed = true; }
+      }
+      if (uploadedForRollback.length > 0 && rollbackAllowed) {
         const cleanup = await deleteAssets(
           uploadedForRollback.map((asset) => asset.id),
           { onlyUnreferenced: true },
@@ -9735,7 +9762,7 @@ function CanvasShell({
       const message = importSaveConfirmed ? "导入已保存，界面更新失败，请重新加载；素材已保留" :
         error instanceof Error ? error.message : "项目导入失败";
       setProjectImportError(
-        cleanupFailed > 0
+        draftRecoveryFailed ? `${message}；本地草稿未能确认，素材已保留，请先导出当前画布备份并重新加载确认` : cleanupFailed > 0
           ? `${message}；另有 ${cleanupFailed} 个临时上传素材清理失败，请在素材库中手动删除`
           : message,
       );

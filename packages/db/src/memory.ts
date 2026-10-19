@@ -29,7 +29,7 @@ import type {
   CatalogSnapshotCommit,
   WorkflowRunRecord,
 } from "./types.js";
-import { CanvasRevisionConflictError } from "./types.js";
+import { CanvasAssetReferenceError, CanvasRevisionConflictError } from "./types.js";
 import { applyImageDesignReview } from "./image-design-review.js";
 import { collectReferencedAssetIds } from "./asset-references.js";
 import {
@@ -638,7 +638,7 @@ export class MemoryRepository implements Repository {
     for (const id of collectReferencedAssetIds(input.graph)) {
       const asset = this.assets.get(id);
       if (!previousReferences.has(id) && asset?.deleted && asset.metadata.rollbackCleanup === true) {
-        throw new Error(`素材 ${id} 已由未引用回滚清理，请重新导入后再保存；当前画布未修改`);
+        throw new CanvasAssetReferenceError(id);
       }
     }
     // Leaving a canvas flushes the full snapshot even when no edit occurred.

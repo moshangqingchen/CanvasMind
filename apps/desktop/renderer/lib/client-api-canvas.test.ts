@@ -21,6 +21,12 @@ afterEach(() => {
 });
 
 describe("import rollback evidence", () => {
+  it("does not retry a typed rollback-asset rejection", async () => {
+    const fetch = vi.fn(async () => Response.json({ error: "素材已由未引用回滚清理，请重新导入", code: "CANVAS_ASSET_ROLLBACK_CLEANED" }, { status: 409 }));
+    vi.stubGlobal("fetch", fetch);
+    await expect(saveCanvas("canvas", graph, "import", 1)).rejects.toMatchObject({ code: "CANVAS_ASSET_ROLLBACK_CLEANED", definitelyRejected: true });
+    expect(fetch).toHaveBeenCalledOnce();
+  });
   it("treats an initial typed name conflict as a definite rejection without retrying", async () => {
     const fetch = vi.fn(async () => Response.json({ error: "项目名称已存在，请换一个名称", code: "PROJECT_NAME_CONFLICT" }, { status: 409 }));
     vi.stubGlobal("fetch", fetch);

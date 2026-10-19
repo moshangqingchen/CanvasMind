@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { CanvasRevisionConflictError } from "@super-canvas/db";
+import { CanvasAssetReferenceError, CanvasRevisionConflictError } from "@super-canvas/db";
 
 const mocks = vi.hoisted(() => ({
   repository: {
@@ -49,6 +49,13 @@ beforeEach(() => {
 });
 
 describe("PUT /api/canvas/[id]", () => {
+  it("returns a non-retryable typed rejection for rollback-cleaned asset references", async () => {
+    mocks.repository.saveCanvas.mockRejectedValue(new CanvasAssetReferenceError("removed"));
+    const response = await PUT(request(8), context);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "CANVAS_ASSET_ROLLBACK_CLEANED", error: expect.stringContaining("请重新导入原素材") });
+    expect(mocks.repository.saveCanvas).toHaveBeenCalledOnce();
+  });
   it("returns a typed name conflict before saving an import", async () => {
     mocks.repository.listCanvasTitles.mockResolvedValue([{ id: "canvas-1", title: "Canvas" }, { id: "other", title: "Occupied" }]);
     const response = await PUT(new Request("http://localhost/api/canvas/canvas-1", { method: "PUT", headers: { "content-type": "application/json" },
