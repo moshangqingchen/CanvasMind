@@ -6,27 +6,45 @@ import { billingCompact } from "./supplier-billing-display";
 
 export type NodeParameterRoute = NonNullable<CanvasNodeData["connectionOptions"]>[number];
 
+function withoutSupplierPrefix(label: string, supplierLabel: string) {
+  const supplierPrefix = [`${supplierLabel} · `, `${supplierLabel} › `, `${supplierLabel} `]
+    .find(prefix => label.startsWith(prefix) && label.length > prefix.length);
+  return supplierPrefix ? label.slice(supplierPrefix.length) : label;
+}
+
+/** Keep every other character verbatim, including mojibake already stored in a name. */
+function comparableLabel(label: string, supplierLabel: string) {
+  const trimSeparators = (value: string) => value.replace(/^[\s·›|:：/\\–—-]+|[\s·›|:：/\\–—-]+$/gu, "");
+  return trimSeparators(withoutSupplierPrefix(trimSeparators(label), supplierLabel));
+}
+
 /** Open-menu projection only; every tariff stays attached to its own full model. */
 export function nodeParameterRouteRows(connections: readonly NodeParameterRoute[], currentId: string, currentModel?: string) {
   return connections.map(connection => {
     const peers = connections.filter(candidate => candidate.supplier === connection.supplier && candidate.group === connection.group);
     const connectionLabel = pickerConnectionLabel(connection, peers);
-    const supplierPrefix = [`${connection.supplierLabel} · `, `${connection.supplierLabel} › `, `${connection.supplierLabel} `]
-      .find(prefix => connectionLabel.startsWith(prefix) && connectionLabel.length > prefix.length);
-    const shortConnectionLabel = supplierPrefix ? connectionLabel.slice(supplierPrefix.length) : connectionLabel;
+    const shortConnectionLabel = withoutSupplierPrefix(connectionLabel, connection.supplierLabel);
     const groupLabel = connection.groupLabel ?? connection.group;
+    const comparableGroup = comparableLabel(groupLabel, connection.supplierLabel) || groupLabel;
+    const comparableConnection = comparableLabel(connectionLabel, connection.supplierLabel) || connectionLabel;
+    const sharesPrefix = comparableGroup.startsWith(comparableConnection) || comparableConnection.startsWith(comparableGroup);
+    const primaryLabel = sharesPrefix && comparableConnection.length > comparableGroup.length ? comparableConnection : comparableGroup;
+    const duplicateGroupLabel = connections.some(candidate => candidate.supplier === connection.supplier && candidate.group !== connection.group &&
+      (comparableLabel(candidate.groupLabel ?? candidate.group, candidate.supplierLabel) || (candidate.groupLabel ?? candidate.group)) === comparableGroup);
     const switchModelId = connection.switchModelId ?? "—";
     const switchModelName = connection.switchModelName?.trim() || switchModelId;
     return {
       connection,
       connectionLabel,
       shortLabel: shortConnectionLabel === groupLabel ? groupLabel : `${groupLabel} · ${shortConnectionLabel}`,
+      primaryLabel: duplicateGroupLabel ? `${primaryLabel}（${connection.group}）` : primaryLabel,
+      secondaryLabel: sharesPrefix ? undefined : comparableConnection,
       path: `${connection.supplierLabel} › ${groupLabel} › ${connectionLabel}`,
       current: connection.id === currentId,
       comparisonPrice: connection.modelDescriptor ? modelPickerPriceCompact(connection.modelDescriptor) : connection.modelQuote ?? "—",
       switchModelId,
       switchModelName,
-      switchLabel: currentModel && connection.switchModelId && switchModelId === currentModel ? "同型号" : `切换后将使用：${switchModelName}`,
+      switchLabel: connection.switchModelId ? currentModel && switchModelId === currentModel ? "同型号" : `切换后将使用：${switchModelName}` : undefined,
       unavailableReason: connection.available === false ? connection.unavailableReason ?? "密钥未配置或不可用" : undefined,
     };
   });
@@ -42,6 +60,12 @@ export function nodeParameterRouteGroups(rows: ReturnType<typeof nodeParameterRo
     groups.set(supplier, group);
   }
   return [...groups.values()];
+}
+
+/** Only one shared, nonempty account identity permits a supplier-level balance. */
+export function nodeParameterRouteSharedSupplierId(rows: readonly ReturnType<typeof nodeParameterRouteRows>[number][]) {
+  const supplierId = rows[0]?.connection.supplierId;
+  return supplierId?.trim() && rows.every(row => row.connection.supplierId === supplierId) ? supplierId : undefined;
 }
 
 /** Only real recorded balances occupy the compact line; no status becomes money. */
