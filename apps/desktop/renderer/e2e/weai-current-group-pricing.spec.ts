@@ -195,7 +195,9 @@ test("WeAI 后台补全当前精确分组报价，保留完整型号、质量档
     await groups.selectOption(WEAI_ADOBE_TOKEN_GROUP);
     await expect(quote).toContainText("Token 计价");
     await expect(quote).not.toContainText("0.15 USD / 次");
-    await expect(details).not.toContainText("本次预计费用");
+    await expect(details).toContainText("本次预计费用 —");
+    await expect(panel.getByTestId("param-panel-unit-price")).toHaveText("—");
+    await expect(panel.getByTestId("param-panel-total-price")).toHaveText("—");
     await expect(details.getByRole("table", { name: "Token 单价", exact: true }).getByRole("row", { name: "输入 3.5", exact: true })).toBeVisible();
     await expect(details.getByRole("table", { name: "Token 单价", exact: true }).getByRole("row", { name: "输出 7", exact: true })).toBeVisible();
     await expect(details.getByRole("table", { name: "Token 单价", exact: true }).getByRole("row", { name: "图片输出 21", exact: true })).toBeVisible();

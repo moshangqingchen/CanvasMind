@@ -139,7 +139,7 @@ for (const failure of ["submission", "provider", "multi-selection", "marquee-sel
     const panel = page.getByRole("dialog", { name: "失败参数测试 模型与参数", exact: true });
     await expect(panel).toBeVisible();
     await expect(source.locator(".node-config-summary strong")).toHaveText("失败参数供应商甲 · 失败回归模型甲");
-    await page.getByRole("button", { name: "运行 失败参数测试 节点", exact: true }).click();
+    await source.getByRole("button", { name: "运行 失败参数测试 节点", exact: true }).click();
     const result = page.locator(".react-flow__node:has(.generated-result-state.failed)");
     await expect(result).toHaveCount(1);
     await expect(result.locator(".result-error-summary")).toContainText("隔离测试：");

@@ -100,7 +100,13 @@ for (const width of [980, 1280, 1366, 1440, 1920]) {
       // Retain screen-safe controls and independent scrolling at every zoom.
       await expect.poll(async () => (await floatingPanelGeometry(panel)).floatingError).toBeLessThanOrEqual(1);
       await expect(panel.getByRole("button", { name: "关闭模型与参数面板" })).toBeInViewport({ ratio: 1 });
-      await expect(panel.getByRole("button", { name: "管理供应商与密钥" })).toBeInViewport({ ratio: 1 });
+      await expect(panel.locator(":scope > header").getByRole("button")).toHaveCount(1);
+      const routeMenu = panel.getByLabel("线路菜单", { exact: true });
+      await routeMenu.click();
+      const manage = panel.getByRole("button", { name: "管理供应商与密钥", exact: true });
+      await expect(manage).toBeInViewport({ ratio: 1 });
+      await manage.click({ trial: true });
+      await routeMenu.click();
       await expect(panel.locator(".node-config-provider-header > span").first()).toHaveCSS("font-size", "12px");
       const body = panel.locator(".node-config-popover-body");
       await expect(body).toHaveCSS("overflow-y", "auto");

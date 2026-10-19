@@ -162,7 +162,7 @@ test("开放图片尺寸恢复自动、1K/2K/4K 和截图比例，宽高、保�
     await quality.scrollIntoViewIfNeeded();
     await panel.screenshot({ path: testInfo.outputPath("user-image-4k-quality-max.png") });
 
-    const run = page.getByRole("button", { name: `运行 ${label} 节点`, exact: true });
+    const run = panel.getByRole("button", { name: `运行 ${label} 节点`, exact: true });
     await expect(run).toBeEnabled();
     await run.click();
     await expect.poll(() => submissions.length).toBe(1);

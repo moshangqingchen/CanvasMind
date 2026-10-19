@@ -25,7 +25,6 @@ import {
   AlignVerticalSpaceBetween,
   CircleAlert,
   Brush,
-  ExternalLink,
   Film,
   Image as ImageIcon,
   LoaderCircle,
@@ -82,6 +81,8 @@ import { acquireNodeConfigSurfaceMarkers } from "../lib/node-config-surface-mark
 import { createGenerationNodeRunAction } from "../lib/generation-node-actions";
 import { isNodeConfigRunChord, nodeConfigChildLayerOpen, nodeConfigRunShortcutScope } from "../lib/node-config-interaction";
 import { createNodeParameterQuote } from "../lib/node-parameter-quote";
+import { NodeParameterFooter } from "./node-parameter-footer";
+import { NodeParameterRouteMenu } from "./node-parameter-route-menu";
 
 const ASSET_DRAG_TYPE = "application/x-super-canvas-asset";
 
@@ -728,6 +729,15 @@ export function GenerationNodeBody({
   const running = ["queued", "submitting", "running", "archiving"].includes(
     data.status ?? "",
   );
+  const countDescriptor = selectedModel?.parameters?.find(parameter => parameter.key === "n");
+  const requestCount = parameters.n ?? countDescriptor?.default;
+  const requestSummary = [summary, requestCount !== undefined ? `${countDescriptor?.label ?? "数量"} ${String(requestCount)}` : null]
+    .filter(Boolean).join(" · ");
+  const routeLabel = currentConnectionOption
+    ? [currentConnectionOption.supplierLabel, currentGroupLabel,
+      currentGroupConnections.length > 1 ? pickerConnectionLabel(currentConnectionOption, currentGroupConnections) : null]
+      .filter(Boolean).join(" › ")
+    : currentConnection ? "原连接已不可用" : "未配置线路";
 
   const selectNode = (event?: { ctrlKey: boolean; metaKey: boolean }) =>
     data.onSelect?.(Boolean(event?.ctrlKey || event?.metaKey));
@@ -871,21 +881,35 @@ export function GenerationNodeBody({
         >
           <X size={14} />
         </button>
-        <button
-          className="node-config-manage-api"
-          title="管理供应商与密钥"
-          aria-label="管理供应商与密钥"
-          type="button"
-          onClick={() => {
-            closeSettings();
-            data.onOpenApiSettings?.();
-          }}
-        >
-          <ExternalLink size={12} /> 管理供应商与密钥
-        </button>
       </header>
       <div className="node-config-popover-body" ref={settingsBody}>
+        <div className="node-config-model-field node-config-model-header">
+          <div className="node-config-model-control" ref={modelSelectRef}>
+            <ModelPicker key={currentConnection} id={`node-inline-model-${nodeId}`} label={`${data.label} 模型`}
+              preferSidePlacement
+              connectionId={currentConnection} models={modelOptions} value={data.model ?? ""}
+              capabilities={connectionAvailable ? data.modelImageCapabilities : undefined}
+              onChange={id => data.onModelChange?.(id)} open={uiActive && modelMenuOpen} onOpenChange={setModelMenuOpen}
+              loading={data.modelOptionsLoading} failed={data.modelOptionsError}
+              authoritative={data.modelOptionsAuthoritative} allowManual={!data.modelOptionsAuthoritative}
+              catalogDirectory={data.catalogPickerDirectory}
+              badge={cangyuanAvailabilityEnabled ? model => <CangyuanAvailabilityBadge
+                availability={cangyuanAvailabilityForModel(model, availabilityItems, availabilityOptions)}
+                loadState={availabilityState} checkedAt={availabilitySnapshot.checkedAt} /> : undefined} />
+          </div>
+          <div className="node-config-model-quote" aria-label="本次运行预计费用">
+            <span>本次预计</span><strong data-testid="param-panel-unit-price">{parameterQuote?.displayCost ?? "—"}</strong>
+          </div>
+        </div>
         <div className="node-config-connections">
+          <div className="node-config-route-bar" aria-label="当前线路">
+            <span className="node-config-route-label">线路</span>
+            <span className="node-config-route-path" title={routeLabel}>{routeLabel}</span>
+            <span className="node-config-route-balance" title="供应商账号余额">
+              {billingCompact(billingAccounts.find(account => account.id === currentConnectionOption?.supplierId)?.billing)}
+            </span>
+            <NodeParameterRouteMenu active={uiActive} onManage={() => { closeSettings(); data.onOpenApiSettings?.(); }} />
+          </div>
           <div className="node-config-provider-selectors">
             <label className="node-config-provider-header">
               <span>供应商</span>
@@ -958,22 +982,6 @@ export function GenerationNodeBody({
             </table>
           </details>}
         </div>
-        <div className="node-config-model-field node-config-model-header">
-          <span>模型</span>
-          <div className="node-config-model-control" ref={modelSelectRef}>
-            <ModelPicker key={currentConnection} id={`node-inline-model-${nodeId}`} label={`${data.label} 模型`}
-              connectionId={currentConnection} models={modelOptions} value={data.model ?? ""}
-              capabilities={connectionAvailable ? data.modelImageCapabilities : undefined}
-              onChange={id => data.onModelChange?.(id)} open={uiActive && modelMenuOpen} onOpenChange={setModelMenuOpen}
-              loading={data.modelOptionsLoading} failed={data.modelOptionsError}
-              authoritative={data.modelOptionsAuthoritative} allowManual={!data.modelOptionsAuthoritative}
-              catalogDirectory={data.catalogPickerDirectory}
-              badge={cangyuanAvailabilityEnabled ? model => <CangyuanAvailabilityBadge
-                availability={cangyuanAvailabilityForModel(model, availabilityItems, availabilityOptions)}
-                loadState={availabilityState} checkedAt={availabilitySnapshot.checkedAt} /> : undefined} />
-          </div>
-        </div>
-
         {cangyuanAvailabilityEnabled && <CangyuanModelAvailability availability={selectedAvailability}
           loadState={availabilityState} checkedAt={availabilitySnapshot.connectionId === currentConnection ? availabilitySnapshot.checkedAt : undefined} />}
 
@@ -1005,12 +1013,20 @@ export function GenerationNodeBody({
             }
           />
         </section>
-        <ModelPriceDetails quote={parameterQuote} />
+        <details className="node-config-detail-section" open>
+          <summary>价格明细</summary>
+          <ModelPriceDetails quote={parameterQuote} />
+        </details>
         </DeferredPanelContent>
         {currentConnectionOption?.supplierId && <DeferredPanelContent>
-          <SupplierBillingSummary key={currentConnectionOption?.supplierId} compact supplierId={currentConnectionOption?.supplierId} />
+          <details className="node-config-detail-section" open>
+            <summary>账号余额与消耗</summary>
+            <SupplierBillingSummary key={currentConnectionOption?.supplierId} compact supplierId={currentConnectionOption?.supplierId} />
+          </details>
         </DeferredPanelContent>}
       </div>
+      <NodeParameterFooter label={data.label} quote={parameterQuote} summary={requestSummary}
+        runAction={runAction} beforeRun={commitBeforeRun} reasonId={`node-run-reason-${presentation}-${nodeId}`} />
     </section>
   ) : null;
 

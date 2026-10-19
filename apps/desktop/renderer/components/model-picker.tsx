@@ -41,7 +41,7 @@ const ModelIdentity = memo(function ModelIdentity({ model, capabilities, price =
 });
 
 export function ModelPicker({ id, label, connectionId, models, value, onChange, capabilities = {},
-  open: controlledOpen, onOpenChange, anchorKey, loading = false, failed = false, authoritative = true, allowManual = false, badge, catalogDirectory, allowAutomatic = true,
+  open: controlledOpen, onOpenChange, anchorKey, loading = false, failed = false, authoritative = true, allowManual = false, badge, catalogDirectory, allowAutomatic = true, preferSidePlacement = false,
 }: {
   id?: string; label: string; connectionId: string; models: readonly ModelDescriptor[]; value: string;
   onChange: (modelId: string) => void; open?: boolean;
@@ -50,6 +50,8 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
   capabilities?: Readonly<Record<string, ImageEditingCapabilities>>;
   catalogDirectory?: CatalogPickerDirectory;
   allowAutomatic?: boolean;
+  /** Keep this inspector's other controls reachable when the model is first. */
+  preferSidePlacement?: boolean;
 }) {
   const generatedId = useId();
   const listId = `${id ?? generatedId}-options`;
@@ -189,9 +191,9 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
       const rightSpace = inspector ? right - inspector.right - gap : 0;
       const leftSpace = inspector ? inspector.left - left - gap : 0;
       const sideSpace = Math.max(rightSpace, leftSpace);
-      if (inspector && below < height && sideSpace >= 280) {
+      if (inspector && (preferSidePlacement || below < height) && sideSpace >= 280) {
         // Beside the inspector, the full viewport height is available and the
-        // supplier/group controls above the model remain directly clickable.
+        // inspector's other controls remain directly clickable.
         width = Math.min(width, sideSpace);
         height = measureHeight();
         x = rightSpace >= leftSpace ? inspector.right + gap : inspector.left - gap - width;
@@ -244,7 +246,7 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
       window.visualViewport?.removeEventListener("resize", position);
       window.visualViewport?.removeEventListener("scroll", position);
     };
-  }, [open, options, page, anchorKey, showPricePreview, pageHasPriceDetails]);
+  }, [open, options, page, anchorKey, showPricePreview, pageHasPriceDetails, preferSidePlacement]);
   useEffect(() => {
     if (!open) return;
     search.current?.focus();

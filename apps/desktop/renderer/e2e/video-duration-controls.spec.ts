@@ -328,7 +328,9 @@ test("分辨率切换收紧滑条但保留旧秒数，明确修正后按秒费�
     await expect(slider).toHaveAttribute("aria-invalid", "true");
     await expect(f.panel.locator(".parameter-duration-saved")).toContainText("当前值：30 · 目录范围：4–12 秒");
     await expect.poll(f.savedParameters).toEqual({ resolution: "1080p", duration: 30 });
-    await expect(price).not.toContainText("本次预计费用");
+    await expect(price).toContainText("本次预计费用 —");
+    await expect(f.panel.getByTestId("param-panel-unit-price")).toHaveText("—");
+    await expect(f.panel.getByTestId("param-panel-total-price")).toHaveText("—");
     await slider.press("End");
     await expect(slider).toHaveValue("12");
     await expect(slider).toHaveAttribute("aria-valuetext", "12 秒");
@@ -455,7 +457,9 @@ test("非Seedance开放参数保留旧38秒与720p，明确清空时长解除别
     await expect(resolution).toHaveValue("720p");
     await expect(f.panel.getByRole("spinbutton")).toHaveCount(1);
     await expect(f.panel.getByRole("slider")).toHaveCount(0);
-    await expect(price).not.toContainText("本次预计费用");
+    await expect(price).toContainText("本次预计费用 —");
+    await expect(f.panel.getByTestId("param-panel-unit-price")).toHaveText("—");
+    await expect(f.panel.getByTestId("param-panel-total-price")).toHaveText("—");
     await expect.poll(f.savedParameters).toMatchObject({ duration: 38, seconds: 35, resolution: "720p" });
     await page.reload(); await f.open();
     await expect(duration).toHaveValue("38");
@@ -503,7 +507,9 @@ test("佳速全参真人采用用户1至30秒兜底，保留旧38并明确修正
     await expect(resolution).not.toHaveAttribute("aria-invalid", "true");
     await expect(f.panel.getByRole("status", { name: "当前参数与目录数据" })).not.toContainText("输出分辨率 · 当前值：720p");
     await expect(f.panel.getByRole("status", { name: "当前参数与目录数据" })).not.toContainText(/未确认|不支持|不可运行/u);
-    await expect(prices).not.toContainText("本次预计费用");
+    await expect(prices).toContainText("本次预计费用 —");
+    await expect(f.panel.getByTestId("param-panel-unit-price")).toHaveText("—");
+    await expect(f.panel.getByTestId("param-panel-total-price")).toHaveText("—");
     await expect.poll(f.savedParameters).toMatchObject({ duration: 38, seconds: 35, resolution: "720p" });
     await page.reload(); await f.open();
     await expect(duration).toHaveAttribute("aria-invalid", "true");
@@ -629,7 +635,9 @@ for (const reference of [
         await expect(savedDuration).toHaveAttribute("aria-invalid", "true");
         await expect(f.panel.locator(".parameter-duration-saved")).toContainText("当前值：29 · 目录范围：4–18 秒");
         await expect(f.panel.getByRole("status", { name: "当前参数与目录数据" })).toContainText("目录范围：4–18 秒");
-        await expect(price).not.toContainText("本次预计费用");
+        await expect(price).toContainText("本次预计费用 —");
+        await expect(f.panel.getByTestId("param-panel-unit-price")).toHaveText("—");
+        await expect(f.panel.getByTestId("param-panel-total-price")).toHaveText("—");
         await expect.poll(f.savedParameters).toEqual({ duration: 29, ...reference.parameters });
         await f.panel.screenshot({ path: testInfo.outputPath("video-duration-reference-invalid-no-estimate.png") });
         await f.panel.getByRole("button", { name: "使用 5 秒", exact: true }).click();

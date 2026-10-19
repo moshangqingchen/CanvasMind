@@ -97,7 +97,6 @@
 .prompt-overview { width:100%; }
 
 /* Match the library and the fixed-size parameter inspector. */
-.canvas-editor .node-config-manage-api { width:30px; min-height:30px; height:30px; padding:0; font-size:0; }
 .canvas-editor .node-config-model-field { font-size:13px; }.canvas-editor .node-config-provider-selectors select { font-size:13px; }
 
 /* The title stays accessible while all configuration fields scroll together. */
@@ -110,22 +109,17 @@
   line-height:1.5;
 }
 .canvas-editor .node-config-popover-portal > header {
-  min-height:60px;
-  padding:16px 88px 16px 18px;
+  min-height:48px;
+  padding:12px 52px 12px 18px;
 }
-.canvas-editor .node-config-title-block strong { font-size:16px; letter-spacing:-.02em; }
+.canvas-editor .node-config-title-block strong { font-size:12px; color:var(--text-secondary); }
 .canvas-editor .node-config-title-block { min-width:0; overflow-wrap:anywhere; }
 .canvas-editor .node-config-popover-portal > header > button {
   right:12px;
-  top:14px;
+  top:9px;
   width:30px;
   height:30px;
   margin:0;
-}
-.canvas-editor .node-config-popover-portal > header > .node-config-manage-api {
-  right:48px;
-  font-size:0;
-  padding:0;
 }
 .canvas-editor .node-config-popover-portal > header > button > svg { width:16px; height:16px; flex:0 0 auto; }
 .canvas-editor .node-config-popover-portal .node-config-popover-body {
@@ -142,7 +136,10 @@
 }
 .canvas-editor .node-config-supplier-quote { display:block; font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
 .canvas-editor .node-config-popover-portal .node-config-model-header {
-  margin:14px 0 16px;
+  grid-template-columns:minmax(0,1fr) minmax(64px,32%);
+  align-items:start;
+  gap:12px;
+  margin:0 0 16px;
   padding:0 0 16px;
 }
 .canvas-editor .node-config-model-field { gap:7px; }
@@ -152,6 +149,40 @@
   padding:10px 12px;
   font-size:13px;
 }
+.canvas-editor .node-config-model-header .node-model-select-trigger {
+  height:auto;
+  min-height:60px;
+  padding:0;
+  border:0;
+  background:transparent;
+  box-shadow:none;
+}
+.canvas-editor .node-config-model-header [id$="-selected-name"] {
+  font-size:18px;
+  line-height:1.35;
+  font-weight:650;
+  white-space:normal;
+  overflow-wrap:anywhere;
+}
+.canvas-editor .node-config-model-header [id$="-selected-id"] {
+  font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
+  font-variant-numeric:tabular-nums;
+}
+.canvas-editor .node-config-model-quote { min-width:0; display:grid; gap:6px; padding-top:2px; text-align:right; }
+.canvas-editor .node-config-model-quote > span { font-size:11px; color:var(--text-secondary); }
+.canvas-editor .node-config-model-quote > strong { color:var(--text); font-size:15px; line-height:1.45; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.canvas-editor .node-config-route-bar { min-width:0; display:flex; align-items:center; gap:7px; padding:8px 0; border-bottom:1px solid var(--line); }
+.canvas-editor .node-config-route-label { color:var(--text-secondary); font-size:11px; flex:0 0 auto; }
+.canvas-editor .node-config-route-path { min-width:0; flex:1; font-size:12px; color:var(--text-secondary); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.canvas-editor .node-config-route-balance { flex:0 1 88px; min-width:0; color:var(--text-secondary); font-size:11px; font-variant-numeric:tabular-nums; text-align:right; overflow-wrap:anywhere; }
+.canvas-editor .node-config-route-menu { position:relative; flex:0 0 28px; min-width:0; }
+.canvas-editor .node-config-route-menu > summary { display:grid; place-items:center; width:28px; height:28px; padding:0; border:1px solid var(--line); border-radius:6px; color:var(--text-secondary); cursor:pointer; list-style:none; }
+.canvas-editor .node-config-route-menu > summary::-webkit-details-marker { display:none; }
+.canvas-editor .node-config-route-menu-content { position:absolute; z-index:4; top:calc(100% + 6px); right:0; width:220px; max-width:calc(100cqw - 32px); padding:6px; border:1px solid var(--line); border-radius:8px; background:var(--surface-floating); box-shadow:var(--shadow-e2); }
+.canvas-editor .node-config-route-menu-content > button { display:flex; align-items:center; gap:8px; width:100%; min-height:36px; padding:6px 8px; border:0; border-radius:4px; background:transparent; color:var(--text); font:inherit; font-size:12px; text-align:left; cursor:pointer; }
+.canvas-editor .node-config-route-menu-content > button:hover { background:var(--panel-2); }
+.canvas-editor .node-config-route-menu > summary:focus-visible,
+.canvas-editor .node-config-route-menu-content > button:focus-visible { outline:2px solid var(--focus-ring); outline-offset:2px; }
 .canvas-editor .node-config-popover-portal .node-model-select-trigger > svg { flex:0 0 auto; }
 .canvas-editor .node-config-popover-portal .node-model-select-trigger [id$="-selected-id"] { font-size:12px; }
 .canvas-editor .node-config-parameter-section { display:grid; gap:12px; }
@@ -201,6 +232,22 @@
 .canvas-editor .parameter-dimensions-inputs { gap:8px; }
 .canvas-editor .parameter-toggle { margin:0; }
 .canvas-editor .node-config-price-summary { margin-top:18px; padding-top:14px; }
+.canvas-editor .node-config-detail-section { min-width:0; margin-top:16px; border-top:1px solid var(--line); padding-top:12px; }
+.canvas-editor .node-config-detail-section > summary { color:var(--text-secondary); font-size:12px; cursor:pointer; }
+.canvas-editor .node-config-detail-section .node-config-price-summary { margin-top:8px; padding-top:0; border-top:0; }
+.canvas-editor .node-config-footer { flex:0 0 auto; min-width:0; padding:12px 18px; border-top:1px solid var(--line); background:var(--surface-floating); }
+.canvas-editor .node-config-footer-main { display:flex; align-items:center; justify-content:space-between; gap:12px; min-width:0; }
+.canvas-editor .node-config-footer-quote { display:grid; gap:3px; min-width:0; flex:1; }
+.canvas-editor .node-config-footer-quote > span { font-size:11px; color:var(--text-secondary); }
+.canvas-editor .node-config-footer-quote > strong { color:var(--text); font-size:15px; line-height:1.4; overflow-wrap:anywhere; font-variant-numeric:tabular-nums; }
+.canvas-editor .node-config-footer-quote > small { font-size:11px; line-height:1.45; color:var(--text-secondary); overflow-wrap:anywhere; }
+.canvas-editor .node-config-run { display:inline-flex; flex:0 0 auto; align-items:center; justify-content:center; gap:6px; min-height:38px; max-width:48%; padding:8px 12px; border:1px solid transparent; border-radius:8px; background:var(--accent); color:var(--on-accent); font:inherit; font-size:13px; font-weight:600; cursor:pointer; }
+.canvas-editor .node-config-run > span { min-width:0; white-space:normal; }
+.canvas-editor .node-config-run > svg { flex:0 0 auto; }
+.canvas-editor .node-config-run:hover:not(:disabled) { background:var(--accent-strong); }
+.canvas-editor .node-config-run:focus-visible { outline:2px solid var(--focus-ring); outline-offset:2px; }
+.canvas-editor .node-config-run:disabled { opacity:.55; cursor:not-allowed; }
+.canvas-editor .node-config-run-reason { display:block; margin-top:8px; color:var(--text-secondary); font-size:11px; line-height:1.45; overflow-wrap:anywhere; }
 .canvas-editor .node-config-popover-portal :is(.field-note, .node-config-connection-warning, .model-resolution-choice small) { font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
 .canvas-editor .node-config-popover-portal .parameter-toggle { font-size:13px; }
 .canvas-editor .node-config-popover-portal .parameter-dimensions-heading { flex-wrap:wrap; }
@@ -209,7 +256,8 @@
 @container node-config (max-width:380px) {
   .canvas-editor .node-config-popover-portal > header,
   .canvas-editor .node-config-popover-portal .node-config-popover-body { padding-left:12px; padding-right:12px; }
-  .canvas-editor .node-config-popover-portal > header { padding-right:80px; }
+  .canvas-editor .node-config-popover-portal > header { padding-right:52px; }
+  .canvas-editor .node-config-footer { padding-left:12px; padding-right:12px; }
   .canvas-editor .node-config-provider-selectors,
   .canvas-editor .node-config-parameter-section .parameter-grid { grid-template-columns:minmax(0, 1fr); }
   .canvas-editor .node-config-popover-portal .parameter-dimensions-heading { align-items:flex-start; gap:6px; }

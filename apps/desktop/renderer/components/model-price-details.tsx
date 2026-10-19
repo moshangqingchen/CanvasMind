@@ -26,7 +26,7 @@ export function ModelPriceDetails({ model: input, parameters = {}, quote }: {
     <ModelPriceEvidence model={model} />
     <details><summary>价格与参数依据</summary>
       {estimate && <p>按当前参数与数量估算，最终费用以供应商实际扣费为准。</p>}
-      {projection.unavailableNote && <p>{projection.unavailableNote}</p>}
+      {quote && projection.unavailableNote && <p>{projection.unavailableNote}</p>}
       {model?.metadata?.priceSource === "generated-result" && <p>来源：已生成请求的实际扣费与对应参数。</p>}
       {priceCheckedAt && <dl className={priceStyles.facts}><div className={priceStyles.fact}><dt>价格资料更新于</dt><dd><time dateTime={priceCheckedAt}>{priceCheckedAt}</time></dd></div>
         {model?.pricing && model.pricing.confidence !== "exact" && <div className={priceStyles.fact}><dt>当前金额</dt><dd>参考值</dd></div>}

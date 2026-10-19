@@ -1,5 +1,9 @@
-import { expect, test, type APIRequestContext, type Page } from "./helpers/canvas-offline-test";
+import { expect, test, type APIRequestContext, type Locator, type Page } from "./helpers/canvas-offline-test";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { ModelDescriptor } from "@super-canvas/providers";
+
+const evidence = "D:/project development/超级画布/.codex-logs/2026-10-18-param-panel/stage1";
 
 const image: ModelDescriptor = {
   id: "stage1-image", name: "参数层级图片模型", operations: ["image.generate", "image.edit"],
@@ -129,7 +133,7 @@ test("stage1 step1 Ctrl+Enter 运行面板 owner 恰一次并先提交 W/H 草�
   await f.owner("b").getByText(labels.b, { exact: true }).click();
   await expect(f.owner("b")).toHaveClass(/\bselected\b/u);
   const width = f.panel("a").getByLabel("图片宽度", { exact: true });
-  await width.fill("3072"); await width.press("Control+Enter");
+  await width.fill("3072"); await expect(f.owner("b")).toHaveClass(/\bselected\b/u); await width.press("Control+Enter");
   await expect.poll(() => f.submissions.length).toBe(1);
   expect(f.submissions[0]).toMatchObject({ nodeId: "a", scope: "node" });
   expect(f.submissions[0]!.graph.nodes.find(node => node.id === "a")?.data.parameters?.size).toBe("3072x4096");
@@ -158,3 +162,168 @@ test("stage1 step1 原生下拉与 ModelPicker 的 Enter/Escape 及 IME/repeat �
   expect(f.submissions).toHaveLength(0); f.assertSafe();
 });
 
+async function noHorizontalOverflow(panel: Locator) {
+  const overflows = await panel.evaluate(element => {
+    const outer = element.getBoundingClientRect();
+    return [...element.querySelectorAll<HTMLElement>(".node-config-header, .node-config-popover-body, .node-config-run, input, select, textarea, button, [data-testid='param-panel-unit-price'], [data-testid='param-panel-total-price']")]
+      .filter(item => item.getClientRects().length && !item.closest(".node-model-select-options"))
+      .flatMap(item => {
+        const rect = item.getBoundingClientRect();
+        return item.scrollWidth > item.clientWidth + 2 || rect.left < outer.left - 1 || rect.right > outer.right + 1
+          ? [{ tag: item.tagName, label: item.getAttribute("aria-label"), className: item.className, width: item.clientWidth, scroll: item.scrollWidth }] : [];
+      });
+  });
+  expect(overflows).toEqual([]);
+}
+
+
+test("stage1 step2 运行入口共享连接和蒙版禁用条件及原因", async ({ page, request }) => {
+  const f = await fixture(page, request);
+  for (const id of ["a", "mask", "missing"] as const) {
+    await f.open(id);
+    expect(await f.run(id).isDisabled()).toBe(await f.run(id, "node").isDisabled());
+    expect(await f.run(id).getAttribute("title")).toBe(await f.run(id, "node").getAttribute("title"));
+    if (id === "a") await expect(f.run(id)).toBeEnabled();
+    else { await expect(f.run(id)).toBeDisabled(); await f.panel(id).focus(); await page.keyboard.press("Control+Enter"); }
+    await f.closeAll();
+  }
+  expect(f.submissions).toHaveLength(0); f.assertSafe();
+});
+
+
+
+test("stage1 step2 面板按钮运行先提交 W/H 草稿", async ({ page, request }) => {
+  const f = await fixture(page, request); await f.open("a");
+  const width = f.panel("a").getByLabel("图片宽度", { exact: true });
+  await width.fill("2816"); await f.run("a").click();
+  await expect.poll(() => f.submissions.length).toBe(1);
+  expect(f.submissions[0]).toMatchObject({ nodeId: "a", scope: "node" });
+  expect(f.submissions[0]!.graph.nodes.find(node => node.id === "a")?.data.parameters?.size).toBe("2816x4096");
+  f.assertSafe();
+});
+
+test("stage1 step2 线路菜单与原生下拉分层处理 Escape 并恢复焦点", async ({ page, request }) => {
+  const f = await fixture(page, request); await f.open("a");
+  const panel = f.panel("a"), menu = panel.locator(".node-config-route-menu");
+  const summary = panel.getByLabel("线路菜单", { exact: true });
+  await summary.click(); await expect(menu).toHaveAttribute("open", "");
+  await page.keyboard.press("Escape");
+  await expect(menu).not.toHaveAttribute("open"); await expect(summary).toBeFocused(); await expect(panel).toBeVisible();
+  await summary.press("Enter"); await expect(menu).toHaveAttribute("open", "");
+  await summary.press("Tab"); await expect(panel.getByRole("button", { name: "管理供应商与密钥", exact: true })).toBeFocused();
+  await page.keyboard.press("Tab");
+  const supplier = panel.getByRole("combobox", { name: `${labels.a} 供应商`, exact: true });
+  await expect(supplier).toBeFocused(); await supplier.press("Alt+ArrowDown");
+  await expect.poll(() => supplier.evaluate(element => element.matches(":open"))).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect.poll(() => supplier.evaluate(element => element.matches(":open"))).toBe(false);
+  await expect(menu).toHaveAttribute("open", ""); await expect(panel).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(menu).not.toHaveAttribute("open"); await expect(summary).toBeFocused(); await expect(panel).toBeVisible();
+  await page.keyboard.press("Escape"); await expect(panel).toHaveCount(0);
+  expect(f.submissions).toHaveLength(0); f.assertSafe();
+});
+
+test("stage1 step2 侧开模型菜单在双卡和并排智能体中保持 owner、键盘和视口边界", async ({ page, request }) => {
+  const f = await fixture(page, request); await f.open("a"); await f.open("b");
+  const supplemental = join(evidence, "supplemental"); await mkdir(supplemental, { recursive: true });
+  const panel = f.panel("b"), picker = panel.getByRole("combobox", { name: `${labels.b} 模型`, exact: true });
+  const search = panel.getByRole("combobox", { name: "搜索模型名称或 ID", exact: true });
+  const menu = panel.locator(".node-model-select-options");
+  const options = panel.getByRole("listbox", { name: `${labels.b} 模型 可选模型`, exact: true });
+  const expectMenuInsideViewport = async () => {
+    await expect(menu).toBeVisible();
+    const bounds = (await menu.boundingBox())!, cardBounds = (await panel.boundingBox())!, viewport = page.viewportSize()!;
+    expect(bounds.x).toBeGreaterThanOrEqual(0); expect(bounds.y).toBeGreaterThanOrEqual(0);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width);
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height);
+    expect(bounds.x + bounds.width <= cardBounds.x + 1 || bounds.x >= cardBounds.x + cardBounds.width - 1).toBe(true);
+  };
+  await picker.click(); await expect(search).toBeFocused(); await expectMenuInsideViewport();
+  // The shared inventory has four media models. This image card's actual list
+  // contains its two image models plus the automatic entry; all stay reachable.
+  const names = ["自动模型", image.name, "缺价图片模型"];
+  await expect(options.getByRole("option")).toHaveCount(names.length);
+  await search.press("Home");
+  for (const [index, name] of names.entries()) {
+    if (index) await search.press("ArrowDown");
+    await expect(options.getByRole("option", { name, exact: true })).toHaveAttribute("data-active", "true");
+  }
+  await page.screenshot({ path: join(supplemental, "model-menu-two-cards.png"), animations: "disabled" });
+  await search.press("Escape"); await expect(menu).toHaveCount(0); await expect(picker).toBeFocused();
+  await expect(page.locator('.canvas-parameter-dock[data-parameter-node-id="b"]')).toHaveAttribute("data-active", "true");
+  await picker.click(); await expectMenuInsideViewport();
+  await f.panel("a").locator(".node-config-header").click({ position: { x: 40, y: 20 } });
+  await expect(menu).toHaveCount(0);
+  await expect(page.locator('.canvas-parameter-dock[data-parameter-node-id="a"]')).toHaveAttribute("data-active", "true");
+  await expect(f.panel("a").getByRole("combobox", { name: `${labels.a} 模型`, exact: true })).toHaveAttribute("aria-expanded", "false");
+  await f.closeAll();
+  const agent = page.getByRole("button", { name: "智能体面板", exact: true });
+  await agent.click(); await expect(agent).toHaveAttribute("aria-expanded", "true");
+  await f.open("b"); await expect(page.locator(".canvas-parameter-deck")).toHaveAttribute("data-alongside-agent", "true");
+  await picker.click(); await expectMenuInsideViewport(); await expect(search).toBeFocused();
+  await expect(options.getByRole("option")).toHaveCount(names.length);
+  await page.screenshot({ path: join(supplemental, "model-menu-alongside-agent.png"), animations: "disabled" });
+  await agent.click(); await expect(agent).toHaveAttribute("aria-expanded", "false");
+  await expect(menu).toHaveCount(0); await expect(panel).toBeVisible();
+  expect((await f.saved()).nodes.find(node => node.id === "b")?.data.model).toBe(image.id);
+  expect(f.submissions).toHaveLength(0); f.assertSafe();
+});
+
+for (const [chord, scope] of [["Meta+Enter", "node"], ["Control+Shift+Enter", "downstream"]] as const) {
+  test(`stage1 step2 ${chord} 保留面板 owner 和运行范围`, async ({ page, request }) => {
+    const f = await fixture(page, request); await f.open("a");
+    await f.owner("b").getByText(labels.b, { exact: true }).click();
+    await f.panel("a").focus();
+    await expect(f.owner("b")).toHaveClass(/\bselected\b/u);
+    await page.keyboard.press(chord);
+    await expect.poll(() => f.submissions.length).toBe(1);
+    expect(f.submissions[0]).toMatchObject({ nodeId: "a", scope });
+    f.assertSafe();
+  });
+}
+
+test("stage1 step2 顶部底栏详情采用同一当前参数报价且缺价不编造", async ({ page, request }) => {
+  const f = await fixture(page, request); await f.open("a");
+  const panel = f.panel("a"); await panel.getByRole("spinbutton", { name: "数量", exact: true }).fill("3");
+  const header = panel.getByTestId("param-panel-unit-price"), footer = panel.getByTestId("param-panel-total-price");
+  await expect(header).toHaveText("0.375 CNY"); await expect(footer).toHaveText("0.375 CNY");
+  const detail = panel.getByLabel("当前参数价格", { exact: true });
+  const disclosure = detail.locator("xpath=ancestor::details[1]");
+  if (await disclosure.getAttribute("open") === null) await disclosure.locator("summary").first().click();
+  await expect(detail.getByText("本次预计费用", { exact: false })).toContainText("0.375 CNY");
+  await f.closeAll(); await f.open("unknown");
+  await expect(f.panel("unknown").getByTestId("param-panel-unit-price")).toHaveText("—");
+  await expect(f.panel("unknown").getByTestId("param-panel-total-price")).toHaveText("—");
+  expect(f.submissions).toHaveLength(0); f.assertSafe();
+});
+
+test("stage1 step2 浅深主题与 320/360/420 像素图片视频音乐 18 张及双卡低高度 2 张截图", async ({ page, request }) => {
+  test.setTimeout(120_000);
+  const f = await fixture(page, request); await mkdir(evidence, { recursive: true });
+  const screenshots: string[] = [];
+  for (const theme of ["light", "dark"] as const) for (const width of [320, 360, 420]) for (const id of ["a", "video", "music"] as const) {
+    await f.closeAll();
+    await page.evaluate(value => { localStorage.setItem("supercanvas:appearance", value); window.dispatchEvent(new StorageEvent("storage", { key: "supercanvas:appearance", newValue: value })); }, theme);
+    await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+    await f.open(id);
+    await page.locator(".canvas-parameter-deck").evaluate((element, pixels) => { (element as HTMLElement).style.width = `${pixels}px`; }, width);
+    await noHorizontalOverflow(f.panel(id));
+    const footer = f.run(id); await expect(footer).toBeInViewport();
+    const name = `stage1-${theme}-${width}-${id === "a" ? "image" : id}.png`;
+    await f.panel(id).screenshot({ path: join(evidence, name), animations: "disabled" }); screenshots.push(name);
+  }
+  await f.closeAll(); await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.locator(".canvas-parameter-deck").evaluate(element => { (element as HTMLElement).style.removeProperty("width"); });
+  await f.open("a"); await f.open("b"); await expect(f.panel("a")).toBeVisible(); await expect(f.panel("b")).toBeVisible();
+  await noHorizontalOverflow(f.panel("a")); await noHorizontalOverflow(f.panel("b"));
+  await page.locator(".canvas-parameter-deck").screenshot({ path: join(evidence, "stage1-two-cards.png"), animations: "disabled" }); screenshots.push("stage1-two-cards.png");
+  await f.closeAll(); await page.setViewportSize({ width: 1280, height: 560 }); await f.open("a");
+  await page.locator(".canvas-parameter-deck").evaluate(element => { (element as HTMLElement).style.width = "320px"; });
+  await noHorizontalOverflow(f.panel("a")); await expect(f.run("a")).toBeInViewport();
+  const body = f.panel("a").locator(".node-config-popover-body");
+  await body.evaluate(element => { element.scrollTop = element.scrollHeight; }); await expect(f.run("a")).toBeInViewport();
+  await f.panel("a").screenshot({ path: join(evidence, "stage1-low-height.png"), animations: "disabled" }); screenshots.push("stage1-low-height.png");
+  expect(screenshots).toHaveLength(20); await writeFile(join(evidence, "screenshots.json"), `${JSON.stringify(screenshots, null, 2)}\n`, "utf8");
+  expect(f.submissions).toHaveLength(0); f.assertSafe();
+});

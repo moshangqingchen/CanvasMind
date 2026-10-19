@@ -186,7 +186,9 @@ test("视频分辨率切换收紧离散时长，费用随秒数和数量变化�
     await expect(duration).toHaveAttribute("aria-invalid", "true");
     await expect(duration.locator('option[value="15"]')).toBeDisabled();
     await expect.poll(async () => (await f.saved()).parameters).toMatchObject({ resolution: "1080p", duration: 15 });
-    await expect(prices).not.toContainText("本次预计费用");
+    await expect(prices).toContainText("本次预计费用 —");
+    await expect(f.panel.getByTestId("param-panel-unit-price")).toHaveText("—");
+    await expect(f.panel.getByTestId("param-panel-total-price")).toHaveText("—");
     await duration.selectOption("10");
     await expect(duration).not.toHaveAttribute("aria-invalid", "true");
     await expect(prices).toContainText("分辨率=1080p · 0.4 CNY / 秒");
