@@ -12,6 +12,37 @@ class IsolatedService extends RunService {
 }
 
 describe("ordered role-bearing input entries", () => {
+  it.each([
+    { connectedRoles: ["firstFrame"], promptRoles: ["reference"], expectedRoles: ["firstFrame"], expectedPrompt: "Loop [参考素材 1]" },
+    { connectedRoles: ["firstFrame", "lastFrame"], promptRoles: ["reference"], expectedRoles: ["firstFrame", "lastFrame"], expectedPrompt: "Loop [参考素材 1]" },
+    { connectedRoles: [], promptRoles: ["reference"], expectedRoles: ["reference"], expectedPrompt: "Loop [参考素材 1]" },
+    { connectedRoles: ["firstFrame"], promptRoles: ["reference", "lastFrame"], expectedRoles: ["firstFrame", "lastFrame"], expectedPrompt: "Loop [参考素材 1] [参考素材 2]" },
+  ])("resolves ordinary mentions to the first connected role: $connectedRoles / $promptRoles", async scenario => {
+    const repository = new MemoryRepository(), bytes = new Uint8Array(validPngBytes);
+    const get = vi.fn<ObjectStorage["get"]>(async () => ({ bytes, contentType: "image/png" }));
+    const storage: ObjectStorage = { get, put: async () => {} };
+    await repository.saveAsset({ id: "same-original", name: "Original.png", kind: "image", mimeType: "image/png", size: bytes.length, storageKey: "original.png", metadata: {} });
+    await repository.saveCanvas({ id: "canvas", graph: { schemaVersion: 1, nodes: [
+      { id: "source", type: "workflow", data: { nodeType: "asset-input", assetId: "same-original", assetKind: "image", outputs: [{ id: "asset", kind: "image" }] } },
+      { id: "video", type: "workflow", data: { nodeType: "video-generation", provider: "fake", connectionId: "fake-default",
+        parts: [{ type: "text", text: "Loop" }, ...scenario.promptRoles.map(role => ({ type: "asset", assetId: "same-original", role }))],
+        inputs: [{ id: "firstFrame", kind: "image" }, { id: "lastFrame", kind: "image" }], outputs: [{ id: "video", kind: "video" }] } },
+    ], edges: scenario.connectedRoles.map((role, index) => ({ id: `edge-${index}`, source: "source", sourceHandle: "asset", target: "video", targetHandle: role })) } });
+    let submitted: NormalizedRequest | undefined;
+    const adapter: ProviderAdapter = { testConnection: async () => {}, listModels: async () => [], validate: async () => ({ valid: true, issues: [] }),
+      submit: vi.fn(async request => { submitted = request; return { providerTaskId: "mocked-result", status: "succeeded", result: {} }; }),
+      extractOutputs: async () => [{ kind: "video", data: new Uint8Array(validWebmBytes), mimeType: "video/webm", metadata: { fake: true } }],
+    };
+    const service = new IsolatedService(repository, storage, adapter);
+    const run = await service.createRun({ canvasId: "canvas", clientRequestId: "ordinary-mention", scope: "node", nodeId: "video" });
+    await vi.waitFor(async () => expect((await service.getRun(run.id))?.run.status).toBe("succeeded"), { timeout: 4000 });
+    expect(adapter.submit).toHaveBeenCalledOnce(); expect(get).toHaveBeenCalledOnce();
+    expect(submitted?.assets?.map(asset => asset.role)).toEqual(scenario.expectedRoles);
+    expect(submitted?.prompt).toBe(scenario.expectedPrompt);
+    const saved = (await service.getRun(run.id))?.nodes.find(node => node.nodeId === "video");
+    expect(saved?.inputJson.inputAssets).toEqual(scenario.expectedRoles.map(role => ({ id: "same-original", name: "Original.png", kind: "image", role })));
+  });
+
   it.each(["connections", "prompt", "both"] as const)("preserves same-ID frame roles from %s while reading one original", async source => {
     const repository = new MemoryRepository(), bytes = new Uint8Array(validPngBytes);
     const get = vi.fn<ObjectStorage["get"]>(async key => key === "original.png" ? { bytes, contentType: "image/png" } : null);

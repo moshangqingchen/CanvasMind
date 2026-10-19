@@ -3000,7 +3000,9 @@ export class RunService {
     // Keep edge order, then prompt order. Identity reuse must not erase roles.
     for (const value of values) for (const assetId of value.assetIds ?? [])
       addInput(assetId, value.assetRoles?.[assetId] ?? "reference");
-    for (const part of parts) if (part.type === "asset") addInput(part.assetId, part.role);
+    const connectedAssetIds = new Set(inputEntries.map(input => input.assetId));
+    for (const part of parts) if (part.type === "asset" && !(part.role === "reference" && connectedAssetIds.has(part.assetId)))
+      addInput(part.assetId, part.role);
     const assetIds = [...new Set(inputEntries.map(input => input.assetId))];
     const assets: ProviderAssetInput[] = [];
     // A known supplier task only needs its saved receipt for polling/archival.
@@ -3173,7 +3175,8 @@ export class RunService {
     }
     const prompt = resumingTask && typeof nodeRun.inputJson.prompt === "string" ? nodeRun.inputJson.prompt : renderPromptParts(parts, {
       resolveAsset: (id, role) => {
-        const index = assets.findIndex((asset) => asset.id === id && (asset.role ?? "reference") === role);
+        const index = assets.findIndex((asset) => asset.id === id &&
+          (role === "reference" && connectedAssetIds.has(id) || (asset.role ?? "reference") === role));
         return index < 0 ? "" : `[参考素材 ${index + 1}]`;
       },
       unresolvedAsset: "empty",

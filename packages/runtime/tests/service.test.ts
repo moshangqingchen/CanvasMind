@@ -1874,7 +1874,7 @@ describe("RunService", () => {
     expect((await repository.listAssets()).length).toBe(before);
   });
 
-  it("uses image operations when the only image is referenced by the prompt", async () => {
+  it("preserves explicit prompt frame roles alongside differently connected reference roles", async () => {
     const repository = await testRepository();
     const storage = new MemoryStorage();
     const canvas = await repository.ensureDefaultCanvas();
@@ -1914,8 +1914,11 @@ describe("RunService", () => {
       "video.image-to-video",
     );
     expect(byNodeId.get("image")?.inputJson["prompt"]).toBe(
-      "animate this reference [参考素材 1]",
+      "animate this reference [参考素材 2]",
     );
+    expect(byNodeId.get("image")?.inputJson.inputAssets).toMatchObject([
+      { id: "reference-image", role: "reference" }, { id: "reference-image", role: "firstFrame" },
+    ]);
     expect(byNodeId.get("image")?.inputJson["parameters"]).toMatchObject({
       aspect_ratio: "4:3",
     });
