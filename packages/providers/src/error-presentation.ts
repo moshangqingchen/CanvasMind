@@ -7,6 +7,8 @@ import {
 } from "./http.js";
 import { providerSupplierLabel, providerSupplierProfile } from "./suppliers.js";
 import { extractProviderChargeEvidence, type ProviderChargeEvidence } from "./charge-evidence.js";
+import { MaterialPreparationError, type MaterialPreparationStage } from "./material-preparation.js";
+import type { ReferenceOriginalDiagnostic } from "./reference-original-probe.server.js";
 export { extractProviderChargeEvidence, type ProviderChargeEvidence } from "./charge-evidence.js";
 
 export type ProviderFailureCategory = "insufficient_balance" | "local_network" | "network" |
@@ -32,6 +34,8 @@ export interface ProviderErrorPresentation {
   submissionMayHaveOccurred?: boolean;
   failureCategory?: ProviderFailureCategory;
   charge?: ProviderChargeEvidence;
+  materialPreparationStage?: MaterialPreparationStage;
+  referenceDiagnostics?: readonly ReferenceOriginalDiagnostic[];
 }
 
 export interface ProviderErrorContext {
@@ -203,6 +207,8 @@ function apiDetails(context: ProviderErrorContext): {
 
 function phaseLabel(phase?: ProviderRequestPhase): string {
   switch (phase) {
+    case "prepare":
+      return "准备素材";
     case "connect":
       return "连接";
     case "submit":
@@ -534,6 +540,21 @@ export function presentProviderError(
   error: unknown,
   context: ProviderErrorContext,
 ): ProviderErrorPresentation {
+  if (error instanceof MaterialPreparationError) {
+    // Reuse the HTTP presentation's bounded, redacted diagnostics. The free
+    // upload's own charge response never establishes generation billing.
+    const cause = error.cause === undefined ? undefined : presentProviderError(error.cause, context);
+    return {
+      ...(cause ?? { api: apiDetails(context).api }),
+      message: error.message, type: "素材准备失败", code: error.code,
+      source: "local_validation", localMessage: error.message,
+      phase: "prepare", materialPreparationStage: error.stage,
+      ...(error.diagnostics.length ? { referenceDiagnostics: error.diagnostics } : {}),
+      retryable: false, submissionMayHaveOccurred: false,
+      failureCategory: "local_network",
+      charge: { status: "not_charged", source: "not_submitted" },
+    };
+  }
   if (error instanceof ProviderHttpError) {
     const extracted = errorField(error.details.responseBody);
     const transportCode = providerTransportErrorCode(error.details.cause) ?? error.details.transport?.errorCode;

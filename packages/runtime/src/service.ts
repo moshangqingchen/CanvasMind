@@ -18,9 +18,8 @@ import { evaluateImageParameters } from "@super-canvas/providers/image-parameter
 import { chuangxiangImageEvidence } from "@super-canvas/providers/chuangxiang-image-capabilities";
 import { genimageImageRatioIssues, isGenimageImageConnection } from "@super-canvas/providers/genimage-image-capabilities";
 import { isChuangxiangMidjourneyConnection } from "@super-canvas/providers/chuangxiang-midjourney-contract";
-import { cloudSubmissionId, isCloudSubmission, readCloudGenerationConfig, runCloudGeneration, testCloudGeneration, uploadCloudReferences, type CloudGenerationConfig } from "./cloud-generation.js";
+import { CloudGenerationUncertainError, cloudSubmissionId, isCloudSubmission, queryCloudGeneration, readCloudGenerationConfig, runCloudGeneration, testCloudGeneration, uploadCloudReferences, type CloudGenerationConfig } from "./cloud-generation.js";
 import {
-  extractPromptAssetIds,
   getEdgeTargetPortId,
   renderPromptParts,
   runFingerprint,
@@ -82,6 +81,7 @@ import {
   presentProviderError,
   extractProviderChargeEvidence,
   ProviderHttpError,
+  MaterialPreparationError,
   withProviderSubmissionProgress,
   type ProviderSubmissionPhase,
   RunwayAdapter,
@@ -187,6 +187,8 @@ export interface RuntimeOptions {
   executionMode?: "inline" | "queue";
   enqueueRun?: (runId: string) => Promise<void>;
   projectFileStore?: ProjectFileStore | null;
+  /** Desktop directory identities are coordinated with rename recovery. */
+  projectFileAccess?: <T>(canvasId: string, work: () => Promise<T>) => Promise<T>;
   /** Durable task files, adjacent to the desktop profile's object storage. */
   cliJobRoot?: string;
   /** Stop local work without cancelling the durable supplier task. */
@@ -908,6 +910,7 @@ export class RunService {
   private readonly executionMode?: "inline" | "queue";
   private readonly enqueueRunOverride?: (runId: string) => Promise<void>;
   private readonly projectFileStore?: ProjectFileStore | null;
+  private readonly projectFileAccess?: <T>(canvasId: string, work: () => Promise<T>) => Promise<T>;
   private readonly cliJobRoot: string;
   private readonly shutdownSignal?: AbortSignal;
 
@@ -923,6 +926,7 @@ export class RunService {
     this.executionMode = options.executionMode;
     this.enqueueRunOverride = options.enqueueRun;
     this.projectFileStore = options.projectFileStore;
+    this.projectFileAccess = options.projectFileAccess;
     this.shutdownSignal = options.shutdownSignal;
     this.cliJobRoot = resolve(/* turbopackIgnore: true */ options.cliJobRoot ?? join(/* turbopackIgnore: true */ dirname(resolve(/* turbopackIgnore: true */ process.env.LOCAL_STORAGE_PATH ?? "storage")), "cli-jobs"));
   }
@@ -1794,6 +1798,24 @@ export class RunService {
     throw new NeedsAttentionError("节点状态已被其他执行器修改；本次执行已停止");
   }
 
+  private async checkpointKnownTask(
+    runId: string,
+    nodeRunId: string,
+    checkpoint: KnownTaskCheckpoint,
+    allowNull = false,
+  ): Promise<NodeRunRecord | null> {
+    try {
+      return allowNull
+        ? await this.repository.updateNodeRun(nodeRunId, checkpoint)
+        : await this.updateNodeRunOrCancel(runId, nodeRunId, checkpoint);
+    } catch (cause) {
+      if (cause instanceof CancelledError || cause instanceof NeedsAttentionError) throw cause;
+      throw new NeedsAttentionError("供应商已受理任务，但本地回执保存失败；已保留原任务，恢复时只查询原任务", {
+        code: "provider_checkpoint_failed", cause, checkpoint,
+      });
+    }
+  }
+
   private updateCancelledNode(
     runId: string,
     nodeRunId: string,
@@ -2266,10 +2288,21 @@ export class RunService {
           this.repository.getRun(runId),
           this.repository.getNodeRun(nodeRun.id),
         ]);
+        const checkpoint = error instanceof NeedsAttentionError ? error.checkpoint : undefined;
+        // Carry the actual receipt even for repositories that failed before
+        // changing memory. Never downgrade a newer terminal receipt or replace
+        // a different task owned by another executor.
+        const currentTask = storedProviderTask(authoritativeNode?.inputJson.providerTask);
+        const checkpointTask = storedProviderTask(checkpoint?.inputJson.providerTask);
+        const recoveryPatch = checkpoint && (!authoritativeNode?.providerTaskId || authoritativeNode.providerTaskId === checkpoint.providerTaskId) &&
+          !(currentTask && !["running", "queued"].includes(currentTask.status) && checkpointTask && ["running", "queued"].includes(checkpointTask.status))
+          ? { providerTaskId: checkpoint.providerTaskId, inputJson: checkpoint.inputJson } : {};
+        const diagnosticNode = { ...(authoritativeNode ?? nodeRun), ...recoveryPatch };
         if (this.shutdownSignal?.aborted && authoritativeRun?.status !== "cancelled" &&
             authoritativeNode?.status !== "cancel_requested" && authoritativeNode?.status !== "cancelled") {
           // Keep the task ID and running/archiving checkpoint available to the
           // next process. Shutdown is not a provider failure or user cancel.
+          if (checkpoint) await this.repository.updateNodeRun(nodeRun.id, recoveryPatch, { expectedUpdatedAt: authoritativeNode?.updatedAt });
           executionLost = true;
           return false;
         }
@@ -2300,14 +2333,16 @@ export class RunService {
         const nodeOutcome: WorkflowRunRecord["status"] =
           cancellationWon || error instanceof CancelledError
             ? "cancelled"
-            : error instanceof NeedsAttentionError
+            : error instanceof NeedsAttentionError ||
+              ((error instanceof MaterialPreparationError || error instanceof LocalReferenceChannelError) &&
+                materialPreparationHasPriorSubmission(authoritativeNode ?? nodeRun))
               ? "needs_attention"
               : "failed";
         overall = combineRunStatus(overall, nodeOutcome);
         const providerFailure = providerFailureFor(
           error,
           node,
-          authoritativeNode ?? nodeRun,
+          diagnosticNode,
         );
         const cancelledTask = storedProviderTask(authoritativeNode?.inputJson.providerTask);
         const stoppedCliTracking = nodeOutcome === "cancelled" &&
@@ -2321,12 +2356,17 @@ export class RunService {
             : nodeOutcome === "needs_attention"
               ? "needs_attention"
               : "failed";
+        if (cancellationWon && checkpoint) {
+          // Receipt-only supplementation cannot revive a cancelled node.
+          await this.repository.updateNodeRun(nodeRun.id, recoveryPatch, { expectedUpdatedAt: authoritativeNode?.updatedAt });
+        }
         const persistedFailure = cancellationWon
           ? await this.updateCancelledNode(runId, nodeRun.id,
               providerFailure ? { ...providerFailure } : { message }, undefined, "cancelled", nodeRun.errorJson ?? null)
           : await this.repository.updateNodeRun(
           nodeRun.id,
           {
+            ...recoveryPatch,
             status: nodeStatus,
             errorJson: providerFailure
               ? { ...providerFailure }
@@ -2862,14 +2902,15 @@ export class RunService {
       throw new NeedsAttentionError(
         "供应商任务仍在运行，但 Adapter 未提供轮询能力",
       );
+    const expectedProviderTaskId = state.providerTaskId;
 
     for (let attempt = 1; options.persistent || attempt <= 3; attempt += 1) {
       try {
         options.signal?.throwIfAborted();
         await options.beforePoll?.();
         options.signal?.throwIfAborted();
-        const polling = adapter.poll(state).then(async polled => {
-          assertMatchingProviderTask(polled, state.providerTaskId);
+        const polling = adapter.poll({ ...state }).then(async polled => {
+          assertMatchingProviderTask(polled, expectedProviderTaskId);
           // Cancellation still returns immediately. A query that finishes later
           // can retain its receipt without resuming polling or archival.
           if (options.signal?.aborted) await options.onAbortedTask?.(polled);
@@ -2951,46 +2992,36 @@ export class RunService {
       hasInlineText || connectedPrompts.length === 0
         ? inlineParts
         : connectedPrompts;
-    const promptAssetIds = extractPromptAssetIds(parts);
-    const assetIds = [
-      ...new Set([
-        ...values.flatMap((value) => value.assetIds ?? []),
-        ...promptAssetIds,
-      ]),
-    ];
+    const inputEntries: Array<{ assetId: string; role: "reference" | "firstFrame" | "lastFrame" }> = [];
+    const inputKeys = new Set<string>();
+    const addInput = (assetId: string, role: "reference" | "firstFrame" | "lastFrame") => {
+      const key = JSON.stringify([assetId, role]);
+      if (!inputKeys.has(key)) { inputKeys.add(key); inputEntries.push({ assetId, role }); }
+    };
+    // Keep edge order, then prompt order. Identity reuse must not erase roles.
+    for (const value of values) for (const assetId of value.assetIds ?? [])
+      addInput(assetId, value.assetRoles?.[assetId] ?? "reference");
+    const connectedAssetIds = new Set(inputEntries.map(input => input.assetId));
+    for (const part of parts) if (part.type === "asset" && !(part.role === "reference" && connectedAssetIds.has(part.assetId)))
+      addInput(part.assetId, part.role);
+    const assetIds = [...new Set(inputEntries.map(input => input.assetId))];
     const assets: ProviderAssetInput[] = [];
     // A known supplier task only needs its saved receipt for polling/archival.
     // Re-reading, validating or uploading original references can strand paid
     // jobs after inputs were removed or their reference channel went offline.
-    // Cloud jobs still reconstruct the adapter request for their query-only transport.
-    const resumingTask = Boolean(nodeRun.providerTaskId) && !isCloudSubmission(nodeRun.providerTaskId);
-    const connectedRoles = new Map<
-      string,
-      "reference" | "firstFrame" | "lastFrame"
-    >();
-    for (const value of values) {
-      for (const [assetId, role] of Object.entries(value.assetRoles ?? {}))
-        connectedRoles.set(assetId, role);
-    }
-    for (const assetId of resumingTask ? [] : assetIds) {
-      const asset = await this.repository.getAsset(assetId);
-      if (!asset) throw new Error(`素材 ${assetId} 不存在`);
-      const stored = await this.storage.get(asset.storageKey);
-      if (!stored) throw new Error(`素材 ${assetId} 的存储文件不存在`);
-      const referencedPart = parts.find(
-        (part): part is Extract<PromptPart, { type: "asset" }> =>
-          part.type === "asset" && part.assetId === asset.id,
-      );
-      const role =
-        referencedPart?.role ?? connectedRoles.get(asset.id) ?? "reference";
-      assets.push({
-        id: asset.id,
-        kind: inputAssetKind(asset.kind),
-        mimeType: asset.mimeType,
-        data: stored.bytes,
-        role,
-        filename: asset.name,
-      });
+    const resumingTask = Boolean(nodeRun.providerTaskId);
+    const originals = new Map<string, Omit<ProviderAssetInput, "role">>();
+    for (const { assetId, role } of resumingTask ? [] : inputEntries) {
+      let original = originals.get(assetId);
+      if (!original) {
+        const asset = await this.repository.getAsset(assetId);
+        if (!asset) throw new Error(`素材 ${assetId} 不存在`);
+        const stored = await this.storage.get(asset.storageKey);
+        if (!stored) throw new Error(`素材 ${assetId} 的存储文件不存在`);
+        original = { id: asset.id, kind: inputAssetKind(asset.kind), mimeType: asset.mimeType, data: stored.bytes, filename: asset.name };
+        originals.set(assetId, original);
+      }
+      assets.push({ ...original, role });
     }
     const providerName =
       typeof nodeRun.inputJson.provider === "string"
@@ -3092,9 +3123,11 @@ export class RunService {
       assetIds.push(imageMask.asset.id);
     }
     if (!resumingTask && operation.startsWith("video.") && providerName !== "fake") {
+      const metadataById = new Map<string, Awaited<ReturnType<typeof readLocalMediaMetadata>>>();
       for (const asset of assets) {
         if ((asset.kind === "video" || asset.kind === "audio") && asset.data) {
-          const metadata = await readLocalMediaMetadata(asset.data);
+          let metadata = metadataById.get(asset.id);
+          if (!metadata) { metadata = await readLocalMediaMetadata(asset.data); metadataById.set(asset.id, metadata); }
           if (metadata.durationSeconds !== undefined) asset.durationSeconds = metadata.durationSeconds;
           if (asset.kind === "video" && metadata.width !== undefined && metadata.height !== undefined) {
             asset.width = metadata.width;
@@ -3142,8 +3175,9 @@ export class RunService {
       );
     }
     const prompt = resumingTask && typeof nodeRun.inputJson.prompt === "string" ? nodeRun.inputJson.prompt : renderPromptParts(parts, {
-      resolveAsset: (id) => {
-        const index = assets.findIndex((asset) => asset.id === id);
+      resolveAsset: (id, role) => {
+        const index = assets.findIndex((asset) => asset.id === id &&
+          (role === "reference" && connectedAssetIds.has(id) || (asset.role ?? "reference") === role));
         return index < 0 ? "" : `[参考素材 ${index + 1}]`;
       },
       unresolvedAsset: "empty",
@@ -3483,7 +3517,21 @@ export class RunService {
       inputJson,
     });
     let task: ProviderTask;
-    if (nodeRun.providerTaskId && !isCloudSubmission(nodeRun.providerTaskId)) {
+    if (isCloudSubmission(nodeRun.providerTaskId)) {
+      try {
+        const cloud = isRecord(inputJson.cloudGeneration) ? inputJson.cloudGeneration : frozenConnection?.cloudGeneration;
+        if (!isRecord(cloud) || typeof cloud.endpoint !== "string" || typeof cloud.encryptedToken !== "string")
+          throw new Error("原任务的云端连接配置缺失，已停止，不能回退本机重复生成");
+        if (savedTask) task = savedTask;
+        else {
+          if (!adapter.restoreCloudTask) throw new Error("此供应商缺少原云任务响应解析入口；已保留原任务，禁止重新提交");
+          const response = await queryCloudGeneration(nodeRun.providerTaskId!, cloud as unknown as CloudGenerationConfig, { signal, progress: submissionProgress });
+          task = await adapter.restoreCloudTask(request, response);
+        }
+      } catch (cause) {
+        throw new NeedsAttentionError(cause instanceof Error ? cause.message : "原云任务查询失败，已停止重复提交", { code: "cloud_recovery_failed", cause });
+      }
+    } else if (nodeRun.providerTaskId) {
       task =
         savedTask ??
         (await this.restoreProviderTask(
@@ -3530,23 +3578,28 @@ export class RunService {
         throw error;
       }
     }
+    // A cloud identity belongs to the desktop job; its upstream ID is separate.
+    // Keep both as strings so adapter mutations cannot change the checkpoint key.
+    const originalUpstreamTaskId = task.providerTaskId;
+    const originalProviderTaskId = nodeRun.providerTaskId ??
+      (inputJson.cloudGeneration ? cloudSubmissionId(request.idempotencyKey) : originalUpstreamTaskId);
     rememberTaskCharge(inputJson, task);
     recordSubmissionPhase(inputJson, task.status === "running" || task.status === "queued" ? "generating" : "downloading");
     const taskSnapshot = {
       ...inputJson,
       providerTask: providerTaskJson(task),
     };
-    const persistedTask = await this.repository.updateNodeRun(nodeRunId, {
+    const persistedTask = await this.checkpointKnownTask(runId, nodeRunId, {
       status: task.status === "succeeded" ? "archiving" : "running",
-      providerTaskId: inputJson.cloudGeneration ? cloudSubmissionId(request.idempotencyKey) : task.providerTaskId,
+      providerTaskId: originalProviderTaskId,
       inputJson: taskSnapshot,
-    });
+    }, true);
     if (!persistedTask) {
       // Cancellation may win immediately after a paid submission. Preserve
       // the remote task id without changing the cancellation status so the
       // reconciler can keep sending provider cancellation requests.
       await this.repository.updateNodeRun(nodeRunId, {
-        providerTaskId: task.providerTaskId,
+        providerTaskId: originalProviderTaskId,
         inputJson: taskSnapshot,
       });
       const [cancelledRun, cancelledNode] = await Promise.all([
@@ -3617,14 +3670,16 @@ export class RunService {
         await delay(cliDeadline === undefined ? interval : Math.max(0, Math.min(interval, cliDeadline - Date.now())));
         state = await this.pollWithRetry(adapter, state);
       }
+      assertMatchingProviderTask(state, originalUpstreamTaskId);
       const chargeChanged = rememberTaskCharge(inputJson, state);
       // The provider task id is durably stored immediately after submission.
       // Avoid rewriting the entire local JSON database for every 1.5-second
       // running poll; terminal state or a new billing receipt needs a checkpoint.
       if (chargeChanged || (state.status !== "running" && state.status !== "queued")) {
         try {
-          await this.updateNodeRunOrCancel(runId, nodeRunId, {
+          await this.checkpointKnownTask(runId, nodeRunId, {
             status: state.status === "succeeded" ? "archiving" : "running",
+            providerTaskId: originalProviderTaskId,
             inputJson: { ...inputJson, providerTask: providerTaskJson(state) },
           });
         } catch (error) {
@@ -3654,8 +3709,9 @@ export class RunService {
       throw new NeedsAttentionError(
         `无法识别供应商任务状态：${String(state.status)}`,
       );
-    await this.updateNodeRunOrCancel(runId, nodeRunId, {
+    await this.checkpointKnownTask(runId, nodeRunId, {
       status: "archiving",
+      providerTaskId: originalProviderTaskId,
       inputJson: { ...inputJson, providerTask: providerTaskJson(state) },
     });
     let artifacts: RemoteArtifact[];
@@ -3697,8 +3753,8 @@ export class RunService {
       // a second generation task.
       if (shouldRefreshRemoteArtifact(error) && adapter.poll) {
         try {
-          const refreshed = await retryOperation(() => adapter.poll!(state));
-          assertMatchingProviderTask(refreshed, state.providerTaskId);
+          const refreshed = await retryOperation(() => adapter.poll!({ ...state }));
+          assertMatchingProviderTask(refreshed, originalUpstreamTaskId);
           if (refreshed.status === "succeeded") {
             state = refreshed;
             rememberTaskCharge(inputJson, refreshed);
@@ -3751,22 +3807,29 @@ export class RunService {
   }
 
   private async archiveProjectAsset(asset: AssetRecord, runId: string, bytes?: Uint8Array): Promise<void> {
-    if (!this.projectFileStore || asset.kind === "text") return;
+    const projectFiles = this.projectFileStore;
+    const projectKind = asset.kind;
+    if (!projectFiles || projectKind === "text") return;
     try {
       const run = await this.repository.getRun(runId);
-      const canvas = run ? await this.repository.getCanvas(run.canvasId) : null;
-      if (!canvas) return;
-      const storage = this.storage;
-      // Defer opening/reading the object: an existing project file consumes nothing.
-      const projectBytes = bytes ?? storage.stream?.(asset.storageKey) ?? (async function* () {
-        const stored = await storage.get(asset.storageKey);
-        if (!stored) throw new Error("Archived asset is missing from storage");
-        yield stored.bytes;
-      })();
-      await this.projectFileStore.archiveDraft({
-        projectName: canvas.title, assetId: asset.id, name: asset.name,
-        mimeType: asset.mimeType, kind: asset.kind, bytes: projectBytes, source: "generated",
-      });
+      if (!run) return;
+      const archive = async () => {
+        const canvas = await this.repository.getCanvas(run.canvasId);
+        if (!canvas) return;
+        const storage = this.storage;
+        // Defer opening/reading the object: an existing project file consumes nothing.
+        const projectBytes = bytes ?? storage.stream?.(asset.storageKey) ?? (async function* () {
+          const stored = await storage.get(asset.storageKey);
+          if (!stored) throw new Error("Archived asset is missing from storage");
+          yield stored.bytes;
+        })();
+        await projectFiles.archiveDraft({
+          projectName: canvas.title, assetId: asset.id, name: asset.name,
+          mimeType: asset.mimeType, kind: projectKind, bytes: projectBytes, source: "generated",
+        });
+      };
+      if (this.projectFileAccess) await this.projectFileAccess(run.canvasId, archive);
+      else await archive();
     } catch (error) {
       // Keep the durable original available; later output recovery repairs this mirror.
       console.error("[super-canvas] unable to archive generated asset",
@@ -4064,11 +4127,19 @@ function cyberAfeiCapabilityDenialFromProviderError(
   return undefined;
 }
 
+/** A free preparation failure cannot erase an earlier accepted/uncertain generation. */
+function materialPreparationHasPriorSubmission(nodeRun: NodeRunRecord): boolean {
+  return Boolean(nodeRun.providerTaskId || storedProviderTask(nodeRun.inputJson.providerTask)) ||
+    nodeRun.inputJson.cloudAccepted === true ||
+    (typeof nodeRun.inputJson.submissionPhase === "string" && nodeRun.inputJson.submissionPhase !== "not_started") ||
+    ["charged", "refunded"].includes(taskChargeEvidence(nodeRun)?.status ?? "");
+}
+
 function providerFailureFor(
   error: unknown,
   node: WorkflowNode,
   nodeRun: NodeRunRecord,
-): (ProviderErrorPresentation & { referenceDiagnostics?: LocalReferenceChannelError["diagnostics"] }) | undefined {
+): (ProviderErrorPresentation & { referenceDiagnostics?: LocalReferenceChannelError["diagnostics"]; cloudTaskEvidence?: CloudGenerationUncertainError["cloudTaskEvidence"] }) | undefined {
   if (error instanceof CancelledError) return undefined;
   const source =
     error instanceof NeedsAttentionError && error.cause !== undefined
@@ -4119,7 +4190,7 @@ function providerFailureFor(
     presentation = { ...presentation, message: error.message,
       ...(error.code ? { code: error.code } : {}) };
     const storageCode = isRecord(source) && typeof source.code === "string" ? source.code : undefined;
-    if (error.code === "artifact_archive_failed" &&
+    if (error.code === "provider_checkpoint_failed" || error.code === "artifact_archive_failed" &&
         ((storageCode && ["ENOSPC", "EDQUOT", "EIO", "EROFS", "EACCES", "EPERM", "ENOENT"].includes(storageCode)) ||
           (source instanceof Error && /archive storage .*unavailable/iu.test(source.message)))) {
       presentation = { ...presentation, failureCategory: "local_storage", type: "本地保存失败" };
@@ -4127,6 +4198,12 @@ function providerFailureFor(
   }
   if (error instanceof NeedsAttentionError && isRecord(source) && source.code === "music_submit_missing_id")
     presentation = { ...presentation, message: error.message, code: "music_submit_missing_id" };
+  if ((source instanceof MaterialPreparationError || source instanceof LocalReferenceChannelError) &&
+      materialPreparationHasPriorSubmission(nodeRun)) {
+    const message = "素材准备失败；原生成任务已提交或提交结果尚待核对，请继续查询原任务。";
+    presentation = { ...presentation, message, localMessage: message,
+      submissionMayHaveOccurred: true, charge: { status: "unknown", source: "unconfirmed" } };
+  }
   const taskCharge = taskChargeEvidence(nodeRun);
   // Billing on a failed query/download/cancel belongs to that HTTP request,
   // not necessarily the generation. Only the matching task's saved response
@@ -4139,6 +4216,7 @@ function providerFailureFor(
   if (nodeRun.providerTaskId && charge?.source === "not_submitted")
     charge = { status: "unknown", source: "unconfirmed" };
   return { ...presentation,
+    ...(source instanceof CloudGenerationUncertainError ? { cloudTaskEvidence: source.cloudTaskEvidence } : {}),
     ...(source instanceof LocalReferenceChannelError ? { referenceDiagnostics: source.diagnostics } : {}),
     ...(charge ? { charge } : {}) };
 }
@@ -4187,16 +4265,20 @@ class ProviderTaskFailedError extends Error {
   }
 }
 
+type KnownTaskCheckpoint = { status: NodeRunRecord["status"]; providerTaskId: string; inputJson: JsonObject };
+
 class NeedsAttentionError extends Error {
   public readonly code?: string;
+  public readonly checkpoint?: KnownTaskCheckpoint;
 
   public constructor(
     message: string,
-    options?: ErrorOptions & { code?: string },
+    options?: ErrorOptions & { code?: string; checkpoint?: KnownTaskCheckpoint },
   ) {
     super(message, options);
     this.name = "NeedsAttentionError";
     this.code = options?.code;
+    this.checkpoint = options?.checkpoint;
   }
 }
 class CancelledError extends Error {}

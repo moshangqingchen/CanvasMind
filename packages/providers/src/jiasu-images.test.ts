@@ -52,16 +52,19 @@ describe("Jiasu full-model image contracts", () => {
       if (String(url).endsWith("/media/uploads")) return Response.json({ success: true, data: { items: [{ url: "https://m.jiasuapi.com/media/uploaded.png",
         put: { url: "https://storage.example.com/reference.png?signature=fixture", method: "PUT", headers: { "content-type": "image/png", "x-storage-ticket": "fixture" } } }] } });
       if (init?.method === "PUT") return new Response(null, { status: 200 });
+      if (init?.method === "GET") return new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "image/png" } });
       return queued();
     });
     const adapter = new JiasuImageAdapter(resolver(), { fetch });
     await adapter.submit({ ...request, operation: "image.edit", assets: [{ id: "local", kind: "image", mimeType: "image/png", filename: "image.png", data: new Uint8Array([1, 2, 3]) }] });
-    expect(fetch.mock.calls.map(([url]) => String(url))).toEqual(["https://ai.jiasuapi.com/v1/media/uploads", "https://storage.example.com/reference.png?signature=fixture", "https://ai.jiasuapi.com/v1/images/create"]);
+    expect(fetch.mock.calls.map(([url]) => String(url))).toEqual(["https://ai.jiasuapi.com/v1/media/uploads", "https://storage.example.com/reference.png?signature=fixture", "https://m.jiasuapi.com/media/uploaded.png", "https://ai.jiasuapi.com/v1/images/create"]);
     expect(JSON.parse(String(fetch.mock.calls[0]![1]?.body))).toEqual({ items: [{ name: "image.png", content_type: "image/png", size: 3, kind: "image" }] });
     const putHeaders = new Headers(fetch.mock.calls[1]![1]?.headers);
     expect(putHeaders.get("Authorization")).toBeNull();
     expect(putHeaders.get("x-storage-ticket")).toBe("fixture");
-    expect(JSON.parse(String(fetch.mock.calls[2]![1]?.body))).toMatchObject({ images: ["https://m.jiasuapi.com/media/uploaded.png"] });
+    const generation = fetch.mock.calls.filter(([url, init]) => String(url).endsWith("/images/create") && init?.method === "POST");
+    expect(generation).toHaveLength(1);
+    expect(JSON.parse(String(generation[0]![1]?.body))).toMatchObject({ images: ["https://m.jiasuapi.com/media/uploaded.png"] });
   });
   it("does not submit generation after a failed storage PUT", async () => {
     const fetch = vi.fn<FetchImplementation>(async (_url, init) => init?.method === "PUT" ? new Response("unavailable", { status: 503 }) :

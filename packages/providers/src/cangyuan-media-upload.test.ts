@@ -17,11 +17,12 @@ const response = () => Response.json(ticket);
 
 describe("Cangyuan same-token local media upload", () => {
   it("signs exact MD5 and puts original bytes with only the returned storage headers", async () => {
-    const fetcher = vi.fn<typeof fetch>(async (_url, init) => init?.method === "POST" ? response() : new Response(null, { status: 204 }));
+    const fetcher = vi.fn<typeof fetch>(async (_url, init) => init?.method === "POST" ? response() : init?.method === "GET"
+      ? new Response(image.data!, { headers: { "content-type": image.mimeType } }) : new Response(null, { status: 204 }));
     const remote: ProviderAssetInput = { id: "remote", kind: "image", mimeType: "image/webp", url: "https://images.example/a.webp" };
     const mask = { ...image, id: "mask", role: "mask" as const };
     const result = await uploadCangyuanMedia(connection, [image, remote, mask], { fetch: fetcher });
-    expect(fetcher).toHaveBeenCalledTimes(4);
+    expect(fetcher).toHaveBeenCalledTimes(6);
     const [url, init] = fetcher.mock.calls[0]!;
     expect(url).toBe(`${baseUrl}/v1/images/uploads`);
     expect(new Headers(init!.headers).get("Authorization")).toBe(`Bearer ${apiKey}`);
@@ -40,7 +41,8 @@ describe("Cangyuan same-token local media upload", () => {
   });
 
   it.each(["video/mp4", "video/webm", "audio/wav", "audio/mpeg", "audio/mp4"])("uses the documented common signing route for %s", async mimeType => {
-    const fetcher = vi.fn<typeof fetch>(async (_url, init) => init?.method === "POST" ? response() : new Response(null, { status: 204 }));
+    const fetcher = vi.fn<typeof fetch>(async (_url, init) => init?.method === "POST" ? response() : init?.method === "GET"
+      ? new Response(image.data!, { headers: { "content-type": mimeType } }) : new Response(null, { status: 204 }));
     const kind = mimeType.startsWith("video/") ? "video" : "audio";
     await uploadCangyuanMedia(connection, [{ ...image, kind, mimeType }], { fetch: fetcher });
     expect(JSON.parse(String(fetcher.mock.calls[0]![1]!.body)).content_type).toBe(mimeType);
@@ -65,7 +67,8 @@ describe("Cangyuan same-token local media upload", () => {
   });
 
   it("accepts data URIs and retains their exact decoded bytes and MIME", async () => {
-    const fetcher = vi.fn<typeof fetch>(async (_url, init) => init?.method === "POST" ? response() : new Response(null, { status: 204 }));
+    const fetcher = vi.fn<typeof fetch>(async (_url, init) => init?.method === "POST" ? response() : init?.method === "GET"
+      ? new Response(image.data!, { headers: { "content-type": "image/webp" } }) : new Response(null, { status: 204 }));
     await uploadCangyuanMedia(connection, [{ ...image, data: undefined, url: "data:image/webp;base64,AQID/w==" } as unknown as ProviderAssetInput], { fetch: fetcher });
     expect(JSON.parse(String(fetcher.mock.calls[0]![1]!.body))).toMatchObject({ bytes: 4, content_type: "image/webp" });
   });
@@ -81,10 +84,13 @@ describe("Cangyuan same-token local media upload", () => {
 
   it("uses uploaded image and mask URLs in the native edits request", async () => {
     const fetcher = vi.fn<typeof fetch>(async (url, init) => String(url).endsWith("/uploads") ? response()
-      : init?.method === "PUT" ? new Response(null, { status: 204 }) : Response.json({ id: "test-task", status: "running" }));
+      : init?.method === "PUT" ? new Response(null, { status: 204 }) : init?.method === "GET"
+        ? new Response(image.data!, { headers: { "content-type": image.mimeType } }) : Response.json({ id: "test-task", status: "running" }));
     await adapter(fetcher).submit(edit);
-    expect(fetcher).toHaveBeenCalledTimes(5);
-    const [url, init] = fetcher.mock.calls[4]!;
+    expect(fetcher).toHaveBeenCalledTimes(7);
+    const generation = fetcher.mock.calls.filter(([url, init]) => String(url).endsWith("/images/edits") && init?.method === "POST");
+    expect(generation).toHaveLength(1);
+    const [url, init] = generation[0]!;
     expect(url).toBe(`${baseUrl}/v1/images/edits`);
     expect(JSON.parse(String(init!.body))).toMatchObject({ images: [ticket.url], mask: ticket.url, quality: "max" });
     expect(edit.assets![0]!.url).toBeUndefined();
@@ -102,12 +108,15 @@ describe("Cangyuan same-token local media upload", () => {
     const connector: RestConnectorConfig = { submit: transport.submit!, output: transport.output!, poll: transport.poll,
       models: [cangyuanVideoModel({ id, name: id, operations: ["video.generate", "video.image-to-video"] })] };
     const fetcher = vi.fn<typeof fetch>(async (url, init) => String(url).endsWith("/uploads") ? response()
-      : init?.method === "PUT" ? new Response(null, { status: 204 }) : Response.json({ id: "offline-video", status: "running" }));
+      : init?.method === "PUT" ? new Response(null, { status: 204 }) : init?.method === "GET"
+        ? new Response(image.data!, { headers: { "content-type": image.mimeType } }) : Response.json({ id: "offline-video", status: "running" }));
     const video = new GenericRestAdapter(new StaticConnectionResolver([{ ...connection, settings: { connector } }]), { fetch: fetcher });
     await video.submit({ connectionId: "one", model: id, operation: "video.image-to-video", prompt: "offline mocked first-frame test",
       parameters: { duration: 7 }, assets: [{ ...image, role: "firstFrame" }], idempotencyKey: "mocked-video" });
-    expect(fetcher).toHaveBeenCalledTimes(3);
-    const [url, init] = fetcher.mock.calls[2]!;
+    expect(fetcher).toHaveBeenCalledTimes(4);
+    const generation = fetcher.mock.calls.filter(([url, init]) => String(url).endsWith("/v1/videos") && init?.method === "POST");
+    expect(generation).toHaveLength(1);
+    const [url, init] = generation[0]!;
     expect(url).toBe(`${baseUrl}/v1/videos`);
     expect(JSON.parse(String(init!.body))).toMatchObject({ model: id, reference_image_urls: [ticket.url], duration: 7 });
   });

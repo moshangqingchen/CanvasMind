@@ -28,6 +28,9 @@ function contentTypeFor(
 ): { contentType: string; downloadable: boolean } {
   const assetType = normalizeMimeType(assetMimeType);
   const storedType = normalizeMimeType(storedMimeType ?? "");
+  if (assetKind === "audio" && assetType === "audio/webm" && (!storedType || storedType === assetType)) {
+    return { contentType: "audio/webm", downloadable: false };
+  }
   const candidate =
     isSupportedMediaMimeType(storedType) &&
     mediaKindForMime(storedType) === assetKind

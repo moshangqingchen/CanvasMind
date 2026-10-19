@@ -163,7 +163,7 @@ function structuredError(value: unknown): LocalizedRunError | null {
   const docsUrl = safeHttpsUrl(record.docsUrl);
   const actionUrl = safeHttpsUrl(record.actionUrl);
   const actionLabel = safeText(record.actionLabel);
-  const phase = ["connect", "submit", "poll", "cancel", "archive"].includes(String(record.phase))
+  const phase = ["prepare", "connect", "submit", "poll", "cancel", "archive"].includes(String(record.phase))
     ? record.phase as LocalizedRunError["phase"] : undefined;
   const transport = safeTransport(record.transport);
   const categories = ["insufficient_balance", "local_network", "network", "supplier_capacity", "supplier_error", "authentication", "rate_limit", "invalid_request", "content_policy", "local_storage", "unknown"];

@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { MAX_SMALL_JSON_BODY_BYTES, parseJsonRequest } from "../../../lib/api-validation";
 import { jsonError, repository, safeJsonObject } from "../../../lib/server";
+import { projectCoordinator, ProjectMutationError } from "../../../lib/project-coordinator";
 import {
   ensureProjectDirectory,
-  normalizedProjectTitle,
   projectCardSummary,
   projectSummary,
 } from "../../../lib/project-service";
@@ -19,11 +19,16 @@ const emptyGraph = {
 };
 
 export async function GET() {
+  try {
   const canvases = (await repository.listCanvases()).sort((a, b) =>
     b.updatedAt.localeCompare(a.updatedAt),
   );
   await Promise.all(canvases.map((canvas) => ensureProjectDirectory(canvas)));
   return Response.json({ projects: await Promise.all(canvases.map(projectCardSummary)) });
+  } catch (error) {
+    if (error instanceof ProjectMutationError) return Response.json({ error: error.message, code: error.code }, { status: error.status });
+    return jsonError(error instanceof Error ? error.message : "项目列表读取失败", 500);
+  }
 }
 
 export async function POST(request: Request) {
@@ -35,27 +40,16 @@ export async function POST(request: Request) {
   if (!parsed.success) return parsed.response;
 
   const title = parsed.data.title.trim();
-  const normalized = normalizedProjectTitle(title).normalize("NFC").toLocaleLowerCase();
-  const existing = await repository.listCanvases();
-  if (
-    existing.some(
-      (canvas) =>
-        normalizedProjectTitle(canvas.title).normalize("NFC").toLocaleLowerCase() ===
-        normalized,
-    )
-  )
-    return jsonError("项目名称已存在，请换一个名称", 409);
-
   try {
-    const canvas = await repository.saveCanvas({
+    const canvas = await projectCoordinator(repository).saveCanvas({
       id: crypto.randomUUID(),
       title,
       graph: safeJsonObject(emptyGraph),
       reason: "manual",
-    });
-    await ensureProjectDirectory(canvas);
+    }, true);
     return Response.json({ project: projectSummary(canvas) }, { status: 201 });
   } catch (error) {
-    return jsonError(error instanceof Error ? error.message : "项目创建失败", 500);
+    if (error instanceof ProjectMutationError) return Response.json({ error: error.message, code: error.code }, { status: error.status });
+    return jsonError(error instanceof Error ? error.message : "项目创建失败", error instanceof ProjectMutationError ? error.status : 500);
   }
 }

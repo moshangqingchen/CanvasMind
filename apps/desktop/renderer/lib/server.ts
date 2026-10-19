@@ -18,11 +18,12 @@ import { getRunService } from "@super-canvas/runtime";
 import { requireServerMasterKey, serverMasterKey } from "./master-key";
 import { scopedCatalogRepository } from "./catalog-repository-scope";
 import type { GenerationInputAsset, RunTaskEvidence } from "../components/types";
+import { projectCoordinator } from "./project-coordinator";
 
 export const repository = scopedCatalogRepository(getRepository());
 export const storage = getObjectStorage();
 serverMasterKey();
-export const runService = getRunService();
+export const runService = getRunService({ projectFileAccess: (canvasId, work) => projectCoordinator(repository).withCanvas(canvasId, work) });
 
 const inlineRecoveryKey = "__superCanvasInlineRecovery";
 
@@ -132,6 +133,7 @@ export interface PublicRunError {
   submissionMayHaveOccurred?: boolean;
   failureCategory?: ProviderErrorPresentation["failureCategory"];
   charge?: ProviderErrorPresentation["charge"];
+  cloudTaskEvidence?: { jobId: string; upstreamTaskId?: string };
 }
 
 const PUBLIC_FAILURE_CATEGORIES = new Set([
@@ -197,6 +199,11 @@ function publicError(
   const localMessage = typeof value.localMessage === "string"
     ? redactPublicText(value.localMessage).slice(0, 2_048) : undefined;
   const charge = publicCharge(value.charge);
+  const cloud = value.cloudTaskEvidence && typeof value.cloudTaskEvidence === "object" && !Array.isArray(value.cloudTaskEvidence)
+    ? value.cloudTaskEvidence as Record<string, unknown> : undefined;
+  const cloudTaskEvidence = cloud && typeof cloud.jobId === "string" && /^[a-f0-9]{64}$/u.test(cloud.jobId)
+    ? { jobId: cloud.jobId, ...(typeof cloud.upstreamTaskId === "string" && cloud.upstreamTaskId.trim() && cloud.upstreamTaskId.length <= 1024
+      ? { upstreamTaskId: redactPublicText(cloud.upstreamTaskId).replace(/[\u0000-\u001f\u007f]/gu, "").slice(0, 1024) } : {}) } : undefined;
   return {
     message,
     ...(detail("type") ? { type: detail("type") } : {}),
@@ -208,12 +215,13 @@ function publicError(
     ...(localMessage ? { localMessage } : {}),
     ...(providerMessage ? { providerMessage } : {}),
     ...(docsUrl ? { docsUrl } : {}),
-    ...(["connect", "submit", "poll", "cancel", "archive"].includes(String(value.phase)) ? { phase: value.phase as ProviderErrorPresentation["phase"] } : {}),
+    ...(["connect", "submit", "poll", "cancel", "archive", "prepare"].includes(String(value.phase)) ? { phase: value.phase as ProviderErrorPresentation["phase"] } : {}),
     ...(typeof value.retryable === "boolean" ? { retryable: value.retryable } : {}),
     ...(typeof value.submissionMayHaveOccurred === "boolean" ? { submissionMayHaveOccurred: value.submissionMayHaveOccurred } : {}),
     ...(typeof value.failureCategory === "string" && PUBLIC_FAILURE_CATEGORIES.has(value.failureCategory)
       ? { failureCategory: value.failureCategory as PublicRunError["failureCategory"] } : {}),
     ...(charge ? { charge } : {}),
+    ...(cloudTaskEvidence ? { cloudTaskEvidence } : {}),
   };
 }
 

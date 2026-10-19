@@ -395,7 +395,7 @@ export function RunHistoryModal({
                               <li key={node.id}>
                                 <strong>{node.nodeId}</strong>
                                 <div className="history-error-detail">
-                                  <FailureDiagnosis error={localized} status={node.status} providerTaskStatus={node.taskEvidence?.status} recoveryAction={node.recoveryAction} />
+                                  <FailureDiagnosis error={localized} rawError={node.errorJson} providerTaskId={node.taskEvidence?.taskId} status={node.status} providerTaskStatus={node.taskEvidence?.status} recoveryAction={node.recoveryAction} />
                                   {localized?.actionUrl ? (
                                     <a
                                       href={localized.actionUrl}

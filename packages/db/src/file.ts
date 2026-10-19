@@ -354,7 +354,7 @@ export class FileRepository extends MemoryRepository {
     // candidate is being made durable. Reentrant MemoryRepository calls remain
     // part of their original mutation, avoiding nested-save deadlocks.
     for (const name of ["flush", "saveSupplierVerification", "ensureDefaultCanvas", "saveCanvas", "deleteCanvas", "saveAsset",
-      "updateImageDesignReview", "deleteAsset", "deleteAssets", "saveConnection", "saveSupplier", "commitSupplier", "deleteConnection",
+      "updateImageDesignReview", "deleteAsset", "deleteAssets", "deleteUnreferencedAssets", "saveConnection", "saveSupplier", "commitSupplier", "deleteConnection",
       "saveDirectorProfile", "deleteDirectorProfile", "createDirectorSession", "updateDirectorSession", "deleteDirectorSession",
       "createDirectorMessage", "updateDirectorMessage", "deleteDirectorMessage", "createDirectorProposal", "updateDirectorProposal",
       "deleteDirectorProposal", "createRun", "updateRun", "transitionRunStatus", "createNodeRun", "updateNodeRun", "saveWebhookEvent"]) {
@@ -766,6 +766,12 @@ export class FileRepository extends MemoryRepository {
     if (ids.length === 0) return;
     await super.deleteAssets(ids);
     await this.persist();
+  }
+
+  override async deleteUnreferencedAssets(ids: readonly string[]): ReturnType<MemoryRepository["deleteUnreferencedAssets"]> {
+    const result = await super.deleteUnreferencedAssets(ids);
+    if (result.deletedIds.length) await this.persist();
+    return result;
   }
 
   override async saveConnection(

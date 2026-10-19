@@ -270,6 +270,53 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
       autoInterface: true, autoInterfaceTransport: "c-open-native-images" } };
     return adapter === this.fallback ? task : mark(task);
   }
+  async restoreCloudTask(request: NormalizedRequest, response: unknown): Promise<ProviderTask> {
+    const connection = await this.connections.resolve(request.connectionId), source = imageEditingConnection(connection);
+    const model = request.model ?? "", binding = savedModelInterfaces(connection.settings)[model];
+    const catalog = connection.settings?.modelCatalogModels;
+    const current = Array.isArray(catalog) ? (catalog as ModelDescriptor[]).find(item => item?.id === model) : undefined;
+    const declared = binding?.connector && binding.model?.id === model && binding.model.operations.includes(request.operation);
+    const banana = bananaImageRoute(source, model);
+    const transparent = verifiedTransparentImageEvidence(source, model, request.parameters, request.operation === "image.edit" ? "image.edit" : "image.generate");
+    const savedConnector = this.options.config ?? connection.settings?.connector as RestConnectorConfig | undefined;
+    const connectorModel = savedConnector?.models?.find(item => item.id === model);
+    let adapter: ProviderAdapter = this.fallback, marker: string | undefined, transport: string | undefined;
+    // Recover from the frozen connection contract, without any of selected()'s
+    // new-submission validation, catalog permissions or reference preparation.
+    if (["openai", "rest"].includes(connection.provider) && isJiasuImageConnection(source.config, model)) {
+      adapter = new JiasuImageAdapter(this.connections, this.options, model); marker = "jiasuImage";
+    } else if (declared && (explicitImageContract(binding.model) || explicitImageContract(current)) &&
+        (isJijiuGptImage(source.config, model) || cOpenImageRoute(source.config, model) || isGenimageImageConnection(source.config, model))) {
+      adapter = new GenericRestAdapter(this.connections, { ...this.options, config: binding.connector });
+    } else if (connection.provider === "openai" && cOpenImageRoute(source.config, model)) {
+      adapter = this.cOpenImages; transport = "c-open-native-images";
+    } else if (connection.provider === "openai" && isGenimageImageConnection(source.config, model)) {
+      adapter = this.genimageImages; transport = "genimage-native-images";
+    } else if (["openai", "rest"].includes(connection.provider) && isJijiuGptImage(source.config, model) && savedConnector &&
+        (explicitImageContract(connectorModel) || explicitImageContract(current))) {
+      adapter = new GenericRestAdapter(this.connections, { ...this.options, config: savedConnector });
+    } else if (["openai", "rest"].includes(connection.provider) && isJijiuGptImage(source.config, model) && !explicitImageContract(current)) {
+      adapter = this.jijiuImages; transport = "jijiu-native-images";
+    } else if (banana) {
+      const route = banana.asyncTextGeneration && request.operation === "image.generate" ? { ...banana, kind: "secure-async" as const } : banana;
+      adapter = new BananaImageAdapter(this.connections, route, applyBananaImageCapabilities(source, current ?? { id: model, name: model, operations: [request.operation] }), this.options);
+      marker = "bananaImage";
+    } else if (connection.provider === "openai" && isPdogImageConnection(source.config, model)) {
+      adapter = new PdogImageAdapter(this.connections, this.options, request.parameters?.background === "transparent" && transparent?.transport.kind === "pdog-async"
+        ? "async" : connection.settings?.pdogImageMode === "sync" ? "sync" : "async"); marker = "pdogImage";
+    } else if (["openai", "rest"].includes(connection.provider) && isChuangxiangMidjourneyConnection(source.config, model)) {
+      adapter = new ChuangxiangMidjourneyAdapter(this.connections, this.options); marker = "chuangxiangMidjourneyImages";
+    } else if (connection.provider === "openai" && isChuangxiangImageConnection(source.config, model)) {
+      adapter = new ChuangxiangImageAdapter(this.connections, this.options); marker = "chuangxiangCurrentImages";
+    } else if (!(connection.provider === "openai" && isSecureSkillImageConnection(source.config, model)) &&
+        !(usesDeclaredImagesEditingRoute(source, model, request.parameters) || transparent && request.parameters?.background === "transparent") && declared) {
+      adapter = new GenericRestAdapter(this.connections, { ...this.options, config: binding.connector });
+    }
+    if (!adapter.restoreCloudTask) throw new Error("此供应商缺少原云任务响应解析入口，禁止重新生成");
+    const task = await adapter.restoreCloudTask(request, response);
+    return adapter === this.fallback ? task : { ...mark(task), result: { ...(task.result as Record<string, unknown>), autoInterface: true,
+      ...(marker ? { [marker]: true } : {}), ...(transport ? { autoInterfaceTransport: transport } : {}) } };
+  }
   async poll(task: ProviderTask) {
     if (jijiuImagesResult(task.result) || genimageImagesResult(task.result)) {
       // Images returns synchronously. Recovery decodes the persisted response,

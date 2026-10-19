@@ -11,6 +11,9 @@ import {
 } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
+import { webmMediaKind } from "./webm-media.js";
+import { cleanSegment, normalizeProjectName } from "./project-name.js";
+export { normalizeProjectName } from "./project-name.js";
 import {
   dirname,
   extname,
@@ -75,7 +78,7 @@ const extensionMedia: Record<string, { kind: ProjectMediaKind; mimeType: string 
 );
 function mimeExtensionsForBrowser(): Record<string, string> {
   return { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif", avif: "image/avif", bmp: "image/bmp",
-    mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime", avi: "video/x-msvideo",
+    mp4: "video/mp4", mov: "video/quicktime", avi: "video/x-msvideo",
     mp3: "audio/mpeg", wav: "audio/wav", m4a: "audio/mp4", ogg: "audio/ogg" };
 }
 
@@ -127,26 +130,6 @@ function configuredRoot(): string {
   );
 }
 
-function cleanSegment(
-  value: string,
-  fallback: string,
-  maxLength: number,
-): string {
-  let cleaned = value
-    .trim()
-    .replace(/[<>:"/\\|?*\u0000-\u001f\u007f]/gu, "_")
-    .slice(0, maxLength)
-    .replace(/[. ]+$/gu, "");
-  // Windows treats these names as devices even when followed by an extension.
-  if (/^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/iu.test(cleaned))
-    cleaned = `_${cleaned}`.slice(0, maxLength).replace(/[. ]+$/gu, "");
-  return cleaned || fallback;
-}
-
-export function normalizeProjectName(value: string): string {
-  return cleanSegment(value, "未命名项目", 120);
-}
-
 function normalizedMimeType(value: string): string {
   return value.trim().toLowerCase().split(";", 1)[0] ?? "";
 }
@@ -194,6 +177,7 @@ export class ProjectFileStore {
   >();
   private readonly fileIndexes = new Map<string, { at: number; files: Map<string, ProjectMediaFile> }>();
   private readonly pendingFileIndexes = new Map<string, Promise<{ files: ProjectMediaFile[]; ignoredFiles: number }>>();
+  private readonly webmKinds = new Map<string, "audio" | "video" | undefined>();
 
   constructor(options: ProjectFileStoreOptions = {}) {
     this.root = resolve(
@@ -296,11 +280,30 @@ export class ProjectFileStore {
           continue;
         }
         const extension = extname(entry.name).slice(1).toLowerCase();
-        const media = Object.hasOwn(extensionMedia, extension) ? extensionMedia[extension] : undefined;
-        if (!entry.isFile() || !media || entry.name.endsWith(".tmp")) { ignoredFiles++; continue; }
+        let media = Object.hasOwn(extensionMedia, extension) ? extensionMedia[extension] : undefined;
+        if (!entry.isFile() || (!media && extension !== "webm") || entry.name.endsWith(".tmp")) { ignoredFiles++; continue; }
         await this.verifyExistingPath(target, false);
         const details = await lstat(target);
         const relativePath = relative(project, target);
+        if (extension === "webm") {
+          const version = this.fileVersion(project, relativePath, details);
+          if (!this.webmKinds.has(version)) {
+            const handle = await open(target, "r");
+            try {
+              const opened = await handle.stat();
+              if (this.fileVersion(project, relativePath, opened) !== version) throw new ProjectFileAccessError("文件读取期间发生变化，请刷新");
+              const kind = await webmMediaKind(handle, details.size);
+              await this.verifyExistingPath(target, false);
+              if (this.fileVersion(project, relativePath, await lstat(target)) !== version) throw new ProjectFileAccessError("文件读取期间发生变化，请刷新");
+              if (this.webmKinds.size >= 512) this.webmKinds.delete(this.webmKinds.keys().next().value!);
+              this.webmKinds.set(version, kind);
+            } finally { await handle.close(); }
+          }
+          const kind = this.webmKinds.get(version);
+          if (!kind) { ignoredFiles++; continue; }
+          media = { kind, mimeType: `${kind}/webm` };
+        }
+        if (!media) { ignoredFiles++; continue; }
         files.push({ fileId: this.fileVersion(project, relativePath, details), name: entry.name, ...media,
           size: details.size, modifiedAt: details.mtime.toISOString(), section,
           subfolder: relative(area, directory).split(sep).join("/"), relativePath });
@@ -474,15 +477,18 @@ export class ProjectFileStore {
   async renameProject(
     currentProjectName: string,
     nextProjectName: string,
+    options: { requireSource?: boolean; temporaryProjectName?: string } = {},
   ): Promise<boolean> {
     return this.withProjectAccess([
       this.projectDirectory(currentProjectName), this.projectDirectory(nextProjectName),
-    ], true, () => this.renameProjectOnce(currentProjectName, nextProjectName));
+      ...(options.temporaryProjectName ? [this.projectDirectory(options.temporaryProjectName)] : []),
+    ], true, () => this.renameProjectOnce(currentProjectName, nextProjectName, options));
   }
 
   private async renameProjectOnce(
     currentProjectName: string,
     nextProjectName: string,
+    options: { requireSource?: boolean; temporaryProjectName?: string },
   ): Promise<boolean> {
     const currentProject = this.projectDirectory(currentProjectName);
     const nextProject = this.projectDirectory(nextProjectName);
@@ -519,16 +525,23 @@ export class ProjectFileStore {
     }
 
     if (!currentExists) {
+      if (options.requireSource) throw new ProjectFileAccessError("原项目目录不存在，重命名待恢复");
       await this.ensureProjectShared(nextProjectName);
       return false;
     }
 
     if (caseOnlyRename) {
-      const temporary = join(
+      const temporary = options.temporaryProjectName ? this.projectDirectory(options.temporaryProjectName) : join(
         /* turbopackIgnore: true */ this.root,
         `.project-rename-${randomUUID()}`,
       );
       assertWithin(this.root, temporary);
+      try {
+        await lstat(temporary);
+        throw new ProjectFileAccessError("重命名临时目录已存在，请先处理恢复冲突");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
       await rename(currentProject, temporary);
       try {
         await rename(temporary, nextProject);

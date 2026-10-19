@@ -29,8 +29,9 @@ import type {
   CatalogSnapshotCommit,
   WorkflowRunRecord,
 } from "./types.js";
-import { CanvasRevisionConflictError } from "./types.js";
+import { CanvasAssetReferenceError, CanvasRevisionConflictError } from "./types.js";
 import { applyImageDesignReview } from "./image-design-review.js";
+import { collectReferencedAssetIds } from "./asset-references.js";
 import {
   catalogObservationModeSetting,
   assertCatalogPipelineState,
@@ -565,6 +566,10 @@ export class MemoryRepository implements Repository {
     return [...this.canvases.values()].map(clone);
   }
 
+  async listCanvasTitles(): Promise<Array<Pick<CanvasRecord, "id" | "title">>> {
+    return [...this.canvases.values()].map(({ id, title }) => ({ id, title }));
+  }
+
   async getCanvas(id: string, expectedRevision?: number, acceptChangedRevision?: (canvas: CanvasRecord) => boolean): Promise<CanvasRecord | null> {
     const record = this.canvases.get(id);
     if (!record) return null;
@@ -628,6 +633,13 @@ export class MemoryRepository implements Repository {
         input.expectedRevision,
         currentRevision,
       );
+    }
+    const previousReferences = new Set(collectReferencedAssetIds(previous?.graph));
+    for (const id of collectReferencedAssetIds(input.graph)) {
+      const asset = this.assets.get(id);
+      if (!previousReferences.has(id) && asset?.deleted && asset.metadata.rollbackCleanup === true) {
+        throw new CanvasAssetReferenceError(id);
+      }
     }
     // Leaving a canvas flushes the full snapshot even when no edit occurred.
     // Keep that durability/CAS path, without creating an identical autosave.
@@ -747,6 +759,20 @@ export class MemoryRepository implements Repository {
       const existing = this.assets.get(id);
       if (existing) this.assets.set(id, { ...existing, deleted: true });
     }
+  }
+
+  async deleteUnreferencedAssets(ids: readonly string[]): Promise<{ deletedIds: string[]; referencedIds: string[] }> {
+    const referenced = new Set<string>();
+    // No await between inspection and tombstones. Retained revisions also own originals.
+    for (const record of [...this.canvases.values(), ...this.revisions.values()])
+      for (const id of collectReferencedAssetIds(record.graph)) referenced.add(id);
+    const unique = [...new Set(ids)];
+    const deletedIds = unique.filter(id => !referenced.has(id));
+    for (const id of deletedIds) {
+      const asset = this.assets.get(id);
+      if (asset) this.assets.set(id, { ...asset, deleted: true, metadata: { ...asset.metadata, rollbackCleanup: true } });
+    }
+    return { deletedIds, referencedIds: unique.filter(id => referenced.has(id)) };
   }
 
   async listConnections(): Promise<ProviderConnectionRecord[]> {

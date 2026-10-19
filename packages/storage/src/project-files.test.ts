@@ -27,7 +27,32 @@ const asset = {
   bytes: new TextEncoder().encode("image"),
 };
 
+function webmBytes(trackType: number): Buffer {
+  return Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0x87, 0x42, 0x82, 0x84, 0x77, 0x65, 0x62, 0x6d,
+    0x18, 0x53, 0x80, 0x67, 0x8a, 0x16, 0x54, 0xae, 0x6b, 0x85, 0xae, 0x83, 0x83, 0x81, trackType]);
+}
+
 describe("ProjectFileStore", () => {
+  it("reads archived audio/webm as audio, preserves video/webm and ignores an unknown WebM", async () => {
+    const store = await storeFixture();
+    const audio = await store.archiveDraft({ ...asset, assetId: "audio", name: "voice.webm", mimeType: "audio/webm", kind: "audio", source: "external", bytes: webmBytes(2) });
+    await store.archiveFinished({ ...asset, assetId: "video", name: "video.webm", mimeType: "video/webm", kind: "video", bytes: webmBytes(1) });
+    await writeFile(join(store.projectDirectory(asset.projectName), "成品", "unknown.webm"), Buffer.from("unknown bytes"));
+    const listing = await store.listFiles(asset.projectName);
+    expect(listing.files).toHaveLength(2);
+    expect(listing.ignoredFiles).toBe(1);
+    const audioFile = listing.files.find(file => file.name === "voice--audio.webm")!;
+    expect(audioFile).toMatchObject({ kind: "audio", mimeType: "audio/webm" });
+    expect(listing.files.find(file => file.name === "video--video.webm")).toMatchObject({ kind: "video", mimeType: "video/webm" });
+    expect((await store.readFile(asset.projectName, audioFile.fileId)).bytes).toEqual(webmBytes(2));
+    expect((await store.fileMetadata(asset.projectName, audioFile.fileId)).mimeType).toBe("audio/webm");
+    expect(await readFile(audio.path)).toEqual(webmBytes(2));
+    const replacement = `${audio.path}.replacement`;
+    await writeFile(replacement, webmBytes(1)); await rename(replacement, audio.path);
+    await expect(store.readFile(asset.projectName, audioFile.fileId)).rejects.toMatchObject({ status: 409 });
+    expect((await store.listFiles(asset.projectName)).files.find(file => file.name === audioFile.name)?.kind).toBe("video");
+  });
+
   it("lists real draft/finished media, scopes IDs to a project, and deletes only selected copies", async () => {
     const store = await storeFixture();
     const finished = await store.archiveFinished(asset);

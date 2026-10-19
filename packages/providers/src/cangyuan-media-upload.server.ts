@@ -2,6 +2,9 @@ import { createHash } from "node:crypto";
 import type { FetchImplementation, ProviderAssetInput, ResolvedProviderConnection, ValidationIssue } from "./contracts.js";
 import { assetToBlob, fetchProviderJson, mergeHeaders, parseDataUrl, providerFetch, ProviderHttpError, requireApiKey } from "./http.js";
 import { CANGYUAN_UPLOAD_LIMITS, cangyuanMediaUploadOrigin } from "./cangyuan-media-upload-contract.js";
+import { MaterialPreparationError, prepareMaterial } from "./material-preparation.js";
+import { distinctAssetSources } from "./asset-preparation-cache.js";
+import { verifyReferenceOriginal } from "./reference-original-probe.server.js";
 
 export const cangyuanLocalMedia = (asset: ProviderAssetInput): boolean => asset.data !== undefined || asset.url?.startsWith("data:") === true;
 export function cangyuanMediaUploadInputIssues(assets: readonly ProviderAssetInput[]): ValidationIssue[] {
@@ -28,37 +31,44 @@ function publicHttps(value: unknown): value is string {
   } catch { return false; }
 }
 interface UploadTicket { upload_url?: unknown; url?: unknown; expires_in?: unknown; headers?: unknown }
-const invalidTicket = () => new ProviderHttpError("沧元本地素材上传凭证无效；生成尚未提交。", {
-  kind: "invalid_response", phase: "archive", retryable: false, submissionMayHaveOccurred: false,
-});
+const invalidTicket = () => new MaterialPreparationError("sign", { detail: "沧元本地素材上传凭证无效", cause: new ProviderHttpError("沧元本地素材上传凭证无效", {
+  kind: "invalid_response", phase: "prepare", retryable: false, submissionMayHaveOccurred: false,
+}) });
 
 /** Sign + PUT original bytes; never sends the supplier credential to object storage. */
 export async function uploadCangyuanMedia(connection: ResolvedProviderConnection, assets: readonly ProviderAssetInput[],
   options: { fetch?: FetchImplementation; requestTimeoutMs?: number } = {}): Promise<ProviderAssetInput[]> {
   const origin = cangyuanMediaUploadOrigin(connection.baseUrl);
-  if (!origin) throw new Error("沧元素材直传需要当前官方 API 来源");
+  if (!origin) throw new MaterialPreparationError("initialize", { detail: "沧元素材直传需要当前官方 API 来源" });
   const issues = cangyuanMediaUploadInputIssues(assets);
-  if (issues.length) throw new Error(issues.map(issue => issue.message).join("；"));
-  const fetch = options.fetch ?? providerFetch, key = requireApiKey(connection), result = [...assets];
+  if (issues.length) throw new MaterialPreparationError("read", { detail: issues.map(issue => issue.message).join("；") });
+  const sources = distinctAssetSources(assets);
+  const fetch = options.fetch ?? providerFetch, key = await prepareMaterial("initialize", async () => requireApiKey(connection)), urls = new Map<string, string>();
   // Validate all inputs before the first signing request.
-  const prepared = await Promise.all(assets.map(async (asset, index) => cangyuanLocalMedia(asset)
-    ? { index, asset, blob: await assetToBlob(asset, fetch) } : undefined));
+  const prepared = await Promise.all(sources.map(async asset => cangyuanLocalMedia(asset)
+    ? { asset, blob: await prepareMaterial("read", () => assetToBlob(asset, fetch)) } : undefined));
   for (const item of prepared) {
     if (!item) continue;
-    const data = new Uint8Array(await item.blob.arrayBuffer());
-    const ticket = await fetchProviderJson<UploadTicket>(fetch, `${origin}/v1/images/uploads`, {
+    const data = new Uint8Array(await prepareMaterial("read", () => item.blob.arrayBuffer()));
+    const ticket = await prepareMaterial("sign", () => fetchProviderJson<UploadTicket>(fetch, `${origin}/v1/images/uploads`, {
       method: "POST", headers: mergeHeaders(connection.headers, { Authorization: `Bearer ${key}`, "content-type": "application/json" }),
       body: JSON.stringify({ bytes: data.byteLength, content_type: item.blob.type,
         content_md5: createHash("md5").update(data).digest("base64") }),
-    }, { phase: "archive", timeoutMs: options.requestTimeoutMs ?? 120_000, idempotent: false });
-    if (!publicHttps(ticket.upload_url) || !publicHttps(ticket.url) || typeof ticket.expires_in !== "number" || ticket.expires_in <= 0 ||
+    }, { phase: "prepare", timeoutMs: options.requestTimeoutMs ?? 120_000, idempotent: false }));
+    if (!publicHttps(ticket?.upload_url) || !publicHttps(ticket.url) || typeof ticket.expires_in !== "number" || ticket.expires_in <= 0 ||
         !ticket.headers || typeof ticket.headers !== "object" || Array.isArray(ticket.headers)) throw invalidTicket();
     const headers = Object.entries(ticket.headers);
     if (headers.some(([name, value]) => typeof value !== "string" || !name || /[\r\n]/u.test(name + value) || value.includes(key))) throw invalidTicket();
-    await fetchProviderJson(fetch, ticket.upload_url, { method: "PUT", headers: Object.fromEntries(headers) as Record<string, string>, body: data },
-      { phase: "archive", timeoutMs: options.requestTimeoutMs ?? 120_000, idempotent: true, allowEmpty: true });
-    const { data: _local, ...asset } = item.asset;
-    result[item.index] = { ...asset, url: ticket.url };
+    await prepareMaterial("upload", () => fetchProviderJson(fetch, ticket.upload_url as string, { method: "PUT", headers: Object.fromEntries(headers) as Record<string, string>, body: data },
+      { phase: "prepare", timeoutMs: options.requestTimeoutMs ?? 120_000, idempotent: true, allowEmpty: true }));
+    await verifyReferenceOriginal(ticket.url, { id: item.asset.id, mimeType: item.blob.type || item.asset.mimeType, data },
+      assets.findIndex(asset => asset.id === item.asset.id), { fetch, timeoutMs: options.requestTimeoutMs ?? 120_000 });
+    urls.set(item.asset.id, ticket.url);
   }
-  return result;
+  return assets.map(asset => {
+    const url = urls.get(asset.id);
+    if (!url) return asset;
+    const { data: _local, ...publicAsset } = asset;
+    return { ...publicAsset, url };
+  });
 }

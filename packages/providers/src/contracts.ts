@@ -224,6 +224,8 @@ export interface ProviderAdapter {
   listModels(connectionId: string): Promise<ModelDescriptor[]>;
   validate(request: NormalizedRequest): Promise<ValidationResult>;
   submit(request: NormalizedRequest): Promise<ProviderTask>;
+  /** Decode a saved cloud response without validating, reading, uploading or submitting inputs. */
+  restoreCloudTask?(request: NormalizedRequest, response: unknown): Promise<ProviderTask>;
   poll?(task: ProviderTask): Promise<NormalizedTaskState>;
   cancel?(task: ProviderTask): Promise<void>;
   verifyWebhook?(

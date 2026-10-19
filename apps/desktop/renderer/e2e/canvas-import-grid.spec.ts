@@ -9,7 +9,7 @@ import type { MaterialDropEventView } from "../lib/client-api";
 const screenshotDirectory = resolve(process.env.CANVAS_LAYOUT_EVIDENCE_DIR ?? resolve(process.cwd(), "../../../.codex-logs/2026-10-16-canvas-layout/screenshots"));
 const now = "2026-10-16T00:00:00.000Z";
 
-async function fixture(page: Page, origin: string, options: { fallbackDimensions?: boolean; order?: "filename" | "connection" } = {}) {
+async function fixture(page: Page, origin: string, options: { fallbackDimensions?: boolean; order?: "filename" | "connection"; holdClaims?: boolean } = {}) {
   await page.setViewportSize({ width: 1800, height: 1200 });
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.addInitScript(input => {
@@ -33,6 +33,8 @@ async function fixture(page: Page, origin: string, options: { fallbackDimensions
   } as CanvasDocument };
   const counts = { outbound: 0, paid: 0, unexpectedMutations: 0, uploads: 0, claims: 0, imports: 0 };
   const errors: string[] = [], assets: AssetView[] = [], drops: MaterialDropEventView[] = [];
+  let releaseClaim!: () => void;
+  const claimGate = new Promise<void>(resolve => { releaseClaim = resolve; });
   page.on("pageerror", error => errors.push(error.message));
   await page.route("**/*", async route => {
     const request = route.request(), url = new URL(request.url()), path = url.pathname, method = request.method();
@@ -63,6 +65,7 @@ async function fixture(page: Page, origin: string, options: { fallbackDimensions
       const index = drops.findIndex(drop => drop.id === dropId), drop = drops.splice(index, 1)[0]!;
       if (method === "DELETE") return route.fulfill({ json: { ok: true } });
       counts.claims++; const asset = files.find(file => file.name === drop.name)!.asset; assets.push(asset);
+      if (options.holdClaims) await claimGate;
       return route.fulfill({ json: asset });
     }
     if (path === "/api/assets") return route.fulfill({ json: assets });
@@ -81,7 +84,7 @@ async function fixture(page: Page, origin: string, options: { fallbackDimensions
   await expect(page.locator('.react-flow__node[data-id="obstacle"]')).toBeVisible();
   const agent = page.getByRole("button", { name: "智能体面板", exact: true });
   if (await agent.getAttribute("aria-expanded") === "true") await agent.click();
-  return { canvas, files, counts, errors, drops,
+  return { canvas, files, counts, errors, drops, releaseClaim,
     drop: async (mixed = false) => {
       await page.locator(".react-flow__pane").evaluate((pane, input) => {
         const transfer = new DataTransfer();
@@ -104,6 +107,59 @@ function expectClear(nodes: readonly CanvasNode[]) {
       a.position.y + ah + 23 <= b.position.y || b.position.y + bh + 23 <= a.position.y).toBe(true);
   }));
 }
+
+test("认领素材期间切换排列顺序仍完成一次导入", async ({ page, baseURL }) => {
+  const f = await fixture(page, new URL(baseURL!).origin, { holdClaims: true });
+  const file = f.files[0]!;
+  f.drops.push({ id: "held-sort", name: file.name, mimeType: "image/png", size: file.bytes.length,
+    screenX: -10_000, screenY: -10_000, previewAvailable: false, createdAt: now });
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect.poll(() => f.counts.claims).toBe(1);
+  await page.getByRole("button", { name: "排列顺序", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: "按连线顺序" }).click();
+  f.releaseClaim();
+  await expect.poll(() => f.imported().length).toBe(1);
+  await expect(page.locator('[data-id="material-drop-held-sort"] img')).toBeVisible();
+  expect(f.counts.claims).toBe(1);
+  f.check();
+});
+
+test("认领素材期间切换画布不会把迟到素材写入新画布", async ({ page, baseURL }) => {
+  const f = await fixture(page, new URL(baseURL!).origin, { holdClaims: true });
+  const file = f.files[0]!;
+  f.drops.push({ id: "held-switch", name: file.name, mimeType: "image/png", size: file.bytes.length,
+    screenX: -10_000, screenY: -10_000, previewAvailable: false, createdAt: now });
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect.poll(() => f.counts.claims).toBe(1);
+  const other = { id: "other-bridge-canvas", title: "新画布", revision: 1, graph: {
+    schemaVersion: 1, nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 },
+  } };
+  await page.route("**/api/canvas/other-bridge-canvas", route => route.fulfill({ json: other }));
+  await page.goto("/canvas/other-bridge-canvas");
+  f.releaseClaim();
+  await expect(page.getByRole("button", { name: "返回主界面", exact: true })).toBeVisible();
+  await expect(page.locator('[data-id="material-drop-held-switch"]')).toHaveCount(0);
+  expect(other.graph.nodes).toEqual([]);
+  expect(f.counts.claims).toBe(1);
+  f.check();
+});
+
+test("认领期间删除占位节点后迟到素材不会复活节点", async ({ page, baseURL }) => {
+  const f = await fixture(page, new URL(baseURL!).origin, { holdClaims: true });
+  const file = f.files[0]!;
+  f.drops.push({ id: "held-delete", name: file.name, mimeType: "image/png", size: file.bytes.length,
+    screenX: -10_000, screenY: -10_000, previewAvailable: false, createdAt: now });
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect.poll(() => f.counts.claims).toBe(1);
+  await expect(page.locator('[data-id="material-drop-held-delete"]')).toBeVisible();
+  await page.keyboard.press("Delete");
+  await expect(page.locator('[data-id="material-drop-held-delete"]')).toHaveCount(0);
+  f.releaseClaim();
+  await expect.poll(() => f.counts.claims).toBe(1);
+  await expect(page.locator('[data-id="material-drop-held-delete"]')).toHaveCount(0);
+  expect(f.imported()).toEqual([]);
+  f.check();
+});
 
 test("多文件拖入按文件名自然排序成三列网格，加载尺寸后无重叠且一次撤销全部导入", async ({ page, baseURL }) => {
   const f = await fixture(page, new URL(baseURL!).origin);

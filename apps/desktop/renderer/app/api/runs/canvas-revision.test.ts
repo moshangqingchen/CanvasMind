@@ -184,7 +184,7 @@ describe("canvas identity across asynchronous run preflight", () => {
     expect(JSON.stringify(snapshot.run.revisionGraph)).not.toContain("P2");
     await state.repository.saveCanvas({ id: "canvas", graph: graph("P2"), expectedRevision: p1.revision });
     const replay = await POST(request(p1.revision, "all"));
-    expect(replay.status).toBe(201);
+    expect(replay.status).toBe(202);
     expect((await replay.json()).run.id).toBe(snapshot.run.id);
     expect(submit).toHaveBeenCalledOnce();
     await vi.waitFor(async () => expect((await state.service.getRun(snapshot.run.id))?.run.status).toBe("succeeded"));

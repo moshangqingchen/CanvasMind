@@ -25,12 +25,13 @@ describe("Langframe original-byte website uploads", () => {
       calls.push({ url: String(url), init });
       if (String(url).endsWith("/api/auth/login")) return Response.json({ ok: true, token: "fixture-dashboard-token" });
       if (String(url).endsWith("/api/me")) return Response.json({ ok: true, user: { account: "fixture-user", credits: 0 } });
+      if (init?.method === "GET") return new Response(asset.data!, { headers: { "content-type": asset.mimeType } });
       return Response.json({ ok: true, url: "/uploads/original.mp4" });
     };
     const upload = langframeReferenceUploader(f.repository, f.resolver, () => masterKey, fetcher);
     expect(await upload("connection", asset)).toBe(`${base}/uploads/original.mp4`);
     expect(await f.repository.getSupplier("supplier")).toEqual(before);
-    const last = calls.at(-1)!;
+    const last = calls.find(call => call.url.endsWith("/api/canvas/media-upload"))!;
     expect(last.url).toBe(`${base}/api/canvas/media-upload`);
     expect(last.init?.method).toBe("POST");
     expect(new Headers(last.init?.headers).get("authorization")).toBe("Bearer fixture-dashboard-token");
@@ -39,6 +40,8 @@ describe("Langframe original-byte website uploads", () => {
     expect(new Headers(last.init?.headers).get("content-type")).toBe("application/octet-stream");
     expect(last.init?.body).toEqual(asset.data);
     expect(JSON.stringify(calls)).not.toContain("sk-lf-never-use-for-site");
+    expect(calls.at(-1)?.url).toBe(`${base}/uploads/original.mp4`);
+    expect(new Headers(calls.at(-1)?.init?.headers).has("authorization")).toBe(false);
   });
 
   it.each(["source", "site", "deleted"])("rejects a changed %s before sending saved credentials or bytes", async change => {
@@ -58,5 +61,20 @@ describe("Langframe original-byte website uploads", () => {
     const error = await langframeReferenceUploader(f.repository, f.resolver, () => masterKey, fetcher)("connection", asset).catch(error => error);
     expect(error.message).toContain("HTTP 403");
     expect(error.message).not.toContain("fixture-dashboard-token");
+  });
+  it.each([
+    { name: "missing", response: () => new Response("missing", { status: 404 }) },
+    { name: "HTML", response: () => new Response("login", { headers: { "content-type": "text/html" } }) },
+    { name: "corrupt", response: () => new Response(new Uint8Array([9, 2, 3, 4, 0, 255]), { headers: { "content-type": asset.mimeType } }) },
+    { name: "truncated", response: () => new Response(new Uint8Array([1, 2]), { headers: { "content-type": asset.mimeType } }) },
+  ])("rejects a $name uploaded original without exposing login credentials", async sample => {
+    const f = await fixture("access-token"), fetcher = vi.fn<typeof fetch>(async (url, init) => String(url).endsWith("/api/me")
+      ? Response.json({ ok: true, user: { account: "fixture-user" } }) : init?.method === "GET" ? sample.response()
+        : Response.json({ ok: true, url: "/uploads/original.mp4" }));
+    const error = await langframeReferenceUploader(f.repository, f.resolver, () => masterKey, fetcher)("connection", asset).catch(value => value);
+    expect(error.message).toContain("素材准备失败，尚未提交生成"); expect(error.stage).toBe("verify");
+    expect(fetcher.mock.calls.filter(([url]) => String(url).endsWith("/api/canvas/media-upload"))).toHaveLength(1);
+    expect(fetcher.mock.calls.filter(([url]) => String(url).includes("/generate"))).toHaveLength(0);
+    expect(new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers).has("authorization")).toBe(false);
   });
 });

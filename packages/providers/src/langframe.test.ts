@@ -104,6 +104,23 @@ describe("LangframeAdapter", () => {
     expect(validation.issues.some(issue => issue.code === "undeclared_frame_role")).toBe(true);
     expect(fetcher).not.toHaveBeenCalled();
   });
+  it("shares the in-flight upload of one original across repeated reference entries", async () => {
+    const upload = vi.fn(async () => "https://vipprompt.cn/uploads/source");
+    const fetcher = vi.fn(async () => json({ task_id: "video-original", status: "queued" }));
+    const adapter = new LangframeAdapter(new StaticConnectionResolver([connection()]), { uploadReference: upload, fetch: fetcher });
+    await adapter.submit(request({ model: video, operation: "video.generate", parameters: { duration: 5, resolution: "720P" }, assets: [image, { ...image }] }));
+    expect(upload).toHaveBeenCalledOnce();
+    expect(fetcher.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+  });
+  it("requires HTTPS only for input delivery while retaining historical HTTP output URLs", async () => {
+    const fetcher = vi.fn<typeof fetch>();
+    const adapter = new LangframeAdapter(new StaticConnectionResolver([connection()]), { fetch: fetcher });
+    await expect(adapter.submit(request({ model: video, operation: "video.generate", parameters: { resolution: "720P", duration: 5 },
+      assets: [{ id: "clip", kind: "video", mimeType: "video/mp4", url: "http://cdn.test/original.mp4" }] }))).rejects.toThrow("公开 HTTPS");
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(await adapter.extractOutputs({ config: { output: { kind: "video" } }, remote: { download_url: "http://cdn.test/historical.mp4" } }))
+      .toEqual([{ kind: "video", url: "http://cdn.test/historical.mp4" }]);
+  });
 
   it("recovers an interrupted POST by the preassigned identity using GET only, including after restart", async () => {
     const methods: string[] = [], urls: string[] = [];

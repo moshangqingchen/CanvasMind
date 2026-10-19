@@ -5,9 +5,10 @@ import {
   validateCanvasGraphSemantics,
 } from "../../../lib/api-validation";
 import { jsonError, repository, safeJsonObject } from "../../../lib/server";
+import { projectCoordinator, ProjectMutationError } from "../../../lib/project-coordinator";
 
 export async function GET() {
-  const canvas = await repository.ensureDefaultCanvas();
+  const canvas = await projectCoordinator(repository).ensureDefaultCanvas();
   return Response.json(canvas);
 }
 
@@ -19,14 +20,18 @@ export async function POST(request: Request) {
   if (graphIssues.length > 0) return graphValidationError(graphIssues);
 
   try {
-    const canvas = await repository.saveCanvas({
+    const canvas = await projectCoordinator(repository).saveCanvas({
       id: parsed.data.id ?? crypto.randomUUID(),
       title: parsed.data.title,
       graph: safeJsonObject(parsed.data.graph),
       reason: "manual",
     });
     return Response.json(canvas, { status: 201 });
-  } catch {
+  } catch (error) {
+    if (error instanceof CanvasAssetReferenceError || (error instanceof Error && "code" in error && error.code === "CANVAS_ASSET_ROLLBACK_CLEANED"))
+      return Response.json({ error: error.message, code: "CANVAS_ASSET_ROLLBACK_CLEANED" }, { status: 409 });
+    if (error instanceof ProjectMutationError) return Response.json({ error: error.message, code: error.code }, { status: error.status });
     return jsonError("画布创建失败", 500);
   }
 }
+import { CanvasAssetReferenceError } from "@super-canvas/db";

@@ -13,6 +13,7 @@ import {
 import { jsonError, repository, storage } from "../../../../lib/server";
 import {
   MAX_PROXY_UPLOAD_BYTES,
+  completeMediaPayload,
   mediaKindForMime,
   normalizeMimeType,
   sanitizedAssetExtension,
@@ -290,21 +291,10 @@ async function materializePendingDrop(drop: PendingMaterialDrop) {
   // same media kind, while still rejecting image/video/audio cross-kind data.
   if (!detectedMimeType || !declaredKind || declaredKind !== detectedKind)
     return jsonError("Material content does not match its media type");
-  let normalizedBytes = bytes;
-  let mimeType = detectedMimeType;
-  if (mimeType === "image/gif") {
-    try {
-      normalizedBytes = new Uint8Array(
-        await sharp(bytes, { failOn: "error" })
-          .rotate()
-          .png()
-          .toBuffer(),
-      );
-      mimeType = "image/png";
-    } catch {
-      return jsonError("GIF 图片无法转换为 PNG", 415);
-    }
-  }
+  const normalizedBytes = bytes;
+  const mimeType = detectedMimeType;
+  if (mimeType === "image/gif" && !completeMediaPayload(bytes, mimeType))
+    return jsonError("GIF 图片数据不完整，未保存素材", 415);
   const kind = mediaKindForMime(mimeType)!;
   const assetId = randomUUID();
   const extension = sanitizedAssetExtension(drop.name, mimeType);

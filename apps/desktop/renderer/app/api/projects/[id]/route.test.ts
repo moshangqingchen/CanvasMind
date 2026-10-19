@@ -30,14 +30,25 @@ vi.mock("../../../../lib/project-service", () => ({
   }),
 }));
 
-vi.mock("@super-canvas/storage", () => ({
+vi.mock("@super-canvas/storage", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@super-canvas/storage")>(),
   getProjectFileStore: () => ({
+    root: "D:/__supercanvas-unit-project-delete-unused",
     deleteProject: mocks.deleteProject,
     renameProject: mocks.renameProject,
   }),
 }));
 
+vi.mock("../../../../lib/project-coordinator", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../../../lib/project-coordinator")>(),
+  projectCoordinator: () => ({
+    run: (work: () => Promise<unknown>) => work(),
+    saveCanvas: (input: unknown) => mocks.repository.saveCanvas(input),
+  }),
+}));
+
 import { DELETE, PATCH } from "./route";
+import { ProjectMutationError } from "../../../../lib/project-coordinator";
 
 const target = {
   id: "canvas-delete",
@@ -76,6 +87,14 @@ beforeEach(() => {
 });
 
 describe("PATCH /api/projects/[id]", () => {
+  it("preserves the rename-pending error code", async () => {
+    mocks.repository.listCanvases.mockResolvedValue([target, remaining]);
+    mocks.repository.saveCanvas.mockRejectedValueOnce(new ProjectMutationError("待恢复", 409, "PROJECT_RENAME_PENDING"));
+    const response = await PATCH(new Request("http://localhost/api/projects/canvas-delete", { method: "PATCH", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "新名称" }) }), context);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "待恢复", code: "PROJECT_RENAME_PENDING" });
+  });
   it("renames the folder and project with revision protection", async () => {
     mocks.repository.listCanvases.mockResolvedValue([target, remaining]);
     const response = await PATCH(
@@ -93,10 +112,6 @@ describe("PATCH /api/projects/[id]", () => {
       revision: 4,
       folderRenamed: true,
     });
-    expect(mocks.renameProject).toHaveBeenCalledWith(
-      target.title,
-      "新项目名称",
-    );
     expect(mocks.repository.saveCanvas).toHaveBeenCalledWith({
       id: target.id,
       title: "新项目名称",
@@ -122,7 +137,7 @@ describe("PATCH /api/projects/[id]", () => {
     expect(mocks.repository.saveCanvas).not.toHaveBeenCalled();
   });
 
-  it("restores the folder name when saving the renamed project fails", async () => {
+  it("reports pending recovery rather than claiming a failed save was rolled back", async () => {
     mocks.repository.listCanvases.mockResolvedValue([target, remaining]);
     mocks.repository.saveCanvas.mockRejectedValue(new Error("database failed"));
     const response = await PATCH(
@@ -135,16 +150,8 @@ describe("PATCH /api/projects/[id]", () => {
     );
 
     expect(response.status).toBe(500);
-    expect(mocks.renameProject).toHaveBeenNthCalledWith(
-      1,
-      target.title,
-      "新项目名称",
-    );
-    expect(mocks.renameProject).toHaveBeenNthCalledWith(
-      2,
-      "新项目名称",
-      target.title,
-    );
+    expect(await response.json()).toMatchObject({ error: expect.stringContaining("待恢复") });
+    expect(mocks.renameProject).not.toHaveBeenCalled();
   });
 });
 

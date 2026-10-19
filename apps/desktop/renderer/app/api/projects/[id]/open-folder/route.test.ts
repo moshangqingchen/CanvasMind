@@ -22,8 +22,9 @@ vi.mock("../../../../../lib/project-service", () => ({
   ensureProjectDirectory: mocks.ensureProjectDirectory,
 }));
 
-vi.mock("@super-canvas/storage", () => ({
-  getProjectFileStore: () => ({ projectDirectory: mocks.projectDirectory }),
+vi.mock("@super-canvas/storage", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@super-canvas/storage")>(),
+  getProjectFileStore: () => ({ root: "D:/__supercanvas-unit-project-open-unused", projectDirectory: mocks.projectDirectory }),
 }));
 
 import { POST } from "./route";

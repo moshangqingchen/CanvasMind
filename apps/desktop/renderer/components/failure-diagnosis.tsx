@@ -2,13 +2,15 @@ import type { LocalizedRunError } from "../lib/error-localization";
 import { failureDiagnosis } from "../lib/failure-diagnosis";
 import styles from "./failure-diagnosis.module.css";
 
-export function FailureDiagnosis({ error, status, providerTaskStatus, recoveryAction }: {
+export function FailureDiagnosis({ error, status, providerTaskStatus, recoveryAction, providerTaskId, rawError }: {
   error?: LocalizedRunError | null;
   status?: string;
   providerTaskStatus?: string;
   recoveryAction?: string;
+  providerTaskId?: string;
+  rawError?: unknown;
 }) {
-  const diagnosis = failureDiagnosis(error, { status, providerTaskStatus, recoveryAction });
+  const diagnosis = failureDiagnosis(error, { status, providerTaskStatus, recoveryAction, providerTaskId, rawError });
   return <div className={styles.diagnosis} role="group" aria-label={diagnosis.regionLabel}>
     <dl className={styles.rows}>
       <div className={styles.reason}>

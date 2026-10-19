@@ -1972,6 +1972,27 @@ export class GenericRestAdapter implements ProviderAdapter {
       config.output.kind === "video" ? body => { videoOutputParameters = videoOutputParametersFromBody(body); } : undefined,
       request.operation.startsWith("image.") ? evidence => { upstreamRequestEvidence = evidence; } : undefined,
     );
+    return this.parsedSubmission(request, received, connection, config, {
+      requireVideoTaskId: Boolean(videoRequest || !this.fixedConfig && (isCangyuanVideoRequest(request.model, connection.baseUrl) || remainingSupplier && isRemainingVideoModel(remainingSupplier, request.model, videoContext))),
+      ...(upstreamRequestEvidence ? { upstreamRequestEvidence } : {}), ...(videoOutputParameters ? { videoOutputParameters } : {}),
+    });
+  }
+
+  public async restoreCloudTask(request: NormalizedRequest, received: unknown): Promise<ProviderTask> {
+    const connection = await this.connections.resolve(request.connectionId);
+    let config = this.configFrom(connection, request.model, request.operation);
+    if (!this.fixedConfig && /^midjourney-[12]k$/u.test(request.model ?? "") &&
+        managesCangyuanCurrentTransport(connection.settings ?? {}, connection.baseUrl, this.configFrom(connection), request.model)) {
+      const current = cangyuanCurrentTransport(request.model!, request.parameters)!;
+      config = { ...config, ...current, ...current.operationOverrides?.[request.operation] };
+    }
+    return this.parsedSubmission(request, received, connection, config, { requireVideoTaskId: false });
+  }
+
+  private async parsedSubmission(request: NormalizedRequest, received: unknown,
+    connection: Awaited<ReturnType<ProviderConnectionResolver["resolve"]>>, config: RestConnectorConfig,
+    context: { requireVideoTaskId: boolean; upstreamRequestEvidence?: ProviderRequestEvidence; videoOutputParameters?: Record<string, unknown> },
+  ): Promise<ProviderTask> {
     let knownProviderTaskId: string | undefined;
     try {
       const cloudTask = isRecord(received) && typeof received.__superCanvasCloudPoll === "string" ? received.__superCanvasCloudPoll : undefined;
@@ -1986,7 +2007,7 @@ export class GenericRestAdapter implements ProviderAdapter {
           kind: "invalid_response", phase: "submit", retryable: false, submissionMayHaveOccurred: true, responseBody: remote,
         }), { code: "music_submit_missing_id" });
       }
-      if (config.output.format !== "openai-chat-videos" && (videoRequest || !this.fixedConfig && (isCangyuanVideoRequest(request.model, connection.baseUrl) || remainingSupplier && isRemainingVideoModel(remainingSupplier, request.model, videoContext))) && !cloudTask &&
+      if (config.output.format !== "openai-chat-videos" && context.requireVideoTaskId && !cloudTask &&
           !(typeof rawTaskId === "string" && rawTaskId.trim() || typeof rawTaskId === "number" && Number.isFinite(rawTaskId)))
         throw new ProviderHttpError("供应商已响应但未返回视频任务 ID；请核对供应商记录，避免重复提交。", {
           kind: "invalid_response", phase: "submit", retryable: false, submissionMayHaveOccurred: true, responseBody: remote,
@@ -2003,7 +2024,7 @@ export class GenericRestAdapter implements ProviderAdapter {
         rawTaskId === undefined ? "succeeded" : "running";
       const status = normalizeStatus(rawStatus, config, fallback);
       const envelope: RestTaskEnvelope = {
-        ...(upstreamRequestEvidence ? { upstreamRequestEvidence } : {}),
+        ...(context.upstreamRequestEvidence ? { upstreamRequestEvidence: context.upstreamRequestEvidence } : {}),
         connectionId: request.connectionId,
         config,
         remote,
@@ -2011,7 +2032,7 @@ export class GenericRestAdapter implements ProviderAdapter {
         status,
         ...(request.model ? { model: request.model } : {}),
         ...(connection.baseUrl ? { baseUrl: connection.baseUrl } : {}),
-        ...(videoOutputParameters === undefined ? {} : { videoOutputParameters }),
+        ...(context.videoOutputParameters === undefined ? {} : { videoOutputParameters: context.videoOutputParameters }),
       };
       const result: ProviderTask = {
         providerTaskId,
@@ -2033,7 +2054,7 @@ export class GenericRestAdapter implements ProviderAdapter {
       if (status === "succeeded" && (config.output.format || config.output.requireOutput) && !(await this.extractOutputs(envelope)).length)
         throw new ProviderHttpError(`供应商已返回响应但没有${config.output.kind === "video" ? "视频" : "图片"}；请核对供应商记录和响应，避免重复提交。`, {
           kind: "invalid_response", phase: "submit", retryable: false, submissionMayHaveOccurred: true, responseBody: remote,
-          ...(upstreamRequestEvidence ? { upstreamRequestEvidence } : {}),
+          ...(context.upstreamRequestEvidence ? { upstreamRequestEvidence: context.upstreamRequestEvidence } : {}),
         });
       return result;
     } catch (error) {

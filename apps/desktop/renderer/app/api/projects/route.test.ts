@@ -3,10 +3,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   repository: {
     listCanvases: vi.fn(),
+    listCanvasTitles: vi.fn(),
+    getCanvas: vi.fn(),
     ensureDefaultCanvas: vi.fn(),
     saveCanvas: vi.fn(),
   },
   ensureProjectDirectory: vi.fn(),
+  ensureProject: vi.fn(),
+}));
+
+vi.mock("@super-canvas/storage", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@super-canvas/storage")>(),
+  getProjectFileStore: () => ({ root: "D:/__supercanvas-unit-project-create-unused", ensureProject: mocks.ensureProject }),
 }));
 
 vi.mock("../../../lib/server", () => ({
@@ -39,6 +47,7 @@ vi.mock("../../../lib/project-service", () => ({
 }));
 
 import { GET, POST } from "./route";
+import { POST as createCanvas } from "../canvas/route";
 
 const canvasFixture = {
   id: "canvas-1",
@@ -52,10 +61,21 @@ const canvasFixture = {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.repository.listCanvases.mockResolvedValue([canvasFixture]);
+  mocks.repository.listCanvasTitles.mockImplementation(async () => (await mocks.repository.listCanvases()).map(({ id, title }: { id: string; title: string }) => ({ id, title })));
+  mocks.repository.getCanvas.mockResolvedValue(null);
   mocks.ensureProjectDirectory.mockResolvedValue(undefined);
 });
 
 describe("/api/projects", () => {
+  it("keeps the name-conflict code on project and canvas creation", async () => {
+    for (const create of [POST, createCanvas]) {
+      const response = await create(new Request("http://localhost/api/projects", { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title: canvasFixture.title, ...(create === createCanvas ? { graph: { schemaVersion: 1, nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } } } : {}) }) }));
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({ code: "PROJECT_NAME_CONFLICT" });
+    }
+    expect(mocks.repository.saveCanvas).not.toHaveBeenCalled();
+  });
   it("lists canvases as project summaries and prepares directories", async () => {
     const response = await GET();
 
@@ -116,6 +136,23 @@ describe("/api/projects", () => {
         graph: expect.objectContaining({ nodes: [], edges: [] }),
       }),
     );
-    expect(mocks.ensureProjectDirectory).toHaveBeenCalledWith(canvasFixture);
+    expect(mocks.ensureProject).toHaveBeenCalledWith(canvasFixture.title);
+  });
+
+  it("returns 201 and 409 for two concurrent creates of the same name", async () => {
+    const saved: typeof canvasFixture[] = [];
+    mocks.repository.listCanvases.mockImplementation(async () => [...saved]);
+    mocks.repository.saveCanvas.mockImplementation(async input => {
+      const canvas = { ...canvasFixture, ...input };
+      saved.push(canvas);
+      return canvas;
+    });
+    const create = () => POST(new Request("http://localhost/api/projects", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: "并发项目" }),
+    }));
+    const responses = await Promise.all([create(), create()]);
+    expect(responses.map(response => response.status)).toEqual([201, 409]);
+    expect(saved).toHaveLength(1);
+    expect(mocks.ensureProject).toHaveBeenCalledOnce();
   });
 });

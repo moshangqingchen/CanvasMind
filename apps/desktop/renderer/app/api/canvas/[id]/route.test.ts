@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { CanvasRevisionConflictError } from "@super-canvas/db";
+import { CanvasAssetReferenceError, CanvasRevisionConflictError } from "@super-canvas/db";
 
 const mocks = vi.hoisted(() => ({
   repository: {
     getCanvas: vi.fn(),
+    listCanvases: vi.fn(),
+    listCanvasTitles: vi.fn(),
     saveCanvas: vi.fn(),
     flush: vi.fn(),
   },
@@ -20,6 +22,7 @@ vi.mock("../../../../lib/server", () => ({
 }));
 
 import { PUT } from "./route";
+import { ProjectMutationError } from "../../../../lib/project-coordinator";
 
 const graph = {
   schemaVersion: 1,
@@ -40,9 +43,33 @@ const context = { params: Promise.resolve({ id: "canvas-1" }) };
 
 beforeEach(() => {
   vi.resetAllMocks();
+  mocks.repository.listCanvases.mockResolvedValue([{ id: "canvas-1", title: "Canvas", graph, revision: 8 }]);
+  mocks.repository.listCanvasTitles.mockResolvedValue([{ id: "canvas-1", title: "Canvas" }]);
+  mocks.repository.getCanvas.mockResolvedValue({ id: "canvas-1", title: "Canvas", graph, revision: 8 });
 });
 
 describe("PUT /api/canvas/[id]", () => {
+  it("returns a non-retryable typed rejection for rollback-cleaned asset references", async () => {
+    mocks.repository.saveCanvas.mockRejectedValue(new CanvasAssetReferenceError("removed"));
+    const response = await PUT(request(8), context);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "CANVAS_ASSET_ROLLBACK_CLEANED", error: expect.stringContaining("请重新导入原素材") });
+    expect(mocks.repository.saveCanvas).toHaveBeenCalledOnce();
+  });
+  it("returns a typed name conflict before saving an import", async () => {
+    mocks.repository.listCanvasTitles.mockResolvedValue([{ id: "canvas-1", title: "Canvas" }, { id: "other", title: "Occupied" }]);
+    const response = await PUT(new Request("http://localhost/api/canvas/canvas-1", { method: "PUT", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "Occupied", graph, expectedRevision: 8 }) }), context);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "PROJECT_NAME_CONFLICT" });
+    expect(mocks.repository.saveCanvas).not.toHaveBeenCalled();
+  });
+  it("preserves the unknown rename-pending code", async () => {
+    mocks.repository.saveCanvas.mockRejectedValue(new ProjectMutationError("待恢复", 409, "PROJECT_RENAME_PENDING"));
+    const response = await PUT(request(8), context);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "待恢复", code: "PROJECT_RENAME_PENDING" });
+  });
   it("acknowledges a repeated save after its first response was lost without incrementing revision", async () => {
     const saved = { id: "canvas-1", title: "Canvas", graph: {
       viewport: { zoom: 1, y: 0, x: 0 }, edges: [], nodes: [], schemaVersion: 1,
@@ -69,6 +96,7 @@ describe("PUT /api/canvas/[id]", () => {
   it("preserves a genuine conflict if the graph changes during the durability check", async () => {
     mocks.repository.saveCanvas.mockRejectedValue(new CanvasRevisionConflictError(7, 8));
     mocks.repository.getCanvas
+      .mockResolvedValueOnce({ id: "canvas-1", title: "Canvas", graph, revision: 8 })
       .mockResolvedValueOnce({ id: "canvas-1", title: "Canvas", graph, revision: 8 })
       .mockResolvedValueOnce({ id: "canvas-1", title: "Canvas", graph: { ...graph, viewport: { x: 20, y: 0, zoom: 1 } }, revision: 9 });
     const response = await PUT(request(7), context);
@@ -109,6 +137,7 @@ describe("PUT /api/canvas/[id]", () => {
   });
 
   it("returns a typed 409 response for a stale revision", async () => {
+    mocks.repository.getCanvas.mockResolvedValue({ id: "canvas-1", title: "Canvas", graph: { ...graph, viewport: { x: 42, y: 0, zoom: 1 } }, revision: 5 });
     mocks.repository.saveCanvas.mockRejectedValue(
       new CanvasRevisionConflictError(3, 5),
     );
@@ -135,11 +164,12 @@ describe("PUT /api/canvas/[id]", () => {
 
     expect(response.status).toBe(200);
     expect(mocks.repository.saveCanvas).toHaveBeenCalledWith(
-      expect.objectContaining({ expectedRevision: undefined }),
+      expect.objectContaining({ expectedRevision: 8, title: undefined }),
     );
   });
 
   it("recognizes a conflict from a repository surviving a module reload", async () => {
+    mocks.repository.getCanvas.mockResolvedValue({ id: "canvas-1", title: "Canvas", graph: { ...graph, viewport: { x: 42, y: 0, zoom: 1 } }, revision: 5 });
     mocks.repository.saveCanvas.mockRejectedValue(Object.assign(new Error("conflict"), {
       code: "CANVAS_REVISION_CONFLICT", expectedRevision: 3, currentRevision: 5,
     }));

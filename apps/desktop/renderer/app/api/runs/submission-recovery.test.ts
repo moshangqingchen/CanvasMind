@@ -17,6 +17,7 @@ import { createRun } from "../../../lib/client-api";
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.stubGlobal("__superCanvasSubmissionIdentities", new WeakMap());
   vi.stubEnv("SUPERCANVAS_DESKTOP", "true");
   vi.stubEnv("SUPERCANVAS_DRAIN_FILE", "");
   mocks.repository.getRunByClientRequest.mockResolvedValue(null);

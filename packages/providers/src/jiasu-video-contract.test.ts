@@ -390,19 +390,22 @@ describe("Jiasu exact video supplier contract", () => {
     const local = [image, video, audio].map(asset => ({ ...asset, url: undefined, data: new Uint8Array([1, 2, 3]) })) as unknown as ProviderAssetInput[];
     const urls = ["image", "video", "audio"].map(kind => `https://m.jiasuapi.com/local-${kind}`);
     const f = fixture("sd-2.0-J2", [Response.json({ success: true, data: { items: urls.map((url, index) => ({ url, put: { url: `https://storage.example/asset-${index}?signature=isolated`, method: "PUT", headers: { "Content-Type": local[index]!.mimeType } } })) } }),
-      new Response(null, { status: 204 }), new Response(null, { status: 204 }), new Response(null, { status: 204 }), Response.json({ id: "local_task_original", status: "queued" })]);
+      ...local.flatMap(asset => [new Response(null, { status: 204 }), new Response(asset.data!, { headers: { "content-type": asset.mimeType } })]),
+      Response.json({ id: "local_task_original", status: "queued" })]);
     expect((await f.adapter.validate(request("sd-2.0-J2", {}, local))).valid).toBe(true);
     const task = await f.adapter.submit(request("sd-2.0-J2", {}, local));
     expect(task.providerTaskId).toBe("local_task_original");
     expect(f.fetcher.mock.calls[0]?.[0]).toBe("https://ai.jiasuapi.com/v1/media/uploads");
     expect(JSON.parse(String(f.fetcher.mock.calls[0]?.[1]?.body)).items.map((item: { kind: string }) => item.kind)).toEqual(["image", "video", "audio"]);
-    for (const [, init] of f.fetcher.mock.calls.slice(1, 4)) {
-      expect(init?.method).toBe("PUT");
+    const uploads = f.fetcher.mock.calls.filter(([, init]) => init?.method === "PUT");
+    expect(uploads).toHaveLength(3);
+    for (const [, init] of uploads) {
       expect(new Headers(init?.headers).has("authorization")).toBe(false);
     }
-    expect(f.fetcher.mock.calls[4]?.[0]).toBe("https://ai.jiasuapi.com/v1/video/generations");
-    expect(JSON.parse(String(f.fetcher.mock.calls[4]?.[1]?.body))).toMatchObject({ images: [urls[0]], videos: [urls[1]], audios: [urls[2]] });
-    expect(f.fetcher.mock.calls.filter(([url]) => String(url).endsWith("/video/generations"))).toHaveLength(1);
+    const generation = f.fetcher.mock.calls.filter(([url, init]) => String(url).endsWith("/video/generations") && init?.method === "POST");
+    expect(generation).toHaveLength(1);
+    expect(JSON.parse(String(generation[0]?.[1]?.body))).toMatchObject({ images: [urls[0]], videos: [urls[1]], audios: [urls[2]] });
+    expect(f.fetcher.mock.calls.filter(([, init]) => init?.method === "GET")).toHaveLength(3);
   });
 
   it("stops before generation if a free supplier media upload fails", async () => {

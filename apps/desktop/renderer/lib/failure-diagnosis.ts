@@ -49,11 +49,17 @@ export function failureDiagnosis(error: LocalizedRunError | null | undefined, op
   status?: string;
   providerTaskStatus?: string;
   recoveryAction?: string;
+  providerTaskId?: string;
+  rawError?: unknown;
 } = {}) {
   const cancelled = options.status === "cancelled";
-  const unsubmittedReference = isUnsubmittedReferenceFailure(error);
+  const unsubmittedReference = isUnsubmittedReferenceFailure(options.rawError ?? error, options.providerTaskId);
   const category = error?.failureCategory ?? legacyCategory(error);
-  const charge = error?.charge ?? { status: "unknown" as const, source: "unconfirmed" as const };
+  const recordedCharge = error?.charge;
+  const raw = options.rawError && typeof options.rawError === "object" ? options.rawError as Record<string, unknown> : undefined;
+  const contradictedNonSubmission = recordedCharge?.source === "not_submitted" && Boolean(options.providerTaskId?.trim() ||
+    error?.submissionMayHaveOccurred === true || raw?.providerTaskId || raw?.cloudTaskEvidence || raw?.taskEvidence);
+  const charge = (!contradictedNonSubmission ? recordedCharge : undefined) ?? { status: "unknown" as const, source: "unconfirmed" as const };
   const chargeStatus = charge.status;
   const chargeLabel = { charged: "已扣费", not_charged: "未扣费", refunded: "已退款", unknown: "扣费待确认" }[chargeStatus];
   const amountLabel = chargeStatus !== "unknown" && charge.amount !== undefined
@@ -65,7 +71,9 @@ export function failureDiagnosis(error: LocalizedRunError | null | undefined, op
       ? "请求尚未发送（本地确认）"
       : `供应商未返回本次扣费凭据；${cancelled ? "取消" : "失败"}不代表未扣费`;
   const nextStep = unsubmittedReference
-    ? "请稍后重试，程序会先重新检查素材链接；准备通过后才会提交生成。"
+    ? error?.code === "MATERIAL_PREPARATION_FAILED"
+      ? "请检查素材与当前渠道，重试时程序会先重新准备并校验素材；准备通过后才会提交生成。"
+      : "请稍后重试，程序会先重新检查素材链接；准备通过后才会提交生成。"
     : cancelled
     ? "请核对供应商原任务是否已停止，以及本次扣费或退款记录。取消不等于退款。"
     : options.providerTaskStatus === "succeeded" || options.recoveryAction === "resume_archive"

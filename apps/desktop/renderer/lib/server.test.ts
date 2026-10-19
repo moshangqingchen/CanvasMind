@@ -141,6 +141,20 @@ describe("public run snapshots", () => {
     }],
   });
 
+  it("retains preparation phase and only bounded cloud task identities in public failures", () => {
+    const input = recoverySnapshot();
+    const publish = (cloudTaskEvidence: unknown) => publicRunSnapshot({ ...input, nodes: [{ ...input.nodes[0]!, errorJson: {
+      message: "素材准备失败，尚未提交生成", code: "MATERIAL_PREPARATION_FAILED", phase: "prepare",
+      cloudTaskEvidence, pollingHeaders: { Authorization: "private-capsule" }, pollBody: "private-capsule",
+    } }] })!.nodes[0]!.errorJson;
+    expect(publish({ jobId: "a".repeat(64), upstreamTaskId: "upstream-1\n", headers: { Authorization: "private-capsule" }, body: "private-capsule" }))
+      .toMatchObject({ phase: "prepare", cloudTaskEvidence: { jobId: "a".repeat(64), upstreamTaskId: "upstream-1" } });
+    expect(JSON.stringify(publish({ jobId: "a".repeat(64), upstreamTaskId: "original token=private-secret" })))
+      .not.toMatch(/private|pollingHeaders|pollBody|headers/u);
+    expect(publish({ jobId: "invalid", upstreamTaskId: "task" })?.cloudTaskEvidence).toBeUndefined();
+    expect(publish({ jobId: "a".repeat(64), upstreamTaskId: "x".repeat(1025) })?.cloudTaskEvidence).toEqual({ jobId: "a".repeat(64) });
+  });
+
   it.each(["cancelled", "failed", "needs_attention"] as const)(
     "offers archive-only recovery for %s even after graph retention expires",
     (status) => {

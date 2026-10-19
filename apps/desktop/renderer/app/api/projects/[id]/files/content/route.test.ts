@@ -14,6 +14,21 @@ const request = (query = "", range?: string) => new Request(`http://localhost/ap
 beforeEach(() => vi.clearAllMocks());
 
 describe("project file media responses", () => {
+  it("serves audio/webm unchanged in metadata, full content and ranges", async () => {
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    mocks.metadata.mockResolvedValue({ fileId, kind: "audio", mimeType: "audio/webm", size: bytes.length });
+    mocks.read.mockImplementation(async (_canvas, _file, options) => ({ bytes: options ? bytes.slice(options.start, options.end + 1) : bytes }));
+    const head = await HEAD(request(), context);
+    expect(head.headers.get("content-type")).toBe("audio/webm");
+    expect(mocks.read).not.toHaveBeenCalled();
+    const full = await GET(request(), context);
+    expect(full.headers.get("content-type")).toBe("audio/webm");
+    expect(new Uint8Array(await full.arrayBuffer())).toEqual(bytes);
+    const range = await GET(request("", "bytes=1-2"), context);
+    expect(range.status).toBe(206);
+    expect(range.headers.get("content-type")).toBe("audio/webm");
+    expect(new Uint8Array(await range.arrayBuffer())).toEqual(bytes.slice(1, 3));
+  });
   it("renders bounded thumbnails once and makes HEAD match cached WebP metadata", async () => {
     const bytes = await sharp({ create: { width: 1000, height: 800, channels: 4, background: "white" } }).png().toBuffer();
     mocks.metadata.mockResolvedValue({ fileId, kind: "image", mimeType: "image/png", size: bytes.length });

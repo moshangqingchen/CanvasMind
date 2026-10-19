@@ -92,6 +92,23 @@ beforeEach(() => {
 });
 
 describe("explicit image download formats", () => {
+  it("keeps imported audio/webm playable with its original MIME for HEAD, GET and Range", async () => {
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    mocks.repository.getAsset.mockResolvedValue({ ...asset, kind: "audio", mimeType: "audio/webm", name: "voice.webm" });
+    useStored(bytes, "audio/webm");
+    const url = `http://localhost/api/assets/${asset.id}/content`;
+    const head = await HEAD(new Request(url), context());
+    expect(head.headers.get("content-type")).toBe("audio/webm");
+    expect(head.headers.has("content-disposition")).toBe(false);
+    const full = await GET(new Request(url), context());
+    expect(full.headers.get("content-type")).toBe("audio/webm");
+    expect(new Uint8Array(await full.arrayBuffer())).toEqual(bytes);
+    mocks.storage.getRange.mockResolvedValue({ bytes: bytes.slice(1, 3), contentType: "audio/webm" });
+    const range = await GET(new Request(url, { headers: { range: "bytes=1-2" } }), context());
+    expect(range.status).toBe(206);
+    expect(range.headers.get("content-type")).toBe("audio/webm");
+    expect(new Uint8Array(await range.arrayBuffer())).toEqual(bytes.slice(1, 3));
+  });
   it.each([
     ["png", "image/png"],
     ["webp", "image/webp"],

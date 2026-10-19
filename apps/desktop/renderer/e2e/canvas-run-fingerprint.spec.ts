@@ -47,7 +47,7 @@ for (const change of ["presentation", "prompt"] as const) {
       await route.fulfill({ json: [descriptor], headers: { "X-Model-Scan-Status": "live" } });
     });
     const created = await request.post("/api/canvas", { data: {
-      title: "运行指纹浏览器回归", graph: {
+      title: `运行指纹浏览器回归-${Date.now()}`, graph: {
         schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 1 }, edges: [], nodes: [{
           id: "source", type: "workflow", position: { x: 170, y: 160 }, style: { width: 420, height: 210 },
           data: { nodeType: "image-generation", label: "运行指纹测试", provider: "openai",

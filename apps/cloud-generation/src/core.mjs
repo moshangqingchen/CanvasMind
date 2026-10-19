@@ -6,6 +6,7 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const stateKey = id => `jobs/${id}/state.json`;
 const responseKey = id => `jobs/${id}/response`;
+const pollingKey = id => `jobs/${id}/polling`;
 const json = (value, status = 200) => Response.json(value, { status, headers: { "cache-control": "no-store" } });
 const now = env => env.clock?.() ?? Date.now();
 const fetcher = env => env.fetchImpl ?? fetch;
@@ -162,7 +163,8 @@ export async function handleRequest(request, env) {
       if (await workflowExists(env, id)) return json({ state: "queued" });
       return json({ error: "Not found" }, 404);
     }
-    if (!match[2]) return json({ state: state.state, phase: state.phase, createdAt: state.createdAt, completedAt: state.completedAt, expiresAt: state.expiresAt, error: state.error, transport: state.transport });
+    if (!match[2]) return json({ state: state.state, phase: state.phase, createdAt: state.createdAt, completedAt: state.completedAt, expiresAt: state.expiresAt, error: state.error, transport: state.transport,
+      ...(state.state === "uncertain" && state.upstreamTaskId ? { upstreamTaskId: state.upstreamTaskId } : {}) });
     if (state.state !== "complete") return json({ error: "Not ready" }, 409);
     const stored = await env.RESULTS.get(responseKey(id));
     if (!stored) return json({ error: "Response is unavailable" }, 410);
@@ -253,7 +255,7 @@ async function inspectSmallResponse(response) {
   for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
   return { response: new Response(bytes, { status: response.status, headers: response.headers }), remote: JSON.parse(decoder.decode(bytes)) };
 }
-async function finishNativeTask(env, payload, manifest, initialResponse, state) {
+async function finishNativeTask(env, payload, manifest, initialResponse, state, remember) {
   let response = initialResponse;
   let remote;
   let taskId = state.upstreamTaskId;
@@ -266,14 +268,18 @@ async function finishNativeTask(env, payload, manifest, initialResponse, state) 
     taskId = mapped(remote, polling.submitMapping, "taskId");
     status = nativeStatus(remote, polling.submitMapping, polling);
     // A documented REST endpoint may sometimes return a synchronous result.
-    if (taskId === undefined || ["succeeded", "failed", "cancelled"].includes(status)) return { response: Response.json(remote, { status: response.status }), state };
+    if (taskId === undefined) return { response: Response.json(remote, { status: response.status }), state };
     taskId = String(taskId);
     if (taskId.length > 1024) throw new Error("Invalid upstream task id");
     state = { ...state, upstreamTaskId: taskId, phase: "generating" };
+    // Share the receipt before storage: even a failed first checkpoint must not
+    // let either enclosing error handler replace it with the pre-submit state.
+    remember(state);
     await putState(env, payload.id, state);
+    if (["succeeded", "failed", "cancelled"].includes(status)) return { response: Response.json(remote, { status: response.status }), state };
   }
-  const deadline = Date.now() + 30 * 60_000;
-  while (Date.now() < deadline) {
+  const deadline = now(env) + 30 * 60_000;
+  while (now(env) < deadline) {
     await (env.delay ?? (ms => new Promise(resolve => setTimeout(resolve, ms))))(polling.intervalMs);
     const url = polling.urlTemplate.replaceAll("__SUPER_CANVAS_CLOUD_TASK__", encodeURIComponent(taskId));
     let body;
@@ -294,7 +300,7 @@ async function finishNativeTask(env, payload, manifest, initialResponse, state) 
   throw new Error("Upstream polling deadline exceeded");
 }
 
-async function dispatchOnce(env, payload) {
+async function dispatchOnce(env, payload, onState) {
   const { id, inputPrefix, createdAt } = payload;
   const prior = await getState(env, id);
   // This marker also protects against infrastructure replay, not just ordinary retries.
@@ -310,27 +316,36 @@ async function dispatchOnce(env, payload) {
   }
   if (prior && ["complete", "received", "uncertain", "expired"].includes(prior.state)) return prior;
   let state = prior ?? { state: "running", phase: "waiting_provider", createdAt, expiresAt: now(env) + DAY, contentType: "application/json" };
+  const remember = next => { state = next; onState?.(next); return next; };
+  remember(state);
   const encoded = await env.RESULTS.get(`${inputPrefix}/manifest`);
   const body = await env.RESULTS.get(`${inputPrefix}/body`);
   if (!encoded || !body) throw new Error("Request upload is incomplete");
   const manifest = await unprotect(await encoded.text(), env.ENCRYPTION_KEY);
-  state = { ...state, transport: { kind: env.submitTransportName?.(manifest.url) ?? "fetch", startedAt: now(env) } };
+  remember({ ...state, transport: { kind: env.submitTransportName?.(manifest.url) ?? "fetch", startedAt: now(env) } });
   await putState(env, id, state);
   try {
+    if (manifest.polling) {
+      // A query needs its own method/body/auth and response mapping, never the
+      // original paid-submit body, reference bytes or submit credentials.
+      const { submitMapping: _submitMapping, ...polling } = manifest.polling;
+      await env.RESULTS.put(pollingKey(id), await protect({ polling, maxResponseBytes: manifest.maxResponseBytes,
+        expiresAt: state.expiresAt }, env.ENCRYPTION_KEY));
+    }
     let response = state.upstreamTaskId ? null : await (env.submitFetchImpl ?? fetcher(env))(manifest.url, { method: manifest.method, headers: manifest.headers,
       ...(manifest.method === "GET" ? {} : { body: body.body }), redirect: "manual", signal: AbortSignal.timeout(30 * 60_000) }, { bodyLength: body.size, maxResponseBytes: manifest.maxResponseBytes });
     if (manifest.polling && (state.upstreamTaskId || response.ok)) {
-      const completed = await finishNativeTask(env, payload, manifest, response, state);
-      response = completed.response; state = completed.state;
+      const completed = await finishNativeTask(env, payload, manifest, response, state, remember);
+      response = completed.response; remember(completed.state);
     }
     const diagnostics = {};
     for (const name of ["server", "via", "cf-ray", "x-request-id", "x-client-request-id"]) {
       const value = response.headers.get(name);
       if (value) diagnostics[name] = value.slice(0, 512);
     }
-    state = { ...state, transport: { ...state.transport, receivedAt: now(env), status: response.status, headers: diagnostics } };
+    remember({ ...state, transport: { ...state.transport, receivedAt: now(env), status: response.status, headers: diagnostics } });
     if (response.ok) {
-      state = { ...state, phase: "receiving" };
+      remember({ ...state, phase: "receiving" });
       await putState(env, id, state);
     }
     await storeStream(env.RESULTS, responseKey(id), response.body, manifest.maxResponseBytes, {
@@ -338,11 +353,15 @@ async function dispatchOnce(env, payload) {
     });
     const complete = { ...state, state: "received", httpStatus: response.status, contentType: response.headers.get("content-type") ?? "application/json",
       expiresAt: now(env) + DAY };
+    remember(complete);
     await putState(env, id, complete); return complete;
   } catch {
-    const uncertain = { ...state, state: "uncertain", error: "云端与供应商的连接中断，未收到完整结果；请核对账单，不会自动重新生成", expiresAt: now(env) + DAY };
+    const uncertain = remember({ ...state, state: "uncertain", error: "云端与供应商的连接中断，未收到完整结果；请核对账单，不会自动重新生成" });
     await putState(env, id, uncertain); return uncertain;
-  } finally { await env.RESULTS.delete([`${inputPrefix}/body`, `${inputPrefix}/manifest`]); }
+  } finally {
+    await env.RESULTS.delete([`${inputPrefix}/body`, `${inputPrefix}/manifest`]);
+    if (!state.upstreamTaskId) await env.RESULTS.delete(pollingKey(id));
+  }
 }
 export async function purgeJob(env, payload) {
   // Delete the image, references and prompt; only a non-sensitive expired marker remains.
@@ -359,10 +378,12 @@ export async function purgeJob(env, payload) {
 }
 export async function executeGeneration(env, payload, step) {
   let state;
+  let latest;
   try {
-    state = await step.do("submit-once-and-save-response", { retries: { limit: 0, delay: "1 second", backoff: "constant" }, timeout: "35 minutes" }, () => dispatchOnce(env, payload));
+    state = await step.do("submit-once-and-save-response", { retries: { limit: 0, delay: "1 second", backoff: "constant" }, timeout: "35 minutes" }, () => dispatchOnce(env, payload, next => { latest = next; }));
   } catch {
-    state = { state: "uncertain", error: "云端运行中断，禁止自动重发", expiresAt: now(env) + DAY };
+    const saved = await getState(env, payload.id).catch(() => null);
+    state = { ...saved, ...latest, state: "uncertain", error: "云端运行中断，禁止自动重发", expiresAt: latest?.expiresAt ?? saved?.expiresAt ?? now(env) + DAY };
     await putState(env, payload.id, state);
   }
   if (state.state === "received") {
@@ -378,6 +399,16 @@ export async function executeGeneration(env, payload, step) {
       });
     } catch {
       state = { ...state, state: "uncertain", error: "供应商已返回结果，但云端图片保存失败；已保留原响应，不会重新生成" };
+      await putState(env, payload.id, state);
+    }
+  }
+  if (state.state !== "uncertain") {
+    try {
+      await step.do("delete-finished-query-capsule", { retries: { limit: 5, delay: "1 minute", backoff: "exponential" } },
+        () => env.RESULTS.delete(pollingKey(payload.id)));
+    } catch {
+      // Keep the expiry/purge path even when credentials cannot yet be removed.
+      state = { ...state, state: "uncertain", error: "生成结果已保留，但云端查询凭据清理失败；不会重新生成" };
       await putState(env, payload.id, state);
     }
   }

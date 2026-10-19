@@ -3,6 +3,36 @@ import { MemoryRepository } from "../src/memory.js";
 import { CanvasRevisionConflictError } from "../src/types.js";
 
 describe("MemoryRepository", () => {
+  it("lists isolated canvas names without reading or cloning graph payloads", async () => {
+    class NameOnlyRepository extends MemoryRepository {
+      rejectGraphReads() {
+        for (const canvas of this.exportSnapshotView().canvases ?? []) {
+          Object.defineProperty(canvas, "graph", { get() { throw new Error("Graph must not be read for names"); } });
+        }
+      }
+    }
+    const repository = new NameOnlyRepository();
+    await repository.saveCanvas({ id: "one", title: "First", graph: { nodes: [] } });
+    await repository.saveCanvas({ id: "two", title: "Second", graph: { nodes: [] } });
+    repository.rejectGraphReads();
+    const titles = await repository.listCanvasTitles();
+    expect(titles).toEqual([{ id: "one", title: "First" }, { id: "two", title: "Second" }]);
+    titles[0]!.title = "caller mutation";
+    expect((await repository.listCanvasTitles())[0]?.title).toBe("First");
+  });
+  it("atomically protects current and retained revision references during rollback", async () => {
+    const repository = new MemoryRepository();
+    for (const id of ["used", "old", "unused"]) await repository.saveAsset({
+      id, name: id, kind: "image", mimeType: "image/png", size: 1, storageKey: id, metadata: {},
+    });
+    await repository.saveCanvas({ id: "other", graph: { nodes: [{ data: { assetId: "old" } }] } });
+    await repository.saveCanvas({ id: "other", graph: { nodes: [{ data: { assetId: "used" } }] } });
+    const result = await repository.deleteUnreferencedAssets(["used", "old", "unused"]);
+    expect(result).toEqual({ deletedIds: ["unused"], referencedIds: ["used", "old"] });
+    expect((await repository.getAsset("used"))?.deleted).toBe(false);
+    expect((await repository.getAsset("old"))?.deleted).toBe(false);
+    expect(await repository.getAsset("unused")).toBeNull();
+  });
   it("accepts a changed revision only using the same isolated record it returns", async () => {
     const repository = new MemoryRepository();
     const first = await repository.saveCanvas({ id: "same-inputs", graph: { prompt: "P1", viewport: { x: 0 } } });

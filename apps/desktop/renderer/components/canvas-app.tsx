@@ -48,7 +48,7 @@ import { newNodePlacement } from "../lib/new-node-placement";
 import { placeCanvasBatch, repairCanvasBatch } from "../lib/canvas-placement";
 import { sortCanvasArrangementItems } from "../lib/canvas-arrangement";
 import { acknowledgeSubmissions, forgetSubmission, hiddenResult, hideRemovedResults, readSubmissions, linkSubmission, needsTaskReconciliation, rememberSubmission, restoreSubmissions } from "../lib/submission-journal";
-import { acknowledgeCanvasDraft, canvasDraftRecovery, discardCanvasDraft, readCanvasDraft, writeCanvasDraft } from "../lib/canvas-drafts";
+import { acknowledgeCanvasDraft, canvasDraftRecovery, discardCanvasDraft, discardRejectedCanvasDraft, readCanvasDraft, writeCanvasDraft } from "../lib/canvas-drafts";
 import { trackCanvasSave, waitForCanvasSaves } from "../lib/canvas-save-barrier";
 import { flushPendingEditorEdits } from "../lib/pending-editor-edits";
 import { isNodeConfigRunChord, nodeConfigOwnerElement } from "../lib/node-config-interaction";
@@ -177,6 +177,7 @@ import {
   saveCanvas,
   uploadAsset,
   CanvasSaveConflictError,
+  CanvasSaveRejectedError,
   type CanvasResponse,
   type ProviderConnectionView,
   requestAppUpdate,
@@ -214,6 +215,8 @@ import {
 } from "../lib/provider-connection-options";
 import { LatestTaskQueue } from "../lib/latest-task-queue";
 import { canvasChangedBeforeRunMessage, isUnacceptedRunResult, saveCanvasForRun } from "../lib/canvas-run-save";
+import { confirmImportedCanvasSave, importSaveDefinitelyRejected } from "../lib/project-import-save";
+import { projectImportTitle } from "../lib/project-import-title";
 import {
   applyPendingNodeConfigurations,
   clearPersistedNodeConfigurations,
@@ -2920,6 +2923,8 @@ function CanvasShell({
   const tidyCanvasLayoutRef = useRef<(() => void) | null>(null);
   const [layoutAnimating, setLayoutAnimating] = useState(false);
   const [arrangementOrder, setArrangementOrder] = useState<CanvasArrangementOrder>(readCanvasArrangementOrder);
+  const arrangementOrderRef = useRef(arrangementOrder);
+  useEffect(() => { arrangementOrderRef.current = arrangementOrder; }, [arrangementOrder]);
   const [arrangementMenuOpen, setArrangementMenuOpen] = useState(false);
   const arrangementMenuRef = useRef<HTMLDivElement | null>(null);
   const arrangementPopupRef = useRef<HTMLDivElement | null>(null);
@@ -3090,6 +3095,9 @@ function CanvasShell({
         clearPersistedNodeConfigurations(request.pendingNodeConfigurations);
         return saved;
       } catch (error) {
+        if (error instanceof CanvasSaveRejectedError && error.code === "CANVAS_ASSET_ROLLBACK_CLEANED" && request.draftVersion !== undefined) {
+          await discardRejectedCanvasDraft(request.canvasId, request.draftVersion).catch(() => setDraftStorageError(true));
+        }
         if (error instanceof CanvasSaveConflictError) {
           const conflict: CanvasSaveConflictState = {
             expectedRevision,
@@ -8965,7 +8973,7 @@ function CanvasShell({
               return ids.has(node.id) && expected && Math.abs(expected.x - node.position.x) < .5 && Math.abs(expected.y - node.position.y) < .5;
             }), optimisticNode];
             const movableIds = new Set(batchNodes.map(node => node.id));
-            const ordered = sortCanvasArrangementItems(batchNodes, arrangementOrder, node => node.data.label, node => node.id);
+            const ordered = sortCanvasArrangementItems(batchNodes, arrangementOrderRef.current, node => node.data.label, node => node.id);
             batch.positions = placeCanvasBatch(ordered.map(node => ({ id: node.id, ...nodeDimensions(node) })), batch.anchor,
               state.nodes.filter(node => !movableIds.has(node.id) && !node.hidden).map(node => ({ id: node.id, position: node.position, ...nodeDimensions(node) })));
             importBatchesRef.current.set(optimisticNode.id, batch);
@@ -9069,7 +9077,6 @@ function CanvasShell({
       }
     };
   }, [
-    arrangementOrder,
     canvasId,
     checkpoint,
     completePendingAssetImport,
@@ -9624,6 +9631,8 @@ function CanvasShell({
     }
 
     const uploadedForRollback: AssetView[] = [];
+    let importSaveStarted = false;
+    let importSaveConfirmed = false;
     setProjectImportBusy(true);
     setProjectImportError(null);
     setProjectImportProgress(
@@ -9632,6 +9641,7 @@ function CanvasShell({
         : null,
     );
     try {
+      const importTitle = projectImportTitle(prepared.title, canvasId, await fetchProjects());
       if (projectImportBackup) exportProject();
       const materialized = await uploadPreparedPackageAssets({
         prepared,
@@ -9675,8 +9685,7 @@ function CanvasShell({
       saveTimer.current = null;
       pendingSave.current = null;
       geometryCheckpoints.take();
-      await saveRequest(
-        {
+      const importRequest = {
           canvasId,
           graph: serializableGraph(
             nextNodes,
@@ -9684,17 +9693,22 @@ function CanvasShell({
             importedViewport,
             importedDrawings,
           ),
-          title: prepared.title,
-        },
-        false,
-      );
+          title: importTitle,
+      };
+      importSaveStarted = true;
+      await confirmImportedCanvasSave({
+        expected: { id: canvasId, title: importTitle, graph: importRequest.graph },
+        save: () => saveRequest(importRequest, false),
+        read: () => fetchCanvas(canvasId),
+      });
+      importSaveConfirmed = true;
       if (!instanceActive.current || saveSuspended.current) return;
       checkpoint(true);
       setNodes(nextNodes);
       setEdges(nextEdges);
       setDrawings(importedDrawings);
       setViewport(importedViewport);
-      setTitle(prepared.title);
+      setTitle(importTitle);
       setSelectedId(null);
       setSelectedDrawingIds(new Set());
       graphRef.current = { nodes: nextNodes, edges: nextEdges };
@@ -9704,15 +9718,39 @@ function CanvasShell({
       if (prepared.source === "package") void refreshAssets();
       showToast(
         prepared.source === "package"
-          ? `完整项目已导入（${materialized.uploadedAssets.length} 个素材）`
-          : "项目结构已导入并保存",
+          ? `完整项目已导入：“${importTitle}”（${materialized.uploadedAssets.length} 个素材）`
+          : `项目结构已导入并保存：“${importTitle}”`,
         "success",
       );
     } catch (error) {
       let cleanupFailed = 0;
-      if (uploadedForRollback.length > 0) {
+      let rollbackAllowed = !importSaveStarted;
+      let draftRecoveryFailed = false;
+      if (importSaveStarted && importSaveDefinitelyRejected(error)) {
+        try {
+          if (!instanceActive.current || activeProjectIdRef.current !== canvasId || canvasRevision.current === null)
+            throw new Error("画布已关闭");
+          // saveRequest recorded the import before sending it. Restore the
+          // still-visible editor and its configuration journal durably before
+          // removing any temporary original it might otherwise recover.
+          flushPendingEditorEdits();
+          const current = useCanvasStore.getState();
+          const graph = serializableGraph(current.nodes, current.edges, current.viewport, current.drawings);
+          const version = Math.max(Date.now(), draftVersion.current + 1);
+          draftVersion.current = version;
+          const restored = { canvasId, graph, title: current.title, draftVersion: version,
+            pendingNodeConfigurations: synchronizePendingNodeConfigurations(canvasId, graph.nodes) };
+          await writeCanvasDraft({ canvasId, graph, title: current.title, baseRevision: canvasRevision.current, version });
+          if (!instanceActive.current || activeProjectIdRef.current !== canvasId || draftVersion.current !== version)
+            throw new Error("草稿写入期间画布或编辑已变化");
+          if (saveConflictRef.current) conflictedSave.current = restored;
+          rollbackAllowed = true;
+        } catch { draftRecoveryFailed = true; }
+      }
+      if (uploadedForRollback.length > 0 && rollbackAllowed) {
         const cleanup = await deleteAssets(
           uploadedForRollback.map((asset) => asset.id),
+          { onlyUnreferenced: true },
         );
         cleanupFailed = cleanup.failedIds.length;
         const deleted = new Set(cleanup.deletedIds);
@@ -9721,9 +9759,10 @@ function CanvasShell({
             current.filter((asset) => !deleted.has(asset.id)),
           );
       }
-      const message = error instanceof Error ? error.message : "项目导入失败";
+      const message = importSaveConfirmed ? "导入已保存，界面更新失败，请重新加载；素材已保留" :
+        error instanceof Error ? error.message : "项目导入失败";
       setProjectImportError(
-        cleanupFailed > 0
+        draftRecoveryFailed ? `${message}；本地草稿未能确认，素材已保留，请先导出当前画布备份并重新加载确认` : cleanupFailed > 0
           ? `${message}；另有 ${cleanupFailed} 个临时上传素材清理失败，请在素材库中手动删除`
           : message,
       );

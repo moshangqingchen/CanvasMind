@@ -34,6 +34,15 @@ export class CanvasRevisionConflictError extends Error {
   }
 }
 
+/** The requested graph was rejected before any canvas mutation. */
+export class CanvasAssetReferenceError extends Error {
+  readonly code = "CANVAS_ASSET_ROLLBACK_CLEANED";
+  constructor(readonly assetId: string) {
+    super(`素材 ${assetId} 已由未引用回滚清理，无法保存；请重新导入原素材后再保存，或重新加载已保存画布`);
+    this.name = "CanvasAssetReferenceError";
+  }
+}
+
 export interface AssetRecord {
   id: string;
   name: string;
@@ -436,6 +445,8 @@ export interface Repository {
   commitSupplier(input: SupplierCommit): Promise<SupplierRecord>;
   ensureDefaultCanvas(): Promise<CanvasRecord>;
   listCanvases(): Promise<CanvasRecord[]>;
+  /** Directory/name checks need identities, without cloning any canvas graph. */
+  listCanvasTitles(): Promise<Array<Pick<CanvasRecord, "id" | "title">>>;
   /** The synchronous predicate inspects the same isolated record returned by this read. */
   getCanvas(id: string, expectedRevision?: number, acceptChangedRevision?: (canvas: CanvasRecord) => boolean): Promise<CanvasRecord | null>;
   deleteCanvas(id: string): Promise<void>;
@@ -462,6 +473,8 @@ export interface Repository {
   ): Promise<AssetRecord | null>;
   deleteAsset(id: string): Promise<void>;
   deleteAssets(ids: readonly string[]): Promise<void>;
+  /** Atomic rollback cleanup; graph inspection must be synchronous and fail closed. */
+  deleteUnreferencedAssets(ids: readonly string[]): Promise<{ deletedIds: string[]; referencedIds: string[] }>;
   listConnections(): Promise<ProviderConnectionRecord[]>;
   getConnection(id: string): Promise<ProviderConnectionRecord | null>;
   saveConnection(

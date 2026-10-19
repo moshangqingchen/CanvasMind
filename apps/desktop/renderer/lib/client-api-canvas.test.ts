@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CanvasSaveConflictError,
+  CanvasSaveRejectedError,
   canvasErrorMessage,
   fetchCanvas,
   saveCanvas,
@@ -17,6 +18,51 @@ const graph = {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+});
+
+describe("import rollback evidence", () => {
+  it("does not retry a typed rollback-asset rejection", async () => {
+    const fetch = vi.fn(async () => Response.json({ error: "素材已由未引用回滚清理，请重新导入", code: "CANVAS_ASSET_ROLLBACK_CLEANED" }, { status: 409 }));
+    vi.stubGlobal("fetch", fetch);
+    await expect(saveCanvas("canvas", graph, "import", 1)).rejects.toMatchObject({ code: "CANVAS_ASSET_ROLLBACK_CLEANED", definitelyRejected: true });
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+  it("treats an initial typed name conflict as a definite rejection without retrying", async () => {
+    const fetch = vi.fn(async () => Response.json({ error: "项目名称已存在，请换一个名称", code: "PROJECT_NAME_CONFLICT" }, { status: 409 }));
+    vi.stubGlobal("fetch", fetch);
+    await expect(saveCanvas("canvas", graph, "import", 1)).rejects.toMatchObject({ code: "PROJECT_NAME_CONFLICT", definitelyRejected: true });
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+  it.each(["PROJECT_RENAME_PENDING", "OTHER_CONFLICT"])("keeps %s uncertain", async code => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: "pending", code }, { status: 409 })));
+    await expect(saveCanvas("canvas", graph, "import", 1)).rejects.not.toBeInstanceOf(CanvasSaveRejectedError);
+  });
+  it("does not treat a name conflict after an uncertain attempt as unsubmitted", async () => {
+    vi.useFakeTimers();
+    const fetch = vi.fn().mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValueOnce(Response.json({ error: "name conflict", code: "PROJECT_NAME_CONFLICT" }, { status: 409 }));
+    vi.stubGlobal("fetch", fetch);
+    const result = saveCanvas("canvas", graph, "import", 1).catch(error => error);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(await result).not.toBeInstanceOf(CanvasSaveRejectedError);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+  it("treats only a first explicit rejection as definitely rejected", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: "invalid graph" }, { status: 422 })));
+    await expect(saveCanvas("canvas", graph, "import", 1)).rejects.toBeInstanceOf(CanvasSaveRejectedError);
+  });
+  it("does not treat a final conflict after an uncertain attempt as unsubmitted", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValueOnce(Response.json({ code: "CANVAS_REVISION_CONFLICT", currentRevision: 3 }, { status: 409 })));
+    const result = saveCanvas("canvas", graph, "import", 1).catch(error => error);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(await result).toMatchObject({ code: "CANVAS_REVISION_CONFLICT", definitelyRejected: false });
+  });
+  it("a committed PUT with invalid success body remains unknown", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("not JSON")));
+    await expect(saveCanvas("canvas", graph, "import", 1)).rejects.not.toBeInstanceOf(CanvasSaveRejectedError);
+  });
 });
 
 describe("fetchCanvas", () => {
