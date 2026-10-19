@@ -16,6 +16,7 @@ import {
 } from "@super-canvas/providers";
 import type { ObjectStorage, StoredObject } from "@super-canvas/storage";
 import { RunService, type RuntimeOptions } from "../src/service.js";
+import { CloudGenerationUncertainError } from "../src/cloud-generation.js";
 import * as remoteDownloads from "../src/remote-download.js";
 import * as localMedia from "../src/media-duration.js";
 import { validPngBytes } from "./fixtures/image-bytes.js";
@@ -1077,6 +1078,19 @@ async function waitForRun(service: RunService, runId: string) {
 }
 
 describe("RunService", () => {
+  it("persists accepted cloud and upstream identities in uncertainty diagnostics", async () => {
+    const repository = await testRepository(); const canvas = await repository.ensureDefaultCanvas();
+    await repository.saveCanvas({ id: canvas.id, graph: resumableNodeGraph() });
+    const adapter = synchronousAdapter();
+    const submit = vi.spyOn(adapter, "submit").mockRejectedValue(new CloudGenerationUncertainError("原任务查询截止", "a".repeat(64), "accepted-T"));
+    const service = new AdapterRunService(adapter, repository, new MemoryStorage());
+    const run = await service.createRun({ canvasId: canvas.id, clientRequestId: "cloud-evidence", scope: "node", nodeId: "image" });
+    const snapshot = await waitForRun(service, run.id);
+    expect(snapshot.run.status).toBe("needs_attention");
+    expect(snapshot.nodes[0]?.errorJson).toMatchObject({ cloudTaskEvidence: { jobId: "a".repeat(64), upstreamTaskId: "accepted-T" },
+      charge: { status: "unknown", source: "unconfirmed" } });
+    expect(submit).toHaveBeenCalledOnce();
+  });
   it("passes measured source-video dimensions and duration to validation and submission instead of requested output values", async () => {
     const repository = await testRepository(), storage = new MemoryStorage();
     const canvas = await repository.ensureDefaultCanvas(), bytes = new Uint8Array([9, 8, 7]);

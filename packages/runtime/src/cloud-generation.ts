@@ -85,14 +85,18 @@ export interface CloudTransportOptions {
   /** A restart may query existing jobs, but must never create a missing job. */
   resumeOnly?: boolean;
 }
+export class CloudGenerationUncertainError extends ProviderHttpError {
+  public readonly cloudTaskEvidence: { jobId: string; upstreamTaskId?: string };
+  public constructor(message: string, jobId: string, upstreamTaskId?: string) {
+    super(message, { kind: "network", phase: "submit", retryable: false, submissionMayHaveOccurred: true });
+    this.cloudTaskEvidence = { jobId, ...(upstreamTaskId ? { upstreamTaskId } : {}) };
+  }
+}
 export async function runCloudGeneration<T>(idempotencyKey: string, config: CloudGenerationConfig, work: () => Promise<T>, options: CloudTransportOptions): Promise<T> {
   const fetchImpl = options.fetch ?? providerFetch;
   const auth = headers(config);
   let index = 0;
   let checkpointed = false;
-  const uncertain = (message: string) => new ProviderHttpError(message, {
-    kind: "network", phase: "submit", retryable: false, submissionMayHaveOccurred: true,
-  });
   const transport: ProviderSubmitTransport = async (url, init, settings) => {
     const signal = init.signal ?? undefined;
     const requestSignal = (timeoutMs: number) => signal
@@ -105,6 +109,8 @@ export async function runCloudGeneration<T>(idempotencyKey: string, config: Clou
     };
     signal?.throwIfAborted();
     const jobId = createHash("sha256").update(`${idempotencyKey}:${index++}`).digest("hex");
+    let upstreamTaskId: string | undefined;
+    const uncertain = (message: string) => new CloudGenerationUncertainError(message, jobId, upstreamTaskId);
     const target = `${config.endpoint}/v1/jobs/${jobId}`;
     const remote = new URL(url);
     if (remote.protocol !== "https:") throw new Error("云端生图只支持公网 HTTPS 供应商接口");
@@ -119,7 +125,10 @@ export async function runCloudGeneration<T>(idempotencyKey: string, config: Clou
       if (response.status === 410) return { state: "expired", error: "云端保存的 24 小时已到期，请检查本地已下载的素材；不会重新生成" };
       if ([401, 403].includes(response.status)) return { state: "failed", error: "云端服务凭据已失效，请修复连接后取回原任务" };
       if (!response.ok) throw new Error(`Cloud task query HTTP ${response.status}`);
-      return await response.json() as { state: string; error?: string; phase?: string };
+      const value = await response.json() as { state: string; error?: string; phase?: string; upstreamTaskId?: unknown };
+      if (typeof value.upstreamTaskId === "string" && value.upstreamTaskId.trim() && value.upstreamTaskId.length <= 1024)
+        upstreamTaskId = value.upstreamTaskId;
+      return value;
     };
     try { status = await check() ?? undefined; }
     catch { throw uncertain("云端任务查询暂时失败，原任务编号已保存；恢复时只查询同一任务"); }

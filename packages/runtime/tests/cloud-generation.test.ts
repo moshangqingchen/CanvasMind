@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { encryptSecret, fetchProviderJson, OpenAIImageAdapter, StaticConnectionResolver, withProviderSubmitTransport } from "@super-canvas/providers";
-import { cloudSubmissionId, runCloudGeneration } from "../src/cloud-generation.js";
+import { CloudGenerationUncertainError, cloudSubmissionId, runCloudGeneration } from "../src/cloud-generation.js";
 vi.mock("node:dns/promises", () => ({ lookup: vi.fn(async () => [{ address: "93.184.216.34", family: 4 }]) }));
 const config = { endpoint: "https://cloud.example.com", encryptedToken: encryptSecret("a".repeat(48), "local-development-master-key") };
 afterEach(() => { vi.unstubAllEnvs(); });
@@ -109,6 +109,16 @@ describe("cloud generation transport", () => {
     const cloud = service();
     await expect(runCloudGeneration("lost", config, () => fetchProviderJson(vi.fn(), "https://supplier.example.com/v1/images", { method: "POST", body: "{}" }, { phase: "submit" }), { fetch: cloud.fetch, checkpoint: async () => {}, resumeOnly: true })).rejects.toMatchObject({ details: { submissionMayHaveOccurred: true, retryable: false } });
     expect(cloud.fetch.mock.calls).toHaveLength(1);
+  });
+  it("retains the cloud job and accepted upstream identity as uncertainty evidence", async () => {
+    const cloudFetch = vi.fn<typeof fetch>(async () => Response.json({ state: "uncertain", phase: "generating", upstreamTaskId: "accepted-T", error: "polling deadline" }));
+    const error = await runCloudGeneration("accepted", config,
+      () => fetchProviderJson(vi.fn(), "https://supplier.example.com/v1/images", { method: "POST", body: "{}" }, { phase: "submit" }),
+      { fetch: cloudFetch, checkpoint: async () => {}, resumeOnly: true }).catch(error => error);
+    expect(error).toBeInstanceOf(CloudGenerationUncertainError);
+    expect(error.cloudTaskEvidence).toEqual({ jobId: cloudSubmissionId("accepted").slice(6), upstreamTaskId: "accepted-T" });
+    expect(error.details).toMatchObject({ submissionMayHaveOccurred: true, retryable: false });
+    expect(cloudFetch.mock.calls.every(([, init]) => init?.method !== "PUT")).toBe(true);
   });
   it("isolates cloud requests from concurrent local submissions and model queries", async () => {
     const direct = vi.fn(async () => Response.json({ route: "local" }));

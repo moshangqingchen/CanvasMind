@@ -18,7 +18,7 @@ import { evaluateImageParameters } from "@super-canvas/providers/image-parameter
 import { chuangxiangImageEvidence } from "@super-canvas/providers/chuangxiang-image-capabilities";
 import { genimageImageRatioIssues, isGenimageImageConnection } from "@super-canvas/providers/genimage-image-capabilities";
 import { isChuangxiangMidjourneyConnection } from "@super-canvas/providers/chuangxiang-midjourney-contract";
-import { cloudSubmissionId, isCloudSubmission, readCloudGenerationConfig, runCloudGeneration, testCloudGeneration, uploadCloudReferences, type CloudGenerationConfig } from "./cloud-generation.js";
+import { CloudGenerationUncertainError, cloudSubmissionId, isCloudSubmission, readCloudGenerationConfig, runCloudGeneration, testCloudGeneration, uploadCloudReferences, type CloudGenerationConfig } from "./cloud-generation.js";
 import {
   extractPromptAssetIds,
   getEdgeTargetPortId,
@@ -4068,7 +4068,7 @@ function providerFailureFor(
   error: unknown,
   node: WorkflowNode,
   nodeRun: NodeRunRecord,
-): (ProviderErrorPresentation & { referenceDiagnostics?: LocalReferenceChannelError["diagnostics"] }) | undefined {
+): (ProviderErrorPresentation & { referenceDiagnostics?: LocalReferenceChannelError["diagnostics"]; cloudTaskEvidence?: CloudGenerationUncertainError["cloudTaskEvidence"] }) | undefined {
   if (error instanceof CancelledError) return undefined;
   const source =
     error instanceof NeedsAttentionError && error.cause !== undefined
@@ -4139,6 +4139,7 @@ function providerFailureFor(
   if (nodeRun.providerTaskId && charge?.source === "not_submitted")
     charge = { status: "unknown", source: "unconfirmed" };
   return { ...presentation,
+    ...(source instanceof CloudGenerationUncertainError ? { cloudTaskEvidence: source.cloudTaskEvidence } : {}),
     ...(source instanceof LocalReferenceChannelError ? { referenceDiagnostics: source.diagnostics } : {}),
     ...(charge ? { charge } : {}) };
 }

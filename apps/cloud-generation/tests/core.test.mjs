@@ -39,9 +39,9 @@ function fixture(fetchImpl = async () => Response.json({ data: [{ b64_json: "b2Z
     const body = JSON.stringify({ model: "gpt-image-2.5-sunburst", prompt: "Offline test", quality: "max", size: "2880x2880" });
     return req(undefined, { method: "PUT", headers: { "x-supercanvas-manifest": Buffer.from(JSON.stringify(manifest)).toString("base64"), "content-length": String(Buffer.byteLength(body)) }, body });
   }
-  async function start() {
+  async function start(overrides = {}) {
     let wake; let expiry;
-    const step = { do: (_name, _options, fn) => fn(), sleepUntil: (_name, date) => { expiry = +date; return new Promise(resolve => { wake = resolve; }); } };
+    const step = { do: (_name, _options, fn) => fn(), ...overrides, sleepUntil: (_name, date) => { expiry = +date; return new Promise(resolve => { wake = resolve; }); } };
     const done = executeGeneration(env, instances.get(id), step);
     for (let i = 0; !wake && i < 1000; i++) await new Promise(resolve => setImmediate(resolve));
     assert.ok(wake, "workflow reached its retention wait");
@@ -220,4 +220,80 @@ test("native task acknowledgement becomes generating before the final image exis
   assert.equal((await (await f.req()).json()).phase, "generating");
   assert.equal((await f.req(`/v1/jobs/${id}/response`)).status, 409);
   release(); const run = await starting; await run.expire();
+});
+
+const nativePolling = { urlTemplate: "https://provider.example.com/tasks/__SUPER_CANVAS_CLOUD_TASK__", method: "POST",
+  headers: { authorization: "Bearer polling-private-key" }, body: JSON.stringify({ id: "__SUPER_CANVAS_CLOUD_TASK__", detail: true }),
+  submitMapping: { taskIdPath: "$.id", statusPath: "$.status" }, pollMapping: { statusPath: "$.status" }, statusMap: { completed: "succeeded" } };
+
+test("polling deadline retains the accepted identity and encrypted query capsule, never the submit body", async () => {
+  let submits = 0;
+  const f = fixture(async url => {
+    if (url.endsWith("/generations")) { submits++; return Response.json({ id: "accepted-T", status: "queued" }); }
+    return Response.json({ status: "running" });
+  });
+  f.env.delay = async () => f.setTime(1000 + 30 * 60_000 + 1);
+  await f.submit({ polling: nativePolling }); const run = await f.start();
+  const state = await (await f.req()).json();
+  assert.equal(state.state, "uncertain"); assert.equal(state.upstreamTaskId, "accepted-T"); assert.equal(state.phase, "generating");
+  assert.equal(state.expiresAt, 1000 + 86_400_000);
+  assert.equal([...f.env.RESULTS.values.keys()].some(key => key.startsWith("inputs/")), false);
+  const sealed = await f.env.RESULTS.get(`jobs/${id}/polling`);
+  const text = await sealed.text();
+  assert.equal(text.includes("polling-private-key"), false);
+  const { iv, value } = JSON.parse(text);
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("request:test-encryption-key"));
+  const key = await crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["decrypt"]);
+  const capsule = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv: new Uint8Array(iv) }, key, new Uint8Array(value))));
+  const { submitMapping: _mapping, ...query } = nativePolling;
+  assert.deepEqual(capsule, { polling: { ...query, intervalMs: 3000 }, maxResponseBytes: 50 * 1024 * 1024, expiresAt: state.expiresAt });
+  assert.equal(JSON.stringify(capsule).includes("Offline test"), false);
+  await f.submit(); const replay = await f.start(); assert.equal(submits, 1);
+  await replay.expire(); await run.expire();
+  assert.equal(await f.env.RESULTS.get(`jobs/${id}/polling`), null);
+});
+
+for (const fault of ["receipt", "response", "cleanup"]) test(`accepted identity survives a one-time ${fault} storage failure`, async () => {
+  let submits = 0;
+  const f = fixture(async url => url.endsWith("/generations")
+    ? (submits++, Response.json({ id: "accepted-T", status: "queued" }))
+    : Response.json({ status: "completed", data: [{ b64_json: "aW1hZ2U=" }] }));
+  await f.submit({ polling: nativePolling });
+  let failed = false; const bucket = f.env.RESULTS;
+  const put = bucket.put.bind(bucket); const remove = bucket.delete.bind(bucket);
+  bucket.put = async (key, value, options) => {
+    if (!failed && (fault === "receipt" && key.endsWith("state.json") && JSON.parse(value).upstreamTaskId || fault === "response" && key.endsWith("/response"))) {
+      failed = true; throw new Error("one-time R2 write failure");
+    }
+    return put(key, value, options);
+  };
+  bucket.delete = async keys => {
+    await remove(keys);
+    if (!failed && fault === "cleanup" && Array.isArray(keys) && keys.some(key => key.endsWith("/body"))) {
+      failed = true; throw new Error("lost cleanup acknowledgement");
+    }
+  };
+  const run = await f.start(); const state = await (await f.req()).json();
+  assert.equal(failed, true); assert.equal(state.state, "uncertain"); assert.equal(state.upstreamTaskId, "accepted-T");
+  assert.ok(await bucket.get(`jobs/${id}/polling`));
+  assert.equal([...bucket.values.keys()].some(key => key.startsWith("inputs/")), false);
+  assert.equal(submits, 1); await run.expire();
+});
+
+test("workflow-level failure merges the durable accepted checkpoint without extending retention", async () => {
+  const f = fixture(); await f.submit({ polling: nativePolling });
+  await f.env.RESULTS.put(`jobs/${id}/state.json`, JSON.stringify({ state: "running", phase: "generating", upstreamTaskId: "accepted-T", createdAt: 1000, expiresAt: 1000 + 86_400_000 }));
+  f.setTime(2000);
+  const run = await f.start({ do: (_name, _options, fn) => { if (_name === "submit-once-and-save-response") throw new Error("step interrupted"); return fn(); } });
+  assert.deepEqual(await (await f.req()).json(), { state: "uncertain", phase: "generating", createdAt: 1000,
+    expiresAt: 1000 + 86_400_000, upstreamTaskId: "accepted-T", error: "云端运行中断，禁止自动重发" });
+  assert.equal(f.calls(), 0); await run.expire();
+});
+
+test("a failure without an upstream receipt deletes original inputs and its query capsule", async () => {
+  const f = fixture(async () => { throw new Error("submit response lost"); });
+  await f.submit({ polling: nativePolling }); const run = await f.start();
+  assert.equal((await (await f.req()).json()).state, "uncertain");
+  assert.equal([...f.env.RESULTS.values.keys()].some(key => key.startsWith("inputs/") || key.endsWith("/polling")), false);
+  assert.equal(f.calls(), 1); await run.expire();
 });
