@@ -94,7 +94,8 @@ describe("parameter route menu display projection", () => {
 
   it("keeps duplicate group IDs and same-group connection short IDs visibly distinct", () => {
     const rows = nodeParameterRouteRows(connections, "same-prefix-1");
-    expect(rows.map(row => row.primaryLabel)).toEqual(["图片组（stable-7）", "图片组（stable-7）", "图片组（stable-8）"]);
+    expect(rows.map(row => row.primaryLabel)).toEqual(["图片组", "图片组", "图片组"]);
+    expect(rows.map(row => row.groupIdLabel)).toEqual(["stable-7", "stable-7", "stable-8"]);
     expect(rows.map(row => row.secondaryLabel)).toEqual(["同名连接 · same-prefix-1", "同名连接 · same-prefix-2", "其他连接"]);
     const repeated = connections.slice(0, 2).map(connection => ({ ...connection, name: "供应商 A · 图片组" }));
     const repeatedRows = nodeParameterRouteRows(repeated, "same-prefix-1");
@@ -105,7 +106,18 @@ describe("parameter route menu display projection", () => {
       { ...connections[2]!, groupLabel: "图片组" },
       { ...connections[2]!, id: "separate-supplier", supplier: "supplier-b", groupLabel: "图片组" },
     ];
-    expect(nodeParameterRouteRows(normalizedGroups, "").map(row => row.primaryLabel)).toEqual(["图片组-备用（stable-7）", "图片组（stable-8）", "图片组"]);
+    const normalizedRows = nodeParameterRouteRows(normalizedGroups, "");
+    expect(normalizedRows.map(row => row.primaryLabel)).toEqual(["图片组-备用", "图片组", "图片组"]);
+    expect(normalizedRows.map(row => row.groupIdLabel)).toEqual(["stable-7", "stable-8", undefined]);
+  });
+
+  it("keeps duplicate group identity separate from a long clamped display name", () => {
+    const groupLabel = "极长的分组显示名称需要在窄屏下折行并截断".repeat(12);
+    const candidates = [connections[0]!, connections[2]!].map(connection => ({ ...connection, groupLabel, name: groupLabel }));
+    const rows = nodeParameterRouteRows(candidates, "");
+    expect(rows.map(row => row.primaryLabel)).toEqual([groupLabel, groupLabel]);
+    expect(rows.map(row => row.groupIdLabel)).toEqual(["stable-7", "stable-8"]);
+    expect(rows.every(row => row.secondaryLabel === undefined)).toBe(true);
   });
 
   it("reproduces the legacy mojibake projection and preserves its original text in the new hierarchy", () => {
