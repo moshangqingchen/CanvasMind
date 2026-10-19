@@ -10,6 +10,7 @@ export default defineConfig({
     { name: "audit-material", testMatch: "audit-material-preparation.spec.ts" },
     { name: "audit-bridge", testMatch: ["canvas-import-grid.spec.ts", "agent-material-drop-lock.spec.ts"] },
     { name: "audit-save", testMatch: "canvas.spec.ts", grep: /项目 JSON 可导出并重新导入|导入新画布后立即刷新/u },
+    { name: "audit-roles", testMatch: "canvas.spec.ts", grep: /上传素材、保存结构化 @引用，并跑通 Fake 生图到生视频/u },
     { name: "audit-recovery", testMatch: "canvas-polish.spec.ts", grep: /提交响应丢失并关闭页面/u },
     { name: "audit-project", testMatch: ["project-files.spec.ts", "project-dialog.spec.ts"] },
     { name: "audit-webm", testMatch: "audit-webm.spec.ts" },
