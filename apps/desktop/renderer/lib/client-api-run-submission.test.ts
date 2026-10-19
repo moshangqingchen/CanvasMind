@@ -8,7 +8,7 @@ describe("revision-bound run requests", () => {
     const snapshot = { run: { id: "run", status: "queued" }, nodes: [] };
     const fetcher = vi.fn().mockResolvedValue(Response.json(snapshot, { status: 201 }));
     vi.stubGlobal("fetch", fetcher);
-    const input = { canvasId: "canvas", clientRequestId: "click", expectedRevision: 7, scope,
+    const input = { canvasId: "canvas", clientRequestId: "click", expectedRevision: 7, runFingerprint: "click-fingerprint", scope,
       ...(scope !== "all" ? { nodeId: "image" } : {}) };
     await expect(createRun(input)).resolves.toEqual(snapshot);
     expect(fetcher).toHaveBeenCalledExactlyOnceWith("/api/runs", expect.objectContaining({

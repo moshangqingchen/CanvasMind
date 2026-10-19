@@ -565,13 +565,15 @@ export class MemoryRepository implements Repository {
     return [...this.canvases.values()].map(clone);
   }
 
-  async getCanvas(id: string, expectedRevision?: number): Promise<CanvasRecord | null> {
+  async getCanvas(id: string, expectedRevision?: number, acceptChangedRevision?: (canvas: CanvasRecord) => boolean): Promise<CanvasRecord | null> {
     const record = this.canvases.get(id);
+    if (!record) return null;
+    const snapshot = clone(record);
     // Check the very record being cloned; a separate revision read followed by
     // another graph read could execute a newer, unapproved paid request.
-    if (record && expectedRevision !== undefined && record.revision !== expectedRevision)
+    if (expectedRevision !== undefined && snapshot.revision !== expectedRevision && !acceptChangedRevision?.(snapshot))
       throw new CanvasRevisionConflictError(expectedRevision, record.revision);
-    return record ? clone(record) : null;
+    return snapshot;
   }
 
   /** File persistence can detect a no-op without cloning a large canvas. */

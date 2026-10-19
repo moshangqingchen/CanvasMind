@@ -3,6 +3,25 @@ import { MemoryRepository } from "../src/memory.js";
 import { CanvasRevisionConflictError } from "../src/types.js";
 
 describe("MemoryRepository", () => {
+  it("accepts a changed revision only using the same isolated record it returns", async () => {
+    const repository = new MemoryRepository();
+    const first = await repository.saveCanvas({ id: "same-inputs", graph: { prompt: "P1", viewport: { x: 0 } } });
+    const second = await repository.saveCanvas({ id: first.id, graph: { prompt: "P1", viewport: { x: 200 } } });
+    let checked: unknown;
+    const read = repository.getCanvas(first.id, first.revision, snapshot => {
+      checked = snapshot;
+      return snapshot.graph.prompt === "P1";
+    });
+    await repository.saveCanvas({ id: first.id, graph: { prompt: "P2" } });
+    const result = await read;
+    expect(result).toBe(checked);
+    expect(result).toEqual(second);
+    await expect(repository.getCanvas(first.id, first.revision, snapshot => snapshot.graph.prompt === "P1"))
+      .rejects.toBeInstanceOf(CanvasRevisionConflictError);
+    result!.graph.prompt = "caller mutation";
+    expect((await repository.getCanvas(first.id))!.graph.prompt).toBe("P2");
+  });
+
   it("checks the revision on the same immutable record returned to a run", async () => {
     const repository = new MemoryRepository();
     const first = await repository.saveCanvas({ id: "paid", graph: { model: "P1" } });

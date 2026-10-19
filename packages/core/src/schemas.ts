@@ -344,6 +344,7 @@ export const CreateRunRequestSchema = z
     canvasId: identifier,
     clientRequestId: identifier,
     expectedRevision: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+    runFingerprint: z.string().min(1).optional(),
     scope: RunScopeSchema,
     nodeId: identifier.optional(),
     nodeIds: z.array(identifier).min(1).max(100).optional(),

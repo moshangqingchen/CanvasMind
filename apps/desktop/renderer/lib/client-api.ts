@@ -726,6 +726,7 @@ export async function createRun(input: {
   canvasId: string;
   clientRequestId: string;
   expectedRevision: number;
+  runFingerprint?: string;
   scope: "node" | "downstream" | "all";
   nodeId?: string;
 }): Promise<RunSnapshot> {

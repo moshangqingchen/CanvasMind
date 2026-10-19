@@ -8,6 +8,15 @@ import {
 } from "../src/index.js";
 
 describe("public schemas", () => {
+  it("accepts optional run fingerprints while retaining the strict revision contract for legacy callers", () => {
+    const input = { canvasId: "canvas", clientRequestId: "request", expectedRevision: 1, scope: "all" };
+    expect(CreateRunRequestSchema.safeParse(input).success).toBe(true);
+    expect(CreateRunRequestSchema.safeParse({ ...input, runFingerprint: "canonical-execution-data" }).success).toBe(true);
+    for (const runFingerprint of ["", 3, null, {}]) {
+      expect(CreateRunRequestSchema.safeParse({ ...input, runFingerprint }).success).toBe(false);
+    }
+  });
+
   it("requires a selected node for partial run scopes", () => {
     expect(
       CreateRunRequestSchema.safeParse({
