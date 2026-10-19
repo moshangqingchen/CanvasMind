@@ -55,7 +55,7 @@ export async function PATCH(
         other.id !== canvas.id && normalizedTitleKey(other.title) === nextTitleKey,
     )
   )
-    return jsonError("项目名称已存在，请换一个名称", 409);
+    return Response.json({ error: "项目名称已存在，请换一个名称", code: "PROJECT_NAME_CONFLICT" }, { status: 409 });
 
   const runs = await repository.listRuns(canvas.id);
   if (runs.some((run) => activeRunStatuses.has(run.status)))
@@ -91,12 +91,14 @@ export async function PATCH(
       folderRenamed: folderNameChanged,
     });
   } catch (error) {
-    if (error instanceof ProjectMutationError) return jsonError(error.message, error.status);
+    if (error instanceof ProjectMutationError) return Response.json({ error: error.message, code: error.code }, { status: error.status });
     if (error instanceof CanvasRevisionConflictError)
       return jsonError("项目刚刚发生变化，请稍后重试重命名", 409);
     return jsonError("项目重命名待恢复，请刷新确认，保留原文件与恢复记录", 500);
   }
-  }, parsedId.data).catch(error => jsonError(error instanceof Error ? error.message : "项目重命名待恢复", error instanceof ProjectMutationError ? error.status : 500));
+  }, parsedId.data).catch(error => error instanceof ProjectMutationError
+    ? Response.json({ error: error.message, code: error.code }, { status: error.status })
+    : jsonError(error instanceof Error ? error.message : "项目重命名待恢复", 500));
 }
 
 export async function DELETE(
@@ -147,5 +149,7 @@ export async function DELETE(
     folderDeleted,
     ...(warning ? { warning } : {}),
   });
-  }, parsedId.data).catch(error => jsonError(error instanceof Error ? error.message : "项目删除失败，存在待恢复操作", error instanceof ProjectMutationError ? error.status : 500));
+  }, parsedId.data).catch(error => error instanceof ProjectMutationError
+    ? Response.json({ error: error.message, code: error.code }, { status: error.status })
+    : jsonError(error instanceof Error ? error.message : "项目删除失败，存在待恢复操作", 500));
 }

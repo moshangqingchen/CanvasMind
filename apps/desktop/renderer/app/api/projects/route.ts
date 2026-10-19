@@ -25,7 +25,10 @@ export async function GET() {
   );
   await Promise.all(canvases.map((canvas) => ensureProjectDirectory(canvas)));
   return Response.json({ projects: await Promise.all(canvases.map(projectCardSummary)) });
-  } catch (error) { return jsonError(error instanceof Error ? error.message : "项目列表读取失败", error instanceof ProjectMutationError ? error.status : 500); }
+  } catch (error) {
+    if (error instanceof ProjectMutationError) return Response.json({ error: error.message, code: error.code }, { status: error.status });
+    return jsonError(error instanceof Error ? error.message : "项目列表读取失败", 500);
+  }
 }
 
 export async function POST(request: Request) {
@@ -46,6 +49,7 @@ export async function POST(request: Request) {
     }, true);
     return Response.json({ project: projectSummary(canvas) }, { status: 201 });
   } catch (error) {
+    if (error instanceof ProjectMutationError) return Response.json({ error: error.message, code: error.code }, { status: error.status });
     return jsonError(error instanceof Error ? error.message : "项目创建失败", error instanceof ProjectMutationError ? error.status : 500);
   }
 }

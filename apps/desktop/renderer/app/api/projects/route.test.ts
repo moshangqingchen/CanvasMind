@@ -47,6 +47,7 @@ vi.mock("../../../lib/project-service", () => ({
 }));
 
 import { GET, POST } from "./route";
+import { POST as createCanvas } from "../canvas/route";
 
 const canvasFixture = {
   id: "canvas-1",
@@ -66,6 +67,15 @@ beforeEach(() => {
 });
 
 describe("/api/projects", () => {
+  it("keeps the name-conflict code on project and canvas creation", async () => {
+    for (const create of [POST, createCanvas]) {
+      const response = await create(new Request("http://localhost/api/projects", { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title: canvasFixture.title, ...(create === createCanvas ? { graph: { schemaVersion: 1, nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } } } : {}) }) }));
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({ code: "PROJECT_NAME_CONFLICT" });
+    }
+    expect(mocks.repository.saveCanvas).not.toHaveBeenCalled();
+  });
   it("lists canvases as project summaries and prepares directories", async () => {
     const response = await GET();
 

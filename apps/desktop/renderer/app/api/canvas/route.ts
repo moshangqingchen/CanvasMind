@@ -28,7 +28,7 @@ export async function POST(request: Request) {
     });
     return Response.json(canvas, { status: 201 });
   } catch (error) {
-    if (error instanceof ProjectMutationError) return jsonError(error.message, error.status);
+    if (error instanceof ProjectMutationError) return Response.json({ error: error.message, code: error.code }, { status: error.status });
     return jsonError("画布创建失败", 500);
   }
 }

@@ -84,6 +84,7 @@ export class CanvasSaveConflictError extends Error {
 
 export class CanvasSaveRejectedError extends Error {
   readonly definitelyRejected = true;
+  constructor(message: string, readonly code?: string) { super(message); this.name = "CanvasSaveRejectedError"; }
 }
 
 interface CanvasIssuePayload {
@@ -551,8 +552,9 @@ export async function saveCanvas(
       throw conflict;
     }
     const message = canvasErrorMessage(payload, "画布保存失败");
-    if (!hadUncertainAttempt && [400, 401, 403, 404, 413, 415, 422].includes(response.status))
-      throw new CanvasSaveRejectedError(message);
+    if (!hadUncertainAttempt && ([400, 401, 403, 404, 413, 415, 422].includes(response.status) ||
+      response.status === 409 && payload?.code === "PROJECT_NAME_CONFLICT"))
+      throw new CanvasSaveRejectedError(message, typeof payload?.code === "string" ? payload.code : undefined);
     throw new Error(message);
   }
   if (!payload?.id || !payload.graph || typeof payload.revision !== "number")

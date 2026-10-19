@@ -22,6 +22,7 @@ vi.mock("../../../../lib/server", () => ({
 }));
 
 import { PUT } from "./route";
+import { ProjectMutationError } from "../../../../lib/project-coordinator";
 
 const graph = {
   schemaVersion: 1,
@@ -48,6 +49,20 @@ beforeEach(() => {
 });
 
 describe("PUT /api/canvas/[id]", () => {
+  it("returns a typed name conflict before saving an import", async () => {
+    mocks.repository.listCanvasTitles.mockResolvedValue([{ id: "canvas-1", title: "Canvas" }, { id: "other", title: "Occupied" }]);
+    const response = await PUT(new Request("http://localhost/api/canvas/canvas-1", { method: "PUT", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "Occupied", graph, expectedRevision: 8 }) }), context);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "PROJECT_NAME_CONFLICT" });
+    expect(mocks.repository.saveCanvas).not.toHaveBeenCalled();
+  });
+  it("preserves the unknown rename-pending code", async () => {
+    mocks.repository.saveCanvas.mockRejectedValue(new ProjectMutationError("待恢复", 409, "PROJECT_RENAME_PENDING"));
+    const response = await PUT(request(8), context);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "待恢复", code: "PROJECT_RENAME_PENDING" });
+  });
   it("acknowledges a repeated save after its first response was lost without incrementing revision", async () => {
     const saved = { id: "canvas-1", title: "Canvas", graph: {
       viewport: { zoom: 1, y: 0, x: 0 }, edges: [], nodes: [], schemaVersion: 1,

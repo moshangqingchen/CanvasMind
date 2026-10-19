@@ -45,7 +45,7 @@ export async function PUT(
     });
     return Response.json(canvas);
   } catch (error) {
-    if (error instanceof ProjectMutationError) return jsonError(error.message, error.status);
+    if (error instanceof ProjectMutationError) return Response.json({ error: error.message, code: error.code }, { status: error.status });
     // The persistent development repository can outlive a hot-reloaded module.
     // Preserve the typed error contract even when its class identity changes.
     if (error instanceof CanvasRevisionConflictError || (

@@ -48,6 +48,7 @@ vi.mock("../../../../lib/project-coordinator", async (importOriginal) => ({
 }));
 
 import { DELETE, PATCH } from "./route";
+import { ProjectMutationError } from "../../../../lib/project-coordinator";
 
 const target = {
   id: "canvas-delete",
@@ -86,6 +87,14 @@ beforeEach(() => {
 });
 
 describe("PATCH /api/projects/[id]", () => {
+  it("preserves the rename-pending error code", async () => {
+    mocks.repository.listCanvases.mockResolvedValue([target, remaining]);
+    mocks.repository.saveCanvas.mockRejectedValueOnce(new ProjectMutationError("待恢复", 409, "PROJECT_RENAME_PENDING"));
+    const response = await PATCH(new Request("http://localhost/api/projects/canvas-delete", { method: "PATCH", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "新名称" }) }), context);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "待恢复", code: "PROJECT_RENAME_PENDING" });
+  });
   it("renames the folder and project with revision protection", async () => {
     mocks.repository.listCanvases.mockResolvedValue([target, remaining]);
     const response = await PATCH(

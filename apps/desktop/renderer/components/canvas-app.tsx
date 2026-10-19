@@ -215,6 +215,7 @@ import {
 import { LatestTaskQueue } from "../lib/latest-task-queue";
 import { canvasChangedBeforeRunMessage, isUnacceptedRunResult, saveCanvasForRun } from "../lib/canvas-run-save";
 import { confirmImportedCanvasSave, importSaveDefinitelyRejected } from "../lib/project-import-save";
+import { projectImportTitle } from "../lib/project-import-title";
 import {
   applyPendingNodeConfigurations,
   clearPersistedNodeConfigurations,
@@ -9636,6 +9637,7 @@ function CanvasShell({
         : null,
     );
     try {
+      const importTitle = projectImportTitle(prepared.title, canvasId, await fetchProjects());
       if (projectImportBackup) exportProject();
       const materialized = await uploadPreparedPackageAssets({
         prepared,
@@ -9687,11 +9689,11 @@ function CanvasShell({
             importedViewport,
             importedDrawings,
           ),
-          title: prepared.title,
+          title: importTitle,
       };
       importSaveStarted = true;
       await confirmImportedCanvasSave({
-        expected: { id: canvasId, title: prepared.title, graph: importRequest.graph },
+        expected: { id: canvasId, title: importTitle, graph: importRequest.graph },
         save: () => saveRequest(importRequest, false),
         read: () => fetchCanvas(canvasId),
       });
@@ -9702,7 +9704,7 @@ function CanvasShell({
       setEdges(nextEdges);
       setDrawings(importedDrawings);
       setViewport(importedViewport);
-      setTitle(prepared.title);
+      setTitle(importTitle);
       setSelectedId(null);
       setSelectedDrawingIds(new Set());
       graphRef.current = { nodes: nextNodes, edges: nextEdges };
@@ -9712,8 +9714,8 @@ function CanvasShell({
       if (prepared.source === "package") void refreshAssets();
       showToast(
         prepared.source === "package"
-          ? `完整项目已导入（${materialized.uploadedAssets.length} 个素材）`
-          : "项目结构已导入并保存",
+          ? `完整项目已导入：“${importTitle}”（${materialized.uploadedAssets.length} 个素材）`
+          : `项目结构已导入并保存：“${importTitle}”`,
         "success",
       );
     } catch (error) {
