@@ -402,6 +402,16 @@ export async function executeGeneration(env, payload, step) {
       await putState(env, payload.id, state);
     }
   }
+  if (state.state !== "uncertain") {
+    try {
+      await step.do("delete-finished-query-capsule", { retries: { limit: 5, delay: "1 minute", backoff: "exponential" } },
+        () => env.RESULTS.delete(pollingKey(payload.id)));
+    } catch {
+      // Keep the expiry/purge path even when credentials cannot yet be removed.
+      state = { ...state, state: "uncertain", error: "生成结果已保留，但云端查询凭据清理失败；不会重新生成" };
+      await putState(env, payload.id, state);
+    }
+  }
   await step.sleepUntil("retain-result-for-24-hours", new Date(state.expiresAt));
   await step.do("delete-expired-content", { retries: { limit: 10, delay: "1 minute", backoff: "exponential" } }, () => purgeJob(env, payload));
   return { id: payload.id, state: "expired" };

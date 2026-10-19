@@ -226,6 +226,58 @@ const nativePolling = { urlTemplate: "https://provider.example.com/tasks/__SUPER
   headers: { authorization: "Bearer polling-private-key" }, body: JSON.stringify({ id: "__SUPER_CANVAS_CLOUD_TASK__", detail: true }),
   submitMapping: { taskIdPath: "$.id", statusPath: "$.status" }, pollMapping: { statusPath: "$.status" }, statusMap: { completed: "succeeded" } };
 
+test("completed native tasks remove query credentials after archival and never submit again", async () => {
+  let submits = 0;
+  const f = fixture(async url => url.endsWith("/generations")
+    ? (submits++, Response.json({ id: "accepted-T", status: "queued" }))
+    : Response.json({ status: "completed", data: [{ b64_json: "aW1hZ2U=" }] }));
+  let entered, release;
+  const archiving = new Promise(resolve => { entered = resolve; }), gate = new Promise(resolve => { release = resolve; });
+  await f.submit({ polling: nativePolling });
+  const starting = f.start({ do: async (name, _options, work) => {
+    if (name === "archive-image-links") { entered(); await gate; }
+    return work();
+  } });
+  await archiving;
+  assert.equal((await (await f.req()).json()).state, "received");
+  assert.ok(await f.env.RESULTS.get(`jobs/${id}/polling`));
+  release(); const run = await starting;
+  assert.equal((await (await f.req()).json()).state, "complete");
+  assert.equal(await f.env.RESULTS.get(`jobs/${id}/polling`), null);
+  await f.submit({ polling: nativePolling }); const replay = await f.start();
+  assert.equal(submits, 1); assert.equal(f.calls(), 2);
+  await replay.expire(); await run.expire();
+});
+
+test("native archival uncertainty retains the query capsule until the existing purge", async () => {
+  let submits = 0;
+  const f = fixture(async url => url.endsWith("/generations")
+    ? (submits++, Response.json({ id: "accepted-T", status: "queued" }))
+    : url.includes("/tasks/") ? Response.json({ status: "completed", data: [{ url: "https://cdn.example.com/original.png" }] })
+      : new Response(null, { status: 503 }));
+  await f.submit({ polling: nativePolling }); const run = await f.start();
+  assert.equal((await (await f.req()).json()).state, "uncertain");
+  assert.ok(await f.env.RESULTS.get(`jobs/${id}/polling`));
+  assert.equal(submits, 1);
+  await run.expire(); assert.equal(await f.env.RESULTS.get(`jobs/${id}/polling`), null);
+});
+
+test("failed query credential cleanup keeps uncertainty and still schedules the expiry purge", async () => {
+  let submits = 0;
+  const f = fixture(async url => url.endsWith("/generations")
+    ? (submits++, Response.json({ id: "accepted-T", status: "queued" }))
+    : Response.json({ status: "completed", data: [{ b64_json: "aW1hZ2U=" }] }));
+  const remove = f.env.RESULTS.delete.bind(f.env.RESULTS); let failed = false;
+  f.env.RESULTS.delete = async keys => {
+    if (!failed && keys === `jobs/${id}/polling`) { failed = true; throw new Error("capsule cleanup unavailable"); }
+    return remove(keys);
+  };
+  await f.submit({ polling: nativePolling }); const run = await f.start();
+  assert.equal(failed, true); assert.equal((await (await f.req()).json()).state, "uncertain");
+  assert.ok(await f.env.RESULTS.get(`jobs/${id}/polling`)); assert.equal(submits, 1); assert.equal(f.calls(), 2);
+  await run.expire(); assert.equal(await f.env.RESULTS.get(`jobs/${id}/polling`), null);
+});
+
 test("polling deadline retains the accepted identity and encrypted query capsule, never the submit body", async () => {
   let submits = 0;
   const f = fixture(async url => {
