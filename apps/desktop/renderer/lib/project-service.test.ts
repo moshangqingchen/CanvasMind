@@ -53,6 +53,8 @@ import {
   importProjectFiles,
   deleteProjectFiles,
   archiveExternalAssetsForProject,
+  projectFileMetadata,
+  readProjectFile,
 } from "./project-service";
 
 const canvas = {
@@ -122,7 +124,7 @@ describe("scoped project files", () => {
   });
   it("reuses identical archived assets and imports manual media once without extra archive copies", async () => {
     const bytes = await sharp({ create: { width: 2, height: 2, channels: 4, background: "white" } }).png().toBuffer();
-    const original = { id: "image", name: "Picture", kind: "image", storageKey: "original.png", metadata: { canvasId: canvas.id } };
+    const original = { id: "image", name: "Picture", kind: "image", mimeType: "image/png", storageKey: "original.png", metadata: { canvasId: canvas.id } };
     mocks.repository.listAssets.mockResolvedValue([original]);
     mocks.storage.get.mockResolvedValue({ bytes });
     mocks.store.readFile.mockImplementation(async (_title, id) => {
@@ -139,6 +141,34 @@ describe("scoped project files", () => {
     mocks.repository.getAsset.mockResolvedValue(result.assets[1]);
     await archiveExternalAssetsForProject(canvas.id, [result.assets[1]!.id]);
     expect(mocks.store.archiveDraft).not.toHaveBeenCalled();
+  });
+
+  it("keeps audio/webm consistent through listing, metadata, content reads and reimport", async () => {
+    const bytes = Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0x87, 0x42, 0x82, 0x84, 0x77, 0x65, 0x62, 0x6d,
+      0x18, 0x53, 0x80, 0x67, 0x8a, 0x16, 0x54, 0xae, 0x6b, 0x85, 0xae, 0x83, 0x83, 0x81, 2]);
+    const audio = { ...file, name: "voice--voice.webm", kind: "audio", mimeType: "audio/webm", size: bytes.length };
+    const original = { id: "voice", name: "原始音频", kind: "audio", mimeType: "audio/webm;codecs=opus", storageKey: "voice.webm", metadata: { canvasId: canvas.id } };
+    mocks.repository.listAssets.mockResolvedValue([original]);
+    mocks.store.listFiles.mockResolvedValue({ files: [audio], ignoredFiles: 0 });
+    mocks.store.fileMetadata.mockResolvedValue(audio);
+    mocks.store.readFile.mockResolvedValue({ file: audio, bytes });
+    expect((await listProjectFiles(canvas.id)).files[0]).toMatchObject({ name: original.name, assetId: "voice", kind: "audio", mimeType: original.mimeType });
+    expect(await projectFileMetadata(canvas.id, audio.fileId)).toMatchObject({ kind: "audio", mimeType: original.mimeType });
+    expect((await readProjectFile(canvas.id, audio.fileId)).file).toMatchObject({ kind: "audio", mimeType: original.mimeType });
+    // With no remaining original object, import the unchanged project copy.
+    mocks.storage.get.mockResolvedValue(null);
+    mocks.repository.saveAsset.mockImplementation(async value => value);
+    const imported = await importProjectFiles(canvas.id, [audio.fileId]);
+    expect(imported.failed).toEqual([]);
+    expect(imported.assets[0]).toMatchObject({ kind: "audio", mimeType: original.mimeType });
+    expect(mocks.storage.put).toHaveBeenCalledWith(expect.stringMatching(/original\.webm$/u), bytes, original.mimeType);
+  });
+
+  it("does not reuse stale audio metadata for a replacement containing a video track", async () => {
+    const video = { ...file, name: "replacement--voice.webm", kind: "video", mimeType: "video/webm" };
+    mocks.repository.listAssets.mockResolvedValue([{ id: "voice", name: "Old voice", kind: "audio", mimeType: "audio/webm", metadata: { canvasId: canvas.id } }]);
+    mocks.store.listFiles.mockResolvedValue({ files: [video], ignoredFiles: 0 });
+    expect((await listProjectFiles(canvas.id)).files[0]).toMatchObject({ kind: "video", mimeType: "video/webm" });
   });
 });
 

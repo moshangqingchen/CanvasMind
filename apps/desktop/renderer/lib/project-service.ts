@@ -11,7 +11,7 @@ import {
 import { repository, storage } from "./server";
 import { collectReferencedAssetIds } from "./project-transfer";
 import type { CanvasDocument } from "../components/types";
-import { completeMediaPayload, mediaKindForMime, sanitizedAssetExtension, validateMediaMagic } from "../app/api/assets/media-utils";
+import { completeMediaPayload, mediaKindForMime, normalizeMimeType, sanitizedAssetExtension, validateMediaMagic } from "../app/api/assets/media-utils";
 import { projectCoordinator } from "./project-coordinator";
 
 export type ProjectFileView = Omit<ProjectMediaFile, "relativePath"> & {
@@ -45,6 +45,15 @@ function associatedAsset(file: ProjectMediaFile, assets: readonly AssetRecord[])
   });
 }
 
+function assetMedia(file: ProjectMediaFile, asset: AssetRecord | undefined): ProjectMediaFile {
+  // Track inspection is authoritative when a manually replaced file disagrees
+  // with the old --assetId name. Restore compatible original MIME metadata.
+  return asset && asset.kind === file.kind && typeof asset.mimeType === "string" &&
+    normalizeMimeType(asset.mimeType) === normalizeMimeType(file.mimeType)
+    ? { ...file, kind: asset.kind, mimeType: asset.mimeType }
+    : file;
+}
+
 export async function listProjectFiles(canvasId: string): Promise<{ files: ProjectFileView[]; ignoredFiles: number }> {
   return projectCoordinator(repository).withCanvas(canvasId, async () => {
   const canvas = await uniqueProjectDirectory(canvasId);
@@ -52,9 +61,9 @@ export async function listProjectFiles(canvasId: string): Promise<{ files: Proje
   const [{ files, ignoredFiles }, assets] = await Promise.all([store.listFiles(canvas.title), projectAssets(canvas)]);
   const endpoint = `/api/projects/${encodeURIComponent(canvasId)}/files/content`;
   return { ignoredFiles, files: files.map(file => {
-    const { fileId, name, kind, mimeType, size, modifiedAt, section, subfolder } = file;
-    const publicFile = { fileId, name, kind, mimeType, size, modifiedAt, section, subfolder };
     const asset = associatedAsset(file, assets);
+    const { fileId, name, kind, mimeType, size, modifiedAt, section, subfolder } = assetMedia(file, asset);
+    const publicFile = { fileId, name, kind, mimeType, size, modifiedAt, section, subfolder };
     const assetId = asset?.id;
     const contentUrl = `${endpoint}?fileId=${file.fileId}`;
     return { ...publicFile, name: asset?.name ?? file.name, contentUrl, previewUrl: file.kind === "image" ? `${contentUrl}&preview=640` : contentUrl,
@@ -66,14 +75,17 @@ export async function listProjectFiles(canvasId: string): Promise<{ files: Proje
 export async function readProjectFile(canvasId: string, fileId: string, options?: { start?: number; end?: number; maxBytes?: number }) {
   return projectCoordinator(repository).withCanvas(canvasId, async () => {
   const canvas = await uniqueProjectDirectory(canvasId);
-  return getProjectFileStore().readFile(canvas.title, fileId, options);
+  const result = await getProjectFileStore().readFile(canvas.title, fileId, options);
+  const file = assetMedia(result.file, associatedAsset(result.file, await projectAssets(canvas)));
+  return { ...result, file };
   });
 }
 
 export async function projectFileMetadata(canvasId: string, fileId: string) {
   return projectCoordinator(repository).withCanvas(canvasId, async () => {
   const canvas = await uniqueProjectDirectory(canvasId);
-  return getProjectFileStore().fileMetadata(canvas.title, fileId);
+  const file = await getProjectFileStore().fileMetadata(canvas.title, fileId);
+  return assetMedia(file, associatedAsset(file, await projectAssets(canvas)));
   });
 }
 
@@ -91,16 +103,21 @@ export async function importProjectFiles(canvasId: string, fileIds: readonly str
   const assets: AssetRecord[] = [], failed: Array<{ fileId: string; error: string }> = [];
   for (const fileId of new Set(fileIds)) {
     try {
-      const { file, bytes } = await getProjectFileStore().readFile(canvas.title, fileId, { maxBytes: 500 * 1024 * 1024 });
-      const prior = associatedAsset(file, known);
-      if (prior) {
+      const result = await getProjectFileStore().readFile(canvas.title, fileId, { maxBytes: 500 * 1024 * 1024 });
+      const bytes = result.bytes;
+      const prior = associatedAsset(result.file, known);
+      const file = assetMedia(result.file, prior);
+      if (prior && prior.kind === file.kind && normalizeMimeType(prior.mimeType ?? "") === normalizeMimeType(file.mimeType)) {
         const original = await storage.get(prior.storageKey);
         if (original && createHash("sha256").update(original.bytes).digest("hex") === createHash("sha256").update(bytes).digest("hex")) {
           assets.push(prior); continue;
         }
       }
-      const kind = mediaKindForMime(file.mimeType);
-      if (!kind || !validateMediaMagic(bytes, file.mimeType).valid || !completeMediaPayload(bytes, file.mimeType))
+      const audioWebm = file.kind === "audio" && normalizeMimeType(file.mimeType) === "audio/webm";
+      const kind = audioWebm ? "audio" : mediaKindForMime(file.mimeType);
+      // The store proved the WebM track kind for this immutable file version;
+      // the existing magic validator recognizes their shared WebM container.
+      if (!kind || !validateMediaMagic(bytes, audioWebm ? "video/webm" : file.mimeType).valid || !completeMediaPayload(bytes, file.mimeType))
         throw new Error("文件不是完整的受支持图片、视频或音频，无法放入画布");
       const id = randomUUID();
       const storageKey = `assets/${id}/original.${sanitizedAssetExtension(file.name, file.mimeType)}`;

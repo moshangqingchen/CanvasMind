@@ -11,6 +11,7 @@ import {
 } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
+import { webmMediaKind } from "./webm-media.js";
 import {
   dirname,
   extname,
@@ -75,7 +76,7 @@ const extensionMedia: Record<string, { kind: ProjectMediaKind; mimeType: string 
 );
 function mimeExtensionsForBrowser(): Record<string, string> {
   return { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif", avif: "image/avif", bmp: "image/bmp",
-    mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime", avi: "video/x-msvideo",
+    mp4: "video/mp4", mov: "video/quicktime", avi: "video/x-msvideo",
     mp3: "audio/mpeg", wav: "audio/wav", m4a: "audio/mp4", ogg: "audio/ogg" };
 }
 
@@ -194,6 +195,7 @@ export class ProjectFileStore {
   >();
   private readonly fileIndexes = new Map<string, { at: number; files: Map<string, ProjectMediaFile> }>();
   private readonly pendingFileIndexes = new Map<string, Promise<{ files: ProjectMediaFile[]; ignoredFiles: number }>>();
+  private readonly webmKinds = new Map<string, "audio" | "video" | undefined>();
 
   constructor(options: ProjectFileStoreOptions = {}) {
     this.root = resolve(
@@ -296,11 +298,30 @@ export class ProjectFileStore {
           continue;
         }
         const extension = extname(entry.name).slice(1).toLowerCase();
-        const media = Object.hasOwn(extensionMedia, extension) ? extensionMedia[extension] : undefined;
-        if (!entry.isFile() || !media || entry.name.endsWith(".tmp")) { ignoredFiles++; continue; }
+        let media = Object.hasOwn(extensionMedia, extension) ? extensionMedia[extension] : undefined;
+        if (!entry.isFile() || (!media && extension !== "webm") || entry.name.endsWith(".tmp")) { ignoredFiles++; continue; }
         await this.verifyExistingPath(target, false);
         const details = await lstat(target);
         const relativePath = relative(project, target);
+        if (extension === "webm") {
+          const version = this.fileVersion(project, relativePath, details);
+          if (!this.webmKinds.has(version)) {
+            const handle = await open(target, "r");
+            try {
+              const opened = await handle.stat();
+              if (this.fileVersion(project, relativePath, opened) !== version) throw new ProjectFileAccessError("文件读取期间发生变化，请刷新");
+              const kind = await webmMediaKind(handle, details.size);
+              await this.verifyExistingPath(target, false);
+              if (this.fileVersion(project, relativePath, await lstat(target)) !== version) throw new ProjectFileAccessError("文件读取期间发生变化，请刷新");
+              if (this.webmKinds.size >= 512) this.webmKinds.delete(this.webmKinds.keys().next().value!);
+              this.webmKinds.set(version, kind);
+            } finally { await handle.close(); }
+          }
+          const kind = this.webmKinds.get(version);
+          if (!kind) { ignoredFiles++; continue; }
+          media = { kind, mimeType: `${kind}/webm` };
+        }
+        if (!media) { ignoredFiles++; continue; }
         files.push({ fileId: this.fileVersion(project, relativePath, details), name: entry.name, ...media,
           size: details.size, modifiedAt: details.mtime.toISOString(), section,
           subfolder: relative(area, directory).split(sep).join("/"), relativePath });
