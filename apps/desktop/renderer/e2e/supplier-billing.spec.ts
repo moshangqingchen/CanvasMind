@@ -161,13 +161,19 @@ test("画布供应商选择显示对应报价余额，切换后刷新对应账�
   for (const [index, [name, price, balance]] of ([["报价甲", "0.4 CNY / 张", "余额 10 CNY"], ["报价乙", "0.8 USD / 张", "余额 22 USD"]] as const).entries()) {
     const row = candidateList.locator(`[data-route-id="${data.connections[index]!.id}"]`);
     await expect(row).toBeVisible();
-    await expect(candidates.getByRole("group", { name: `${name} 线路`, exact: true })).toContainText("创作组");
+    const supplierGroup = candidates.getByRole("group", { name: `${name} 线路`, exact: true });
+    await expect(supplierGroup).toContainText("创作组");
     await expect(row).toHaveAttribute("data-route-group", "创作组");
     await expect(row.getByLabel("同型号报价", { exact: true })).toHaveText(price);
-    await expect(row).toContainText(balance);
-    expect(await row.getByText(balance, { exact: true }).evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+    const supplierBalance = supplierGroup.getByText(balance, { exact: true });
+    await expect(supplierBalance).toHaveCount(1);
+    await expect(supplierBalance).toBeVisible();
+    await expect(supplierGroup).toHaveAccessibleDescription(new RegExp(balance, "u"));
+    await expect(row.getByText(balance, { exact: true })).toHaveCount(0);
+    expect(await supplierBalance.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
     await expect(row.getByText("同型号", { exact: true })).toBeVisible();
     await expect(row.getByRole("button", { name: /^选择线路 /u })).toHaveAttribute("title", new RegExp(balance, "u"));
+    await expect(row.getByRole("button", { name: /^选择线路 /u })).toHaveAccessibleDescription(new RegExp(balance, "u"));
     await expect(row.getByRole("button", { name: /^选择线路 /u })).toHaveAttribute("title", /切换后将使用：计价模型（gpt-image-2\.5）/u);
     await expect(row.locator("summary")).toHaveText("价格明细");
   }
