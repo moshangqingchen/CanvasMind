@@ -171,11 +171,14 @@ test("画布供应商选择显示对应报价余额，切换后刷新对应账�
     await expect(supplierGroup).toHaveAccessibleDescription(new RegExp(balance, "u"));
     await expect(row.getByText(balance, { exact: true })).toHaveCount(0);
     expect(await supplierBalance.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
-    await expect(row.getByText("同型号", { exact: true })).toBeVisible();
+    await expect(row.getByRole("button", { name: /^选择线路 /u })).toHaveAccessibleDescription(/同型号；切换后将使用/u);
+    await expect(row.getByRole("button", { name: /^选择线路 /u })).toHaveAttribute("title", /同型号；切换后将使用/u);
+    await expect(row.getByText("同型号", { exact: true })).toHaveCount(0);
     await expect(row.getByRole("button", { name: /^选择线路 /u })).toHaveAttribute("title", new RegExp(balance, "u"));
     await expect(row.getByRole("button", { name: /^选择线路 /u })).toHaveAccessibleDescription(new RegExp(balance, "u"));
     await expect(row.getByRole("button", { name: /^选择线路 /u })).toHaveAttribute("title", /切换后将使用：计价模型（gpt-image-2\.5）/u);
-    await expect(row.locator("summary")).toHaveText("价格明细");
+    await expect(row.locator("summary")).toHaveText("明细");
+    await expect(row.locator("summary")).toHaveAccessibleName(/价格明细$/u);
   }
   await candidateList.scrollIntoViewIfNeeded();
   const candidateBounds = await candidateList.evaluate(element => {

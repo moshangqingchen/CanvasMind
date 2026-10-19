@@ -109,7 +109,9 @@ test("stage2 step4 线路键盘所有权、收起明细与管理前草稿提交"
   await expect(routes).toBeVisible();
   const selectedRoute = routes.getByRole("button", { name: /^选择线路 /u, pressed: true });
   await expect(selectedRoute.getByLabel("同型号报价", { exact: true })).toHaveText("0.125 CNY / 张");
-  await expect(selectedRoute.getByText("同型号", { exact: true })).toBeVisible();
+  await expect(selectedRoute).toHaveAccessibleDescription(/同型号；切换后将使用/u);
+  await expect(selectedRoute).toHaveAttribute("title", /同型号；切换后将使用/u);
+  await expect(routes.getByText("同型号", { exact: true })).toHaveCount(0);
   await expect(panel.locator('div[aria-label="当前线路"]')).not.toContainText("余额未读取");
   await capturePanel(panel, "stage3-route-picker-single.png");
   await page.keyboard.press("Control+Enter"); expect(f.submissions).toHaveLength(0);

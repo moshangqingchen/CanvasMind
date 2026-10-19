@@ -432,7 +432,9 @@ test("视频供应商比较与切换选择完整型号所在分组，不借用�
   await expect(targetSupplierGroup).toHaveAccessibleDescription(/余额未读取/u);
   await expect(targetRow.getByText("余额未读取", { exact: true })).toHaveCount(0);
   expect(await targetBalance.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
-  await expect(targetRow.getByText("同型号", { exact: true })).toBeVisible();
+  await expect(targetRow.getByRole("button", { name: /^选择线路 /u })).toHaveAccessibleDescription(/同型号；切换后将使用/u);
+  await expect(targetRow.getByRole("button", { name: /^选择线路 /u })).toHaveAttribute("title", /同型号；切换后将使用/u);
+  await expect(candidates.getByText("同型号", { exact: true })).toHaveCount(0);
   await expect(targetRow.getByRole("button", { name: /^选择线路 /u })).toHaveAttribute("title", new RegExp(exactId, "u"));
   await expect(targetRow.getByRole("button", { name: /^选择线路 /u })).toHaveAccessibleDescription(/余额未读取/u);
   const missingRow = candidates.locator(`[data-route-id="${missingConnection.id}"]`);
