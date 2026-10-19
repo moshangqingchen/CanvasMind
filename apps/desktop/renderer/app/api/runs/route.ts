@@ -1,4 +1,5 @@
 import { imageCapabilityRequestError } from "../../../lib/supplier-capabilities";
+import { withSubmissionIdentity } from "../../../lib/submission-identity";
 import { savedModelAvailabilityError, savedModelMediaError } from "../../../lib/model-availability";
 import type { ModelDescriptor } from "@super-canvas/providers";
 import { CanvasRevisionConflictError } from "@super-canvas/db";
@@ -59,15 +60,6 @@ async function cyberAfeiRunPreflight(input: {
     typeof repositoryMethods.getRunByClientRequest !== "function" ||
     typeof repositoryMethods.getCanvas !== "function" ||
     typeof repositoryMethods.getConnection !== "function"
-  )
-    return null;
-  // A retry for an already-created idempotent run must return that run even if
-  // the provider catalog changes while it is executing.
-  if (
-    await repository.getRunByClientRequest(
-      input.canvasId,
-      input.clientRequestId,
-    )
   )
     return null;
   const canvas = await repository.getCanvas(input.canvasId);
@@ -315,8 +307,25 @@ export async function POST(request: Request) {
   const parsed = await parseJsonRequest(request, CreateRunRequestSchema);
   if (!parsed.success) return parsed.response;
 
+  return withSubmissionIdentity(runService.repository, parsed.data.canvasId, parsed.data.clientRequestId, async () => {
+  try {
+    const existing = await runService.repository.getRunByClientRequest(parsed.data.canvasId, parsed.data.clientRequestId);
+    if (existing) {
+      const snapshot = publicRunSnapshot(await runService.getRun(existing.id));
+      return snapshot ? Response.json(snapshot, { status: 202 }) : uncertainRunSubmission();
+    }
+  } catch { return uncertainRunSubmission(); }
   const preflight = await cyberAfeiRunPreflight(parsed.data);
-  if (preflight) return jsonError(preflight.message, preflight.status);
+  if (preflight) {
+    try {
+      const existing = await runService.repository.getRunByClientRequest(parsed.data.canvasId, parsed.data.clientRequestId);
+      if (existing) {
+        const snapshot = publicRunSnapshot(await runService.getRun(existing.id));
+        return snapshot ? Response.json(snapshot, { status: 202 }) : uncertainRunSubmission();
+      }
+    } catch { return uncertainRunSubmission(); }
+    return Response.json({ error: preflight.message, code: "RUN_PREFLIGHT_REJECTED", submissionPhase: "not_started" }, { status: preflight.status });
+  }
 
   let created = false;
   try {
@@ -373,4 +382,5 @@ export async function POST(request: Request) {
     if (error instanceof Error && "code" in error && error.code === "DESKTOP_PUBLIC_ASSETS_UNAVAILABLE") return jsonError(error.message, 422);
     return jsonError("无法创建运行，请检查画布、节点和输入配置", 422);
   }
+  });
 }

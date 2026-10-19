@@ -755,7 +755,10 @@ export async function createRun(input: {
     body: JSON.stringify(input),
   });
   if (!response.ok) {
-    const message = (await response.json().catch(() => null))?.error ?? "运行创建失败";
+    const payload = await response.json().catch(() => null);
+    const message = payload?.error ?? "运行创建失败";
+    if (payload?.submissionPhase === "not_started" &&
+        ["RUN_PREFLIGHT_REJECTED", "CANVAS_REVISION_CONFLICT"].includes(payload?.code)) throw new Error(message);
     if (response.status >= 500 || response.status === 408) throw new TypeError(message);
     throw new Error(message);
   }

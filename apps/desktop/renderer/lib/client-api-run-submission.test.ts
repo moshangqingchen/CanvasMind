@@ -4,6 +4,17 @@ import { createRun } from "./client-api";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("revision-bound run requests", () => {
+  it.each([
+    [{ error: "素材目录预检拒绝", code: "RUN_PREFLIGHT_REJECTED", submissionPhase: "not_started" }, false],
+    [{ error: "unknown" }, true],
+    [{ error: "unrecognized evidence", code: "OTHER", submissionPhase: "not_started" }, true],
+  ] as const)("only recognizes the exact definite rejection contract %#", async (body, unknown) => {
+    const fetcher = vi.fn(async () => Response.json(body, { status: 503 }));
+    vi.stubGlobal("fetch", fetcher);
+    const error = await createRun({ canvasId: "canvas", clientRequestId: "click", expectedRevision: 7, scope: "all" }).catch(error => error);
+    expect(error instanceof TypeError).toBe(unknown);
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
   it.each(["node", "downstream", "all"] as const)("sends the saved click revision for %s without retrying", async scope => {
     const snapshot = { run: { id: "run", status: "queued" }, nodes: [] };
     const fetcher = vi.fn().mockResolvedValue(Response.json(snapshot, { status: 201 }));
