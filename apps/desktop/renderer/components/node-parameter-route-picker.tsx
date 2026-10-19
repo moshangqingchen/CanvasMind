@@ -25,14 +25,15 @@ function RouteChoice({ row, balance, sharedBalanceId, onChoose }: {
   const quoteId = useId();
   const identityId = useId();
   const balanceId = useId();
-  const switchDescription = connection.switchModelId ? `切换后将使用：${row.switchModelName}（${connection.switchModelId}）` : undefined;
+  const switchDescription = connection.switchModelId ? `${row.sameModel ? "同型号；" : ""}切换后将使用：${row.switchModelName}（${connection.switchModelId}）` : undefined;
+  const visibleSwitchDescription = row.sameModel ? undefined : switchDescription;
   const identityDescription = `${row.path}\n分组名称：${connection.groupLabel ?? connection.group}\n连接名称：${connection.name}\n分组 ID：${connection.group}\n连接 ID：${connection.id}`;
   const details = [identityDescription, balance, `同型号报价：${row.comparisonPrice}`, switchDescription, row.unavailableReason].filter(Boolean).join("\n");
   const rowBalance = sharedBalanceId ? undefined : balance;
   const hasDetails = Boolean(connection.modelDescriptor || connection.modelQuote);
   const descriptionIds = [identityId, quoteId, sharedBalanceId ?? (rowBalance ? balanceId : undefined),
     switchDescription ? switchId : undefined, row.unavailableReason ? reasonId : undefined].filter(Boolean).join(" ");
-  return <li className={styles.row} data-route-id={connection.id} data-route-group={connection.group}>
+  return <li className={styles.row} data-route-id={connection.id} data-route-group={connection.group} data-route-current={row.current ? "true" : undefined}>
     <button type="button" className={styles.choice} data-route-choice="true"
       aria-label={`选择线路 ${row.path}`} aria-pressed={row.current} aria-disabled={Boolean(row.unavailableReason)}
       aria-describedby={descriptionIds}
@@ -46,16 +47,17 @@ function RouteChoice({ row, balance, sharedBalanceId, onChoose }: {
         </span>
         {row.groupIdLabel && <small className={styles.groupIdentity}>{row.groupIdLabel}</small>}
         {row.secondaryLabel && <small className={styles.connectionName}>{row.secondaryLabel}</small>}
-        {(rowBalance || switchDescription) && <span className={styles.secondary}>
+        {(rowBalance || visibleSwitchDescription) && <span className={styles.secondary}>
           {rowBalance && <small id={balanceId}>{rowBalance}</small>}
-          {switchDescription && <small id={switchId} aria-label={switchDescription}>{row.switchLabel}</small>}
+          {visibleSwitchDescription && <small id={switchId} aria-label={visibleSwitchDescription}>{row.switchLabel}</small>}
         </span>}
         {row.unavailableReason && <small id={reasonId}>{row.unavailableReason}</small>}
       </span>
       <span id={identityId} className={styles.visuallyHidden}>{identityDescription}</span>
+      {row.sameModel && switchDescription && <span id={switchId} className={styles.visuallyHidden}>{switchDescription}</span>}
     </button>
     {hasDetails && <details className={styles.details} open={detailsOpen} onToggle={event => setDetailsOpen(event.currentTarget.open)}>
-      <summary aria-label={`${row.path}价格明细`}>价格明细</summary>
+      <summary aria-label={`${row.path}价格明细`}>明细</summary>
       {detailsOpen && (connection.modelDescriptor ? <ModelPriceTable model={connection.modelDescriptor} /> : <p>{connection.modelQuote ?? "—"}</p>)}
     </details>}
   </li>;
