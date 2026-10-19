@@ -17,8 +17,8 @@ const image: ModelDescriptor = {
   pricing: { kind: "per-image", currency: "CNY", unitAmount: .4, confidence: "exact", checkedAt: timestamp },
 };
 
-async function fixture(page: Page, request: APIRequestContext, options: { currentId?: string; longList?: boolean; emptySecondary?: boolean } = {}) {
-  const { currentId = "equal-name", longList = false, emptySecondary = false } = options;
+async function fixture(page: Page, request: APIRequestContext, options: { currentId?: string; longList?: boolean; emptySecondary?: boolean; longAliasDisplay?: boolean } = {}) {
+  const { currentId = "equal-name", longList = false, emptySecondary = false, longAliasDisplay = false } = options;
   expect(process.env.PLAYWRIGHT_BASE_URL, "仅使用本地隔离运行时").toBeFalsy();
   const prohibited: string[] = [], errors: string[] = [], writes: Record<string, unknown>[] = [];
   page.on("pageerror", error => errors.push(error.message));
@@ -55,6 +55,9 @@ async function fixture(page: Page, request: APIRequestContext, options: { curren
     connection("beta-unavailable", "不可用连接", "停用组", { beta: true, unavailable: true,
       models: [{ ...image, pricing: undefined, metadata: { canvasRunnable: false, canvasUnavailableReason: "隔离目录仅展示" } }] }),
   ];
+  if (longAliasDisplay) for (const candidate of connections.filter(item => ["alias-a", "alias-b"].includes(item.id))) {
+    candidate.config.modelGroupLabel = longGroup.repeat(3);
+  }
   if (emptySecondary) connections.push(connection("empty-secondary", "供应商甲 · 无次要内容组", "无次要内容组", {
     models: [{ ...image, metadata: { canvasRunnable: false } }],
   }));
@@ -224,5 +227,40 @@ test("空次要行不占位、Space仅选择连接且标题不进入Tab序列", 
   await expect(f.routes).toBeHidden(); await expect(f.trigger).toBeFocused();
   await expect.poll(async () => (await f.readNode()).connectionId).toBe("prefix-backup");
   expect((await f.readNode()).model).toBe(image.id);
+  f.assertSafe();
+});
+
+test("超长同名分组的不同组 ID 仍完整可见", async ({ page, request }) => {
+  test.skip(before, "改动前仅采集相同 fixture 截图");
+  const f = await fixture(page, request, { longAliasDisplay: true });
+  await f.trigger.evaluate(element => { element.style.width = "320px"; });
+  await f.trigger.click();
+  for (const suffix of ["a", "b"]) {
+    const choice = f.choice(`alias-${suffix}`), groupId = `langframe-key:stable-${suffix}`;
+    await choice.scrollIntoViewIfNeeded();
+    await expect.poll(() => choice.evaluate((element, expectedId) => {
+      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const start = node.textContent?.indexOf(expectedId) ?? -1;
+        if (start < 0) continue;
+        const range = document.createRange(); range.setStart(node, start); range.setEnd(node, start + expectedId.length);
+        const rects = [...range.getClientRects()];
+        if (!rects.length || rects.some(rect => rect.width <= 1 || rect.height <= 1)) continue;
+        let visible = true;
+        for (let parent = node.parentElement; parent; parent = parent.parentElement) {
+          const style = getComputedStyle(parent), bounds = parent.getBoundingClientRect();
+          if (style.display === "none" || style.visibility !== "visible" || style.opacity === "0") { visible = false; break; }
+          if (rects.some(rect => /hidden|clip|auto|scroll/u.test(style.overflowX) && (rect.left < bounds.left - 1 || rect.right > bounds.right + 1)
+            || /hidden|clip|auto|scroll/u.test(style.overflowY) && (rect.top < bounds.top - 1 || rect.bottom > bounds.bottom + 1))) {
+            visible = false; break;
+          }
+          // A top-layer popover escapes clipping by its DOM ancestors.
+          if (parent.matches(":popover-open")) break;
+        }
+        if (visible) return true;
+      }
+      return false;
+    }, groupId), { message: `${groupId} 应处于实际可见区域，不能被两行分组名或隐藏描述替代` }).toBe(true);
+  }
   f.assertSafe();
 });
