@@ -17,7 +17,8 @@ const image: ModelDescriptor = {
   pricing: { kind: "per-image", currency: "CNY", unitAmount: .4, confidence: "exact", checkedAt: timestamp },
 };
 
-async function fixture(page: Page, request: APIRequestContext, currentId = "equal-name", longList = false) {
+async function fixture(page: Page, request: APIRequestContext, options: { currentId?: string; longList?: boolean; emptySecondary?: boolean } = {}) {
+  const { currentId = "equal-name", longList = false, emptySecondary = false } = options;
   expect(process.env.PLAYWRIGHT_BASE_URL, "仅使用本地隔离运行时").toBeFalsy();
   const prohibited: string[] = [], errors: string[] = [], writes: Record<string, unknown>[] = [];
   page.on("pageerror", error => errors.push(error.message));
@@ -54,6 +55,9 @@ async function fixture(page: Page, request: APIRequestContext, currentId = "equa
     connection("beta-unavailable", "不可用连接", "停用组", { beta: true, unavailable: true,
       models: [{ ...image, pricing: undefined, metadata: { canvasRunnable: false, canvasUnavailableReason: "隔离目录仅展示" } }] }),
   ];
+  if (emptySecondary) connections.push(connection("empty-secondary", "供应商甲 · 无次要内容组", "无次要内容组", {
+    models: [{ ...image, metadata: { canvasRunnable: false } }],
+  }));
   if (longList) for (let index = 0; index < 28; index++) connections.push(connection(`long-${index}`, `长列表连接 ${index}`, `长列表分组 ${index}`, { beta: true }));
   const suppliers = ["account-a", "account-b", "account-c"].map((id, index) => ({
     id, name: index ? "供应商乙" : "供应商甲", supplierKey: index ? "custom-hierarchy-beta" : "custom-hierarchy-alpha",
@@ -168,6 +172,7 @@ test("供应商余额分层、身份去重、报价与可访问描述完整", as
   for (const connection of f.connections) {
     await expect(f.choice(connection.id)).toHaveAccessibleDescription(new RegExp(`连接 ID：${connection.id}`, "u"));
     await expect(f.choice(connection.id)).toHaveAccessibleDescription(new RegExp(`分组 ID：${String(connection.config.modelGroup)}`, "u"));
+    if (connection.config.supplierId === "account-a") await expect(f.choice(connection.id)).toHaveAccessibleDescription(/余额 26\.637338 CNY/u);
   }
   const missingDescriptions = await f.routes.evaluate(element => [...element.querySelectorAll("[aria-describedby]")].flatMap(node =>
     (node.getAttribute("aria-describedby") ?? "").split(/\s+/u).filter(id => id && !document.getElementById(id))));
@@ -178,7 +183,7 @@ test("供应商余额分层、身份去重、报价与可访问描述完整", as
 test("长列表初焦点可见、跨供应商键盘循环且仅保存连接 ID", async ({ page, request }) => {
   test.skip(before, "改动前仅采集相同 fixture 截图");
   await page.setViewportSize({ width: 1440, height: 720 });
-  const f = await fixture(page, request, "long-27", true); await f.trigger.click();
+  const f = await fixture(page, request, { currentId: "long-27", longList: true }); await f.trigger.click();
   await expectFocusedRowVisible(f.choice("long-27"));
   await page.keyboard.press("Escape"); await expect(f.trigger).toBeFocused();
   await f.trigger.press("ArrowDown");
@@ -186,6 +191,8 @@ test("长列表初焦点可见、跨供应商键盘循环且仅保存连接 ID",
   await expectFocusedRowVisible(choices.first());
   await page.keyboard.press("ArrowUp"); await expectFocusedRowVisible(choices.last());
   await page.keyboard.press("ArrowDown"); await expectFocusedRowVisible(choices.first());
+  await page.keyboard.press("Escape"); await expect(f.trigger).toBeFocused();
+  await f.trigger.press("ArrowUp"); await expectFocusedRowVisible(choices.last());
   const lastAlpha = f.routes.getByRole("group", { name: "供应商甲 线路", exact: true }).locator("[data-route-choice]").last();
   await lastAlpha.focus(); await page.keyboard.press("ArrowDown");
   await expectFocusedRowVisible(f.routes.getByRole("group", { name: "供应商乙 线路", exact: true }).locator("[data-route-choice]").first());
@@ -200,5 +207,22 @@ test("长列表初焦点可见、跨供应商键盘循环且仅保存连接 ID",
   expect(typeof afterData.connectionId).toBe("string");
   expect(afterData.connectionId).not.toContain("›");
   expect(f.writes.length).toBeGreaterThan(0);
+  f.assertSafe();
+});
+
+test("空次要行不占位、Space仅选择连接且标题不进入Tab序列", async ({ page, request }) => {
+  test.skip(before, "改动前仅采集相同 fixture 截图");
+  const f = await fixture(page, request, { emptySecondary: true }); await f.trigger.click();
+  const empty = f.choice("empty-secondary");
+  await expect(empty).not.toContainText("切换后将使用");
+  await expect(empty.locator("small")).toHaveCount(0);
+  await expect(empty).toHaveAccessibleDescription(/余额 26\.637338 CNY/u);
+  const tabbableHeadings = f.routes.locator('h4[tabindex], [data-route-supplier] > section > [tabindex]');
+  await expect(tabbableHeadings).toHaveCount(0);
+  const choice = f.choice("prefix-backup");
+  await choice.focus(); await page.keyboard.press("Space");
+  await expect(f.routes).toBeHidden(); await expect(f.trigger).toBeFocused();
+  await expect.poll(async () => (await f.readNode()).connectionId).toBe("prefix-backup");
+  expect((await f.readNode()).model).toBe(image.id);
   f.assertSafe();
 });
