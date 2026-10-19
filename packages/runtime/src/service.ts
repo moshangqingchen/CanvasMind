@@ -2902,14 +2902,15 @@ export class RunService {
       throw new NeedsAttentionError(
         "供应商任务仍在运行，但 Adapter 未提供轮询能力",
       );
+    const expectedProviderTaskId = state.providerTaskId;
 
     for (let attempt = 1; options.persistent || attempt <= 3; attempt += 1) {
       try {
         options.signal?.throwIfAborted();
         await options.beforePoll?.();
         options.signal?.throwIfAborted();
-        const polling = adapter.poll(state).then(async polled => {
-          assertMatchingProviderTask(polled, state.providerTaskId);
+        const polling = adapter.poll({ ...state }).then(async polled => {
+          assertMatchingProviderTask(polled, expectedProviderTaskId);
           // Cancellation still returns immediately. A query that finishes later
           // can retain its receipt without resuming polling or archival.
           if (options.signal?.aborted) await options.onAbortedTask?.(polled);
@@ -3577,6 +3578,11 @@ export class RunService {
         throw error;
       }
     }
+    // A cloud identity belongs to the desktop job; its upstream ID is separate.
+    // Keep both as strings so adapter mutations cannot change the checkpoint key.
+    const originalUpstreamTaskId = task.providerTaskId;
+    const originalProviderTaskId = nodeRun.providerTaskId ??
+      (inputJson.cloudGeneration ? cloudSubmissionId(request.idempotencyKey) : originalUpstreamTaskId);
     rememberTaskCharge(inputJson, task);
     recordSubmissionPhase(inputJson, task.status === "running" || task.status === "queued" ? "generating" : "downloading");
     const taskSnapshot = {
@@ -3585,7 +3591,7 @@ export class RunService {
     };
     const persistedTask = await this.checkpointKnownTask(runId, nodeRunId, {
       status: task.status === "succeeded" ? "archiving" : "running",
-      providerTaskId: inputJson.cloudGeneration ? cloudSubmissionId(request.idempotencyKey) : task.providerTaskId,
+      providerTaskId: originalProviderTaskId,
       inputJson: taskSnapshot,
     }, true);
     if (!persistedTask) {
@@ -3593,7 +3599,7 @@ export class RunService {
       // the remote task id without changing the cancellation status so the
       // reconciler can keep sending provider cancellation requests.
       await this.repository.updateNodeRun(nodeRunId, {
-        providerTaskId: inputJson.cloudGeneration ? cloudSubmissionId(request.idempotencyKey) : task.providerTaskId,
+        providerTaskId: originalProviderTaskId,
         inputJson: taskSnapshot,
       });
       const [cancelledRun, cancelledNode] = await Promise.all([
@@ -3664,6 +3670,7 @@ export class RunService {
         await delay(cliDeadline === undefined ? interval : Math.max(0, Math.min(interval, cliDeadline - Date.now())));
         state = await this.pollWithRetry(adapter, state);
       }
+      assertMatchingProviderTask(state, originalUpstreamTaskId);
       const chargeChanged = rememberTaskCharge(inputJson, state);
       // The provider task id is durably stored immediately after submission.
       // Avoid rewriting the entire local JSON database for every 1.5-second
@@ -3672,7 +3679,7 @@ export class RunService {
         try {
           await this.checkpointKnownTask(runId, nodeRunId, {
             status: state.status === "succeeded" ? "archiving" : "running",
-            providerTaskId: inputJson.cloudGeneration ? cloudSubmissionId(request.idempotencyKey) : state.providerTaskId,
+            providerTaskId: originalProviderTaskId,
             inputJson: { ...inputJson, providerTask: providerTaskJson(state) },
           });
         } catch (error) {
@@ -3704,7 +3711,7 @@ export class RunService {
       );
     await this.checkpointKnownTask(runId, nodeRunId, {
       status: "archiving",
-      providerTaskId: inputJson.cloudGeneration ? cloudSubmissionId(request.idempotencyKey) : state.providerTaskId,
+      providerTaskId: originalProviderTaskId,
       inputJson: { ...inputJson, providerTask: providerTaskJson(state) },
     });
     let artifacts: RemoteArtifact[];
@@ -3746,8 +3753,8 @@ export class RunService {
       // a second generation task.
       if (shouldRefreshRemoteArtifact(error) && adapter.poll) {
         try {
-          const refreshed = await retryOperation(() => adapter.poll!(state));
-          assertMatchingProviderTask(refreshed, state.providerTaskId);
+          const refreshed = await retryOperation(() => adapter.poll!({ ...state }));
+          assertMatchingProviderTask(refreshed, originalUpstreamTaskId);
           if (refreshed.status === "succeeded") {
             state = refreshed;
             rememberTaskCharge(inputJson, refreshed);

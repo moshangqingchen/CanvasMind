@@ -71,13 +71,15 @@ for (const finalStatus of [200, 404]) it.each(["openai", "rest", "auto"] as cons
     const service = new Service({ repository, storage, executionMode: "queue", enqueueRun: async () => {}, pollIntervalMs: 0 });
     const run = await service.createRun({ canvasId: canvas.id, clientRequestId: `lost-${kind}`, scope: "node", nodeId: "image" });
     await service.execute(run.id, new AbortController().signal);
-    expect((await service.getRun(run.id))?.run.status).toBe("needs_attention"); expect(purchases).toBe(1);
+    const first = await service.getRun(run.id), originalCloudId = first?.nodes[0]?.providerTaskId;
+    expect(first?.run.status).toBe("needs_attention"); expect(originalCloudId).toMatch(/^cloud:/u); expect(purchases).toBe(1);
     await repository.deleteAssets(["original-ref"]); stored.delete("original-ref");
     storage.get.mockClear(); const validate = vi.spyOn(adapter, "validate"), submit = vi.spyOn(adapter, "submit");
     await service.retryRun(run.id); await service.execute(run.id, new AbortController().signal);
     const result = await service.getRun(run.id);
     expect(result?.run.status, JSON.stringify(result)).toBe(finalStatus === 200 ? "succeeded" : "needs_attention");
-    if (finalStatus === 404) expect(result?.nodes[0]?.providerTaskId).toMatch(/^cloud:/u);
+    expect(result?.nodes[0]?.providerTaskId).toBe(originalCloudId);
+    if (finalStatus === 200) expect(result?.nodes[0]?.inputJson.providerTask).not.toMatchObject({ providerTaskId: originalCloudId });
     expect(result?.nodes[0]?.inputJson).toMatchObject({ operation: "image.edit", prompt: "original edit [参考素材 1]", assetIds: ["original-ref"], inputAssets: [{ id: "original-ref", role: "reference" }] });
     expect(validate).not.toHaveBeenCalled(); expect(submit).not.toHaveBeenCalled();
     expect(storage.get.mock.calls.some(([key]) => key === "original-ref")).toBe(false);

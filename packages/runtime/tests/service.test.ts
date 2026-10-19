@@ -1327,7 +1327,7 @@ describe("RunService", () => {
     expect(provider.calls()).toEqual({ submit: 0, poll: 1 });
   });
 
-  it.each(["poll", "restore"] as const)("rejects a different provider task during %s without importing its refund", async phase => {
+  it.each(["poll", "poll-mutates", "restore"] as const)("rejects a different provider task during %s without importing its refund", async phase => {
     const repository = await testRepository();
     const canvas = await repository.ensureDefaultCanvas();
     await seedResumableRun(repository, canvas.id);
@@ -1338,7 +1338,7 @@ describe("RunService", () => {
       providerTask: phase === "restore" ? wrongTask : { providerTaskId: "remote-task-1", status: "running", result: { remote: {} } },
     } });
     const provider = pollingAdapter([]);
-    const poll = vi.fn(async () => wrongTask);
+    const poll = vi.fn(async (task: ProviderTask) => phase === "poll-mutates" ? Object.assign(task, wrongTask) : wrongTask);
     provider.adapter.poll = poll;
     const service = new AdapterRunService(provider.adapter, repository, new MemoryStorage());
     await service.resumeRun("resumable-run");
@@ -1347,8 +1347,8 @@ describe("RunService", () => {
     expect(snapshot.nodes[0]?.providerTaskId).toBe("remote-task-1");
     expect(snapshot.nodes[0]?.errorJson).toMatchObject({ code: "provider_task_mismatch" });
     expect(snapshot.nodes[0]?.errorJson?.charge).not.toMatchObject({ status: "refunded" });
-    if (phase === "poll") expect(snapshot.nodes[0]?.errorJson?.charge).toEqual(originalCharge);
-    expect(poll).toHaveBeenCalledTimes(phase === "poll" ? 1 : 0);
+    if (phase !== "restore") expect(snapshot.nodes[0]?.errorJson?.charge).toEqual(originalCharge);
+    expect(poll).toHaveBeenCalledTimes(phase === "restore" ? 0 : 1);
     expect(provider.calls().submit).toBe(0);
   });
 
