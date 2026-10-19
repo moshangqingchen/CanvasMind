@@ -2,6 +2,7 @@ import { idleCatalogCheckFixture } from "./helpers/catalog-check-fixture";
 import { expect, test } from "@playwright/test";
 import type { ModelDescriptor } from "@super-canvas/providers";
 import { userImageSizeOptions } from "@super-canvas/providers/image-size-presets";
+import { chooseParameterOption, expectParameterValue, openParameterDetails, readParameterOptions } from "./helpers/parameter-controls";
 
 test("统一图片合同保留完整面板，4K 16:9 max 保存重载且没有上游请求", async ({ page, request }, testInfo) => {
   // global-setup creates an ephemeral database and isolated storage. Never attach
@@ -72,6 +73,8 @@ test("统一图片合同保留完整面板，4K 16:9 max 保存重载且没有�
   const width = panel.getByLabel("图片宽度", { exact: true });
   const height = panel.getByLabel("图片高度", { exact: true });
   const quality = panel.getByLabel("质量", { exact: true });
+  await openParameterDetails(panel, "自定义宽高");
+  await openParameterDetails(panel, "高级设置");
   await expect(tiers).toHaveCount(1);
   // This exact official group declares 2K/4K. Do not invent a 1K option simply
   // to make the screenshot resemble another supplier's panel.
@@ -81,20 +84,23 @@ test("统一图片合同保留完整面板，4K 16:9 max 保存重载且没有�
   await expect(width).toHaveJSProperty("readOnly", false);
   await expect(height).toHaveJSProperty("readOnly", false);
   await expect(panel.getByRole("group", { name: "生成模式", exact: true })).toBeVisible();
-  await expect(quality).toHaveValue("low");
+  await expectParameterValue(quality, "low");
   await tiers.getByRole("button", { name: "4K", exact: true }).click();
-  await preset.selectOption("3840x2160");
-  await quality.selectOption("max");
+  await chooseParameterOption(preset, "3840x2160");
+  await chooseParameterOption(quality, "max");
   const expected = { size: "3840x2160", size_tier: "4K", aspect_ratio: "16:9", quality: "max" };
   await expect.poll(saved).toMatchObject(expected);
   await page.reload();
   await open();
   await expect(tiers.getByRole("button", { name: "4K", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await expect(preset).toHaveValue("3840x2160");
-  await expect(preset.locator("option:checked")).toHaveText("4K · 16:9 · 3840 × 2160");
+  await expectParameterValue(preset, "3840x2160");
+  await expect(preset).toContainText("16:9");
+  await expect(preset).toContainText("4K · 3840 × 2160");
+  await openParameterDetails(panel, "自定义宽高");
+  await openParameterDetails(panel, "高级设置");
   await expect(width).toHaveValue("3840");
   await expect(height).toHaveValue("2160");
-  await expect(quality).toHaveValue("max");
+  await expectParameterValue(quality, "max");
   await expect(panel.getByLabel("当前参数价格", { exact: true })).toContainText("0.12 USD");
   const fullScreenshot = testInfo.outputPath("image-parameter-contract-4k-max-panel.png");
   await panel.screenshot({ path: fullScreenshot });
@@ -105,14 +111,15 @@ test("统一图片合同保留完整面板，4K 16:9 max 保存重载且没有�
   await width.fill("3501");
   await height.fill("2301");
   await height.press("Tab");
-  await quality.selectOption("low");
+  await chooseParameterOption(quality, "low");
   await expect.poll(saved).toMatchObject({ size: "3501x2301", size_tier: "4K", quality: "low" });
   await expect.poll(async () => (await saved()).aspect_ratio).toBeUndefined();
   await page.reload();
   await open();
+  await openParameterDetails(panel, "自定义宽高");
   await expect(width).toHaveValue("3501");
   await expect(height).toHaveValue("2301");
-  await expect(quality).toHaveValue("low");
+  await expectParameterValue(quality, "low");
   await expect(tiers.getByRole("button", { name: "4K", exact: true })).toHaveAttribute("aria-pressed", "true");
   const explicitScreenshot = testInfo.outputPath("image-parameter-contract-custom-values-restored.png");
   await panel.screenshot({ path: explicitScreenshot });
@@ -206,28 +213,33 @@ test("离线手工合同完整控件预览：自动1K2K4K、宽高、max、返�
   const quality = panel.getByLabel("质量", { exact: true });
   const responseFormat = panel.getByLabel("返回格式", { exact: true });
   const modes = panel.getByRole("group", { name: "生成模式", exact: true });
+  await openParameterDetails(panel, "自定义宽高");
+  await openParameterDetails(panel, "高级设置");
   await expect(tiers.getByRole("button")).toHaveText(["自动", "1K", "2K", "4K"]);
-  await expect(preset.locator("option:checked")).toHaveText("4K · 16:9 · 3840 × 2160");
+  await expectParameterValue(preset, "3840x2160");
+  await expect(preset).toContainText("16:9");
+  await expect(preset).toContainText("4K · 3840 × 2160");
   await expect(panel.getByLabel("图片宽度", { exact: true })).toHaveValue("3840");
   await expect(panel.getByLabel("图片高度", { exact: true })).toHaveValue("2160");
   await expect(panel.getByLabel("图片宽度", { exact: true })).toHaveJSProperty("readOnly", false);
   await expect(panel.getByLabel("图片高度", { exact: true })).toHaveJSProperty("readOnly", false);
-  await expect(quality).toHaveValue("max");
+  await expectParameterValue(quality, "max");
   await expect(modes.getByRole("button")).toHaveText(["普通模式", "透明模式"]);
-  expect(await responseFormat.locator("option").evaluateAll(options => options.map(option => (option as HTMLOptionElement).value).filter(Boolean)))
+  expect((await readParameterOptions(responseFormat)).map(option => option.value).filter(Boolean))
     .toEqual(["url", "b64_json"]);
-  await responseFormat.selectOption("b64_json");
+  await chooseParameterOption(responseFormat, "b64_json");
   await modes.getByRole("button", { name: "透明模式", exact: true }).click();
   await expect.poll(saved).toMatchObject({ ...initial, response_format: "b64_json", background: "transparent", output_format: "png" });
   await page.reload();
   await open();
-  await expect(responseFormat).toHaveValue("b64_json");
+  await openParameterDetails(panel, "高级设置");
+  await expectParameterValue(responseFormat, "b64_json");
   await expect(modes.getByRole("button", { name: "透明模式", exact: true })).toHaveAttribute("aria-pressed", "true");
   await modes.getByRole("button", { name: "普通模式", exact: true }).click();
-  await responseFormat.selectOption("url");
+  await chooseParameterOption(responseFormat, "url");
   await expect.poll(saved).toMatchObject(initial);
   await expect(tiers.getByRole("button", { name: "4K", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await expect(quality).toHaveValue("max");
+  await expectParameterValue(quality, "max");
   await expect(modes.getByRole("button", { name: "普通模式", exact: true })).toHaveAttribute("aria-pressed", "true");
   const previewPath = testInfo.outputPath("image-parameter-contract-panel-preview.png");
   await panel.screenshot({ path: previewPath });

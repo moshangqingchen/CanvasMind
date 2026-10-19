@@ -81,6 +81,7 @@ import { acquireNodeConfigSurfaceMarkers } from "../lib/node-config-surface-mark
 import { createGenerationNodeRunAction } from "../lib/generation-node-actions";
 import { isNodeConfigRunChord, nodeConfigChildLayerOpen, nodeConfigRunShortcutScope } from "../lib/node-config-interaction";
 import { createNodeParameterQuote } from "../lib/node-parameter-quote";
+import { nodeParameterSummary } from "../lib/parameter-display";
 import { NodeParameterFooter } from "./node-parameter-footer";
 import { NodeParameterRouteMenu } from "./node-parameter-route-menu";
 
@@ -704,35 +705,8 @@ export function GenerationNodeBody({
         : "idle";
   const availabilityOptions = { category: nodeType === "video-generation" ? "video" : "image", group: currentGroup };
   const selectedAvailability = selectedModel ? cangyuanAvailabilityForModel(selectedModel, availabilityItems, availabilityOptions) : undefined;
-  const parameterControlsUnavailable =
-    selectedModel?.metadata?.parameterControlsUnavailable === true;
-  const summary =
-    nodeType === "music-generation" ? [parameters.instrumental ? "纯音乐" : "歌曲", parameters.audio_format ? String(parameters.audio_format).toUpperCase() : "MP3", parameters.duration ? `目标 ${parameters.duration}s` : null].filter(Boolean).join(" · ") : nodeType === "video-generation"
-      ? parameterControlsUnavailable
-        ? ""
-        : [
-            parameters.duration ? `${parameters.duration}s` : null,
-            parameters.aspect_ratio ?? parameters.ratio,
-            parameters.resolution,
-          ]
-            .filter(Boolean)
-            .join(" · ")
-      : [
-          parameters.image_size ?? parameters.size_tier,
-          parameters.size === "auto" && parameters.size_tier
-            ? "自动比例"
-            : (parameters.aspect_ratio ?? parameters.size),
-          parameters.quality,
-        ]
-          .filter(Boolean)
-          .join(" · ");
-  const running = ["queued", "submitting", "running", "archiving"].includes(
-    data.status ?? "",
-  );
-  const countDescriptor = selectedModel?.parameters?.find(parameter => parameter.key === "n");
-  const requestCount = parameters.n ?? countDescriptor?.default;
-  const requestSummary = [summary, requestCount !== undefined ? `${countDescriptor?.label ?? "数量"} ${String(requestCount)}` : null]
-    .filter(Boolean).join(" · ");
+  const running = ["queued", "submitting", "running", "archiving"].includes(data.status ?? "");
+  const requestSummary = nodeParameterSummary(nodeType, selectedModel, parameters);
   const routeLabel = currentConnectionOption
     ? [currentConnectionOption.supplierLabel, currentGroupLabel,
       currentGroupConnections.length > 1 ? pickerConnectionLabel(currentConnectionOption, currentGroupConnections) : null]
@@ -830,6 +804,7 @@ export function GenerationNodeBody({
       ref={attachSettingsPopover}
       id={`${presentation === "parameters" ? "canvas-parameters" : "node-parameters"}-${nodeId}`}
       data-config-node-id={nodeId}
+      data-config-active={uiActive}
       role="dialog"
       tabIndex={-1}
       aria-label={`${data.label} 模型与参数`}
@@ -886,7 +861,7 @@ export function GenerationNodeBody({
         <div className="node-config-model-field node-config-model-header">
           <div className="node-config-model-control" ref={modelSelectRef}>
             <ModelPicker key={currentConnection} id={`node-inline-model-${nodeId}`} label={`${data.label} 模型`}
-              preferSidePlacement
+              preferSidePlacement inlineChevron
               connectionId={currentConnection} models={modelOptions} value={data.model ?? ""}
               capabilities={connectionAvailable ? data.modelImageCapabilities : undefined}
               onChange={id => data.onModelChange?.(id)} open={uiActive && modelMenuOpen} onOpenChange={setModelMenuOpen}
@@ -897,8 +872,8 @@ export function GenerationNodeBody({
                 availability={cangyuanAvailabilityForModel(model, availabilityItems, availabilityOptions)}
                 loadState={availabilityState} checkedAt={availabilitySnapshot.checkedAt} /> : undefined} />
           </div>
-          <div className="node-config-model-quote" aria-label="本次运行预计费用">
-            <span>本次预计</span><strong data-testid="param-panel-unit-price">{parameterQuote?.displayCost ?? "—"}</strong>
+          <div className="node-config-model-quote" aria-label="当前型号单价">
+            <span>单价</span><strong data-testid="param-panel-unit-price">{currentUnitPrice || "—"}</strong>
           </div>
         </div>
         <div className="node-config-connections">
@@ -1101,7 +1076,7 @@ export function GenerationNodeBody({
           type="button"
           aria-label={`打开 ${data.label} 模型与参数`}
           aria-haspopup="dialog"
-          title={`${connectionName} · ${modelName}${modelPriceLabel !== "—" ? ` · ${modelPriceLabel}` : ""} · ${summary || "使用 API 默认参数"}`}
+          title={`${connectionName} · ${modelName}${modelPriceLabel !== "—" ? ` · ${modelPriceLabel}` : ""} · ${requestSummary || "使用 API 默认参数"}`}
           // Defer source selection until the native click has been delivered.
           // Selecting on pointerdown can reconcile this node before pointerup
           // and swallow the first click that was meant to open its parameters.

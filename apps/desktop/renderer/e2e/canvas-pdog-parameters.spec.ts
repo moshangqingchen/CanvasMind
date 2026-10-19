@@ -3,6 +3,7 @@ import { imageSizeOptions, type ModelDescriptor } from "@super-canvas/providers"
 import { parseSupplierGroupDetails, supplierGroupModelPriceDetails, supplierGroupPriceLabel, supplierGroupResolutionLabel } from "@super-canvas/providers/supplier-group-details";
 import type { ProviderConnectionView } from "../lib/client-api";
 import { cleanModelDisplayName } from "../lib/model-display";
+import { chooseParameterOption, expectParameterValue, openParameterDetails, readParameterOptions } from "./helpers/parameter-controls";
 
 const supplierKey = "custom-pdog-isolated-e2e";
 const groups = {
@@ -93,41 +94,40 @@ test("pDog Image 2 旧缓存应用 high 质量、全部比例与档位，手选�
   const quality = panel.getByLabel("质量", { exact: true });
   const preset = panel.getByLabel("输出分辨率预设", { exact: true });
   const tiers = panel.getByRole("group", { name: "自动与输出分辨率快捷档位" });
-  await expect(quality).toHaveValue("high");
-  expect(await quality.locator("option").evaluateAll(options => options.map(option => (option as HTMLOptionElement).value).filter(Boolean)))
+  await expectParameterValue(quality, "high");
+  expect((await readParameterOptions(quality)).filter(option => option.value && !option.disabled && !option.value.startsWith("__")).map(option => option.value))
     .toEqual(["auto", "low", "medium", "high"]);
   await expect.poll(fixture.scans).toBeGreaterThan(0);
   const ratios = ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "5:4", "4:5", "21:9", "9:21"];
   for (const tier of ["1K", "2K", "4K"]) {
     await tiers.getByRole("button", { name: tier, exact: true }).click();
     await expect(tiers.getByRole("button", { name: tier, exact: true })).toHaveAttribute("aria-pressed", "true");
-    const options = await preset.locator("option").evaluateAll(options => options
-      .filter(option => Boolean((option as HTMLOptionElement).value)).map(option => ({ value: (option as HTMLOptionElement).value, label: option.textContent ?? "" })));
+    const options = (await readParameterOptions(preset)).filter(option => option.value && !option.disabled && !option.value.startsWith("__"));
     expect(options.length).toBeGreaterThanOrEqual(12);
     expect(options.filter(option => option.value === "auto")).toHaveLength(1);
-    for (const ratio of ratios) expect(options.some(option => option.label.includes(` · ${ratio} · `))).toBeTruthy();
+    for (const ratio of ratios) expect(options.some(option => option.label.startsWith(ratio) && option.label.includes(tier))).toBeTruthy();
   }
-  await quality.selectOption("low");
-  await preset.selectOption("2160x3840");
+  await chooseParameterOption(quality, "low");
+  await chooseParameterOption(preset, "2160x3840");
   await expect.poll(async () => (await saved()).parameters).toMatchObject({ quality: "low", size: "2160x3840", size_tier: "4K" });
   await page.reload(); await open();
-  await expect(quality).toHaveValue("low");
-  await expect(preset).toHaveValue("2160x3840");
+  await expectParameterValue(quality, "low");
+  await expectParameterValue(preset, "2160x3840");
   await expect(tiers.getByRole("button", { name: "4K", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await quality.selectOption("medium");
+  await chooseParameterOption(quality, "medium");
   await tiers.getByRole("button", { name: "2K", exact: true }).click();
-  await preset.selectOption("2048x896");
+  await chooseParameterOption(preset, "2048x896");
   await expect.poll(async () => (await saved()).parameters).toMatchObject({ quality: "medium", size: "2048x896", size_tier: "2K" });
   await page.reload(); await open();
-  await expect(quality).toHaveValue("medium");
-  await expect(preset).toHaveValue("2048x896");
+  await expectParameterValue(quality, "medium");
+  await expectParameterValue(preset, "2048x896");
   await expect(tiers.getByRole("button", { name: "2K", exact: true })).toHaveAttribute("aria-pressed", "true");
   await tiers.getByRole("button", { name: "自动", exact: true }).click();
   await expect.poll(async () => (await saved()).parameters.size).toBe("auto");
   await expect.poll(async () => Object.hasOwn((await saved()).parameters, "size_tier")).toBe(false);
   await page.reload(); await open();
-  await expect(preset).toHaveValue("auto");
-  await expect(quality).toHaveValue("medium");
+  await expectParameterValue(preset, "auto");
+  await expectParameterValue(quality, "medium");
   expect(fixture.safety()).toEqual({ submissions: 0, upstreamRequests: 0 });
   await panel.screenshot({ path: info.outputPath("pdog-cached-gpt-parameters.png") });
 });
@@ -135,19 +135,26 @@ test("pDog Image 2 旧缓存应用 high 质量、全部比例与档位，手选�
 test("pDog 同型号切换分组展示原生与超分说明，并保存分组选择", async ({ page, request }, info) => {
   const fixture = await setup(page, request, "upscale");
   const { panel, saved, open } = fixture;
-  await panel.getByText("价格与参数依据", { exact: true }).click();
+  await openParameterDetails(panel, "价格明细");
+  await openParameterDetails(panel, "价格与参数依据");
   const price = panel.getByLabel("当前参数价格", { exact: true });
   await expect(price).toContainText("0.03/张");
   await expect(price).toContainText("说明原生 1K");
   await expect(price).toContainText("说明超分 2K / 4K");
   const group = panel.getByRole("combobox", { name: "pDog 文档验收 模型群组", exact: true });
-  await group.selectOption(groups.native);
+  if (await group.count()) await group.selectOption(groups.native);
+  else {
+    await panel.getByRole("button", { name: "pDog 文档验收 线路", exact: true }).click();
+    const routes = panel.getByRole("dialog", { name: "pDog 文档验收 候选线路", exact: true });
+    await routes.locator('[data-route-id="isolated-pdog-native"]').locator("button[data-route-choice]").click();
+  }
   await expect.poll(async () => (await saved()).connectionId).toBe("isolated-pdog-native");
   await expect(price).toContainText("0.08一张");
   await expect(price).toContainText("说明原生 2K / 4K");
   await expect(price).not.toContainText("说明超分");
   await page.reload(); await open();
-  await expect(group).toHaveValue(groups.native);
+  if (await group.count()) await expect(group).toHaveValue(groups.native);
+  else await expect(panel.getByRole("button", { name: "pDog 文档验收 线路", exact: true })).toContainText(groups.native);
   await expect(panel.getByRole("combobox", { name: "pDog 文档验收 模型", exact: true })).toContainText("GPT Image 2");
   expect(fixture.safety()).toEqual({ submissions: 0, upstreamRequests: 0 });
   await panel.screenshot({ path: info.outputPath("pdog-native-group.png") });
@@ -158,17 +165,17 @@ test(`pDog 超分组 ${modelId} 默认 max，手选 high 后保存重载保持`,
   const fixture = await setup(page, request, "upscale", modelId);
   const { panel, saved, open } = fixture;
   const quality = panel.getByLabel("质量", { exact: true });
-  await expect(quality).toHaveValue("max");
-  await expect(quality.locator('option[value="max"]')).toHaveCount(1);
+  await expectParameterValue(quality, "max");
+  expect((await readParameterOptions(quality)).filter(option => option.value === "max")).toHaveLength(1);
   await expect.poll(async () => (await saved()).parameters.quality).toBe("max");
   await page.reload(); await open();
-  await expect(quality).toHaveValue("max");
+  await expectParameterValue(quality, "max");
   await quality.scrollIntoViewIfNeeded();
   await panel.screenshot({ path: info.outputPath(`${modelId}-default-max.png`) });
-  await quality.selectOption("high");
+  await chooseParameterOption(quality, "high");
   await expect.poll(async () => (await saved()).parameters.quality).toBe("high");
   await page.reload(); await open();
-  await expect(quality).toHaveValue("high");
+  await expectParameterValue(quality, "high");
   expect(fixture.safety()).toEqual({ submissions: 0, upstreamRequests: 0 });
   await quality.scrollIntoViewIfNeeded();
   await panel.screenshot({ path: info.outputPath(`${modelId}-max-and-manual-quality.png`) });

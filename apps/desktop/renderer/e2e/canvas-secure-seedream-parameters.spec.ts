@@ -1,6 +1,7 @@
 import { expect, test } from "./helpers/canvas-offline-test";
 import { readFile } from "node:fs/promises";
 import { secureSeedreamImageContract } from "../lib/secure-seedream-image-contract";
+import { chooseParameterOption, openParameterDetails } from "./helpers/parameter-controls";
 
 for (const scenario of [
   { name: "旧显式 W/H", parameters: { size: "1024x1024", aspect_ratio: "16:9", width: 1111, height: 777 }, width: "1111", height: "777" },
@@ -44,11 +45,13 @@ for (const scenario of [
   await page.setViewportSize({ width: 1200, height: 800 }); await expect.poll(insideViewport).toBe(true);
   await page.setViewportSize({ width: 1600, height: 1100 }); await expect.poll(insideViewport).toBe(true);
   const width = panel.getByLabel("图片宽度", { exact: true }), height = panel.getByLabel("图片高度", { exact: true });
+  await openParameterDetails(panel, "自定义宽高");
+  await openParameterDetails(panel, "高级设置");
   await expect(width).toHaveCount(1); await expect(height).toHaveCount(1);
   await expect(panel.getByLabel("指定 W", { exact: true })).toHaveCount(0); await expect(panel.getByLabel("指定 H", { exact: true })).toHaveCount(0);
   await expect(width).toHaveValue(scenario.width); await expect(height).toHaveValue(scenario.height);
   await expect(width).toHaveAttribute("min", "768"); await expect(width).toHaveAttribute("max", "2048"); await expect(width).toHaveAttribute("step", "1");
-  await expect(panel.getByRole("checkbox", { name: /16 倍数/u })).toHaveCount(0);
+  await expect(panel.getByRole("switch", { name: /16 倍数/u })).toHaveCount(0);
   for (const name of ["图片宽度", "图片高度", "生成张数", "参考图强度"]) {
     const control = panel.getByLabel(name, { exact: true });
     await control.scrollIntoViewIfNeeded();
@@ -62,7 +65,7 @@ for (const scenario of [
     if (name === "参考图强度") await page.screenshot({ path: testInfo.outputPath("secure-seedream-lower-controls.png") });
   }
   const saved = async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data.parameters;
-  await panel.getByLabel("输出分辨率预设", { exact: true }).selectOption("1536x1920");
+  await chooseParameterOption(panel.getByLabel("输出分辨率预设", { exact: true }), "1536x1920");
   await expect(width).toHaveValue("1536"); await expect(height).toHaveValue("1920");
   await expect.poll(saved).toMatchObject({ size: "1536x1920" });
   for (const key of ["width", "height", "aspect_ratio"]) await expect.poll(async () => (await saved())[key]).toBeUndefined();
@@ -73,7 +76,7 @@ for (const scenario of [
   await expect(width).toHaveValue("1536"); await expect(height).toHaveValue("1920");
   await width.fill("1113"); await height.fill("779"); await height.press("Enter");
   await expect.poll(saved).toMatchObject({ size: "1113x779" });
-  await page.reload(); await open(); await expect(width).toHaveValue("1113"); await expect(height).toHaveValue("779");
+  await page.reload(); await open(); await openParameterDetails(panel, "自定义宽高"); await expect(width).toHaveValue("1113"); await expect(height).toHaveValue("779");
   await expect(width).toHaveCount(1); await expect(height).toHaveCount(1); expect(submissions).toBe(0);
   await panel.screenshot({ path: testInfo.outputPath("secure-seedream-single-dimensions.png") });
 });

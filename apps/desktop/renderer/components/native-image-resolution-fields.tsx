@@ -1,12 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import type { ModelDescriptor, ModelParameterDescriptor, ModelParameterValue } from "@super-canvas/providers";
+import type { ModelDescriptor, ModelParameterDescriptor, ModelParameterOption, ModelParameterValue } from "@super-canvas/providers";
 import { coerceParameterInput, parameterValueForModel, setParameterValue } from "../lib/model-parameters";
 import { declaredImageOutputDimensions, declaredImageReferenceDimensions, imageResolutionOptionLabel, nativeImageRatioOptionLabel } from "../lib/native-image-resolution";
 import { genimageImageRatioIssues } from "@super-canvas/providers/genimage-image-capabilities";
 import { mikotoImageRatioIssues } from "@super-canvas/providers/supplier-image-constraints";
 import { pdogImageSizeSelection } from "@super-canvas/providers/pdog-image-contract";
+import { Dropdown, type DropdownOption } from "./ui/Dropdown";
+import { Segmented } from "./ui/Segmented";
+import { Disclosure } from "./ui/Disclosure";
+import { RatioIcon } from "./ui/RatioIcon";
 
 /** An open exact-supplier size field has no unpublished alignment or edge cap. */
 export function genimageSizeForDimensions(width: string, height: string): string | undefined {
@@ -21,7 +25,7 @@ function GenimageCustomSizeFields({ id, value, onChange }: { id: string; value: 
   const [previous, setPrevious] = useState(value);
   if (previous !== value) { setPrevious(value); setWidth(parts?.[1] ?? ""); setHeight(parts?.[2] ?? ""); }
   const commit = () => { const size = genimageSizeForDimensions(width, height); if (size) onChange(size); };
-  return <>
+  return <Disclosure label="自定义宽高与尺寸参数" defaultOpen={!parts} className="parameter-custom-size">
     <label htmlFor={`${id}-custom-size`}>尺寸参数（size）</label>
     <input id={`${id}-custom-size`} aria-label="基因形象自定义尺寸参数" value={value}
       placeholder="1K / 2K / 4K / WIDTHxHEIGHT" onChange={event => onChange(event.target.value)} />
@@ -34,6 +38,30 @@ function GenimageCustomSizeFields({ id, value, onChange }: { id: string; value: 
         placeholder="高" onChange={event => setHeight(event.target.value)} onBlur={commit}
         onKeyDown={event => { if (event.key === "Enter") commit(); }} />
     </div>
+  </Disclosure>;
+}
+
+/** UI-only custom entry state stays separate from native parameter mapping. */
+export function NativeImageRatioFields({ id, value, options, ratio, inputLabel, onChange }: {
+  id: string;
+  value: string;
+  options: readonly DropdownOption[];
+  ratio: ModelParameterDescriptor;
+  inputLabel: string;
+  onChange: (value: string) => void;
+}) {
+  const [editingCustomRatio, setEditingCustomRatio] = useState(false);
+  const customRatioChoice = "__custom_ratio__";
+  const customRatio = ratio.allowCustomValue === true && (editingCustomRatio || value !== "" && !options.some(option => option.value === value));
+  return <>
+    <Dropdown id={`${id}-ratio`} label="画面比例" value={customRatio ? customRatioChoice : value} required={ratio.required}
+      title={ratio.description} options={[...options, ...(ratio.allowCustomValue ? [{ value: customRatioChoice, label: "自定义比例" }] : [])]}
+      onChange={raw => {
+        if (raw === customRatioChoice) { setEditingCustomRatio(true); return; }
+        setEditingCustomRatio(false); onChange(raw);
+      }} />
+    {customRatio && <input id={`${id}-ratio-custom`} aria-label={inputLabel} value={value}
+      placeholder="auto / WIDTH:HEIGHT" onChange={event => onChange(event.target.value)} />}
   </>;
 }
 
@@ -73,6 +101,13 @@ export function NativeImageResolutionFields({
     : "仅显示供应商已公布的像素；未公布时以原图为准";
   const options = resolution.options ?? [];
   const missing = value !== "" && !options.some(option => String(option.value) === String(value));
+  // These exact contracts explicitly accept auto even in an open ratio field;
+  // an arbitrary open string descriptor does not establish that meaning.
+  const ratioAutomatic: ModelParameterOption | undefined = ratio?.options?.find(option => String(option.value) === "auto") ??
+    (ratio?.allowCustomValue && (genimageOpenSize || mikotoDeclaredTier) ? { value: "auto", label: "自动" } : undefined);
+  const automaticRatioLabel = ratioAutomatic && /供应商|模型默认|上游默认/u.test(ratioAutomatic.label)
+    ? ratioAutomatic.label : "自动 · 跟随提示词，其次参考图";
+  const ratioInputLabel = mikotoDeclaredTier ? "Mikoto画面比例偏好" : pdogDeclaredTier ? "pDog画面比例偏好" : tk1688DeclaredTier ? "词元画面比例偏好" : secureDeclaredTier ? "Secure Skill画面比例" : "基因形象画面比例偏好";
   const update = (descriptor: ModelParameterDescriptor, raw: ModelParameterValue) => {
     const next = setParameterValue(parameters, descriptor.key, coerceParameterInput(descriptor, String(raw)), model);
     if (!independentSizePreferences && descriptor.key === ratio?.key && raw !== "" && hasExactSizeControl) {
@@ -89,15 +124,15 @@ export function NativeImageResolutionFields({
     <div className="parameter-dimensions-heading">
       <label id={`${id}-heading`} title={resolution.description}>分辨率</label>
     </div>
-    <div className="parameter-dimensions-shortcuts parameter-native-resolution-shortcuts"
-      role="group" aria-label="自动与输出分辨率快捷档位" aria-describedby={`${id}-heading`}>
-      {options.map(option => <button key={String(option.value)} type="button"
-        className="parameter-dimensions-shortcut"
-        aria-pressed={String(value) === String(option.value)}
-        disabled={resolution.key === "__fixed_resolution"} onClick={() => update(resolution, option.value)}>
-        {imageResolutionOptionLabel(option)}
-      </button>)}
-    </div>
+    <Segmented label="自动与输出分辨率快捷档位" className="parameter-native-resolution-shortcuts" value={String(value)}
+      options={[
+        ...(options.some(option => String(option.value).toLowerCase() === "auto")
+          ? options.filter(option => String(option.value).toLowerCase() === "auto").map(option => ({ value: String(option.value), label: imageResolutionOptionLabel(option) }))
+          : [{ value: "__automatic_resolution_unavailable__", label: "自动", disabled: true, title: "当前型号未提供自动档位" }]),
+        ...options.filter(option => String(option.value).toLowerCase() !== "auto").map(option => ({ value: String(option.value), label: imageResolutionOptionLabel(option),
+          disabled: resolution.key === "__fixed_resolution", title: resolution.key === "__fixed_resolution" ? "分辨率由当前完整型号固定" : undefined })),
+      ]}
+      onChange={raw => { const option = options.find(option => String(option.value) === raw); if (option) update(resolution, option.value); }} />
     {missing && <small role="status" className="parameter-help">
       当前档位：{imageResolutionOptionLabel({ value: String(value), label: String(value) })} · 目录档位：{options.map(imageResolutionOptionLabel).join(" / ") || "—"}
     </small>}
@@ -117,21 +152,31 @@ export function NativeImageResolutionFields({
     </small>}
     {ratio && <>
       <label className="parameter-native-ratio-label" htmlFor={`${id}-ratio`} title={ratio.description}>画面比例</label>
-      {independentSizePreferences && ratio.allowCustomValue ? <input id={`${id}-ratio`} aria-label={mikotoDeclaredTier ? "Mikoto画面比例偏好" : pdogDeclaredTier ? "pDog画面比例偏好" : tk1688DeclaredTier ? "词元画面比例偏好" : secureDeclaredTier ? "Secure Skill画面比例" : "基因形象画面比例偏好"} value={String(ratioValue)}
-        placeholder="auto / WIDTH:HEIGHT" onChange={event => update(ratio, event.target.value)} /> : <select id={`${id}-ratio`} value={String(ratioValue)} aria-required={ratio.required}
-        title={ratio.description} onChange={event => update(ratio, event.target.value)}>
-        <option value="">{hasExactSizeControl && parameters.size !== undefined ? "按精确尺寸" : "模型默认"}</option>
-        {ratioValue !== "" && !ratio.options?.some(option => String(option.value) === String(ratioValue)) &&
-          <option value={String(ratioValue)}>{String(ratioValue)}（已保存）</option>}
-        {(ratio.options ?? []).map(option => <option key={String(option.value)} value={String(option.value)}>
-          {nativeImageRatioOptionLabel(model, resolution, value, option)}
-        </option>)}
-      </select>}
+      <NativeImageRatioFields id={id} ratio={ratio} value={String(ratioValue)} inputLabel={ratioInputLabel}
+        options={[
+          { value: ratioAutomatic ? "auto" : "__automatic_ratio_unavailable__", label: automaticRatioLabel,
+            detail: options.find(option => String(option.value) === String(value)) ? `保持 ${imageResolutionOptionLabel(options.find(option => String(option.value) === String(value))!)}` : undefined,
+            disabled: !ratioAutomatic, disabledReason: !ratioAutomatic ? "当前型号未声明此自动比例，请选择已列比例或模型默认。" : undefined },
+          { value: "", label: hasExactSizeControl && parameters.size !== undefined ? "按精确尺寸" : "模型默认" },
+          ...(!ratio.allowCustomValue && ratioValue !== "" && !ratio.options?.some(option => String(option.value) === String(ratioValue))
+            ? [{ value: String(ratioValue), label: `${String(ratioValue)}（已保存）` }] : []),
+          ...(ratio.options ?? []).filter(option => String(option.value) !== "auto").map(option => ({ value: String(option.value), label: option.label,
+            icon: /^\d+(?:\.\d+)?:\d+(?:\.\d+)?$/u.test(String(option.value)) ? <RatioIcon ratio={String(option.value)} /> : undefined,
+            detail: nativeImageRatioOptionLabel(model, resolution, value, option) })),
+        ]} onChange={raw => update(ratio, raw)} />
       {ratioValue !== "" && !ratio.options?.some(option => String(option.value) === String(ratioValue)) && <small role="status" className="parameter-help">
         当前比例：{String(ratioValue)} · 目录比例：{ratio.options?.map(option => option.label).join(" / ") || "—"}
       </small>}
     </>}
-    {genimageOpenSize ? <GenimageCustomSizeFields id={id} value={String(value)} onChange={raw => update(resolution, raw)} /> : showDimensions && <div className="parameter-dimensions-inputs">
+    {genimageOpenSize ? <>
+      <div className="parameter-size-summary" aria-label="当前尺寸">请求 size：{String(value) || "供应商默认"}</div>
+      <GenimageCustomSizeFields id={id} value={String(value)} onChange={raw => update(resolution, raw)} />
+    </> : showDimensions && <>
+    <div className="parameter-size-summary" aria-label="当前尺寸" title={dimensionsTitle}>
+      {dimensions ? `${exactDimensions ? "供应商声明尺寸" : pdogDeclaredTier ? "size 映射" : "参考尺寸"} ${dimensions.width} × ${dimensions.height}` : "实际像素以原图为准"}
+    </div>
+    <Disclosure label="查看宽高" className="parameter-custom-size">
+    <div className="parameter-dimensions-inputs">
       <span>W</span>
       <input id={`${id}-width`} aria-label="图片宽度" value={dimensions?.width ?? ""} readOnly
         placeholder={dimensions ? "宽" : "以原图为准"} title={dimensionsTitle} />
@@ -139,7 +184,9 @@ export function NativeImageResolutionFields({
       <span>H</span>
       <input id={`${id}-height`} aria-label="图片高度" value={dimensions?.height ?? ""} readOnly
         placeholder={dimensions ? "高" : "以原图为准"} title={dimensionsTitle} />
-    </div>}
+    </div>
+    </Disclosure>
+    </>}
     {genimageOpenSize && genimageImageRatioIssues(parameters).map(issue => <small key={issue.code} role="status" className="parameter-help">{issue.message}</small>)}
     {mikotoDeclaredTier && mikotoImageRatioIssues(parameters).map(issue => <small key={issue.code} role="status" className="parameter-help">{issue.message}</small>)}
     {pdogDeclaredTier && pdogImageSizeSelection(parameters).issues.map(issue => <small key={issue.code} role="status" className="parameter-help">{issue.message}</small>)}

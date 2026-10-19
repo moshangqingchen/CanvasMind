@@ -1,6 +1,7 @@
 import { idleCatalogCheckFixture } from "./helpers/catalog-check-fixture";
 import { expect, test } from "./helpers/canvas-offline-test";
 import type { ModelDescriptor } from "@super-canvas/providers";
+import { chooseParameterOption, expectParameterValue, openParameterDetails } from "./helpers/parameter-controls";
 
 for (const modelId of ["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"]) {
   test(`${modelId} 保留最高质量、档位和比例，独立宽高保存重载且不提交生成`, async ({ page, request }, testInfo) => {
@@ -54,18 +55,20 @@ for (const modelId of ["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"]) {
     const quality = panel.getByLabel("质量", { exact: true });
     const preset = panel.getByRole("combobox", { name: "输出分辨率预设", exact: true });
     await expect(tiers.getByRole("button")).toHaveText(["自动", "2K", "4K"]);
-    await expect(quality).toHaveValue("max"); await expect(ratio).toHaveCount(0);
+    await expectParameterValue(quality, "max"); await expect(ratio).toHaveCount(0);
+    await openParameterDetails(panel, "自定义宽高");
     await expect(width).toHaveJSProperty("readOnly", false);
     await expect(width).toHaveAttribute("step", "1"); await expect(width).not.toHaveAttribute("max", /.+/);
     await tiers.getByRole("button", { name: "2K", exact: true }).click();
     await expect.poll(saved).toMatchObject({ size_tier: "2K", size: "2720x1536", aspect_ratio: "16:9", quality: "max" });
-    await preset.selectOption("1536x2720");
+    await chooseParameterOption(preset, "1536x2720");
     await expect.poll(saved).toMatchObject({ size_tier: "2K", size: "1536x2720", aspect_ratio: "9:16", quality: "max" });
     await width.fill("1152"); await height.fill("2048"); await height.press("Tab");
     await expect.poll(saved).toMatchObject({ size_tier: "2K", size: "1152x2048", quality: "max" });
     await expect.poll(async () => (await saved()).aspect_ratio).toBeUndefined();
     await page.reload(); await open();
-    await expect(quality).toHaveValue("max"); await expect(ratio).toHaveCount(0);
+    await expectParameterValue(quality, "max"); await expect(ratio).toHaveCount(0);
+    await openParameterDetails(panel, "自定义宽高");
     await expect(width).toHaveValue("1152"); await expect(height).toHaveValue("2048");
     await expect(tiers.getByRole("button", { name: "2K", exact: true })).toHaveAttribute("aria-pressed", "true");
     await panel.screenshot({ path: testInfo.outputPath(`${modelId}-open-parameters.png`) });

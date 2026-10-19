@@ -79,13 +79,16 @@ describe("shared image contract across controls, saved values and quotes (offlin
     ]));
     const html = renderFields(result.model, values);
     expect(html.match(/aria-label="自动与输出分辨率快捷档位"/gu)).toHaveLength(1);
-    expect(html).toMatch(/<button[^>]*aria-pressed="true"[^>]*>4K<\/button>/u);
-    expect(html).toContain("4K · 16:9 · 3840 × 2160");
+    expect(html).toMatch(/<button(?=[^>]*aria-pressed="true")(?=[^>]*data-value="4K")[^>]*><span>4K<\/span>/u);
+    expect(html).toMatch(/<button(?=[^>]*role="combobox")(?=[^>]*data-value="3840x2160")[^>]*>/u);
+    expect(html).toContain("16:9");
+    expect(html).toContain("4K · 3840 × 2160");
     expect(html.match(/aria-label="图片宽度"/gu)).toHaveLength(1);
     expect(html.match(/aria-label="图片高度"/gu)).toHaveLength(1);
     expect(html).toMatch(/<input[^>]*aria-label="图片宽度"[^>]*value="3840"/u);
     expect(html).toMatch(/<input[^>]*aria-label="图片高度"[^>]*value="2160"/u);
-    expect(html).toContain('value="max" selected=""');
+    expect(html).toMatch(/<button(?=[^>]*role="combobox")(?=[^>]*data-value="max")[^>]*>/u);
+    expect(html).toContain("最高");
     expect(html).toContain('aria-label="生成模式"');
     expect(html).toContain("普通模式");
     expect(input).toEqual(rawModel);
@@ -200,6 +203,6 @@ describe("shared image contract across controls, saved values and quotes (offlin
     const html = renderToStaticMarkup(React.createElement(ModelPriceDetails, { model, parameters: selected }));
     expect(html).not.toContain("本次预计费用");
     expect(modelPriceSummary(model, selected)).not.toMatch(/(?:USD|CNY|¥|\$)\s*\d/u);
-    expect(renderFields(evaluated.model, selected)).toContain('value="max" selected=""');
+    expect(renderFields(evaluated.model, selected)).toMatch(/<button(?=[^>]*role="combobox")(?=[^>]*data-value="max")[^>]*>/u);
   });
 });

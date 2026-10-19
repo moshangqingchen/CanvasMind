@@ -20,13 +20,16 @@ import { DirectoryComparisonStats } from "./information-layout";
 
 type PickerOption = { id: string; model?: ModelDescriptor; label: string; reason: string | null; family?: string; merchants?: number };
 
-const ModelIdentity = memo(function ModelIdentity({ model, capabilities, price = false, detailsId, route = false, keyConfirmed = false }: { model: ModelDescriptor; capabilities?: ImageEditingCapabilities; price?: boolean; detailsId?: string; route?: boolean; keyConfirmed?: boolean }) {
+const ModelIdentity = memo(function ModelIdentity({ model, capabilities, price = false, detailsId, route = false, keyConfirmed = false, inlineChevron = false }: { model: ModelDescriptor; capabilities?: ImageEditingCapabilities; price?: boolean; detailsId?: string; route?: boolean; keyConfirmed?: boolean; inlineChevron?: boolean }) {
   const family = tk1688ModelFamily(model);
   const directory = modelPickerDirectoryFact(model, keyConfirmed);
   const compactPrice = useMemo(() => price ? modelPickerPriceCompact(model) : undefined, [price, model]);
   return <span className={styles.identity}>
     <span className={styles.heading}>
-      <span id={detailsId ? `${detailsId}-name` : undefined} className={styles.name}>{family ? route ? tk1688RouteLabel(model) : family : cleanModelDisplayName(model.name, model.metadata?.priceLabel)}</span>
+      <span className={inlineChevron ? styles.nameWithChevron : undefined}>
+        <span id={detailsId ? `${detailsId}-name` : undefined} className={styles.name}>{family ? route ? tk1688RouteLabel(model) : family : cleanModelDisplayName(model.name, model.metadata?.priceLabel)}</span>
+        {inlineChevron && <ChevronDown size={15} aria-hidden="true" />}
+      </span>
       {(capabilities?.transparent || capabilities?.mask) && <span id={detailsId ? `${detailsId}-capabilities` : undefined} className={styles.capabilities}>
         {capabilities.transparent && <span className={`${styles.capability} ${styles.transparent}`} title={imageTransparencyEvidenceNote(capabilities.transparency) ?? "支持透明 PNG 输出"}>可透明</span>}
         {capabilities.mask && <span className={`${styles.capability} ${styles.editable}`} title="支持涂抹蒙版、局部修改">可编辑</span>}
@@ -41,7 +44,7 @@ const ModelIdentity = memo(function ModelIdentity({ model, capabilities, price =
 });
 
 export function ModelPicker({ id, label, connectionId, models, value, onChange, capabilities = {},
-  open: controlledOpen, onOpenChange, anchorKey, loading = false, failed = false, authoritative = true, allowManual = false, badge, catalogDirectory, allowAutomatic = true, preferSidePlacement = false,
+  open: controlledOpen, onOpenChange, anchorKey, loading = false, failed = false, authoritative = true, allowManual = false, badge, catalogDirectory, allowAutomatic = true, preferSidePlacement = false, inlineChevron = false,
 }: {
   id?: string; label: string; connectionId: string; models: readonly ModelDescriptor[]; value: string;
   onChange: (modelId: string) => void; open?: boolean;
@@ -52,6 +55,8 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
   allowAutomatic?: boolean;
   /** Keep this inspector's other controls reachable when the model is first. */
   preferSidePlacement?: boolean;
+  /** Keep the selected name and its chevron together inside one trigger. */
+  inlineChevron?: boolean;
 }) {
   const generatedId = useId();
   const listId = `${id ?? generatedId}-options`;
@@ -277,8 +282,8 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
       aria-describedby={selected ? `${listId}-selected-name ${listId}-selected-id${tk1688ModelFamily(selected) ? ` ${listId}-selected-route` : ""}${capabilities[selected.id]?.transparent || capabilities[selected.id]?.mask ? ` ${listId}-selected-capabilities` : ""}` : undefined}
       title={selected ? `${cleanModelDisplayName(selected.name, selected.metadata?.priceLabel)} · ${selected.id}` : value || "自动模型"}
       onClick={() => setOpen(!open)}>
-      {selected ? <ModelIdentity model={selected} capabilities={capabilities[selected.id]} detailsId={`${listId}-selected`} /> : <span>{value || "自动模型"}</span>}
-      {selected && badge?.(selected)}<ChevronDown size={15} />
+      {selected ? <ModelIdentity model={selected} capabilities={capabilities[selected.id]} detailsId={`${listId}-selected`} inlineChevron={inlineChevron} /> : <span className={inlineChevron ? styles.nameWithChevron : undefined}>{value || "自动模型"}{inlineChevron && <ChevronDown size={15} aria-hidden="true" />}</span>}
+      {selected && badge?.(selected)}{!inlineChevron && <ChevronDown size={15} aria-hidden="true" />}
     </button>
     {value && !selected && <p className={styles.note} role="status">保留当前模型 {value}：{loading ? "正在扫描模型…" : failed ? "本次模型扫描失败" : authoritative ? "本次目录返回：0 条匹配" : "本次目录响应：—"}。请选择后才会更换。</p>}
     {open && <div ref={menu} popover="manual" className={`node-model-select-options ${styles.menu}`}

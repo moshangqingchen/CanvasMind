@@ -522,7 +522,7 @@ html[data-motion="off"] .studio-edge-motion, html[data-page-hidden="true"] .stud
 /* Resolution tiers remain a single, complete segmented control. */
 .canvas-editor .parameter-dimensions-shortcuts.has-auto { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:4px; }
 .canvas-editor .parameter-dimensions-shortcuts.has-auto > button { min-width:0; padding-inline:4px; }
-.canvas-editor .parameter-dimensions-shortcuts.has-auto > button[aria-pressed="true"] { background:var(--primary-fill); color:var(--on-accent); border-color:transparent; }
+.canvas-editor .parameter-dimensions-shortcuts.has-auto > button[aria-pressed="true"] { background:color-mix(in srgb,var(--selection-ink) 12%,transparent); color:var(--text); border-color:var(--selection-ink); box-shadow:none; }
 .canvas-editor .canvas-toolbar { border-radius:999px; }
 .canvas-editor .canvas-toolbar .toolbar-group button > span { display:none; }
 
