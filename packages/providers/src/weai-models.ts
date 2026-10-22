@@ -4,7 +4,7 @@ import type {
   ModelParameterOption,
   ValidationIssue,
 } from "./contracts.js";
-import { imageSizePresetMatchesRatio } from "./image-size-presets.js";
+import { applyUserImageSizePresets, imageSizePresetMatchesRatio } from "./image-size-presets.js";
 
 export type { ModelDescriptor } from "./contracts.js";
 
@@ -13,6 +13,13 @@ export const WEAI_GEMINI_MODEL_GROUP = "gemini香蕉";
 export const WEAI_AZURE_MODEL_GROUP = "AZURE-openai";
 export const WEAI_ADOBE_PER_REQUEST_MODEL_GROUP = "生图-openai-adobe-按次";
 export const WEAI_CODEX_TOKEN_MODEL_GROUP = "生图-openai-codex-token计费";
+export const WEAI_CODEX_PER_REQUEST_MODEL_GROUP = "生图-openai-codex-按次";
+export const WEAI_CODEX_PER_REQUEST_MODELS = ["gpt-image-2", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"] as const;
+
+function codexQualityModel(group: string | undefined, id: string): boolean {
+  return [WEAI_CODEX_TOKEN_MODEL_GROUP, WEAI_CODEX_PER_REQUEST_MODEL_GROUP].includes(group ?? "") &&
+    (WEAI_CODEX_PER_REQUEST_MODELS as readonly string[]).includes(id);
+}
 export const WEAI_ADOBE_URL_MODEL_GROUP = "生图-openai-adobe-按次-返回url";
 
 export type WeAIGeminiProtocol =
@@ -84,12 +91,14 @@ export function applyWeAIImageDimensionContract(connection: { provider: string; 
     if (url.protocol !== "https:" || url.hostname !== "asian-acc.we-token.cc" || url.port || url.username || url.password || url.search || url.hash || !/^(?:\/v1)?\/?$/u.test(url.pathname)) return model;
   } catch { return model; }
   const stable = connection.config.accountKeyGroupId == null ? undefined : String(connection.config.accountKeyGroupId);
-  const names: Record<string, string> = { "6": WEAI_CODEX_TOKEN_MODEL_GROUP, "24": WEAI_ADOBE_TOKEN_MODEL_GROUP,
+  const names: Record<string, string> = { "4": WEAI_CODEX_PER_REQUEST_MODEL_GROUP, "6": WEAI_CODEX_TOKEN_MODEL_GROUP, "24": WEAI_ADOBE_TOKEN_MODEL_GROUP,
     "19": WEAI_AZURE_MODEL_GROUP, "23": WEAI_ADOBE_PER_REQUEST_MODEL_GROUP, "30": WEAI_ADOBE_URL_MODEL_GROUP,
     "35": "生图-openai-adobe-image2.5专属", "12": "adobe香蕉", "33": "aistudio香蕉" };
   const selectedGroup = String(connection.config.accountKeyGroup ?? connection.config.modelGroup ?? "");
   if (stable !== undefined && !Object.hasOwn(names, stable) || connection.provider === "weai" && stable === undefined && !Object.values(names).includes(selectedGroup)) return model;
   const group = stable === undefined ? selectedGroup : names[stable]!;
+  if (group === WEAI_CODEX_PER_REQUEST_MODEL_GROUP &&
+      (selectedGroup && selectedGroup !== group || !(WEAI_CODEX_PER_REQUEST_MODELS as readonly string[]).includes(model.id))) return model;
   const nativeBanana = ["adobe香蕉", "aistudio香蕉"].includes(group) &&
     (GEMINI_MODELS.has(model.id) || group === "aistudio香蕉" && model.id === "gemini-nano-banana-2.1");
   if (nativeBanana) {
@@ -116,19 +125,26 @@ export function applyWeAIImageDimensionContract(connection: { provider: string; 
   }
   if (!/^gpt-image-(?:1(?:\.5)?|2(?:\.5-(?:flare|sunburst)|-(?:low|medium|high))?)$/u.test(model.id)) return model;
   const dimensions = weAIImageDimensionParameters(model.id);
-  const codexQuality = group === WEAI_CODEX_TOKEN_MODEL_GROUP && ["gpt-image-2", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"].includes(model.id);
+  const codexQuality = codexQualityModel(group, model.id);
   const quality = model.id.includes("2.5") && (codexQuality || group === "生图-openai-adobe-image2.5专属" || model.parameters?.some(parameter => parameter.key === "quality"))
     ? { key: "quality", label: "请求质量", control: "text" as const, valueType: "string" as const, default: "max", allowCustomValue: true,
         options: [{ value: "auto", label: "自动" }, { value: "max", label: "最高（应用偏好）" }],
         description: "本完整型号未公布完整 quality 枚举；max 为应用最高偏好，已保存原值按质量字段发送。", operations: IMAGE_OPERATIONS }
     : codexQuality ? OPTIONAL_QUALITY : undefined;
-  return { ...model, parameters: [...dimensions, ...(quality ? [quality] : []), ...(model.parameters ?? []).filter(parameter => !["size", "aspect_ratio", ...(quality ? ["quality"] : [])].includes(parameter.key))],
+  const result: ModelDescriptor = { ...model, parameters: [...dimensions, ...(quality ? [quality] : []), ...(model.parameters ?? []).filter(parameter => !["size", "aspect_ratio", ...(quality ? ["quality"] : [])].includes(parameter.key))],
     metadata: { ...model.metadata, imageNativeParameterContract: true, imageOpenSizePreferences: true,
       imageSupportedResolutions: /^gpt-image-2(?:-(?:low|medium|high))?$/u.test(model.id) ? ["1K", "2K", "4K"] : [],
       imageContractGroupId: stable ?? null, ...(quality ? { imageNativeQualityOptions: true,
         imageApplicationQualityDefault: quality.default, imageSupplierQualityDefault: null,
         imageQualityFieldSource: "https://docs.we-ai.cc/guides/image-generation-service.html", imageQualityEnumPublished: !model.id.includes("2.5") } : {}),
       documentationUrl: "https://docs.we-ai.cc/guides/image-generation.html", imageSizeContract: "weai-full-model-document-size" } };
+  return group === WEAI_CODEX_PER_REQUEST_MODEL_GROUP ? applyUserImageSizePresets({ ...result,
+    parameters: [...(result.parameters ?? []).filter(parameter => !["n", "output_format", "output_compression", "response_format", "background", "style", "moderation"].includes(parameter.key)),
+      { ...IMAGE_PARAMETERS[0]!, description: "CODEX 专属线路单次固定生成 1 张。" }],
+    limits: { ...result.limits, maxInputImages: 16, maxOutputImages: 1, supportedMimeTypes: ["image/png", "image/jpeg", "image/webp"] },
+    metadata: { ...result.metadata, imageContractGroupId: "4", modelGroup: group,
+      imageQualityEnumPublished: false,
+      imageContractCheckedAt: "2026-10-21T03:56:25.000Z", imageGenerationVerified: false } }) : result;
 }
 const IMAGE_PARAMETERS: readonly ModelParameterDescriptor[] = [
   {
@@ -260,7 +276,7 @@ function isGeminiModel(model: string): boolean {
 function maxOutputCount(model: string, group?: string): number {
   if (
     group === WEAI_GEMINI_MODEL_GROUP ||
-    group === WEAI_CODEX_TOKEN_MODEL_GROUP
+    group === WEAI_CODEX_TOKEN_MODEL_GROUP || group === WEAI_CODEX_PER_REQUEST_MODEL_GROUP
   )
     return 1;
   if (
@@ -274,6 +290,7 @@ function maxOutputCount(model: string, group?: string): number {
 }
 
 function modelName(id: string, group?: string): string {
+  if (group === WEAI_CODEX_PER_REQUEST_MODEL_GROUP) return id;
   const base = DISPLAY_NAMES[id] ?? id;
   const kSuffix = /^gpt-image-2(?:-|$)/u.test(id) ? " · 1K/2K/4K" : "";
   if (group === WEAI_ADOBE_PER_REQUEST_MODEL_GROUP) {
@@ -328,7 +345,7 @@ function parametersForModel(
     group === WEAI_ADOBE_TOKEN_MODEL_GROUP ||
     group === WEAI_AZURE_MODEL_GROUP ||
     group === WEAI_ADOBE_URL_MODEL_GROUP;
-  const codexQuality = group === WEAI_CODEX_TOKEN_MODEL_GROUP && ["gpt-image-2", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"].includes(model);
+  const codexQuality = codexQualityModel(group, model);
   const openQuality: ModelParameterDescriptor = { key: "quality", label: "请求质量", control: "text", valueType: "string", default: "max", allowCustomValue: true,
     options: [{ value: "auto", label: "自动" }, { value: "max", label: "最高（应用偏好）" }],
     description: "本完整型号未公布完整 quality 枚举；max 为应用最高偏好，按用户原值发送。", operations: IMAGE_OPERATIONS };
@@ -397,5 +414,7 @@ export function weAIModelDescriptors(
   group?: string,
   protocol: WeAIGeminiProtocol = "gemini-generate-content",
 ): ModelDescriptor[] {
-  return [baseDescriptor(id, isDefault, group, protocol)];
+  const model = baseDescriptor(id, isDefault, group, protocol);
+  return [group === WEAI_CODEX_PER_REQUEST_MODEL_GROUP ? applyWeAIImageDimensionContract({ provider: "weai",
+    config: { baseUrl: "https://asian-acc.we-token.cc/v1", accountKeyGroupId: "4", modelGroup: group } }, model) : model];
 }

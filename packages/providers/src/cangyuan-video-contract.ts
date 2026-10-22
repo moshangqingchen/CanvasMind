@@ -45,6 +45,7 @@ export function cangyuanVideoModel(model: ModelDescriptor): ModelDescriptor {
       cangyuanVideoContractCheckedAt: c.checkedAt ?? "2026-10-07", videoContractFields: [...c.fields], payloadBuilder: "seedance-flat", remoteMediaUrlsOnly: true,
       resultRetention: cangyuanResultRetention("https://ai.cangyuansuanli.cn", "video"),
       videoContractDocumentSha256: c.sourceSha256, videoContractSourceLastReviewed: c.sourceLastReviewed,
+      ...(c.sourceStatus ? { videoContractSourceStatus: c.sourceStatus } : {}),
       ...(c.facePolicy ? { facePolicy: c.facePolicy } : {}), ...(c.fixedResolution ? { videoFixedResolution: c.fixedResolution } : {}),
       ...(c.warnings?.length ? { videoContractWarnings: [...c.warnings] } : {}),
       supportsFirstLastFrames: c.frames, videoSupportsFirstLastFrames: c.frames, framePairRequired: c.framePairRequired, allowFrameMediaMix: c.allowFrameMediaMix,
@@ -78,6 +79,10 @@ export function cangyuanVideoTransport(id: string): RestModelConnectorOverride |
 }
 
 const list = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
+// These newly published contracts expressly expose reference images and no
+// first/last-frame mode. Keep stored frame roles intact for validation instead
+// of applying the older Grok reference-image compatibility mapping.
+const referenceImageContracts = new Set(["sd8-seedance-2.5-n", "sd15-seedance-2.5-2", "sd16-seedance-2.5-2", "sd17-seedance-2.0-4", "sd17-seedance-2.5-4"]);
 /** Also repairs the formerly saved audio alias without emitting undocumented fields. */
 export function normalizeCangyuanVideoParameters(request: NormalizedRequest): Record<string, unknown> {
   const c = CANGYUAN_CURRENT_VIDEO_CONTRACTS[request.model ?? ""], p = { ...request.parameters };
@@ -86,14 +91,15 @@ export function normalizeCangyuanVideoParameters(request: NormalizedRequest): Re
   delete p.seconds;
   if (c.fields.includes("generate_audio") && p.generate_audio === undefined && p.audio !== undefined) p.generate_audio = p.audio;
   delete p.audio;
+  const legacyFirstFrameReference = !referenceImageContracts.has(request.model ?? "") && !c.frames && c.fields.includes("reference_image_urls");
   for (const [kind, field] of [["image", "reference_image_urls"], ["video", "reference_videos"], ["audio", "reference_audios"]] as const) {
     const explicit = list(p[field]);
     const supplied = new Set(explicit.map(value => typeof value === "object" && value !== null ? (value as Record<string, unknown>).url : value));
-    const values = [...explicit, ...(request.assets ?? []).filter(a => a.kind === kind && (!a.role || a.role === "reference" || kind === "image" && a.role === "firstFrame" && !c.frames && c.fields.includes("reference_image_urls")) && !supplied.has(a.url)).map(a => kind === "video" && c.videoObjects ? { url: a.url, duration: a.durationSeconds } : a.url)];
+    const values = [...explicit, ...(request.assets ?? []).filter(a => a.kind === kind && (!a.role || a.role === "reference" || kind === "image" && a.role === "firstFrame" && legacyFirstFrameReference) && !supplied.has(a.url)).map(a => kind === "video" && c.videoObjects ? { url: a.url, duration: a.durationSeconds } : a.url)];
     if (values.length) p[field] = [...new Set(values)];
   }
   for (const [role, field] of [["firstFrame", "first_image_url"], ["lastFrame", "last_image_url"]] as const) {
-    const asset = request.assets?.find(a => a.role === role); if (asset && p[field] === undefined && !(role === "firstFrame" && !c.frames && c.fields.includes("reference_image_urls"))) p[field] = asset.url;
+    const asset = request.assets?.find(a => a.role === role); if (asset && p[field] === undefined && !(role === "firstFrame" && legacyFirstFrameReference)) p[field] = asset.url;
   }
   delete p.n;
   return p;

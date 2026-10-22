@@ -1,0 +1,2528 @@
+{
+  "checkedAt": "2026-10-21T03:45:06.690Z",
+  "sourceUrl": "https://ai.cangyuansuanli.cn/api/pricing",
+  "sourceSha256": "918156fee96bd015464d0e067cda35cf403cdba5adb75f17a0fb1507d5b0f85f",
+  "status": {
+    "url": "https://ai.cangyuansuanli.cn/api/status",
+    "quota_display_type": "CNY",
+    "usd_exchange_rate": 1
+  },
+  "schemas": [
+    {
+      "id": "sd8-seedance-2.5-s",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/sd8-seedance-2.5-s.json",
+      "sha256": "6e12d253171896dd3589baa546b9acbf36034356fb04830f9b0f3d50eaac1af8",
+      "checkedAt": "2026-10-21T02:51:49.649Z",
+      "schema": {
+        "schemaVersion": 1,
+        "publicModel": "sd8-seedance-2.5-s",
+        "capabilityRefs": [
+          "video"
+        ],
+        "supportedModes": [
+          "async"
+        ],
+        "facePolicy": "open",
+        "warnings": [
+          "本页公共名就是请求里要传的名字。",
+          "未列出的字段不要发送。",
+          "视频只走 POST /v1/videos，再轮询 GET /v1/videos/{task_id}。"
+        ],
+        "params": [
+          {
+            "name": "model",
+            "description": "固定传 sd8-seedance-2.5-s。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "prompt",
+            "description": "生成内容的描述。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "duration",
+            "role": "duration",
+            "description": "视频时长，单位秒。最小 30。最大 30。",
+            "type": "integer",
+            "minimum": 30,
+            "maximum": 30
+          },
+          {
+            "name": "aspect_ratio",
+            "description": "画面比例。推荐值：21:9 / 16:9 / 4:3 / 1:1 / 3:4 / 9:16；推荐值不代表完整允许集合。",
+            "type": "string",
+            "suggestions": [
+              "21:9",
+              "16:9",
+              "4:3",
+              "1:1",
+              "3:4",
+              "9:16"
+            ]
+          },
+          {
+            "name": "reference_image_urls",
+            "role": "referenceImage",
+            "description": "参考图 HTTPS URL 数组，最多 30 个。",
+            "type": "array",
+            "maxItems": 30
+          },
+          {
+            "name": "reference_videos",
+            "role": "referenceVideo",
+            "description": "参考视频 HTTPS URL 数组，最多 10 个。",
+            "type": "array",
+            "maxItems": 10
+          },
+          {
+            "name": "reference_audios",
+            "role": "referenceAudio",
+            "description": "参考音频 HTTPS URL 数组，最多 10 个。",
+            "type": "array",
+            "maxItems": 10
+          }
+        ],
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/v1/videos",
+            "description": "创建视频任务。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/videos/{task_id}",
+            "description": "查询视频任务。"
+          }
+        ],
+        "examples": [
+          {
+            "title": "最小请求",
+            "request": {
+              "model": "sd8-seedance-2.5-s",
+              "prompt": "温暖的午后，阳光洒在窗台上。"
+            }
+          }
+        ],
+        "status": "deprecated",
+        "source": "capabilities/video",
+        "lastReviewed": "2026-10-18"
+      }
+    },
+    {
+      "id": "sd8-seedance-2.0-fast",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/sd8-seedance-2.0-fast.json",
+      "sha256": "844a84e59b9a1b0acbab21efd32b709e051addcd5eb5e944cac923a6f5f7d62c",
+      "checkedAt": "2026-10-21T02:51:52.226Z",
+      "schema": {
+        "schemaVersion": 1,
+        "publicModel": "sd8-seedance-2.0-fast",
+        "capabilityRefs": [
+          "video"
+        ],
+        "supportedModes": [
+          "async"
+        ],
+        "facePolicy": "blocked",
+        "warnings": [
+          "本页公共名就是请求里要传的名字。",
+          "未列出的字段不要发送。",
+          "视频只走 POST /v1/videos，再轮询 GET /v1/videos/{task_id}。"
+        ],
+        "params": [
+          {
+            "name": "model",
+            "description": "固定传 sd8-seedance-2.0-fast。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "prompt",
+            "description": "生成内容的描述。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "duration",
+            "role": "duration",
+            "description": "视频时长，单位秒。最小 1。最大 15。",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 15
+          },
+          {
+            "name": "aspect_ratio",
+            "description": "画面比例。推荐值：21:9 / 16:9 / 4:3 / 1:1 / 3:4 / 9:16；推荐值不代表完整允许集合。",
+            "type": "string",
+            "suggestions": [
+              "21:9",
+              "16:9",
+              "4:3",
+              "1:1",
+              "3:4",
+              "9:16"
+            ]
+          },
+          {
+            "name": "reference_image_urls",
+            "role": "referenceImage",
+            "description": "参考图 HTTPS URL 数组，最多 9 个。",
+            "type": "array",
+            "maxItems": 9
+          }
+        ],
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/v1/videos",
+            "description": "创建视频任务。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/videos/{task_id}",
+            "description": "查询视频任务。"
+          }
+        ],
+        "examples": [
+          {
+            "title": "最小请求",
+            "request": {
+              "model": "sd8-seedance-2.0-fast",
+              "prompt": "温暖的午后，阳光洒在窗台上。"
+            }
+          }
+        ],
+        "status": "deprecated",
+        "source": "capabilities/video",
+        "lastReviewed": "2026-10-18"
+      }
+    },
+    {
+      "id": "sd8-seedance-2.5",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/sd8-seedance-2.5.json",
+      "sha256": "368b2025a71384fed4a4853143734b870e7bcbd7f64522babe5533b8224c9748",
+      "checkedAt": "2026-10-21T02:51:52.242Z",
+      "schema": {
+        "schemaVersion": 1,
+        "publicModel": "sd8-seedance-2.5",
+        "capabilityRefs": [
+          "video"
+        ],
+        "supportedModes": [
+          "async"
+        ],
+        "facePolicy": "blocked",
+        "warnings": [
+          "本页公共名就是请求里要传的名字。",
+          "未列出的字段不要发送。",
+          "视频只走 POST /v1/videos，再轮询 GET /v1/videos/{task_id}。"
+        ],
+        "params": [
+          {
+            "name": "model",
+            "description": "固定传 sd8-seedance-2.5。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "prompt",
+            "description": "生成内容的描述。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "duration",
+            "role": "duration",
+            "description": "视频时长，单位秒。最小 30。最大 30。",
+            "type": "integer",
+            "minimum": 30,
+            "maximum": 30
+          },
+          {
+            "name": "aspect_ratio",
+            "description": "画面比例。推荐值：21:9 / 16:9 / 4:3 / 1:1 / 3:4 / 9:16；推荐值不代表完整允许集合。",
+            "type": "string",
+            "suggestions": [
+              "21:9",
+              "16:9",
+              "4:3",
+              "1:1",
+              "3:4",
+              "9:16"
+            ]
+          },
+          {
+            "name": "reference_image_urls",
+            "role": "referenceImage",
+            "description": "参考图 HTTPS URL 数组，最多 9 个。",
+            "type": "array",
+            "maxItems": 9
+          }
+        ],
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/v1/videos",
+            "description": "创建视频任务。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/videos/{task_id}",
+            "description": "查询视频任务。"
+          }
+        ],
+        "examples": [
+          {
+            "title": "最小请求",
+            "request": {
+              "model": "sd8-seedance-2.5",
+              "prompt": "温暖的午后，阳光洒在窗台上。"
+            }
+          }
+        ],
+        "status": "deprecated",
+        "source": "capabilities/video",
+        "lastReviewed": "2026-10-18"
+      }
+    },
+    {
+      "id": "sd15-seedance-2.5",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/sd15-seedance-2.5.json",
+      "sha256": "60f45e77a959880d5019be352be1749d98491fa2cf4e6492cfec9f9477fda884",
+      "checkedAt": "2026-10-21T02:51:52.795Z",
+      "schema": {
+        "schemaVersion": 1,
+        "publicModel": "sd15-seedance-2.5",
+        "capabilityRefs": [
+          "video"
+        ],
+        "supportedModes": [
+          "async"
+        ],
+        "facePolicy": "backend",
+        "warnings": [
+          "本页公共名就是请求里要传的名字。",
+          "未列出的字段不要发送。",
+          "视频只走 POST /v1/videos，再轮询 GET /v1/videos/{task_id}。"
+        ],
+        "params": [
+          {
+            "name": "model",
+            "description": "固定传 sd15-seedance-2.5。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "prompt",
+            "description": "生成内容的描述。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "duration",
+            "role": "duration",
+            "description": "视频时长，单位秒。最小 4。最大 30。",
+            "type": "integer",
+            "minimum": 4,
+            "maximum": 30,
+            "suggestedDefault": 5
+          },
+          {
+            "name": "aspect_ratio",
+            "description": "画面比例。推荐值：1:1 / 16:9 / 9:16；推荐值不代表完整允许集合。",
+            "type": "string",
+            "suggestions": [
+              "1:1",
+              "16:9",
+              "9:16"
+            ]
+          },
+          {
+            "name": "resolution",
+            "role": "resolution",
+            "description": "输出分辨率。推荐值：480p / 720p；推荐值不代表完整允许集合。",
+            "type": "string",
+            "suggestions": [
+              "480p",
+              "720p"
+            ],
+            "suggestedDefault": "720p"
+          },
+          {
+            "name": "reference_image_urls",
+            "role": "referenceImage",
+            "description": "参考图 HTTPS URL 数组，最多 30 个。",
+            "type": "array",
+            "maxItems": 30
+          },
+          {
+            "name": "reference_audios",
+            "role": "referenceAudio",
+            "description": "参考音频 HTTPS URL 数组，最多 10 个。",
+            "type": "array",
+            "maxItems": 10
+          }
+        ],
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/v1/videos",
+            "description": "创建视频任务。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/videos/{task_id}",
+            "description": "查询视频任务。"
+          }
+        ],
+        "examples": [
+          {
+            "title": "最小请求",
+            "request": {
+              "model": "sd15-seedance-2.5",
+              "prompt": "温暖的午后，阳光洒在窗台上。"
+            }
+          }
+        ],
+        "status": "deprecated",
+        "source": "capabilities/video",
+        "lastReviewed": "2026-10-18"
+      }
+    },
+    {
+      "id": "sd15-seedance-2.5-2",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/sd15-seedance-2.5-2.json",
+      "sha256": "4560e0a5de313e920e2036a7cb14f906b6dda5c0a84bb4f9e3d66a9c5aacb850",
+      "checkedAt": "2026-10-21T02:54:38.666Z",
+      "schema": {
+        "schemaVersion": 1,
+        "publicModel": "sd15-seedance-2.5-2",
+        "capabilityRefs": [
+          "video"
+        ],
+        "supportedModes": [
+          "async"
+        ],
+        "facePolicy": "open",
+        "warnings": [
+          "本页公共名就是请求里要传的名字。",
+          "未列出的字段不要发送。",
+          "视频只走 POST /v1/videos，再轮询 GET /v1/videos/{task_id}。"
+        ],
+        "params": [
+          {
+            "name": "model",
+            "description": "固定传 sd15-seedance-2.5-2。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "prompt",
+            "description": "生成内容的描述。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "duration",
+            "role": "duration",
+            "description": "视频时长，单位秒。最小 4。最大 30。",
+            "type": "integer",
+            "minimum": 4,
+            "maximum": 30,
+            "suggestedDefault": 5
+          },
+          {
+            "name": "aspect_ratio",
+            "description": "画面比例。推荐值：1:1 / 16:9 / 9:16；推荐值不代表完整允许集合。",
+            "type": "string",
+            "suggestions": [
+              "1:1",
+              "16:9",
+              "9:16"
+            ],
+            "suggestedDefault": "16:9"
+          },
+          {
+            "name": "resolution",
+            "role": "resolution",
+            "description": "输出分辨率。推荐值：720p；推荐值不代表完整允许集合。",
+            "type": "string",
+            "suggestions": [
+              "720p"
+            ],
+            "suggestedDefault": "720p"
+          },
+          {
+            "name": "reference_image_urls",
+            "role": "referenceImage",
+            "description": "参考图 HTTPS URL 数组，最多 30 个。",
+            "type": "array",
+            "maxItems": 30
+          },
+          {
+            "name": "reference_videos",
+            "role": "referenceVideo",
+            "description": "参考视频 HTTPS URL 数组，最多 10 个。",
+            "type": "array",
+            "maxItems": 10
+          },
+          {
+            "name": "reference_audios",
+            "role": "referenceAudio",
+            "description": "参考音频 HTTPS URL 数组，最多 10 个。",
+            "type": "array",
+            "maxItems": 10
+          }
+        ],
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/v1/videos",
+            "description": "创建视频任务。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/videos/{task_id}",
+            "description": "查询视频任务。"
+          }
+        ],
+        "examples": [
+          {
+            "title": "最小请求",
+            "request": {
+              "model": "sd15-seedance-2.5-2",
+              "prompt": "温暖的午后，阳光洒在窗台上。"
+            }
+          }
+        ],
+        "status": "current",
+        "source": "capabilities/video",
+        "lastReviewed": "2026-10-18"
+      }
+    },
+    {
+      "id": "sd8-seedance-2.5-n",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/sd8-seedance-2.5-n.json",
+      "sha256": "deac9d8a7facb46c309ee4cf4a8423c4ddfaee81aa186a5813a5aca82b912e84",
+      "checkedAt": "2026-10-21T02:54:38.665Z",
+      "schema": {
+        "schemaVersion": 1,
+        "publicModel": "sd8-seedance-2.5-n",
+        "capabilityRefs": [
+          "video"
+        ],
+        "supportedModes": [
+          "async"
+        ],
+        "facePolicy": "blocked",
+        "warnings": [
+          "本页公共名就是请求里要传的名字。",
+          "未列出的字段不要发送。",
+          "视频只走 POST /v1/videos，再轮询 GET /v1/videos/{task_id}。"
+        ],
+        "params": [
+          {
+            "name": "model",
+            "description": "固定传 sd8-seedance-2.5-n。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "prompt",
+            "description": "生成内容的描述。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "duration",
+            "role": "duration",
+            "description": "视频时长，单位秒。最小 30。最大 30。",
+            "type": "integer",
+            "minimum": 30,
+            "maximum": 30,
+            "suggestedDefault": 30
+          },
+          {
+            "name": "aspect_ratio",
+            "description": "画面比例。推荐值：21:9 / 16:9 / 4:3 / 1:1 / 3:4 / 9:16；推荐值不代表完整允许集合。",
+            "type": "string",
+            "suggestions": [
+              "21:9",
+              "16:9",
+              "4:3",
+              "1:1",
+              "3:4",
+              "9:16"
+            ],
+            "suggestedDefault": "16:9"
+          },
+          {
+            "name": "resolution",
+            "role": "resolution",
+            "description": "输出分辨率。推荐值：720p；推荐值不代表完整允许集合。",
+            "type": "string",
+            "suggestions": [
+              "720p"
+            ],
+            "suggestedDefault": "720p"
+          },
+          {
+            "name": "reference_image_urls",
+            "role": "referenceImage",
+            "description": "参考图 HTTPS URL 数组，最多 30 个。",
+            "type": "array",
+            "maxItems": 30
+          },
+          {
+            "name": "reference_videos",
+            "role": "referenceVideo",
+            "description": "参考视频 HTTPS URL 数组，最多 10 个。",
+            "type": "array",
+            "maxItems": 10
+          },
+          {
+            "name": "reference_audios",
+            "role": "referenceAudio",
+            "description": "参考音频 HTTPS URL 数组，最多 10 个。",
+            "type": "array",
+            "maxItems": 10
+          }
+        ],
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/v1/videos",
+            "description": "创建视频任务。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/videos/{task_id}",
+            "description": "查询视频任务。"
+          }
+        ],
+        "examples": [
+          {
+            "title": "最小请求",
+            "request": {
+              "model": "sd8-seedance-2.5-n",
+              "prompt": "温暖的午后，阳光洒在窗台上。"
+            }
+          }
+        ],
+        "status": "current",
+        "source": "capabilities/video",
+        "lastReviewed": "2026-10-18"
+      }
+    },
+    {
+      "id": "sd17-seedance-2.5-4",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/sd17-seedance-2.5-4.json",
+      "sha256": "3527b447fadf2543f0f8932aac7e1afd258efede224066cf1b2fcd3c1c5c45c6",
+      "checkedAt": "2026-10-21T02:54:38.668Z",
+      "schema": {
+        "schemaVersion": 1,
+        "publicModel": "sd17-seedance-2.5-4",
+        "capabilityRefs": [
+          "video"
+        ],
+        "supportedModes": [
+          "async"
+        ],
+        "facePolicy": "open",
+        "warnings": [
+          "本页公共名就是请求里要传的名字。",
+          "未列出的字段不要发送。",
+          "视频只走 POST /v1/videos，再轮询 GET /v1/videos/{task_id}。"
+        ],
+        "params": [
+          {
+            "name": "model",
+            "description": "固定传 sd17-seedance-2.5-4。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "prompt",
+            "description": "生成内容的描述。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "duration",
+            "role": "duration",
+            "description": "视频时长，单位秒。最小 5。最大 30。",
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 30,
+            "suggestedDefault": 5
+          },
+          {
+            "name": "aspect_ratio",
+            "description": "画面比例。推荐值：16:9 / 9:16 / 1:1 / 4:3 / 21:9；推荐值不代表完整允许集合。",
+            "type": "string",
+            "suggestions": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "21:9"
+            ],
+            "suggestedDefault": "16:9"
+          },
+          {
+            "name": "resolution",
+            "role": "resolution",
+            "description": "输出分辨率。推荐值：480p / 720p / 1080p；推荐值不代表完整允许集合。",
+            "type": "string",
+            "suggestions": [
+              "480p",
+              "720p",
+              "1080p"
+            ],
+            "suggestedDefault": "480p"
+          },
+          {
+            "name": "reference_image_urls",
+            "role": "referenceImage",
+            "description": "参考图 HTTPS URL 数组，最多 30 个。",
+            "type": "array",
+            "maxItems": 30
+          },
+          {
+            "name": "reference_videos",
+            "role": "referenceVideo",
+            "description": "参考视频 HTTPS URL 数组，最多 10 个。",
+            "type": "array",
+            "maxItems": 10
+          },
+          {
+            "name": "reference_audios",
+            "role": "referenceAudio",
+            "description": "参考音频 HTTPS URL 数组，最多 10 个。",
+            "type": "array",
+            "maxItems": 10
+          }
+        ],
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/v1/videos",
+            "description": "创建视频任务。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/videos/{task_id}",
+            "description": "查询视频任务。"
+          }
+        ],
+        "examples": [
+          {
+            "title": "最小请求",
+            "request": {
+              "model": "sd17-seedance-2.5-4",
+              "prompt": "温暖的午后，阳光洒在窗台上。"
+            }
+          }
+        ],
+        "status": "current",
+        "source": "capabilities/video",
+        "lastReviewed": "2026-10-18"
+      }
+    },
+    {
+      "id": "sd17-seedance-2.0-4",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/sd17-seedance-2.0-4.json",
+      "sha256": "dc8fd1cc70b5158ccb315dd5938d915be8d04ec22e002e05dddfb8c6117805ea",
+      "checkedAt": "2026-10-21T02:54:38.668Z",
+      "schema": {
+        "schemaVersion": 1,
+        "publicModel": "sd17-seedance-2.0-4",
+        "capabilityRefs": [
+          "video"
+        ],
+        "supportedModes": [
+          "async"
+        ],
+        "facePolicy": "open",
+        "warnings": [
+          "本页公共名就是请求里要传的名字。",
+          "未列出的字段不要发送。",
+          "视频只走 POST /v1/videos，再轮询 GET /v1/videos/{task_id}。"
+        ],
+        "params": [
+          {
+            "name": "model",
+            "description": "固定传 sd17-seedance-2.0-4。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "prompt",
+            "description": "生成内容的描述。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "duration",
+            "role": "duration",
+            "description": "视频时长，单位秒。最小 5。最大 15。",
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 15,
+            "suggestedDefault": 5
+          },
+          {
+            "name": "aspect_ratio",
+            "description": "画面比例。推荐值：16:9 / 9:16 / 1:1 / 4:3 / 21:9；推荐值不代表完整允许集合。",
+            "type": "string",
+            "suggestions": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "21:9"
+            ],
+            "suggestedDefault": "16:9"
+          },
+          {
+            "name": "resolution",
+            "role": "resolution",
+            "description": "输出分辨率。推荐值：480p / 720p；推荐值不代表完整允许集合。",
+            "type": "string",
+            "suggestions": [
+              "480p",
+              "720p"
+            ],
+            "suggestedDefault": "480p"
+          },
+          {
+            "name": "reference_image_urls",
+            "role": "referenceImage",
+            "description": "参考图 HTTPS URL 数组，最多 9 个。",
+            "type": "array",
+            "maxItems": 9
+          },
+          {
+            "name": "reference_videos",
+            "role": "referenceVideo",
+            "description": "参考视频 HTTPS URL 数组，最多 3 个。",
+            "type": "array",
+            "maxItems": 3
+          },
+          {
+            "name": "reference_audios",
+            "role": "referenceAudio",
+            "description": "参考音频 HTTPS URL 数组，最多 3 个。",
+            "type": "array",
+            "maxItems": 3
+          }
+        ],
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/v1/videos",
+            "description": "创建视频任务。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/videos/{task_id}",
+            "description": "查询视频任务。"
+          }
+        ],
+        "examples": [
+          {
+            "title": "最小请求",
+            "request": {
+              "model": "sd17-seedance-2.0-4",
+              "prompt": "温暖的午后，阳光洒在窗台上。"
+            }
+          }
+        ],
+        "status": "current",
+        "source": "capabilities/video",
+        "lastReviewed": "2026-10-18"
+      }
+    },
+    {
+      "id": "sd16-seedance-2.5-2",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/sd16-seedance-2.5-2.json",
+      "sha256": "439a7fba0a2ba5f9ee4e8b0e33567febe14cea43295894a69f465e9a2d18e009",
+      "checkedAt": "2026-10-21T02:54:38.667Z",
+      "schema": {
+        "schemaVersion": 1,
+        "publicModel": "sd16-seedance-2.5-2",
+        "capabilityRefs": [
+          "video"
+        ],
+        "supportedModes": [
+          "async"
+        ],
+        "facePolicy": "open",
+        "warnings": [
+          "本页公共名就是请求里要传的名字。",
+          "未列出的字段不要发送。",
+          "视频只走 POST /v1/videos，再轮询 GET /v1/videos/{task_id}。"
+        ],
+        "params": [
+          {
+            "name": "model",
+            "description": "固定传 sd16-seedance-2.5-2。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "prompt",
+            "description": "生成内容的描述。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "duration",
+            "role": "duration",
+            "description": "视频时长，单位秒。最小 5。最大 30。",
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 30,
+            "suggestedDefault": 5
+          },
+          {
+            "name": "aspect_ratio",
+            "description": "画面比例。推荐值：16:9 / 9:16 / 1:1 / 4:3 / 3:4 / 21:9；推荐值不代表完整允许集合。",
+            "type": "string",
+            "suggestions": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4",
+              "21:9"
+            ]
+          },
+          {
+            "name": "resolution",
+            "role": "resolution",
+            "description": "输出分辨率。推荐值：720p；推荐值不代表完整允许集合。",
+            "type": "string",
+            "suggestions": [
+              "720p"
+            ],
+            "suggestedDefault": "720p"
+          },
+          {
+            "name": "generate_audio",
+            "description": "是否生成音频。",
+            "type": "boolean"
+          },
+          {
+            "name": "reference_image_urls",
+            "role": "referenceImage",
+            "description": "参考图 HTTPS URL 数组，最多 30 个。",
+            "type": "array",
+            "maxItems": 30
+          },
+          {
+            "name": "reference_videos",
+            "role": "referenceVideo",
+            "description": "参考视频 HTTPS URL 数组，最多 10 个。",
+            "type": "array",
+            "maxItems": 10
+          },
+          {
+            "name": "reference_audios",
+            "role": "referenceAudio",
+            "description": "参考音频 HTTPS URL 数组，最多 10 个。",
+            "type": "array",
+            "maxItems": 10
+          }
+        ],
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/v1/videos",
+            "description": "创建视频任务。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/videos/{task_id}",
+            "description": "查询视频任务。"
+          }
+        ],
+        "examples": [
+          {
+            "title": "最小请求",
+            "request": {
+              "model": "sd16-seedance-2.5-2",
+              "prompt": "温暖的午后，阳光洒在窗台上。"
+            }
+          }
+        ],
+        "status": "current",
+        "source": "capabilities/video",
+        "lastReviewed": "2026-10-21"
+      }
+    }
+  ],
+  "pricingRows": [
+    {
+      "model_name": "sd16-seedance-2.5-2",
+      "description": "原生不卡脸；5–30 秒；720p；最多 30 张参考图 / 10 段参考视频 / 10 段参考音频。",
+      "marketplace_badge": "new",
+      "vendor_id": 12,
+      "quota_type": 1,
+      "model_ratio": 0,
+      "model_price": 8.1,
+      "owner_by": "",
+      "completion_ratio": 0,
+      "enable_groups": [
+        "VIDEO",
+        "全模型-无claude/gpt"
+      ],
+      "supported_endpoint_types": [
+        "openai-video"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "tier(\"720p\", n * 8.1)",
+      "billing_capability": "video",
+      "video_ui_params": {
+        "apiMode": "videos-json-async",
+        "hints": [
+          {
+            "text": "30图10视频10音频参考，支持5-30秒，原生人脸。"
+          }
+        ],
+        "id": "sd16-seedance-2.5-2",
+        "params": {
+          "duration": {
+            "default": 5,
+            "enabled": true,
+            "max": 30,
+            "min": 5
+          },
+          "faceMode": {
+            "enabled": false
+          },
+          "faceSplit": {
+            "enabled": false
+          },
+          "frameInputs": {
+            "enabled": false,
+            "hint": "使用注意｜不支持首尾帧。"
+          },
+          "generateAudio": {
+            "enabled": true
+          },
+          "ratio": {
+            "enabled": true,
+            "options": [
+              {
+                "label": "16:9",
+                "value": "16:9"
+              },
+              {
+                "label": "9:16",
+                "value": "9:16"
+              },
+              {
+                "label": "1:1",
+                "value": "1:1"
+              },
+              {
+                "label": "4:3",
+                "value": "4:3"
+              },
+              {
+                "label": "3:4",
+                "value": "3:4"
+              },
+              {
+                "label": "21:9",
+                "value": "21:9"
+              }
+            ]
+          },
+          "resolution": {
+            "default": "720p",
+            "enabled": true,
+            "fixedLabel": "720p",
+            "options": [
+              {
+                "label": "720p",
+                "value": "720p"
+              }
+            ]
+          },
+          "seed": {
+            "enabled": false
+          },
+          "watermark": {
+            "enabled": false
+          },
+          "widthHeight": {
+            "enabled": false
+          }
+        },
+        "poll": {
+          "delayMs": 5000,
+          "maxAttempts": 120
+        },
+        "referenceLimits": {
+          "audios": 10,
+          "images": 30,
+          "prependReferenceGuide": true,
+          "showTempMediaHint": true,
+          "validationHint": "使用注意｜最多 30 张参考图、10 段参考视频、10 段参考音频。不支持首尾帧。",
+          "videos": 10
+        }
+      }
+    },
+    {
+      "model_name": "sd11-seedance-2.5",
+      "description": "【不卡脸、满参数、无额外限制】时长 4–30 秒；480p / 720p。",
+      "marketplace_badge": "limited",
+      "vendor_id": 12,
+      "quota_type": 1,
+      "model_ratio": 0,
+      "model_price": 12.8,
+      "owner_by": "",
+      "completion_ratio": 0,
+      "enable_groups": [
+        "VIDEO",
+        "全模型-无claude/gpt"
+      ],
+      "supported_endpoint_types": [
+        "openai-video"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "has(param(\"resolution\"), \"1080\") ? tier(\"1080p\", n * 29) : has(param(\"resolution\"), \"720\") ? tier(\"720p\", n * 19) : tier(\"480p\", n * 12.8)",
+      "billing_capability": "video",
+      "video_ui_params": {
+        "apiMode": "videos-json-async",
+        "hints": [
+          {
+            "text": "适合用途｜长片与首尾帧；原生不卡脸；4–30 秒；480p / 720p / 1080p；最多 30 张参考图 / 10 段参考音频 / 10 段参考视频。"
+          },
+          {
+            "text": "使用注意｜可只传首帧，也可与参考素材组合；传尾帧时必须同时传首帧。"
+          }
+        ],
+        "id": "sd11-seedance-2.5",
+        "params": {
+          "duration": {
+            "enabled": true,
+            "max": 30,
+            "min": 4
+          },
+          "faceMode": {
+            "enabled": false
+          },
+          "faceSplit": {
+            "enabled": false
+          },
+          "frameInputs": {
+            "allowFirstOnly": true,
+            "allowWithReferences": true,
+            "enabled": true,
+            "hint": "使用注意｜尾帧必须同时给首帧。首帧可以和参考图一起传。"
+          },
+          "generateAudio": {
+            "enabled": true
+          },
+          "ratio": {
+            "enabled": true,
+            "options": [
+              {
+                "label": "16:9",
+                "value": "16:9"
+              },
+              {
+                "label": "4:3",
+                "value": "4:3"
+              },
+              {
+                "label": "1:1",
+                "value": "1:1"
+              },
+              {
+                "label": "3:4",
+                "value": "3:4"
+              },
+              {
+                "label": "9:16",
+                "value": "9:16"
+              },
+              {
+                "label": "21:9",
+                "value": "21:9"
+              },
+              {
+                "label": "adaptive",
+                "value": "adaptive"
+              }
+            ]
+          },
+          "resolution": {
+            "default": "480p",
+            "enabled": true,
+            "options": [
+              {
+                "label": "480p",
+                "value": "480p"
+              },
+              {
+                "label": "720p",
+                "value": "720p"
+              },
+              {
+                "label": "1080p",
+                "value": "1080p"
+              }
+            ]
+          },
+          "seed": {
+            "enabled": true
+          },
+          "watermark": {
+            "enabled": false
+          },
+          "widthHeight": {
+            "enabled": false
+          }
+        },
+        "poll": {
+          "delayMs": 5000,
+          "maxAttempts": 120
+        },
+        "referenceLimits": {
+          "audios": 10,
+          "fullReferenceMode": {
+            "descriptionWithImages": "参考图 + 可选参考视频/音频",
+            "label": "多模态"
+          },
+          "images": 30,
+          "prependReferenceGuide": true,
+          "showTempMediaHint": true,
+          "validationHint": "使用注意｜最多 30 张参考图、10 段参考视频、10 段参考音频；首帧可与参考图同时传。",
+          "videos": 10
+        }
+      }
+    },
+    {
+      "model_name": "mm2-minimax-h3",
+      "description": "不卡脸、满参数、无额外限制。时长 4–15 秒；768P / 2K。",
+      "marketplace_badge": "out_of_stock",
+      "vendor_id": 30,
+      "quota_type": 1,
+      "model_ratio": 0,
+      "model_price": 9.9,
+      "owner_by": "",
+      "completion_ratio": 0,
+      "enable_groups": [
+        "VIDEO",
+        "全模型-无claude/gpt"
+      ],
+      "supported_endpoint_types": [
+        "openai-video"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "has(param(\"resolution\"), \"2K\") || has(param(\"resolution\"), \"2k\") ? tier(\"2k\", n * 14.0) : tier(\"768p\", n * 9.9)",
+      "billing_capability": "video",
+      "video_ui_params": {
+        "apiMode": "videos-json-async",
+        "hints": [
+          {
+            "text": "适合用途｜人物与多模态短片；4–15 秒；768P / 2K；最多 9 张参考图 / 3 段参考音频 / 3 段参考视频。"
+          },
+          {
+            "text": "使用注意｜不卡脸；可只传首帧并与参考素材组合，尾帧必须搭配首帧；支持生成音频。"
+          }
+        ],
+        "id": "mm2-minimax-h3",
+        "params": {
+          "duration": {
+            "enabled": true,
+            "max": 15,
+            "min": 4
+          },
+          "faceMode": {
+            "enabled": false
+          },
+          "faceSplit": {
+            "enabled": false
+          },
+          "frameInputs": {
+            "allowFirstOnly": true,
+            "allowWithReferences": true,
+            "enabled": true,
+            "hint": "使用注意｜尾帧必须同时给首帧。首帧可以和参考图一起传。"
+          },
+          "generateAudio": {
+            "enabled": false
+          },
+          "ratio": {
+            "enabled": true,
+            "options": [
+              {
+                "label": "16:9",
+                "value": "16:9"
+              },
+              {
+                "label": "4:3",
+                "value": "4:3"
+              },
+              {
+                "label": "1:1",
+                "value": "1:1"
+              },
+              {
+                "label": "3:4",
+                "value": "3:4"
+              },
+              {
+                "label": "9:16",
+                "value": "9:16"
+              },
+              {
+                "label": "21:9",
+                "value": "21:9"
+              },
+              {
+                "label": "adaptive",
+                "value": "adaptive"
+              }
+            ]
+          },
+          "resolution": {
+            "default": "768P",
+            "enabled": true,
+            "options": [
+              {
+                "label": "768P",
+                "value": "768P"
+              },
+              {
+                "label": "2K",
+                "value": "2K"
+              }
+            ]
+          },
+          "seed": {
+            "enabled": true
+          },
+          "watermark": {
+            "enabled": false
+          },
+          "widthHeight": {
+            "enabled": false
+          }
+        },
+        "poll": {
+          "delayMs": 5000,
+          "maxAttempts": 120
+        },
+        "referenceLimits": {
+          "audios": 3,
+          "fullReferenceMode": {
+            "descriptionWithImages": "参考图 + 可选参考视频/音频",
+            "label": "多模态"
+          },
+          "images": 9,
+          "prependReferenceGuide": true,
+          "showTempMediaHint": true,
+          "validationHint": "使用注意｜最多 9 张参考图、3 段参考视频、3 段参考音频；首帧可与参考图同时传。",
+          "videos": 3
+        }
+      }
+    },
+    {
+      "model_name": "wan4-wan3.0",
+      "description": "不卡脸、满参数、无额外限制。时长 2–30 秒；480P / 720P / 1080P。默认出音频。",
+      "marketplace_badge": "out_of_stock",
+      "vendor_id": 8,
+      "quota_type": 0,
+      "model_ratio": 37.5,
+      "model_price": 0,
+      "owner_by": "",
+      "completion_ratio": 1,
+      "enable_groups": [
+        "VIDEO",
+        "全模型-无claude/gpt"
+      ],
+      "supported_endpoint_types": [
+        "openai-video"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "has(param(\"resolution\"), \"1080\") ? tier(\"1080p\", n * 20.7) : has(param(\"resolution\"), \"720\") ? tier(\"720p\", n * 10.3) : tier(\"480p\", n * 5.2)",
+      "billing_capability": "video",
+      "video_ui_params": {
+        "apiMode": "videos-json-async",
+        "hints": [
+          {
+            "text": "适合用途｜万相人物与有声长片；2–30 秒；480p / 720p / 1080p；最多 10 张参考图 / 5 段参考音频 / 5 段参考视频。"
+          },
+          {
+            "text": "使用注意｜不卡脸；支持生成音频；可只传首帧并与参考素材组合，尾帧必须搭配首帧；可仅传参考音频。"
+          }
+        ],
+        "id": "wan4-wan3.0",
+        "params": {
+          "duration": {
+            "enabled": true,
+            "max": 30,
+            "min": 2
+          },
+          "faceMode": {
+            "enabled": false
+          },
+          "faceSplit": {
+            "enabled": false
+          },
+          "frameInputs": {
+            "allowFirstOnly": true,
+            "allowWithReferences": true,
+            "enabled": true,
+            "hint": "使用注意｜尾帧必须同时给首帧。首帧可以和参考图一起传。"
+          },
+          "generateAudio": {
+            "enabled": true
+          },
+          "ratio": {
+            "enabled": true,
+            "options": [
+              {
+                "label": "adaptive",
+                "value": "adaptive"
+              },
+              {
+                "label": "16:9",
+                "value": "16:9"
+              },
+              {
+                "label": "9:16",
+                "value": "9:16"
+              },
+              {
+                "label": "1:1",
+                "value": "1:1"
+              },
+              {
+                "label": "4:3",
+                "value": "4:3"
+              },
+              {
+                "label": "3:4",
+                "value": "3:4"
+              }
+            ]
+          },
+          "resolution": {
+            "default": "480P",
+            "enabled": true,
+            "options": [
+              {
+                "label": "480P",
+                "value": "480P"
+              },
+              {
+                "label": "720P",
+                "value": "720P"
+              },
+              {
+                "label": "1080P",
+                "value": "1080P"
+              }
+            ]
+          },
+          "seed": {
+            "enabled": true
+          },
+          "watermark": {
+            "enabled": false
+          },
+          "widthHeight": {
+            "enabled": false
+          }
+        },
+        "poll": {
+          "delayMs": 5000,
+          "maxAttempts": 120
+        },
+        "referenceLimits": {
+          "audios": 5,
+          "images": 10,
+          "validationHint": "使用注意｜最多 10 张参考图、5 段参考视频、5 段参考音频；可只给音频；首帧可与参考同时传。",
+          "videos": 5
+        }
+      }
+    },
+    {
+      "model_name": "sd11-seedance-2.0-mini",
+      "description": "【不卡脸、满参数、无额外限制】。时长 4–15 秒；480p / 720p。",
+      "marketplace_badge": "out_of_stock",
+      "vendor_id": 12,
+      "quota_type": 1,
+      "model_ratio": 0,
+      "model_price": 2.2,
+      "owner_by": "",
+      "completion_ratio": 0,
+      "enable_groups": [
+        "全模型-无claude/gpt",
+        "VIDEO"
+      ],
+      "supported_endpoint_types": [
+        "openai-video"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "has(param(\"resolution\"), \"720\") ? tier(\"720p\", n * 4.7) : tier(\"480p\", n * 2.2)",
+      "billing_capability": "video",
+      "video_ui_params": {
+        "apiMode": "videos-json-async",
+        "hints": [
+          {
+            "text": "适合用途｜Mini 档人物与首尾帧；原生不卡脸；4–15 秒；480p / 720p；最多 9 张参考图 / 3 段参考音频 / 3 段参考视频。"
+          },
+          {
+            "text": "使用注意｜可只传首帧，也可与参考素材组合；传尾帧时必须同时传首帧。"
+          }
+        ],
+        "id": "sd11-seedance-2.0-mini",
+        "params": {
+          "duration": {
+            "enabled": true,
+            "max": 15,
+            "min": 4
+          },
+          "faceMode": {
+            "enabled": false
+          },
+          "faceSplit": {
+            "enabled": false
+          },
+          "frameInputs": {
+            "allowFirstOnly": true,
+            "allowWithReferences": true,
+            "enabled": true,
+            "hint": "使用注意｜尾帧必须同时给首帧。首帧可以和参考图一起传。"
+          },
+          "generateAudio": {
+            "enabled": true
+          },
+          "ratio": {
+            "enabled": true,
+            "options": [
+              {
+                "label": "16:9",
+                "value": "16:9"
+              },
+              {
+                "label": "4:3",
+                "value": "4:3"
+              },
+              {
+                "label": "1:1",
+                "value": "1:1"
+              },
+              {
+                "label": "3:4",
+                "value": "3:4"
+              },
+              {
+                "label": "9:16",
+                "value": "9:16"
+              },
+              {
+                "label": "21:9",
+                "value": "21:9"
+              },
+              {
+                "label": "adaptive",
+                "value": "adaptive"
+              }
+            ]
+          },
+          "resolution": {
+            "default": "480p",
+            "enabled": true,
+            "options": [
+              {
+                "label": "480p",
+                "value": "480p"
+              },
+              {
+                "label": "720p",
+                "value": "720p"
+              }
+            ]
+          },
+          "seed": {
+            "enabled": true
+          },
+          "watermark": {
+            "enabled": false
+          },
+          "widthHeight": {
+            "enabled": false
+          }
+        },
+        "poll": {
+          "delayMs": 5000,
+          "maxAttempts": 120
+        },
+        "referenceLimits": {
+          "audios": 3,
+          "fullReferenceMode": {
+            "descriptionWithImages": "参考图 + 可选参考视频/音频",
+            "label": "多模态"
+          },
+          "images": 9,
+          "prependReferenceGuide": true,
+          "showTempMediaHint": true,
+          "validationHint": "使用注意｜最多 9 张参考图、3 段参考视频、3 段参考音频；首帧可与参考图同时传。",
+          "videos": 3
+        }
+      }
+    },
+    {
+      "model_name": "suno",
+      "description": "文本成曲。一次请求返回两首。",
+      "marketplace_badge": "popular",
+      "vendor_id": 31,
+      "quota_type": 1,
+      "model_ratio": 0,
+      "model_price": 0.5,
+      "owner_by": "",
+      "completion_ratio": 0,
+      "enable_groups": [
+        "MUSIC",
+        "全模型-无claude/gpt"
+      ],
+      "supported_endpoint_types": [
+        "openai-music"
+      ],
+      "billing_mode": "per_request",
+      "request_unit": "generation"
+    },
+    {
+      "model_name": "sd11-seedance-2.0-fast",
+      "description": "【不卡脸、满参数、无额外限制】时长 4–15 秒；480p / 720p。",
+      "marketplace_badge": "out_of_stock",
+      "vendor_id": 12,
+      "quota_type": 1,
+      "model_ratio": 0,
+      "model_price": 3.5,
+      "owner_by": "",
+      "completion_ratio": 0,
+      "enable_groups": [
+        "VIDEO",
+        "全模型-无claude/gpt"
+      ],
+      "supported_endpoint_types": [
+        "openai-video"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "has(param(\"resolution\"), \"720\") ? tier(\"720p\", n * 7.4) : tier(\"480p\", n * 3.5)",
+      "billing_capability": "video",
+      "video_ui_params": {
+        "apiMode": "videos-json-async",
+        "hints": [
+          {
+            "text": "适合用途｜Fast 档人物与首尾帧；原生不卡脸；4–15 秒；480p / 720p；最多 9 张参考图 / 3 段参考音频 / 3 段参考视频。"
+          },
+          {
+            "text": "使用注意｜可只传首帧，也可与参考素材组合；传尾帧时必须同时传首帧。"
+          }
+        ],
+        "id": "sd11-seedance-2.0-fast",
+        "params": {
+          "duration": {
+            "enabled": true,
+            "max": 15,
+            "min": 4
+          },
+          "faceMode": {
+            "enabled": false
+          },
+          "faceSplit": {
+            "enabled": false
+          },
+          "frameInputs": {
+            "allowFirstOnly": true,
+            "allowWithReferences": true,
+            "enabled": true,
+            "hint": "使用注意｜尾帧必须同时给首帧。首帧可以和参考图一起传。"
+          },
+          "generateAudio": {
+            "enabled": true
+          },
+          "ratio": {
+            "enabled": true,
+            "options": [
+              {
+                "label": "16:9",
+                "value": "16:9"
+              },
+              {
+                "label": "4:3",
+                "value": "4:3"
+              },
+              {
+                "label": "1:1",
+                "value": "1:1"
+              },
+              {
+                "label": "3:4",
+                "value": "3:4"
+              },
+              {
+                "label": "9:16",
+                "value": "9:16"
+              },
+              {
+                "label": "21:9",
+                "value": "21:9"
+              },
+              {
+                "label": "adaptive",
+                "value": "adaptive"
+              }
+            ]
+          },
+          "resolution": {
+            "default": "480p",
+            "enabled": true,
+            "options": [
+              {
+                "label": "480p",
+                "value": "480p"
+              },
+              {
+                "label": "720p",
+                "value": "720p"
+              }
+            ]
+          },
+          "seed": {
+            "enabled": true
+          },
+          "watermark": {
+            "enabled": false
+          },
+          "widthHeight": {
+            "enabled": false
+          }
+        },
+        "poll": {
+          "delayMs": 5000,
+          "maxAttempts": 120
+        },
+        "referenceLimits": {
+          "audios": 3,
+          "fullReferenceMode": {
+            "descriptionWithImages": "参考图 + 可选参考视频/音频",
+            "label": "多模态"
+          },
+          "images": 9,
+          "prependReferenceGuide": true,
+          "showTempMediaHint": true,
+          "validationHint": "使用注意｜最多 9 张参考图、3 段参考视频、3 段参考音频；首帧可与参考图同时传。",
+          "videos": 3
+        }
+      }
+    },
+    {
+      "model_name": "sd11-seedance-2.0",
+      "description": "【不卡脸、满参数、无额外限制】时长 4–15 秒；480p / 720p / 1080p。",
+      "marketplace_badge": "out_of_stock",
+      "vendor_id": 12,
+      "quota_type": 1,
+      "model_ratio": 0,
+      "model_price": 4.5,
+      "owner_by": "",
+      "completion_ratio": 0,
+      "enable_groups": [
+        "VIDEO",
+        "全模型-无claude/gpt"
+      ],
+      "supported_endpoint_types": [
+        "openai-video"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "has(param(\"resolution\"), \"1080\") ? tier(\"1080p\", n * 18.9) : has(param(\"resolution\"), \"720\") ? tier(\"720p\", n * 9.6) : tier(\"480p\", n * 4.5)",
+      "billing_capability": "video",
+      "video_ui_params": {
+        "apiMode": "videos-json-async",
+        "hints": [
+          {
+            "text": "适合用途｜人物与首尾帧；原生不卡脸；4–15 秒；480p / 720p / 1080p；最多 9 张参考图 / 3 段参考音频 / 3 段参考视频。"
+          },
+          {
+            "text": "使用注意｜可只传首帧，也可与参考素材组合；传尾帧时必须同时传首帧。"
+          }
+        ],
+        "id": "sd11-seedance-2.0",
+        "optionRules": [
+          {
+            "disableOptions": {
+              "resolution": [
+                "4k",
+                "4K"
+              ]
+            }
+          }
+        ],
+        "params": {
+          "duration": {
+            "enabled": true,
+            "max": 15,
+            "min": 4
+          },
+          "faceMode": {
+            "enabled": false
+          },
+          "faceSplit": {
+            "enabled": false
+          },
+          "frameInputs": {
+            "allowFirstOnly": true,
+            "allowWithReferences": true,
+            "enabled": true,
+            "hint": "使用注意｜尾帧必须同时给首帧。首帧可以和参考图一起传。"
+          },
+          "generateAudio": {
+            "enabled": true
+          },
+          "ratio": {
+            "enabled": true,
+            "options": [
+              {
+                "label": "16:9",
+                "value": "16:9"
+              },
+              {
+                "label": "4:3",
+                "value": "4:3"
+              },
+              {
+                "label": "1:1",
+                "value": "1:1"
+              },
+              {
+                "label": "3:4",
+                "value": "3:4"
+              },
+              {
+                "label": "9:16",
+                "value": "9:16"
+              },
+              {
+                "label": "21:9",
+                "value": "21:9"
+              },
+              {
+                "label": "adaptive",
+                "value": "adaptive"
+              }
+            ]
+          },
+          "resolution": {
+            "default": "480p",
+            "enabled": true,
+            "options": [
+              {
+                "label": "480p",
+                "value": "480p"
+              },
+              {
+                "label": "720p",
+                "value": "720p"
+              },
+              {
+                "label": "1080p",
+                "value": "1080p"
+              }
+            ]
+          },
+          "seed": {
+            "enabled": true
+          },
+          "watermark": {
+            "enabled": false
+          },
+          "widthHeight": {
+            "enabled": false
+          }
+        },
+        "poll": {
+          "delayMs": 5000,
+          "maxAttempts": 120
+        },
+        "referenceLimits": {
+          "audios": 3,
+          "fullReferenceMode": {
+            "descriptionWithImages": "参考图 + 可选参考视频/音频",
+            "label": "多模态"
+          },
+          "images": 9,
+          "prependReferenceGuide": true,
+          "showTempMediaHint": true,
+          "validationHint": "使用注意｜最多 9 张参考图、3 段参考视频、3 段参考音频；首帧可与参考图同时传。",
+          "videos": 3
+        }
+      }
+    },
+    {
+      "model_name": "sd17-seedance-2.5-4",
+      "description": "多模态视频生成；480p / 720p / 1080p，按秒计费。",
+      "marketplace_badge": "available",
+      "vendor_id": 12,
+      "quota_type": 1,
+      "model_ratio": 0,
+      "model_price": 0.5,
+      "owner_by": "",
+      "completion_ratio": 0,
+      "enable_groups": [
+        "VIDEO",
+        "全模型-无claude/gpt"
+      ],
+      "supported_endpoint_types": [
+        "openai-video"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "has(param(\"resolution\"), \"1080\") ? tier(\"1080p\", (vs == 0 ? 5 : vs) * 2.00) : has(param(\"resolution\"), \"720\") ? tier(\"720p\", (vs == 0 ? 5 : vs) * 0.70) : tier(\"480p\", (vs == 0 ? 5 : vs) * 0.50)",
+      "billing_capability": "video",
+      "request_unit": "second",
+      "video_ui_params": {
+        "apiMode": "videos-json-async",
+        "hints": [
+          {
+            "text": "使用注意｜按生成时长和所选分辨率计费；未选择时默认 480p、5 秒。"
+          }
+        ],
+        "id": "sd17-seedance-2.5-4",
+        "params": {
+          "duration": {
+            "default": 5,
+            "enabled": true,
+            "max": 30,
+            "min": 5
+          },
+          "faceMode": {
+            "enabled": false
+          },
+          "faceSplit": {
+            "enabled": false
+          },
+          "frameInputs": {
+            "enabled": false,
+            "hint": "使用注意｜不支持 首尾帧模式。"
+          },
+          "generateAudio": {
+            "enabled": false
+          },
+          "ratio": {
+            "default": "16:9",
+            "enabled": true,
+            "options": [
+              {
+                "label": "16:9",
+                "value": "16:9"
+              },
+              {
+                "label": "9:16",
+                "value": "9:16"
+              },
+              {
+                "label": "1:1",
+                "value": "1:1"
+              },
+              {
+                "label": "4:3",
+                "value": "4:3"
+              },
+              {
+                "label": "21:9",
+                "value": "21:9"
+              }
+            ]
+          },
+          "resolution": {
+            "default": "480p",
+            "enabled": true,
+            "options": [
+              {
+                "label": "480p",
+                "value": "480p"
+              },
+              {
+                "label": "720p",
+                "value": "720p"
+              },
+              {
+                "label": "1080p",
+                "value": "1080p"
+              }
+            ]
+          },
+          "seed": {
+            "enabled": false
+          },
+          "watermark": {
+            "enabled": false
+          },
+          "widthHeight": {
+            "enabled": false,
+            "options": []
+          }
+        },
+        "poll": {
+          "delayMs": 5000,
+          "maxAttempts": 120
+        },
+        "referenceLimits": {
+          "audios": 10,
+          "images": 30,
+          "prependReferenceGuide": true,
+          "showTempMediaHint": true,
+          "videos": 10
+        }
+      }
+    },
+    {
+      "model_name": "mm2-minimax-h3-max",
+      "description": "不卡脸、满参数、无额外限制。时长 5–15 秒；480P / 768P。",
+      "marketplace_badge": "out_of_stock",
+      "vendor_id": 30,
+      "quota_type": 1,
+      "model_ratio": 0,
+      "model_price": 5.8,
+      "owner_by": "",
+      "completion_ratio": 0,
+      "enable_groups": [
+        "全模型-无claude/gpt",
+        "VIDEO"
+      ],
+      "supported_endpoint_types": [
+        "openai-video"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "has(param(\"resolution\"), \"768\") ? tier(\"768p\", n * 8.9) : tier(\"480p\", n * 5.8)",
+      "billing_capability": "video",
+      "video_ui_params": {
+        "apiMode": "videos-json-async",
+        "hints": [
+          {
+            "text": "适合用途｜人物多模态短片备选；5–15 秒；480p / 768P；最多 9 张参考图 / 3 段参考音频 / 3 段参考视频。"
+          },
+          {
+            "text": "使用注意｜不卡脸；可只传首帧并与参考素材组合，尾帧必须搭配首帧；支持生成音频。"
+          }
+        ],
+        "id": "mm2-minimax-h3-max",
+        "params": {
+          "duration": {
+            "enabled": true,
+            "max": 15,
+            "min": 5
+          },
+          "faceMode": {
+            "enabled": false
+          },
+          "faceSplit": {
+            "enabled": false
+          },
+          "frameInputs": {
+            "allowFirstOnly": true,
+            "allowWithReferences": true,
+            "enabled": true,
+            "hint": "使用注意｜尾帧必须同时给首帧。首帧可以和参考图一起传。"
+          },
+          "generateAudio": {
+            "enabled": false
+          },
+          "ratio": {
+            "enabled": true,
+            "options": [
+              {
+                "label": "16:9",
+                "value": "16:9"
+              },
+              {
+                "label": "4:3",
+                "value": "4:3"
+              },
+              {
+                "label": "1:1",
+                "value": "1:1"
+              },
+              {
+                "label": "3:4",
+                "value": "3:4"
+              },
+              {
+                "label": "9:16",
+                "value": "9:16"
+              },
+              {
+                "label": "21:9",
+                "value": "21:9"
+              },
+              {
+                "label": "adaptive",
+                "value": "adaptive"
+              }
+            ]
+          },
+          "resolution": {
+            "default": "480P",
+            "enabled": true,
+            "options": [
+              {
+                "label": "480P",
+                "value": "480P"
+              },
+              {
+                "label": "768P",
+                "value": "768P"
+              }
+            ]
+          },
+          "seed": {
+            "enabled": true
+          },
+          "watermark": {
+            "enabled": false
+          },
+          "widthHeight": {
+            "enabled": false
+          }
+        },
+        "poll": {
+          "delayMs": 5000,
+          "maxAttempts": 120
+        },
+        "referenceLimits": {
+          "audios": 3,
+          "fullReferenceMode": {
+            "descriptionWithImages": "参考图 + 可选参考视频/音频",
+            "label": "多模态"
+          },
+          "images": 9,
+          "prependReferenceGuide": true,
+          "showTempMediaHint": true,
+          "validationHint": "使用注意｜最多 9 张参考图、3 段参考视频、3 段参考音频；首帧可与参考图同时传。",
+          "videos": 3
+        }
+      }
+    },
+    {
+      "model_name": "sd17-seedance-2.0-4",
+      "description": "多模态视频生成；480p / 720p，按秒计费。",
+      "marketplace_badge": "available",
+      "vendor_id": 12,
+      "quota_type": 1,
+      "model_ratio": 0,
+      "model_price": 0.38,
+      "owner_by": "",
+      "completion_ratio": 0,
+      "enable_groups": [
+        "全模型-无claude/gpt",
+        "VIDEO"
+      ],
+      "supported_endpoint_types": [
+        "openai-video"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "has(param(\"resolution\"), \"720\") ? tier(\"720p\", (vs == 0 ? 5 : vs) * 0.46) : tier(\"480p\", (vs == 0 ? 5 : vs) * 0.38)",
+      "billing_capability": "video",
+      "request_unit": "second",
+      "video_ui_params": {
+        "apiMode": "videos-json-async",
+        "hints": [
+          {
+            "text": "使用注意｜按生成时长和所选分辨率计费；未选择时默认 480p、5 秒。"
+          }
+        ],
+        "id": "sd17-seedance-2.0-4",
+        "params": {
+          "duration": {
+            "default": 5,
+            "enabled": true,
+            "max": 15,
+            "min": 5
+          },
+          "faceMode": {
+            "enabled": false
+          },
+          "faceSplit": {
+            "enabled": false
+          },
+          "frameInputs": {
+            "enabled": false,
+            "hint": "使用注意｜不支持 首尾帧模式。"
+          },
+          "generateAudio": {
+            "enabled": false
+          },
+          "ratio": {
+            "default": "16:9",
+            "enabled": true,
+            "options": [
+              {
+                "label": "16:9",
+                "value": "16:9"
+              },
+              {
+                "label": "9:16",
+                "value": "9:16"
+              },
+              {
+                "label": "1:1",
+                "value": "1:1"
+              },
+              {
+                "label": "4:3",
+                "value": "4:3"
+              },
+              {
+                "label": "21:9",
+                "value": "21:9"
+              }
+            ]
+          },
+          "resolution": {
+            "default": "480p",
+            "enabled": true,
+            "options": [
+              {
+                "label": "480p",
+                "value": "480p"
+              },
+              {
+                "label": "720p",
+                "value": "720p"
+              }
+            ]
+          },
+          "seed": {
+            "enabled": false
+          },
+          "watermark": {
+            "enabled": false
+          },
+          "widthHeight": {
+            "enabled": false,
+            "options": []
+          }
+        },
+        "poll": {
+          "delayMs": 5000,
+          "maxAttempts": 120
+        },
+        "referenceLimits": {
+          "audios": 3,
+          "images": 9,
+          "prependReferenceGuide": true,
+          "showTempMediaHint": true,
+          "videos": 3
+        }
+      }
+    },
+    {
+      "model_name": "midjourney",
+      "description": "Midjourney。",
+      "marketplace_badge": "maintenance",
+      "vendor_id": 34,
+      "quota_type": 1,
+      "model_ratio": 0,
+      "model_price": 0.49,
+      "owner_by": "",
+      "completion_ratio": 0,
+      "enable_groups": [
+        "IMAGE",
+        "全模型-无claude/gpt"
+      ],
+      "supported_endpoint_types": [
+        "openai-image"
+      ],
+      "billing_mode": "per_request",
+      "request_unit": "call",
+      "image_ui_params": {
+        "hints": [
+          {
+            "text": "适合用途｜文生图与最多 5 张参考图；版本用 mj_version 或 niji_version，可以不填。"
+          },
+          {
+            "text": "使用注意｜只有常见比例，没有独立分辨率或质量档；传入的宽x高会就近映射到这些比例。不支持蒙版、放大与变体；一次请求可能返回多张。"
+          }
+        ],
+        "id": "midjourney",
+        "params": {
+          "aspectRatio": {
+            "enabled": true,
+            "options": [
+              {
+                "height": 1,
+                "icon": "square",
+                "label": "1:1",
+                "value": "1:1",
+                "width": 1
+              },
+              {
+                "height": 2,
+                "icon": "landscape",
+                "label": "3:2",
+                "value": "3:2",
+                "width": 3
+              },
+              {
+                "height": 3,
+                "icon": "portrait",
+                "label": "2:3",
+                "value": "2:3",
+                "width": 2
+              },
+              {
+                "height": 3,
+                "icon": "landscape",
+                "label": "4:3",
+                "value": "4:3",
+                "width": 4
+              },
+              {
+                "height": 4,
+                "icon": "portrait",
+                "label": "3:4",
+                "value": "3:4",
+                "width": 3
+              },
+              {
+                "height": 4,
+                "icon": "landscape",
+                "label": "5:4",
+                "value": "5:4",
+                "width": 5
+              },
+              {
+                "height": 5,
+                "icon": "portrait",
+                "label": "4:5",
+                "value": "4:5",
+                "width": 4
+              },
+              {
+                "height": 9,
+                "icon": "landscape",
+                "label": "16:9",
+                "value": "16:9",
+                "width": 16
+              },
+              {
+                "height": 16,
+                "icon": "portrait",
+                "label": "9:16",
+                "value": "9:16",
+                "width": 9
+              },
+              {
+                "height": 9,
+                "icon": "landscape",
+                "label": "21:9",
+                "value": "21:9",
+                "width": 21
+              },
+              {
+                "height": 0,
+                "icon": "auto",
+                "label": "自动",
+                "value": "auto",
+                "width": 0
+              }
+            ]
+          },
+          "count": {
+            "enabled": true,
+            "max": 1,
+            "min": 1,
+            "quickCount": 1
+          },
+          "customDimensions": {
+            "enabled": true
+          },
+          "mj_version": {
+            "enabled": true,
+            "options": [
+              {
+                "label": "5",
+                "value": "5"
+              },
+              {
+                "label": "5.1",
+                "value": "5.1"
+              },
+              {
+                "label": "5.2",
+                "value": "5.2"
+              },
+              {
+                "label": "6",
+                "value": "6"
+              },
+              {
+                "label": "6.1",
+                "value": "6.1"
+              },
+              {
+                "label": "7",
+                "value": "7"
+              },
+              {
+                "label": "8",
+                "value": "8"
+              },
+              {
+                "label": "8.1",
+                "value": "8.1"
+              },
+              {
+                "label": "8.2",
+                "value": "8.2"
+              }
+            ]
+          },
+          "niji_version": {
+            "enabled": true,
+            "options": [
+              {
+                "label": "5",
+                "value": "5"
+              },
+              {
+                "label": "6",
+                "value": "6"
+              },
+              {
+                "label": "7",
+                "value": "7"
+              }
+            ]
+          },
+          "prompt": {
+            "maxLength": 1010,
+            "minLength": 1
+          }
+        },
+        "referenceLimits": {
+          "audios": 0,
+          "images": 5,
+          "mask": 0,
+          "videos": 0
+        }
+      }
+    },
+    {
+      "model_name": "kl1-kling-3.0",
+      "description": "不卡脸、满参数、无额外限制。时长 3–15 秒；720p / 1080p。默认出音频。不支持参考图。",
+      "marketplace_badge": "out_of_stock",
+      "vendor_id": 11,
+      "quota_type": 0,
+      "model_ratio": 37.5,
+      "model_price": 0,
+      "owner_by": "",
+      "completion_ratio": 1,
+      "enable_groups": [
+        "VIDEO",
+        "全模型-无claude/gpt"
+      ],
+      "supported_endpoint_types": [
+        "openai-video"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "has(param(\"resolution\"), \"1080\") ? tier(\"1080p\", n * 6.1) : tier(\"720p\", n * 4.6)",
+      "billing_capability": "video",
+      "video_ui_params": {
+        "apiMode": "videos-json-async",
+        "hints": [
+          {
+            "text": "适合用途｜人物与首尾帧短片；3–15 秒；720p / 1080p；不接普通参考素材。"
+          },
+          {
+            "text": "使用注意｜不卡脸；可只传首帧，尾帧必须搭配首帧；支持生成音频；不接普通参考图、视频或音频。"
+          }
+        ],
+        "id": "kl1-kling-3.0",
+        "params": {
+          "duration": {
+            "enabled": true,
+            "max": 15,
+            "min": 3
+          },
+          "faceMode": {
+            "enabled": false
+          },
+          "faceSplit": {
+            "enabled": false
+          },
+          "frameInputs": {
+            "allowFirstOnly": true,
+            "allowWithReferences": false,
+            "enabled": true,
+            "hint": "使用注意｜尾帧必须同时给首帧。可只传首帧做图生。不支持参考图。"
+          },
+          "generateAudio": {
+            "enabled": true
+          },
+          "ratio": {
+            "enabled": true,
+            "options": [
+              {
+                "label": "16:9",
+                "value": "16:9"
+              },
+              {
+                "label": "9:16",
+                "value": "9:16"
+              },
+              {
+                "label": "1:1",
+                "value": "1:1"
+              }
+            ]
+          },
+          "resolution": {
+            "default": "720p",
+            "enabled": true,
+            "options": [
+              {
+                "label": "720p",
+                "value": "720p"
+              },
+              {
+                "label": "1080p",
+                "value": "1080p"
+              }
+            ]
+          },
+          "seed": {
+            "enabled": true
+          },
+          "watermark": {
+            "enabled": false
+          },
+          "widthHeight": {
+            "enabled": false
+          }
+        },
+        "poll": {
+          "delayMs": 5000,
+          "maxAttempts": 120
+        },
+        "referenceLimits": {
+          "audios": 0,
+          "images": 0,
+          "validationHint": "使用注意｜不支持参考图、参考视频或参考音频。",
+          "videos": 0
+        }
+      }
+    }
+  ]
+}

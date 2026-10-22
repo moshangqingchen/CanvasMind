@@ -116,8 +116,13 @@ describe("scanned model protocol binding", () => {
     const cached: ModelDescriptor = { id: "gpt-image-2.5-flare", name: "Cached", operations: ["image.generate", "image.edit"],
       parameters: [{ key: "size", label: "尺寸", control: "dimensions", default: "3840x2160", options: [{ label: "4K", value: "3840x2160" }] }],
       metadata: { canvasRunnable: true } };
-    const oneK = bindScannedModelProtocols({ provider: "openai", config: { baseUrl: "https://token.secure-skill.com", modelGroup: "gpt-image-2.5" } }, [cached]).models[0]!;
-    expect(oneK.parameters?.find(p => p.key === "size")?.options?.map(o => o.value)).toEqual(["1024x1024", "1536x1024", "1024x1536"]);
+    const native = bindScannedModelProtocols({ provider: "openai", config: { baseUrl: "https://token.secure-skill.com", modelGroup: "gpt-image-2.5", accountKeyGroupId: "44" } }, [cached]).models[0]!;
+    expect(native.parameters?.find(p => p.key === "size")).toMatchObject({ control: "select", default: "auto", allowCustomValue: false });
+    expect(native.parameters?.find(p => p.key === "resolution")?.options?.map(o => o.value)).toEqual(["auto", "1K", "2K", "4K"]);
+    expect(native.parameters?.find(p => p.key === "aspect_ratio")?.options?.map(o => o.value)).toContain("3:1");
+    expect(native.parameters?.find(p => p.key === "quality")?.options?.map(o => o.value)).toContain("max");
+    const special = bindScannedModelProtocols({ provider: "openai", config: { baseUrl: "https://token.secure-skill.com", modelGroup: "gpt-image-2.5特价", accountKeyGroupId: "62" } }, [cached]).models[0]!;
+    expect(special.parameters?.find(p => p.key === "quality")?.options?.map(o => o.value)).toEqual(["low", "medium", "high"]);
     const extended = bindScannedModelProtocols({ provider: "openai", config: { baseUrl: "https://token.secure-skill.com", modelGroup: "image2.5特价" } }, [cached]).models[0]!;
     expect(extended.metadata?.imageSizeContract).toBeUndefined();
     const fixedQuality = bindScannedModelProtocols({ provider: "openai", config: { baseUrl: "https://token.secure-skill.com", modelGroup: "image-2-1k" } },

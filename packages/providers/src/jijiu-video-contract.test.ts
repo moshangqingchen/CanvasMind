@@ -34,6 +34,8 @@ describe("Jijiu exact official video contracts (offline only)", () => {
 
   it.each([
     ["满血seedance-2.5全参A", "imageUrls", undefined, "audioUrls"],
+    ["SD2.0满血稳定933-线路一", "images", undefined, "audios"],
+    ["SD2.0满血稳定933-线路四", "images", "videos", "audios"],
     ["SD2.0mini稳定903C", "image_urls", undefined, "audio_urls"],
     ["SD2.5特价30-10线路二", "images", "videos", "audios"],
     ["SD2.5特价30-10-10-线路三", "images", "video_refs", "audio_refs"],
@@ -303,6 +305,45 @@ describe("Jijiu exact official video contracts (offline only)", () => {
     expect(jijiuVideoRequestIssues(request("MinimaxH3", {}, maxImages))).toEqual(expect.arrayContaining([expect.objectContaining({ path: "assets" })]));
   });
 
+  it("enforces the first SD2.0 line's 9 images / no videos / 3 audios without borrowing other lines", async () => {
+    const id = "SD2.0满血稳定933-线路一", model = jijiuVideoModel(id, undefined, "视频SD2.0")!;
+    expect(model.limits).toMatchObject({ maxInputImages: 9, maxInputVideos: 0, maxInputAudios: 3 });
+    expect(model.inputKinds).not.toContain("video");
+    for (const input of [request(id, {}, [video]), request(id, { video_refs: [video.url] }),
+      request(id, {}, Array.from({ length: 10 }, (_, i) => ({ ...image, id: `image-${i}` }))),
+      request(id, {}, Array.from({ length: 4 }, (_, i) => ({ ...audio, id: `audio-${i}` })))]) {
+      const saved = structuredClone(input), f = fixture(id);
+      await expect(f.adapter.submit(input)).rejects.toThrow();
+      expect(input).toEqual(saved); expect(f.fetcher).not.toHaveBeenCalled();
+    }
+    expect(jijiuVideoRequestIssues(request("SD2.0满血稳定933-线路二", { duration: 5 }, [video]))).toEqual([]);
+  });
+
+  it("uses the fourth SD2.0 line's exact URL fields and refuses upstream clipping of saved values", async () => {
+    const id = "SD2.0满血稳定933-线路四", group = "视频SD2.0";
+    for (const resolution of ["480p", "720p"]) {
+      const input = request(id, { duration_seconds: 4, resolution, imageUrls: [image.url], videoUrls: [video.url], audioUrls: [audio.url] });
+      const saved = structuredClone(input), f = fixture(id, [Response.json({ id: "line_four", status: "queued" })], { modelGroup: group, accountKeyGroup: group });
+      await f.adapter.submit(input);
+      expect(JSON.parse(String(f.fetcher.mock.calls[0]?.[1]?.body))).toEqual({ model: id, prompt: input.prompt, seconds: 4, resolution,
+        images: [image.url], videos: [video.url], audios: [audio.url] });
+      expect(input).toEqual(saved);
+    }
+    for (const parameters of [{ duration: 3 }, { duration: 16 }, { resolution: "1080p" }]) {
+      const input = request(id, parameters), saved = structuredClone(input), f = fixture(id);
+      await expect(f.adapter.submit(input)).rejects.toThrow(); expect(input).toEqual(saved); expect(f.fetcher).not.toHaveBeenCalled();
+    }
+  });
+
+  it("keeps A/B digital-watermark and billing notes distinct from C's fixed 720p contract after persistence", () => {
+    const models = JSON.parse(JSON.stringify(["满血seedance-2.5全参A", "满血seedance-2.5全参B", "满血seedance-2.5全参C"].map(id => jijiuVideoModel(id)))) as ModelDescriptor[];
+    expect(models[0]?.metadata?.videoContractNote).toMatch(/数字水印.*按次/);
+    expect(models[1]?.metadata?.videoContractNote).toMatch(/数字水印.*按秒/);
+    expect(models[2]?.metadata).toMatchObject({ videoMinDuration: 4, videoMaxDuration: 30, videoSupportedResolutions: ["720p"],
+      videoReferenceImageLimit: 30, videoReferenceVideoLimit: 10, videoReferenceAudioLimit: 10 });
+    expect(models[2]?.parameters?.find(p => p.key === "resolution")?.options).toEqual([{ label: "720p", value: "720p" }]);
+  });
+
   it("checks WAN measured reference durations and output combined cap", async () => {
     const id = "wan3.0-video";
     expect(jijiuVideoRequestIssues(request(id, { duration: 24 }, [video]))).toEqual([]);
@@ -363,17 +404,20 @@ describe("Jijiu exact official video contracts (offline only)", () => {
     expect(jijiuVideoModel("SD2.0fast稳定900D")?.parameters?.find(parameter => parameter.key === "duration")?.options?.map(option => option.value)).toEqual([5, 10, 15]);
   });
 
-  it.each(["wan3.0-video", "wan3.0-video-prime"])("rejects the historical automatic duration without changing it, and sends legal JSON for %s", async id => {
+  it.each(["wan3.0-video", "wan3.0-video-prime"])("restores automatic duration without changing it, and sends legal JSON for %s", async id => {
     const model = jijiuVideoModel(id)!;
     expect(model.parameters?.find(p => p.key === "duration")).toMatchObject({ control: "select", options: expect.arrayContaining([{ value: 2, label: "2 秒" }, { value: 30, label: "30 秒" }]) });
-    expect(model.parameters?.find(p => p.key === "duration")?.options?.some(value => value.value === -1)).toBe(false);
-    expect(model.metadata).toMatchObject({ remoteMediaUrlsOnly: false, supportsFirstLastFrames: false, videoSupportsFirstLastFrames: false, videoMediaTransport: "multipart-files", billingIncludesInputDuration: true });
+    expect(model.parameters?.find(p => p.key === "duration")?.options).toContainEqual({ label: "自动时长（-1）", value: -1 });
+    expect(model.metadata).toMatchObject({ remoteMediaUrlsOnly: false, supportsFirstLastFrames: false, videoSupportsFirstLastFrames: false, videoMediaTransport: "multipart-files", billingIncludesInputDuration: true,
+      videoSupportsAutomaticDuration: true, videoAutomaticDurationPrechargeSeconds: 30, videoAutomaticDurationSettlement: "actual-duration" });
     expect(model.parameters?.some(p => p.key === "negative_prompt")).toBe(false);
     const f = fixture(id, [Response.json({ id: "wan_auto_fixture", status: "queued" })]);
-    const historical = request(id, { duration: -1, resolution: "720p" }), saved = structuredClone(historical), denied = fixture(id);
-    expect((await denied.adapter.validate(historical)).valid).toBe(false);
-    await expect(denied.adapter.submit(historical)).rejects.toThrow("不接受 -1");
-    expect(historical).toEqual(saved); expect(denied.fetcher).not.toHaveBeenCalled();
+    const historical = request(id, { duration: -1, resolution: "720p" }), saved = structuredClone(historical);
+    const automatic = fixture(id, [Response.json({ id: "wan_auto", status: "queued" })]);
+    expect((await automatic.adapter.validate(historical)).valid).toBe(true);
+    await automatic.adapter.submit(historical);
+    expect(JSON.parse(String(automatic.fetcher.mock.calls[0]?.[1]?.body))).toMatchObject({ seconds: -1, resolution: "720p" });
+    expect(historical).toEqual(saved); expect(automatic.fetcher).toHaveBeenCalledOnce();
     const input = request(id, { duration: 5, resolution: "720p" }), original = structuredClone(input);
     expect(await f.adapter.validate(input)).toEqual({ valid: true, issues: [] });
     await f.adapter.submit(input);
@@ -406,6 +450,26 @@ describe("Jijiu exact official video contracts (offline only)", () => {
     expect(f.fetcher).toHaveBeenCalledTimes(1);
   });
 
+  it.each(["wan3.0-video", "wan3.0-video-prime"])("preserves automatic duration in restored controls and multipart requests for %s", async id => {
+    const previous = { ...jijiuVideoModel(id)!, metadata: { videoSupportsAutomaticDuration: false, videoDurationValues: [5], videoAutomaticDurationPrechargeSeconds: 99 } };
+    const restored = jijiuVideoModel(id, JSON.parse(JSON.stringify(previous)))!;
+    expect(restored.metadata).toMatchObject({ videoSupportsAutomaticDuration: true, videoAutomaticDurationPrechargeSeconds: 30, videoDurationValues: expect.arrayContaining([-1, 2, 30]) });
+    const descriptor = JSON.parse(JSON.stringify(restored)) as ModelDescriptor;
+    expect(descriptor.parameters?.find(p => p.key === "duration")?.options).toContainEqual({ label: "自动时长（-1）", value: -1 });
+    const input = request(id, { duration_seconds: -1, resolution: "720p" }, [{ ...video, filename: "original.mp4", url: undefined, data: new Uint8Array([11, 12]) }]);
+    const before = structuredClone(input), f = fixture(id, [Response.json({ id: "wan_auto_files", status: "queued" })]);
+    expect(await f.adapter.validate(input)).toEqual({ valid: true, issues: [] });
+    await f.adapter.submit(input);
+    const body = f.fetcher.mock.calls[0]?.[1]?.body as FormData;
+    expect(body.get("seconds")).toBe("-1"); expect(body.getAll("videos")).toHaveLength(1);
+    expect(new Uint8Array(await (body.get("videos") as File).arrayBuffer())).toEqual(new Uint8Array([11, 12]));
+    expect(input).toEqual(before); expect(f.fetcher).toHaveBeenCalledOnce();
+    for (const other of ["wan3.0-video-S", "wan3.0-video-prime-S"]) {
+      expect(jijiuVideoModel(other, { ...previous, id: other })?.metadata?.videoAutomaticDurationPrechargeSeconds).toBeUndefined();
+      expect(jijiuVideoRequestIssues(request(other, { duration_seconds: -1 }))).toContainEqual(expect.objectContaining({ path: "parameters.duration" }));
+    }
+  });
+
   it("downloads an existing WAN public image safely and submits its original bytes as a file", async () => {
     const id = "wan3.0-video", f = fixture(id, [new Response(new Uint8Array([11, 12]), { headers: { "content-type": "image/jpeg" } }), Response.json({ id: "wan_url_fixture", status: "queued" })]);
     const input = request(id, { duration: 5 }, [{ ...image, filename: "original.jpg" }]), original = structuredClone(input);
@@ -418,10 +482,19 @@ describe("Jijiu exact official video contracts (offline only)", () => {
     expect(input).toEqual(original);
   });
 
+  it.each([new Response("unavailable", { status: 503 }), new Response(new Uint8Array(), { headers: { "content-type": "image/png" } })])("stops failed WAN material preparation before creating a billable task", async response => {
+    const id = "wan3.0-video", f = fixture(id, [response]);
+    const input = request(id, { seconds: -1 }, [image]), saved = structuredClone(input);
+    await expect(f.adapter.submit(input)).rejects.toMatchObject({ name: "MaterialPreparationError", code: "MATERIAL_PREPARATION_FAILED", message: expect.stringContaining("素材准备失败，尚未提交生成") });
+    expect(f.fetcher).toHaveBeenCalledOnce(); expect(f.fetcher.mock.calls[0]?.[0]).toBe(image.url);
+    expect(f.fetcher.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+    expect(input).toEqual(saved); expect(f.fallback.submit).not.toHaveBeenCalled();
+  });
+
   it("blocks WAN unsupported roles/fields, audio alone and combined input cap before HTTP", async () => {
     const id = "wan3.0-video";
     const cases = [request(id, { duration: -1 }, [audio]), request(id, { duration: -1 }, [{ ...image, role: "firstFrame" }]), request(id, { duration: -1, first_frame_image: image.url }),
-      ...["negative_prompt", "mode", "quality", "fps", "n", "output_format"].map(key => request(id, { duration: 5, [key]: key === "n" ? 1 : "fixture" })),
+      ...["negative_prompt", "mode", "quality", "fps", "n", "output_format", "file_id"].map(key => request(id, { duration: 5, [key]: key === "n" ? 1 : "fixture" })),
       request(id, { duration: -1 }, Array.from({ length: 2 }, (_, i) => ({ ...video, id: `long-${i}`, durationSeconds: 15 }))), request(id, { duration: 1 }), request(id, { duration: 0 })];
     for (const input of cases) { const f = fixture(id); await expect(f.adapter.submit(input)).rejects.toThrow(); expect(f.fetcher).not.toHaveBeenCalled(); }
     expect(jijiuVideoRequestIssues(request(id, { duration: 15 }, [{ ...video, durationSeconds: 8 }, { ...video, id: "other", durationSeconds: 7 }]))).toEqual([]);
@@ -438,6 +511,19 @@ describe("Jijiu exact official video contracts (offline only)", () => {
     expect(f.fetcher.mock.calls[3]?.[0]).toBe(artifact ? contentUrl : "https://newapi.jijiucanvas.com/v1/videos/task_fixture/content");
     expect(f.fetcher.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
     for (const [, init] of f.fetcher.mock.calls) expect(new Headers(init?.headers).get("authorization")).toBe("Bearer fixture-key-only");
+  });
+
+  it.each(["content_url", "video_url", "download_url", "video.url"])("resolves a same-task relative %s with its short-lived ticket and authenticates only the content GET", async field => {
+    const taskId = "relative_task", relative = `/v1/videos/${taskId}/content?access=fixture%2Bticket%2Fone`;
+    const transport = jijiuVideoTransport(), config: RestConnectorConfig = { ...transport, submit: transport.submit!, output: transport.output! };
+    const remote = field === "video.url" ? { video: { url: relative } } : { [field]: relative };
+    const f = fixture("wan3.0-video", [new Response(new Uint8Array([4, 3, 2, 1]), { headers: { "content-type": "video/mp4" } })]);
+    await expect(f.adapter.extractOutputs({ connectionId: "jijiu-offline-fixture", baseUrl: "https://newapi.jijiucanvas.com/v1", config, taskId, status: "succeeded", remote, autoInterface: true }))
+      .resolves.toEqual([{ kind: "video", data: new Uint8Array([4, 3, 2, 1]), mimeType: "video/mp4" }]);
+    expect(f.fetcher).toHaveBeenCalledOnce();
+    expect(f.fetcher.mock.calls[0]?.[0]).toBe(`https://newapi.jijiucanvas.com${relative}`);
+    expect(f.fetcher.mock.calls[0]?.[1]).toMatchObject({ method: "GET", redirect: "manual" });
+    expect(new Headers(f.fetcher.mock.calls[0]?.[1]?.headers).get("authorization")).toBe("Bearer fixture-key-only");
   });
 
   it.each([false, true])("recovers the signed nested video URL through GET only, legacy saved contract=%s", async legacy => {

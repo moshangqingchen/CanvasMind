@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRepository } from "@super-canvas/db";
-import type { ModelDescriptor, RestConnectorConfig } from "@super-canvas/providers";
+import { remainingVideoModel, type ModelDescriptor, type RestConnectorConfig } from "@super-canvas/providers";
 
 const mocks = vi.hoisted(() => ({ repository: undefined as unknown as MemoryRepository, prices: vi.fn(), network: vi.fn() }));
 vi.mock("../../../lib/server", () => ({ get repository() { return mocks.repository; },
@@ -53,6 +53,46 @@ async function fixture(changed: "connector" | "modelProtocolTemplate" = "connect
 }
 
 describe("cached protocol repair persistence", () => {
+  it.each(["dreamina-seedance-2-0-fast", "dreamina-seedance-2-0-mini"])("returns the complete Secure60 %s menu contract on repeated readonly reads without saving", async modelId => {
+    const baseUrl = "https://token.secure-skill.com/v1";
+    const current = remainingVideoModel("secure", modelId, undefined, { baseUrl, officialGroupId: "60" })!;
+    const priceLabel = modelId.endsWith("fast") ? "480p ¥22.2/1M tokens；含参考视频 ¥13.2/1M tokens" : "480p ¥11.5/1M tokens；含参考视频 ¥7/1M tokens";
+    const model = { ...current, metadata: { ...current.metadata, canvasRunnable: true, priceLabel,
+      operationsSource: "declared", outputKindsSource: "declared" } };
+    const original = await mocks.repository.saveConnection({ id, provider: "openai", name: "Secure60 exact mapped Key", encryptedSecret: "fixture-ciphertext", config: {
+      baseUrl, supplierKey: "4stoken", accountKeyGroup: "海外sd-fast/mini", modelGroup: "海外sd-fast/mini", accountKeyGroupId: "60", accountKeyId: "fixture-existing-key",
+      usage: "canvas", modelScanStatus: "live", modelScanComplete: true, scannedModelIds: [modelId], modelCatalogModels: [model] as never,
+      userParameters: { duration: 12, resolution: "1080p", generate_audio: true },
+    } });
+    const save = vi.spyOn(mocks.repository, "saveConnection");
+    for (let pass = 0; pass < 2; pass++) {
+      const response = await read("?cached=1&readonly=1");
+      expect(response.status).toBe(200);
+      const models = await response.json() as ModelDescriptor[];
+      expect(models).toHaveLength(1);
+      expect(models[0]?.metadata).toMatchObject({ canvasRunnable: true, priceLabel, parameterSource: "supplier-documented-contract", videoMinDuration: 1, videoMaxDuration: 15 });
+      expect(models[0]?.parameters?.map(parameter => parameter.key)).toEqual(expect.arrayContaining(["duration", "aspect_ratio", "resolution", "generate_audio", "watermark", "seed", "return_last_frame"]));
+      expect(models[0]?.operations).toEqual(["video.generate", "video.image-to-video"]);
+    }
+    expect(save).not.toHaveBeenCalled();
+    expect(await mocks.repository.getConnection(id)).toEqual(original);
+  });
+
+  it("keeps Secure61's directory-only Kling entry blocked on readonly reads", async () => {
+    const model: ModelDescriptor = { id: "kling-video-v4", name: "kling-video-v4", operations: ["video.generate", "video.image-to-video"], inputKinds: ["text", "image"], outputKinds: ["video"], parameters: [],
+      metadata: { canvasRunnable: false, canvasUnavailableReason: "当前分组列出此型号，但尚未提供其参数与调用合同", priceLabel: "720p ¥0.35/秒 · 1080p ¥0.45/秒" } };
+    const original = await mocks.repository.saveConnection({ id, provider: "openai", name: "Secure61 catalog", config: {
+      baseUrl: "https://token.secure-skill.com/v1", supplierKey: "4stoken", accountKeyGroupId: "61", accountKeyGroup: "kling-video-v4", usage: "canvas",
+      modelScanStatus: "live", scannedModelIds: [model.id], modelCatalogModels: [model] as never,
+    } });
+    const save = vi.spyOn(mocks.repository, "saveConnection");
+    const response = await read("?cached=1&readonly=1");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject([{ id: model.id, parameters: [], metadata: { canvasRunnable: false, priceLabel: model.metadata?.priceLabel } }]);
+    expect(save).not.toHaveBeenCalled();
+    expect(await mocks.repository.getConnection(id)).toEqual(original);
+  });
+
   async function nativeMiaowuFixture() {
     const model = structuredClone(MIAOWU_MODELS.find(row => row.id === modelId)!);
     model.metadata = { ...model.metadata, canvasRunnable: true, parameterSource: "dream.video_schema", videoSchemaStatus: "live", videoSchemaStale: false };

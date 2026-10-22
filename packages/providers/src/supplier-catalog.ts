@@ -327,6 +327,19 @@ export function parseSupplierCatalog(
   /** Parser safety bounds must never establish a complete directory. */
   complete?: false;
 } {
+  // This supplier publishes native media tariffs in CNY. Independent catalog
+  // observations do not read /api/status, so they must use the same native
+  // convention as the dedicated Cangyuan collector instead of overwriting a
+  // valid yuan quote with NewAPI's generic USD fallback. Explicit row/display
+  // currencies still take precedence; the account group multiplier is unchanged.
+  if (priceDisplay.currency === undefined && priceDisplay.supplierSiteUrl) {
+    try {
+      const source = new URL(priceDisplay.supplierSiteUrl);
+      if (source.origin === "https://ai.cangyuansuanli.cn" && !source.username && !source.password &&
+        !source.search && !source.hash && /^(?:\/v1)?\/?$/u.test(source.pathname))
+        priceDisplay = { ...priceDisplay, currency: "CNY" };
+    } catch { /* An unrecognized source keeps the generic convention. */ }
+  }
   const root = record(payload);
   const data = record(root?.data);
   const nestedGroups = root?.groups ?? data?.groups;

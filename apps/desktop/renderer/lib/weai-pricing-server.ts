@@ -7,6 +7,7 @@ import {
   WEAI_ADOBE_TOKEN_GROUP,
   WEAI_AZURE_OPENAI_GROUP,
   WEAI_CODEX_TOKEN_GROUP,
+  WEAI_CODEX_PER_REQUEST_GROUP,
   WEAI_GEMINI_GROUP,
   type WeAiLiveGroupPricing,
   type WeAiLiveModelPricing,
@@ -50,6 +51,7 @@ function canonicalGroupId(value: string): string | undefined {
   if (normalized === WEAI_ADOBE_PER_REQUEST_URL_GROUP)
     return WEAI_ADOBE_PER_REQUEST_URL_GROUP;
   if (normalized === WEAI_CODEX_TOKEN_GROUP) return WEAI_CODEX_TOKEN_GROUP;
+  if (normalized === WEAI_CODEX_PER_REQUEST_GROUP) return WEAI_CODEX_PER_REQUEST_GROUP;
   if (/^AZURE-openai(?:-官key)?$/iu.test(normalized))
     return WEAI_AZURE_OPENAI_GROUP;
   return undefined;

@@ -41,10 +41,11 @@ const CONNECTOR: RestConnectorConfig = {
     mappings: [
       { target: "/model", source: { kind: "request", path: "$.model" } },
       { target: "/prompt", source: { kind: "request", path: "$.prompt" } },
-      ...["size", "image_size", "aspect_ratio", "quality", "background", "n"].map(key => ({
+      ...["size", "image_size", "resolution", "quality", "background", "n"].map(key => ({
         target: `/${key}`, source: { kind: "request" as const, path: `$.parameters.${key}` },
         omitIfUndefined: true, omitValues: ["auto"],
       })),
+      { target: "/aspect_ratio", source: { kind: "request", path: "$.parameters.aspect_ratio" }, omitIfUndefined: true },
       // Case 059's native transparent generation was measured with PNG output.
       // Preserve that parameter without extending ordinary or reference requests.
       { target: "/output_format", source: { kind: "request", path: "$.parameters.output_format" },

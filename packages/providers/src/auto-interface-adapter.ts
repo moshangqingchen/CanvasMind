@@ -117,7 +117,9 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
     const supplier = remainingVideoSupplier(connection.baseUrl);
     const group = connection.settings?.accountKeyGroup ?? connection.settings?.modelGroup ?? connection.settings?.group ?? connection.settings?.supplierGroupId;
     const description = connection.settings?.supplierGroupDescription ?? connection.settings?.groupDescription;
+    const officialGroupId = connection.settings?.accountKeyGroupId;
     const context: RemainingVideoContext = { baseUrl: connection.baseUrl, manualProtocol: connection.settings?.manualProtocol, group: typeof group === "string" ? group : "",
+      ...(typeof officialGroupId === "string" || typeof officialGroupId === "number" ? { officialGroupId } : {}),
       groupDescription: typeof description === "string" ? description : "", ...(current ? { model: current } : {}), assets: request.assets };
     if (request.operation.startsWith("video.") && !preservesMiaowuExplicitVideoContract(config, current, request.operation)) current = restoreRemainingVideoModel(supplier, request.model, current, connection.settings, context) ?? current;
     if (["openai", "weai"].includes(connection.provider) && (request.operation.startsWith("video.") || request.operation === "music.generate")) {

@@ -6,6 +6,7 @@ import { seedanceDurationFallback, seedanceDurationFallbackDescription, seedance
 import { isJiasuApiUrl, isJiasuVideoModel, jiasuVideoModelIds, jiasuVideoModel, jiasuVideoTransport, normalizeJiasuVideoParameters, jiasuVideoRequestIssues, jiasuVideoGroupMismatch, JIASU_VIDEO_DOCS } from "./jiasu-video-contract.js";
 import { SECURE_MUSE_MODEL_ID, SECURE_MUSE_DOCS, isSecureMuseVideoModel, secureMuseVideoModel, secureMuseVideoTransport, normalizeSecureMuseVideoParameters, secureMuseVideoRequestIssues } from "./secure-muse-video-contract.js";
 import { SECURE_WAN_VIDEO_CONTRACT } from "./secure-wan-video-contract.js";
+import { SECURE_BYTEPLUS_MODEL_IDS, SECURE_BYTEPLUS_VIDEO_CONTRACT, isSecureByteplusVideoScope, secureByteplusVideoTransport } from "./secure-byteplus-video-contract.js";
 import { isCyberafeiSeedance25PriceSizeContract, cyberafeiSeedance25SizePreferenceIssues, cyberafeiSeedance25OwnPriceTiers } from "./cyberafei-seedance25-video-contract.js";
 
 /** Exact supplier contracts re-read from public official documents on 2026-10-07. */
@@ -228,6 +229,7 @@ for (const [suffix, res] of [["", "720p"], ["-1080p", "1080p"], ["-4k", "4K"]] a
 const secureDocs = "https://token.secure-skill.com/docs";
 const secureBase: VideoContract = { min: 1, resolutions: ["720p"], ratios: triple, secondsField: "duration", docs: secureDocs,
   imageField: "images", videoField: "videos", audioField: "audios", outputPaths: ["$.video_url", "$.url", "$.output[0].url", "$.data.video_url", "$.data.url"] };
+put("secure", SECURE_BYTEPLUS_MODEL_IDS, SECURE_BYTEPLUS_VIDEO_CONTRACT);
 put("secure", ["seedance2.0"], { ...secureBase, billingUnit: "request", note: "SD 2.0 按条计费；具体素材数量以当前分组说明为准。" });
 put("secure", ["seedance-2.5"], { ...secureBase, min: 4, max: 30, secondsField: "seconds", images: 30, videos: 10, audios: 10, maxAssets: 50,
   resolutions: ["480p", "720p"], defaultRatio: "9:16", billingUnit: "second", note: "SD 2.5 按提交秒数计费；XS 分组默认 480p，NewToken 分组默认 720p。三类素材合计最多 50 项。" });
@@ -338,6 +340,7 @@ function directoryContractFor(supplier: RemainingVideoSupplier, id: string, cont
 }
 
 function supplierContractFor(supplier: RemainingVideoSupplier, id: string, context: RemainingVideoContext = {}): VideoContract | undefined {
+  if (supplier === "secure" && (SECURE_BYTEPLUS_MODEL_IDS as readonly string[]).includes(id) && !isSecureByteplusVideoScope(id, context)) return undefined;
   if (supplier === "secure" && id === SECURE_MUSE_MODEL_ID) return isSecureMuseVideoModel(id, context.group ?? String(context.model?.metadata?.modelGroup ?? ""))
     ? { resolutions: ["720p"], ratios: portrait, directoryContract: true, docs: SECURE_MUSE_DOCS } : undefined;
   if (supplier === "jijiu") return isJijiuVideoModel(id, context.model) ? { resolutions: [], ratios: [], directoryContract: true, docs: JIJIU_VIDEO_DOCS } : undefined;
@@ -441,6 +444,7 @@ export function remainingVideoModel(supplier: RemainingVideoSupplier, id: string
   if (supplier === "jijiu") return jijiuVideoModel(id, current ?? context?.model, context?.group);
   if (supplier === "jiasu") return jiasuVideoModel(id, current ?? context?.model, context?.group);
   const c = contractFor(supplier, id, { model: current, ...context }); if (!c) return undefined;
+  const byteplus = supplier === "secure" && isSecureByteplusVideoScope(id, context ?? {});
   const metadata = { ...current?.metadata };
   delete metadata.durationRangeSource;
   delete metadata.durationRangeFallbackFamily;
@@ -485,8 +489,9 @@ export function remainingVideoModel(supplier: RemainingVideoSupplier, id: string
       ...(supplier === "weai" || c.omitResolution ? { description: "输出档位由完整模型名固定；不会额外发送 resolution。" } : {}) }] : []),
     ...(c.outputAudio ? [{ key: "generate_audio", label: "生成声音", control: "toggle" as const, valueType: "boolean" as const, default: true }] : []), ...(c.extraParameters ?? [])];
   return { ...current, id, name: current?.name ?? id, operations: c.requiresImage ? ["video.image-to-video"] : c.requiresVideo ? ["video.generate"] : ["video.generate", "video.image-to-video"],
-    inputKinds: ["text", ...(c.images || c.imageField || c.frames ? ["image" as const, "image[]" as const] : []), ...(c.videoField && c.videos !== 0 ? ["video" as const, "video[]" as const] : []), ...(c.audioField && c.audios !== 0 && !(supplier === "secure" && id.startsWith("grok-")) ? ["audio" as const, "audio[]" as const] : [])], outputKinds: ["video"], parameters: c.chatVideo ? [] : parameters,
-    limits: { ...(c.chatVideo ? {} : current?.limits), ...(c.images === undefined ? {} : { maxInputImages: Math.max(c.images, c.frames ? 2 : 0) }), ...(c.videos === undefined ? {} : { maxInputVideos: c.videos }),
+    inputKinds: ["text", ...(c.images || c.imageField || c.frames ? ["image" as const, "image[]" as const] : []), ...(c.videoField && c.videos !== 0 ? ["video" as const, "video[]" as const] : []), ...(c.audioField && c.audios !== 0 && !(supplier === "secure" && id.startsWith("grok-")) ? ["audio" as const, "audio[]" as const] : [])], outputKinds: ["video"], parameters: c.chatVideo ? [] : byteplus ? parameters.map(parameter => parameter.key === "resolution" ? { ...parameter, required: true,
+      description: "按当前完整型号和分组原样提交 resolution；480p/720p有本组Token报价，未公布的档位报价留空，不填造固定像素。" } : parameter) : parameters,
+    limits: { ...(c.chatVideo || byteplus ? {} : current?.limits), ...(c.images === undefined ? {} : { maxInputImages: Math.max(c.images, c.frames ? 2 : 0) }), ...(c.videos === undefined ? {} : { maxInputVideos: c.videos }),
       ...(c.audios === undefined ? {} : { maxInputAudios: supplier === "secure" && id.startsWith("grok-") ? 0 : c.audios }), ...(c.maxAssets ? { maxInputAssets: c.maxAssets } : {}), ...(c.requiresImage ? { requiresInputImage: true } : {}), ...(c.requiresVideo ? { requiresInputVideo: true } : {}),
       ...(c.videoSeconds ? { maxTotalInputVideoDurationSeconds: c.videoSeconds } : {}), ...(c.audioSeconds ? { maxInputAudioDurationSeconds: c.audioSeconds } : {}) },
     metadata: { ...metadata, ...seedanceDurationFallbackMetadata(c.durationFallback), supplier, modality: "video", catalogCapability: "video", operationsSource: "declared", outputKindsSource: "declared", protocol: c.chatVideo ? "openai-chat" : "openai-videos", documentationUrl: c.docs, videoContractCheckedAt: c.checkedAt ?? (c.directoryContract ? "2026-10-09" : "2026-10-07"), remoteMediaUrlsOnly: !c.multipartFrames && !c.multipartReference,
@@ -605,6 +610,7 @@ export function normalizeRemainingVideoParameters(supplier: RemainingVideoSuppli
   return p;
 }
 export function remainingVideoTransport(supplier: RemainingVideoSupplier, id: string, context?: RemainingVideoContext): RestModelConnectorOverride | undefined {
+  if (supplier === "secure" && isSecureByteplusVideoScope(id, context ?? {})) return secureByteplusVideoTransport();
   if (supplier === "secure" && id === SECURE_MUSE_MODEL_ID) return contractFor(supplier, id, context) ? secureMuseVideoTransport() : undefined;
   if (supplier === "jijiu") return isJijiuVideoModel(id, context?.model) ? jijiuVideoTransport(id) : undefined;
   if (supplier === "jiasu") return isJiasuVideoModel(id, context?.model) ? jiasuVideoTransport(context?.model) : undefined;
@@ -658,6 +664,9 @@ export function remainingVideoRequestIssues(supplier: RemainingVideoSupplier, re
   if (supplier === "jiasu") return jiasuVideoRequestIssues(request, context?.model, context?.group);
   const c = contractFor(supplier, request.model ?? "", { ...context, assets: request.assets }); if (!c) return [];
   const p = normalizeRemainingVideoParameters(supplier, request, context), issues: ValidationIssue[] = [], add = (path: string, message: string) => issues.push({ path, code: "invalid_parameter", message });
+  if (supplier === "secure" && isSecureByteplusVideoScope(request.model ?? "", context ?? {}) &&
+      (typeof p.resolution !== "string" || !p.resolution.trim()))
+    add("parameters.resolution", "当前分组60官方映射合同要求明确 resolution；请填写该完整型号的分辨率，原值保留。");
   // Group 58's fresh Key directory lists these two short IDs, but both of its
   // current standard/DashScope examples explicitly prohibit them in model.
   // Keep directory identity and the user's choice; never rewrite the model or

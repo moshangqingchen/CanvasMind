@@ -30,10 +30,12 @@ export const WEAI_ADOBE_PER_REQUEST_GROUP = "生图-openai-adobe-按次";
 /** @deprecated Use WEAI_ADOBE_PER_REQUEST_GROUP. */
 export const WEAI_ADOBE_PER_IMAGE_GROUP = WEAI_ADOBE_PER_REQUEST_GROUP;
 export const WEAI_CODEX_TOKEN_GROUP = "生图-openai-codex-token计费";
+export const WEAI_CODEX_PER_REQUEST_GROUP = "生图-openai-codex-按次";
 export const WEAI_ADOBE_PER_REQUEST_URL_GROUP =
   "生图-openai-adobe-按次-返回url";
 
 export const WEAI_GROUP_IDS = [
+  WEAI_CODEX_PER_REQUEST_GROUP,
   // Keep the authenticated model-plaza order. The selector in We-AI shows
   // CODEX, Gemini, Azure, Adobe per-request, Adobe token, then the URL route
   // (the text-only and Claude groups are deliberately outside this image-only
@@ -97,7 +99,7 @@ export interface WeAiPerRequestPricing {
   readonly kind: "per-request";
   readonly currency: "USD";
   readonly unit: "request";
-  readonly dimension: "quality" | "fixed";
+  readonly dimension: "quality" | "fixed" | "resolution";
   readonly tiers: readonly WeAiPriceTier[];
   /** Informational sizes supported at the same request price. */
   readonly supportedSizes?: readonly string[];
@@ -231,7 +233,7 @@ function perImagePricing(tiers: readonly WeAiPriceTier[]): WeAiPerImagePricing {
 }
 
 function perRequestPricing(
-  dimension: "quality" | "fixed",
+  dimension: "quality" | "fixed" | "resolution",
   tiers: readonly WeAiPriceTier[],
   supportedSizes?: readonly string[],
 ): WeAiPerRequestPricing {
@@ -520,6 +522,27 @@ const WEAI_CATALOG_SOURCE: readonly WeAiCatalogGroup[] = [
     ],
   },
   {
+    id: WEAI_CODEX_PER_REQUEST_GROUP,
+    label: WEAI_CODEX_PER_REQUEST_GROUP,
+    description: "We-AI 稳定分组 4；CODEX 按次计费，独立于 Token 分组 6。",
+    multiplier: 0.7,
+    billingMode: "per-request",
+    billingLabel: "按次计费",
+    protocol: OPENAI_IMAGES_PROTOCOL.id,
+    protocolLabel: OPENAI_IMAGES_PROTOCOL.label,
+    protocols: [OPENAI_IMAGES_PROTOCOL],
+    defaultModel: "gpt-image-2",
+    canvasSupported: true,
+    pricesIncludeMultiplier: true,
+    models: ["gpt-image-2", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"].map(id => ({
+      id, name: id, description: "稳定分组 4 的完整型号；1K、2K、4K 目录原价 0.08，乘分组倍率 0.7。",
+      tags: OPENAI_IMAGE_TAGS,
+      pricing: perRequestPricing("resolution", resolutionTiers(0.056, 0.056, 0.056)),
+      ...callable("当前同组目录与 CODEX 专属 Images 生成/编辑协议；未发起收费生成验证。"),
+      limits: OPENAI_IMAGE_LIMITS,
+    })),
+  },
+  {
     id: WEAI_CODEX_TOKEN_GROUP,
     label: WEAI_CODEX_TOKEN_GROUP,
     description: "We-AI CODEX 生图线路，按 Token 用量计费。",
@@ -713,7 +736,14 @@ export function weAiCanvasModelDescriptors(
       geminiProtocol,
       ),
     ),
-    livePricing,
+    livePricing ?? (group.id === WEAI_CODEX_PER_REQUEST_GROUP ? {
+      groupId: group.id, source: "model-plaza", complete: true, multiplier: 0.7,
+      sourceUrl: "https://asian-acc.we-token.cc/api/v1/model-plaza-legacy/models?group_id=4",
+      checkedAt: "2026-10-21T02:55:29.556Z",
+      models: Object.fromEntries(group.models.map(model => [model.id, {
+        kind: "per-request", multiplier: 0.7, tiers: resolutionTiers(0.056, 0.056, 0.056),
+      }])),
+    } : undefined),
   );
 }
 
@@ -813,10 +843,17 @@ export function applyWeAiLivePricing(
 ): ModelDescriptor[] {
   if (!pricing) return [...items];
   return items.map((model) => {
+    // The same three IDs also occur in Token group 6; never borrow its rates.
+    const codexPerRequest = model.metadata?.modelGroup === WEAI_CODEX_PER_REQUEST_GROUP;
+    if ((codexPerRequest || pricing.groupId === WEAI_CODEX_PER_REQUEST_GROUP) && model.metadata?.modelGroup !== pricing.groupId) return model;
     const live = pricing.models[model.id];
     if (!live) return model;
+    if (codexPerRequest && live.kind !== "per-request") return model;
+    const fixedAmount = live.kind !== "token" && live.tiers.length > 0 && live.tiers.every(tier => tier.price === live.tiers[0]!.price)
+      ? live.tiers[0]!.price : undefined;
+    const priceLabel = codexPerRequest && fixedAmount !== undefined ? `${compactMoney(fixedAmount)}/次` : livePricingLabel(live);
     const baseName = model.name.replace(/\s*（.*$/u, "");
-    const sizeSuffix = /^gpt-image-2(?:-|$)/u.test(model.id)
+    const sizeSuffix = !codexPerRequest && /^gpt-image-2(?:-|$)/u.test(model.id)
       ? " · 1K/2K/4K"
       : "";
     const sourceLabel =
@@ -833,17 +870,18 @@ export function applyWeAiLivePricing(
               imageOutputPerMillion: live.imageOutput,
             }
           : {
+              ...(codexPerRequest ? { billingUnit: "request" as const, unitAmount: fixedAmount } : {}),
               tiers: live.tiers.map((tier) => ({
                 ...tier,
-                dimension: tier.id === "request" ? "fixed" : "quality",
-                value: tier.id,
+                dimension: codexPerRequest ? "resolution" : tier.id === "request" ? "fixed" : "quality",
+                value: codexPerRequest ? tier.label.toUpperCase() : tier.id,
               })),
             }),
         sourceUrl: pricing.sourceUrl,
         checkedAt: pricing.checkedAt,
         confidence: pricing.source === "model-plaza" ? "exact" : "snapshot",
       },
-      name: `${baseName}（${livePricingLabel(live)}${sizeSuffix}）`,
+      name: `${baseName}（${priceLabel}${sizeSuffix}）`,
       description: `${model.description ?? ""} 价格来自${sourceLabel}，更新于 ${pricing.checkedAt}。`.trim(),
       metadata: {
         ...model.metadata,
@@ -851,8 +889,8 @@ export function applyWeAiLivePricing(
         pricingSourceUrl: pricing.sourceUrl,
         pricingCheckedAt: pricing.checkedAt,
         pricingComplete: pricing.complete,
-        priceLabel: livePricingLabel(live),
-        pricingLabel: livePricingLabel(live),
+        priceLabel,
+        pricingLabel: priceLabel,
       },
     };
   });

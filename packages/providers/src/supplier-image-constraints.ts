@@ -13,14 +13,14 @@ const mikotoFlareOneKHistory: readonly ModelParameterOption[] = [
   ["1184x880", "4:3"], ["880x1184", "3:4"], ["1248x832", "3:2"], ["832x1248", "2:3"],
   ["1136x912", "5:4"], ["912x1136", "4:5"], ["1552x672", "21:9"], ["672x1552", "9:21"],
 ].map(([size, target]) => ({ value: size!, label: `1K · ${size!.replace("x", ":")} · ${size!.replace("x", " × ")}（历史请求，约 ${target}）` }));
-const secure25Sizes: readonly ModelParameterOption[] = [
+const oneKExamples: readonly ModelParameterOption[] = [
   { label: "1K · 1:1 · 1024 × 1024", value: "1024x1024" },
   { label: "1K · 3:2 · 1536 × 1024", value: "1536x1024" },
   { label: "1K · 2:3 · 1024 × 1536", value: "1024x1536" },
 ];
 const fri1KSizes: readonly ModelParameterOption[] = [
   { label: "自动（当前分组仅 1K）", value: "auto" },
-  ...secure25Sizes,
+  ...oneKExamples,
   { label: "1K · 3:4 · 768 × 1024", value: "768x1024" },
   { label: "1K · 4:3 · 1024 × 768", value: "1024x768" },
   { label: "1K · 4:5 · 768 × 960", value: "768x960" },
@@ -64,8 +64,8 @@ function withoutSizeBounds(parameter: ModelParameterDescriptor): ModelParameterD
 }
 function restrictedSizes(connection: ImageEditingConnection, model: string): readonly ModelParameterOption[] | undefined {
   const host = hostname(connection);
-  // Group 49 explicitly publishes 1K/2K/4K. Do not generalize group 44's restriction.
-  if (host === "token.secure-skill.com" && group(connection) === "gpt-image-2.5" && image25.has(model)) return secure25Sizes;
+  // Secure Skill's current GPT2.5 native tier/ratio contract is applied by
+  // secure-skill-image-contract; the retired three-size 1K rule no longer applies.
   if (["platform.frimodel.com", "api.frimodel.com"].includes(host ?? "") &&
       ["codex_image", "gpt_image_web"].includes(group(connection)) &&
       ["gpt-image-2-w", "gpt-image-2.5"].includes(model)) return fri1KSizes;
@@ -152,7 +152,7 @@ export function applySupplierImageConstraints(connection: ImageEditingConnection
   if (sizes) {
     parameters = parameters.filter(parameter => parameter.key !== "size");
     parameters = [{ key: "size", label: "输出分辨率（当前分组仅 1K）", control: sizes === fri1KSizes ? "dimensions" : "select", valueType: "string",
-      default: sizes === secure25Sizes ? "1024x1024" : "auto", options: sizes,
+      default: "auto", options: sizes,
       ...(sizes === fri1KSizes ? { allowCustomValue: true, step: 1 } : {}),
       operations: ["image.generate", "image.edit"],
       description: sizes === fri1KSizes
@@ -256,7 +256,6 @@ export function applySupplierImageConstraints(connection: ImageEditingConnection
   return { ...model, ...(model.parameters === undefined && !parameters.length ? {} : { parameters }), metadata: { ...metadata,
     ...(qualityByKey ? { imageQualitySource: "key-group", imageQualityNote: "质量由 API Key 所属分组决定，请求不发送 quality。" } : {}),
     ...(sizes ? { imageSizeContract: "group-1k-only" } : {}),
-    ...(sizes === secure25Sizes ? { imageSizeOptionsCompleteEnum: true, imageSizeCompleteEnumSource: "https://token.secure-skill.com/docs#gpt-image" } : {}),
     ...(sizes === fri1KSizes ? { imageFixedResolution: "1K", imageResolutionTierSource: "official-key-group", imageResolutionTiers: ["1K"],
       imageSizeOptionsCompleteEnum: false, imageSizeSourceKind: "supplier-examples", imageOpenSizePreferences: true } : {}),
     ...(mikoto ? { mikotoImageContract: true, imageNativeParameterContract: true,

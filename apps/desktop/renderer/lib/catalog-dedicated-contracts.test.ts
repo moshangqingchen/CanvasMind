@@ -3,7 +3,8 @@ import type { ProviderConnectionRecord } from "@super-canvas/db";
 import type { ModelDescriptor } from "@super-canvas/providers";
 import { collectCatalogDedicatedContracts, normalizeCatalogDedicatedPriceFacts } from "./catalog-dedicated-contracts";
 import { catalogConnectionScopes, catalogReadItem } from "./catalog-source-plan";
-import { catalogContractSlotKey, emptyCatalogContractState, projectCatalogContractModels, reduceCatalogContracts, validateCatalogContractBundle } from "./catalog-contract-policy";
+import { CATALOG_CONTRACT_PENDING_REASON, catalogContractSlotKey, emptyCatalogContractState, projectCatalogContractModels, reduceCatalogContracts, validateCatalogContractBundle } from "./catalog-contract-policy";
+import { bindScannedModelProtocols } from "./scanned-model-protocols";
 import type { CatalogReadObservation } from "./catalog-read-contracts";
 import { chentuFallbackImageDescriptor } from "./chentu-catalog";
 import { reduceCatalogPrices } from "./catalog-price-observations";
@@ -28,6 +29,31 @@ function schema(value: ProviderConnectionRecord, id: string, contract: NonNullab
 }
 
 describe("dedicated schema and native adapter projection", () => {
+  it.each(["dreamina-seedance-2-0-fast", "dreamina-seedance-2-0-mini"])("restores only the exact current-Key Secure60 %s native contract after a fresh directory observation", id => {
+    const value: ProviderConnectionRecord = { ...connection(), config: { baseUrl: "https://token.secure-skill.com/v1", supplierKey: "4stoken",
+      accountKeyGroupId: "60", accountKeyGroup: "海外sd-fast/mini", modelGroup: "海外sd-fast/mini", usage: "canvas", modelScanStatus: "live", scannedModelIds: [id] } };
+    const model: ModelDescriptor = { id, name: id, operations: ["video.generate", "video.image-to-video"], outputKinds: ["video"], parameters: [],
+      metadata: { canvasRunnable: false, catalogContractPolicy: 1, catalogContractStatus: "pending", catalogMembershipVerified: true,
+        canvasUnavailableReason: CATALOG_CONTRACT_PENDING_REASON, priceLabel: "480p/720p Token 本组报价", outputKindsSource: "declared" } };
+    const result = collectCatalogDedicatedContracts(value, undefined, [model], [member(value, [model])], { ...options, membershipModelIds: [id] });
+    expect(result.nativeModels).toHaveLength(1);
+    const scopes = catalogConnectionScopes(value), projected = projectCatalogContractModels(value, result.models, { catalogContracts: emptyCatalogContractState(),
+      sourceId: scopes.apply.supplierSourceId, groupIdentity: scopes.apply.groupIdentity!, nativeModels: result.nativeModels });
+    expect(projected.models[0]?.metadata).toMatchObject({ canvasRunnable: true, catalogContractStatus: "native", priceLabel: model.metadata?.priceLabel });
+    expect(projected.models[0]?.parameters?.map(parameter => parameter.key)).toEqual(expect.arrayContaining(["duration", "aspect_ratio", "resolution", "generate_audio"]));
+    // A second cached projection retains the accepted exact native contract.
+    expect(bindScannedModelProtocols(value, projected.models).models).toEqual(projected.models);
+    expect(collectCatalogDedicatedContracts(value, undefined, projected.models, [], { ...options, membershipModelIds: [id] }).nativeModels).toHaveLength(1);
+    // Before acceptance, historical membership alone cannot grant this contract.
+    expect(collectCatalogDedicatedContracts(value, undefined, [model], [], { ...options, membershipModelIds: [id] }).nativeModels).toEqual([]);
+    for (const changes of [{ accountKeyGroupId: "61" }, { baseUrl: "https://foreign.example/v1" }, { manualProtocol: true }]) {
+      const target = { ...value, config: { ...value.config, ...changes } };
+      expect(collectCatalogDedicatedContracts(target, undefined, [model], [member(target, [model])], { ...options, membershipModelIds: [id] }).nativeModels).toEqual([]);
+    }
+    const rejected = { ...model, metadata: { ...model.metadata, canvasUnavailableReason: "HTTP 403 权限拒绝" } };
+    expect(collectCatalogDedicatedContracts(value, undefined, [rejected], [member(value, [rejected])], { ...options, membershipModelIds: [id] }).nativeModels).toEqual([]);
+  });
+
   it("uses exact current Chentu size facts with its existing image adapter, never a fake Rest route", () => {
     const value = connection(), model = chentuFallbackImageDescriptor("gpt-image-2-4k", "default")!;
     const scopes = catalogConnectionScopes(value), capability: CatalogReadObservation = { receipt: { spec: catalogReadItem("chentu-image-capabilities", "https://tu.988236.xyz/v1/image/model-capabilities", "schema", scopes.key, scopes.apply),

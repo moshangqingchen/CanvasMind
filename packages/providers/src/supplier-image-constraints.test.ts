@@ -16,13 +16,11 @@ const request: NormalizedRequest & { model: string } = { connectionId: "test", m
   operation: "image.generate", prompt: "image", idempotencyKey: "test", parameters: { size: "3840x2160" } };
 
 describe("supplier image parameter boundaries", () => {
-  it("gives cached Image 2.5 group 44 the three documented dimensions without overriding Key denial", () => {
+  it("retires Secure Image 2.5's obsolete 1K size lock without overriding Key denial", () => {
     const result = applySupplierImageConstraints(connection(), model);
-    expect(result.parameters?.find(p => p.key === "size")).toMatchObject({ control: "select", default: "1024x1024" });
-    expect(result.parameters?.find(p => p.key === "size")?.options?.map(o => o.value)).toEqual(["1024x1024", "1536x1024", "1024x1536"]);
-    expect(result.parameters?.find(p => p.key === "aspect_ratio")).toBeUndefined();
+    expect(result).toBe(model);
     expect(result.metadata?.canvasRunnable).toBe(false);
-    expect(supplierImageParameterIssues(connection(), request)).toHaveLength(1);
+    expect(supplierImageParameterIssues(connection(), request)).toEqual([]);
   });
   it("keeps the independently documented 124K group, foreign hosts, and other model IDs unchanged", () => {
     for (const source of [connection(undefined, "image2.5特价"), connection("https://other.example/v1"),

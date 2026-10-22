@@ -48,7 +48,9 @@ describe("local reference channel", () => {
     });
     const urls = await getUrls();
     expect(urls).toHaveLength(2);
-    expect(mocks.fetch.mock.calls.slice(1).map(call => call[0])).toEqual(urls);
+    // Original files are probed concurrently; their verification may start in
+    // either order. The returned URLs below must still match input role order.
+    expect(mocks.fetch.mock.calls.slice(1).map(call => call[0]).sort()).toEqual([...urls].sort());
     for (let index = 0; index < urls.length; index++) {
       const url = new URL(urls[index]!);
       expect(url.pathname).toBe(`/api/provider-assets/${references[index]!.id}`);
@@ -176,6 +178,9 @@ describe("desktop public-reference probe relay", () => {
     expect(mocks.fetch).not.toHaveBeenCalled();
     expect(mocks.localFetch).toHaveBeenCalledTimes(5);
     expect(pathname(mocks.localFetch.mock.calls[0]![0])).toBe("/api/reference-channel-probe/_health");
+    expect(urls.map(pathname)).toEqual(assets.map(asset => `/api/provider-assets/${asset.id}`));
+    expect(mocks.localFetch.mock.calls.slice(1).map(([url]) => pathname(url)).sort())
+      .toEqual(assets.map(asset => `/api/reference-channel-probe/${asset.id}`).sort());
     for (let index = 0; index < mocks.localFetch.mock.calls.length; index++) {
       const [rawUrl, init] = mocks.localFetch.mock.calls[index]!;
       const relay = new URL(rawUrl);
@@ -185,11 +190,11 @@ describe("desktop public-reference probe relay", () => {
         headers: { "x-supercanvas-desktop-token": "private-desktop-test-token" } });
       expect(Object.keys(init.headers)).toEqual(["x-supercanvas-desktop-token"]);
       expect(init.signal).toBeInstanceOf(AbortSignal);
-      const assetId = index === 0 ? "_health" : assets[index - 1]!.id;
+      const assetId = relay.pathname.split("/").at(-1)!;
       const token = relay.searchParams.get("token")!;
       expect(verifyProviderAssetToken({ token, assetId, secret: "isolated-test-key" })).toBe(true);
       if (index > 0) {
-        const submitted = new URL(urls[index - 1]!);
+        const submitted = new URL(urls[assets.findIndex(asset => asset.id === assetId)]!);
         expect(submitted.origin).toBe("https://assets.example.com");
         expect(submitted.pathname).toBe(`/api/provider-assets/${assetId}`);
         expect(submitted.search).toBe(relay.search);

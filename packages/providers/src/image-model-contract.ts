@@ -7,6 +7,7 @@ import { applyChuangxiangCurrentImageCapabilities } from "./chuangxiang-image-co
 import { applyPdogImageCapabilities } from "./pdog-image-contract.js";
 import { applyJiasuImageCapabilities } from "./jiasu-image-contract.js";
 import { secureSeedreamImageContract } from "./secure-seedream-image-contract.js";
+import { applySecureSkillImageCapabilities } from "./secure-skill-image-contract.js";
 import { applyJijiuImageCapabilities } from "./jijiu-image-contract.js";
 import { applySupplierImageConstraints } from "./supplier-image-constraints.js";
 import { applyUserImageSizePresets } from "./image-size-presets.js";
@@ -29,6 +30,7 @@ export function resolveImageModelContract(
   current = applyPdogImageCapabilities(connection, current);
   current = applyJiasuImageCapabilities(connection, current);
   current = secureSeedreamImageContract(connection, current);
+  current = applySecureSkillImageCapabilities(connection, current);
   current = applyJijiuImageCapabilities(connection, current);
   current = applySupplierImageConstraints(connection, current);
   current = applyVerifiedImageEditingCapabilities(connection, current);

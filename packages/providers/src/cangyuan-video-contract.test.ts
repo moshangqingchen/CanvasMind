@@ -191,7 +191,7 @@ describe("fresh Cangyuan per-model video contracts", () => {
     }
   });
 
-  it("keeps the new SD8 S contract distinct, with its own checked date and no guessed price or resolution field", () => {
+  it("keeps the deprecated SD8 S contract distinct without clearing the saved choice or guessing a price", () => {
     const current = model(sd8s);
     expect(current.operations).toEqual(["video.generate", "video.image-to-video"]);
     expect(current.outputKinds).toEqual(["video"]);
@@ -200,13 +200,13 @@ describe("fresh Cangyuan per-model video contracts", () => {
     expect(current.parameters?.map(p => p.key)).toEqual(["duration", "aspect_ratio"]);
     expect(current.parameters?.find(p => p.key === "duration")).toMatchObject({ default: 30, options: [{ label: "30 秒", value: 30 }] });
     expect(current.metadata).toMatchObject({ canvasRunnable: false, canvasUnavailableReason: "403 权限不足", facePolicy: "open", videoFixedResolution: "720p",
-      supportsFirstLastFrames: false, referenceNeedsDuration: false, videoContractSourceLastReviewed: "2026-10-08",
+      supportsFirstLastFrames: false, referenceNeedsDuration: false, videoContractSourceLastReviewed: "2026-10-18", videoContractSourceStatus: "deprecated",
       documentationUrl: "https://ai.cangyuansuanli.cn/docs-static/models/sd8-seedance-2.5-s.json", videoPollingTimeoutMs: 1_800_000 });
     expect(current.pricing).toBeUndefined();
     const price: StructuredModelPricing = { kind: "per-request", currency: "CNY", billingUnit: "request", unitAmount: 3, checkedAt: "fixture", confidence: "exact" };
     expect(cangyuanVideoModel({ ...current, pricing: price }).pricing).toBe(price);
     expect(model("sd8-seedance-2.5").limits).toMatchObject({ maxInputImages: 9, maxInputVideos: 0, maxInputAudios: 0 });
-    expect(model("sd8-seedance-2.5").metadata?.cangyuanVideoContractCheckedAt).toMatch(/^2026-10-13T/u);
+    expect(model("sd8-seedance-2.5").metadata?.cangyuanVideoContractCheckedAt).toMatch(/^2026-10-21T/u);
     expect(isCangyuanVideoModel("sd8-seedance-2.5-s-fast")).toBe(false);
     expect(isCangyuanVideoRequest(sd8s, "https://another-supplier.test/v1")).toBe(false);
   });

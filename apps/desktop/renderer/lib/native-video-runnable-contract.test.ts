@@ -94,6 +94,18 @@ describe("native video executable contract guard", () => {
     expect(guardNativeVideoRunnableContract({ provider: "openai", config: { baseUrl: "https://token.secure-skill.com/v1", accountKeyGroup: "Flow" } }, flow).metadata?.canvasRunnable).toBe(true);
   });
 
+  it.each(["dreamina-seedance-2-0-fast", "dreamina-seedance-2-0-mini"])("preserves the exact Secure60 %s contract through the native menu guard", id => {
+    const config = { baseUrl: "https://token.secure-skill.com/v1", accountKeyGroupId: "60", accountKeyGroup: "海外sd-fast/mini",
+      usage: "canvas", modelScanStatus: "live", scannedModelIds: [id] };
+    const model = remainingVideoModel("secure", id, video(id), { baseUrl: config.baseUrl, officialGroupId: config.accountKeyGroupId })!;
+    expect(model.parameters?.map(parameter => parameter.key)).toEqual(expect.arrayContaining(["duration", "aspect_ratio", "resolution", "generate_audio"]));
+    expect(guardNativeVideoRunnableContract({ provider: "openai", config }, model)).toBe(model);
+    for (const mismatch of [{ baseUrl: "https://foreign.example/v1" }, { accountKeyGroupId: "61" }, { manualProtocol: true },
+      { modelScanStatus: "unauthorized" }, { scannedModelIds: [] }]) {
+      expect(guardNativeVideoRunnableContract({ provider: "openai", config: { ...config, ...mismatch } }, model).metadata?.canvasRunnable).toBe(false);
+    }
+  });
+
   it("preserves exact native Cangyuan and Chuangxiang contracts without granting sibling IDs or foreign hosts", () => {
     for (const id of ["doubao-seedance-2-0-260128", "doubao-seedance-2-0-fast-260128", "doubao-seedance-2-5-260628"]) {
       const model = video(id), connection = { provider: "openai", config: { baseUrl: "https://ai.cangyuansuanli.cn/v1" } };

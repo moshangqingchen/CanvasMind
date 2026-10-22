@@ -54,6 +54,8 @@ import {
 } from "./http.js";
 import {
   WEAI_ADOBE_PER_REQUEST_PRICES,
+  WEAI_CODEX_PER_REQUEST_MODEL_GROUP,
+  WEAI_CODEX_PER_REQUEST_MODELS,
   weAIModelDescriptors,
   weAIImageDimensionParameters,
   imageSizePreferenceIssues,
@@ -192,6 +194,7 @@ const WEAI_GEMINI_MODEL_ALIASES: Readonly<Record<string, string>> = {
 };
 
 const WEAI_GROUP_MODELS: Readonly<Record<string, readonly string[]>> = {
+  [WEAI_CODEX_PER_REQUEST_MODEL_GROUP]: WEAI_CODEX_PER_REQUEST_MODELS,
   [WEAI_ADOBE_TOKEN_GROUP]: ["gpt-image-2"],
   [WEAI_GEMINI_GROUP]: [...WEAI_GEMINI_IMAGE_MODELS],
   [WEAI_AZURE_GROUP]: ["gpt-image-2"],
@@ -1261,6 +1264,7 @@ const WEAI_MODEL_DISPLAY_NAMES: Readonly<Record<string, string>> = {
 };
 
 function weAIModelDisplayName(id: string, group?: string): string {
+  if (group === WEAI_CODEX_PER_REQUEST_MODEL_GROUP) return id;
   const base = WEAI_MODEL_DISPLAY_NAMES[id] ?? id;
   const supportsKResolutionTiers = /^gpt-image-2(?:-|$)/u.test(id);
   const resolutionSuffix = supportsKResolutionTiers ? " · 1K/2K/4K" : "";
@@ -1304,7 +1308,7 @@ function weAIModelDisplayName(id: string, group?: string): string {
 }
 
 function weAIMaxOutputCount(model: string, group?: string): number {
-  if (group === WEAI_GEMINI_GROUP || isMikotoGeminiGroup(group) || group === WEAI_CODEX_TOKEN_GROUP)
+  if (group === WEAI_GEMINI_GROUP || isMikotoGeminiGroup(group) || group === WEAI_CODEX_TOKEN_GROUP || group === WEAI_CODEX_PER_REQUEST_MODEL_GROUP)
     return 1;
   if (
     group === WEAI_ADOBE_TOKEN_GROUP ||
@@ -1355,7 +1359,7 @@ function weAIParametersForModel(
     group === WEAI_ADOBE_TOKEN_GROUP ||
     group === WEAI_AZURE_GROUP ||
     group === WEAI_ADOBE_PER_REQUEST_URL_GROUP;
-  const codexQuality = group === WEAI_CODEX_TOKEN_GROUP && /^gpt-image-2(?:\.5-(?:flare|sunburst))?$/u.test(model);
+  const codexQuality = [WEAI_CODEX_TOKEN_GROUP, WEAI_CODEX_PER_REQUEST_MODEL_GROUP].includes(group ?? "") && /^gpt-image-2(?:\.5-(?:flare|sunburst))?$/u.test(model);
   const supportsOptionalQuality = supportsComplexOutputParameters || codexQuality;
   const supportsUrlResponse = isWeAIAdobeUrlOutputGroup(group, model);
   // Adobe per-request supports response_format: url, but We-AI only documents
@@ -1385,6 +1389,7 @@ function weAIModelDescriptor(
   group?: string,
   geminiProtocol: WeAIGeminiProtocol = "gemini-generate-content",
 ): ModelDescriptor {
+  if (group === WEAI_CODEX_PER_REQUEST_MODEL_GROUP) return weAIModelDescriptors(id, isDefault, group, geminiProtocol)[0]!;
   const isGemini = isGeminiImageModel(id);
   const quality = /^gpt-image-2-(low|medium|high)$/u.exec(id)?.[1];
   const supportsKResolutionTiers = /^gpt-image-2(?:-|$)/u.test(id);
@@ -1667,7 +1672,7 @@ function weAIImageParameterKeys(
   group?: string,
   model?: string,
 ): readonly WeAIImageParameterKey[] {
-  if (group === WEAI_CODEX_TOKEN_GROUP) return ["n", "size", ...(/^gpt-image-2(?:\.5-(?:flare|sunburst))?$/u.test(model ?? "") ? ["quality" as const] : [])];
+  if (group === WEAI_CODEX_TOKEN_GROUP || group === WEAI_CODEX_PER_REQUEST_MODEL_GROUP) return ["n", "size", ...(/^gpt-image-2(?:\.5-(?:flare|sunburst))?$/u.test(model ?? "") ? ["quality" as const] : [])];
   if (isWeAIImage25Group(group)) return ["n", "size", "quality", "response_format"];
   if (group === WEAI_ADOBE_PER_REQUEST_GROUP)
     return ["n", "size", "response_format"];
@@ -3158,6 +3163,14 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     }
     // FriModel uses the same Images API generation and multipart edit routes.
     if (this.profile === "weai" && resolvedConnection) {
+      if (resolvedModelGroup === WEAI_CODEX_PER_REQUEST_MODEL_GROUP) {
+        const config = imageEditingConnection(resolvedConnection).config;
+        if (config.accountKeyGroupId != null && String(config.accountKeyGroupId) !== "4")
+          issues.push({ path: "connectionId", code: "model_group_mismatch", message: "We-AI CODEX 按次线路须使用稳定分组 4 的连接；保留原连接配置，请核对实际 Key 分组。" });
+        for (const key of ["response_format", "output_format", "output_compression", "background", "style", "moderation"])
+          if (request.parameters?.[key] !== undefined)
+            issues.push({ path: `parameters.${key}`, code: "parameter_not_documented", message: `We-AI 分组 4 的当前 CODEX 专属协议未声明 ${key} 字段；原值保留，尚未提交生成。` });
+      }
       const allowed = allowedWeAIModels(resolvedConnection);
       if (allowed && !allowed.includes(resolvedModel)) {
         issues.push({

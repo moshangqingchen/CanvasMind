@@ -49,16 +49,63 @@ describe("shared image model contract assembly", () => {
     expect(resolveImageModelContract(connection, resolved)).toEqual(resolved);
   });
 
-  it("applies existing Secure and Fri one-K constraints before restoring user presets", () => {
+  it("uses Secure's current native tiers and fourteen ratios while keeping Fri's explicit one-K limit", () => {
     const secure = resolveImageModelContract({ provider: "openai", config: {
       baseUrl: "https://token.secure-skill.com", modelGroup: "gpt-image-2.5" } }, imageModel("gpt-image-2.5-flare"));
+    // The current guide declares native tiers/ratios; its pixel table is 1K
+    // only. Legacy shortcuts must not invent 2K/4K pixels or restore old caps.
+    expect(secure.parameters?.find(parameter => parameter.key === "resolution")).toMatchObject({
+      control: "select", default: "4K", options: [
+        { value: "auto", label: "供应商默认" }, { value: "1K", label: "1K" },
+        { value: "2K", label: "2K" }, { value: "4K", label: "4K" },
+      ],
+    });
+    expect(secure.parameters?.find(parameter => parameter.key === "aspect_ratio")).toMatchObject({
+      allowCustomValue: false, options: ["auto", "1:1", "2:1", "3:1", "16:9", "3:2", "4:3", "5:4", "4:5", "3:4", "2:3", "9:16", "1:2", "1:3", "21:9"]
+        .map(value => ({ value, label: value === "auto" ? "自动" : value })),
+    });
+    expect(secure.parameters?.find(parameter => parameter.key === "size")).toMatchObject({ control: "select", allowCustomValue: false });
     expect(secure.parameters?.find(parameter => parameter.key === "size")?.options?.map(option => option.value))
-      .toEqual(["1024x1024", "1536x1024", "1024x1536"]);
+      .toEqual(["auto", "1024x1024", "1280x640", "1440x480", "1280x720", "1536x1024", "1024x768", "1040x832", "832x1040", "768x1024", "1024x1536", "720x1280", "640x1280", "480x1440", "1344x576"]);
     expect(secure.metadata?.imageSizeOptionsCompleteEnum).toBe(true);
+    expect(secure.metadata?.imageNativeResolutionParameter).toBe("resolution");
+    expect(secure.metadata?.imageFixedResolution).toBeUndefined();
+    expect(secure.parameters?.find(parameter => parameter.key === "quality")?.default).toBe("max");
+    expect(resolveImageModelContract({ provider: "openai", config: {
+      baseUrl: "https://token.secure-skill.com", modelGroup: "gpt-image-2.5" } }, secure)).toEqual(secure);
     const fri = resolveImageModelContract({ provider: "openai", config: {
       baseUrl: "https://platform.frimodel.com", modelGroup: "codex_image" } }, imageModel("gpt-image-2-w"));
     expect(fri.metadata?.imageUserSizePresetTiers).toEqual(["1K"]);
     expect(fri.parameters?.find(parameter => parameter.key === "size")?.options?.some(option => /[24]K ·/u.test(option.label))).toBe(false);
+  });
+
+  it("keeps Secure group62's high ceiling scoped to its stable group after shared assembly", () => {
+    for (const id of ["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"]) {
+      const connection = { provider: "openai", config: {
+        baseUrl: "https://token.secure-skill.com", accountKeyGroupId: "62", modelGroup: "renamed-discount" } };
+      const raw = imageModel(id), before = structuredClone(raw);
+      const discount = resolveImageModelContract(connection, raw);
+      expect(discount.parameters?.find(parameter => parameter.key === "quality")).toMatchObject({
+        default: "high", options: ["low", "medium", "high"].map(value => ({ value, label: value })),
+      });
+      expect(raw).toEqual(before);
+      expect(discount.pricing).toEqual(before.pricing);
+      expect(resolveImageModelContract(connection, discount)).toEqual(discount);
+      const ordinary = resolveImageModelContract({ provider: "openai", config: {
+        baseUrl: "https://token.secure-skill.com", accountKeyGroupId: "25", modelGroup: "gpt-image-2.5特价" } }, imageModel(id));
+      expect(ordinary.parameters?.find(parameter => parameter.key === "quality")?.options?.map(option => option.value))
+        .toEqual(["low", "medium", "high", "xhigh", "max"]);
+      expect(ordinary.pricing).toEqual(imageModel(id).pricing);
+      for (const baseUrl of ["https://token.secure-skill.com.example", "https://token.secure-skill.com/custom"]) {
+        const other = resolveImageModelContract({ ...connection, config: { ...connection.config, baseUrl } }, imageModel(id));
+        expect(other.metadata?.secureSkillImageProtocol).toBeUndefined();
+        expect(other.parameters?.some(parameter => parameter.key === "resolution")).toBe(false);
+      }
+      for (const metadata of [{ source: "manual" }, { source: "paid-test" }, { protocolEvidence: "paid-test" }]) {
+        const protectedModel = { ...imageModel(id), metadata };
+        expect(resolveImageModelContract(connection, protectedModel)).toBe(protectedModel);
+      }
+    }
   });
 
   it("does not borrow COpen rules from another origin, stable group or full model ID", () => {

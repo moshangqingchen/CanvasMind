@@ -31,7 +31,7 @@ describe("Secure Skill GPT Images protocol", () => {
     expect(url).toBe("https://token.secure-skill.com/v1/images/async/generations");
     expect(new Headers(init?.headers).get("content-type")).toBe("application/json");
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer test-key");
-    expect(JSON.parse(String(init?.body))).toEqual({ model, prompt: request.prompt, size: "1024x1024", ...(model === "gpt-image-2" ? {} : { quality }), response_format: "url",
+    expect(JSON.parse(String(init?.body))).toEqual({ model, prompt: request.prompt, ...(model === "gpt-image-2" ? { size: "1024x1024" } : { resolution: "1K", aspect_ratio: "1:1", quality }), response_format: "url",
       image: ["https://assets.example.com/reference.png", "https://assets.example.com/second.jpg"], ...(model === "gpt-image-2" ? { background: "opaque" } : {}) });
   });
 
@@ -120,13 +120,19 @@ describe("Secure Skill GPT Images protocol", () => {
     expect(isSecureSkillImageConnection({ baseUrl: "https://token.secure-skill.com/v1" }, "nano-banana-2")).toBe(false);
   });
 
-  it("blocks saved 4K selections only in the documented Image 2.5 1K group before submitting", async () => {
+  it("sends the current Image 2.5 native 4K and new ratios while preserving unrepresentable saved pixels", async () => {
     const fetcher = vi.fn<typeof fetch>();
     const adapter = makeAdapter(fetcher, "https://token.secure-skill.com", { modelGroup: "gpt-image-2.5" });
-    await expect(adapter.submit({ ...request, parameters: { size: "3840x2160", quality: "max" } })).rejects.toThrow("仅支持官方 1K");
+    const parameters = { size: "3840x2160", quality: "max" };
+    await expect(adapter.submit({ ...request, parameters })).rejects.toThrow("不接受自定义宽高");
+    expect(parameters).toEqual({ size: "3840x2160", quality: "max" });
     expect(fetcher).not.toHaveBeenCalled();
     expect(await adapter.validate({ ...request, parameters: { size: "1536x1024", quality: "max" } })).toMatchObject({ valid: true });
-    expect(await makeAdapter(fetcher, "https://token.secure-skill.com", { modelGroup: "image2.5特价" }).validate({ ...request, parameters: { size: "3840x2160", quality: "max" } })).toMatchObject({ valid: true });
+    fetcher.mockResolvedValueOnce(pending());
+    await adapter.submit({ ...request, parameters: { resolution: "4K", aspect_ratio: "3:1", quality: "max" } });
+    expect(JSON.parse(String(fetcher.mock.calls[0]![1]?.body))).toMatchObject({ resolution: "4K", aspect_ratio: "3:1", quality: "max" });
+    expect(JSON.parse(String(fetcher.mock.calls[0]![1]?.body))).not.toHaveProperty("image_size");
+    expect(JSON.parse(String(fetcher.mock.calls[0]![1]?.body))).not.toHaveProperty("size");
   });
   it.each(["512x512", "256x3840", "3840x256", "3840x3840", "1920x1088"])("sends official GPT2 custom %s without borrowed area or ratio caps", async size => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(pending()), adapter = makeAdapter(fetcher);
@@ -176,13 +182,32 @@ describe("Secure Skill GPT Images protocol", () => {
     expect(applySecureSkillImageCapabilities({ provider: "openai", config: { ...config, manualProtocol: true } }, descriptor)).toEqual(descriptor);
     expect(secureSkillImageParameterIssues(config, "gpt-image-2", { size: "256x3840" })).toEqual([]);
   });
-  it("uses stable group49 identity before its potentially reused display name", () => {
-    const config = { baseUrl: "https://token.secure-skill.com", modelGroup: "image2.5特价" };
-    const parameters = { size: "3840x2160", quality: "max" };
-    expect(secureSkillImageParameterIssues({ ...config, accountKeyGroupId: "49" }, "gpt-image-2.5-flare", parameters)).toEqual([]);
-    expect(secureSkillImageParameterIssues({ ...config, accountKeyGroupId: "44" }, "gpt-image-2.5-flare", parameters)).not.toEqual([]);
-    expect(secureSkillImageParameterIssues(config, "gpt-image-2.5-flare", parameters)).toEqual([]);
+  it("applies group62's high ceiling by stable identity without limiting group44 or the old group49", () => {
+    const config = { baseUrl: "https://token.secure-skill.com", modelGroup: "gpt-image-2.5特价" };
+    const parameters = { resolution: "4K", aspect_ratio: "3:1", quality: "max" };
+    expect(secureSkillImageParameterIssues({ ...config, accountKeyGroupId: "62", modelGroup: "renamed" }, "gpt-image-2.5-flare", parameters)).toEqual([expect.objectContaining({ path: "parameters.quality" })]);
+    for (const accountKeyGroupId of ["44", "49"]) expect(secureSkillImageParameterIssues({ ...config, accountKeyGroupId }, "gpt-image-2.5-flare", parameters)).toEqual([]);
+    expect(secureSkillImageParameterIssues(config, "gpt-image-2.5-flare", parameters)).not.toEqual([]);
     expect(isSecureSkillImageConnection({ ...config, manualProtocol: true }, "gpt-image-2")).toBe(false);
     expect(isSecureSkillImageConnection({ ...config, modelCatalogModels: [{ id: "gpt-image-2", metadata: { protocolEvidence: "paid-test" } }] }, "gpt-image-2")).toBe(false);
+  });
+
+  it.each(["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"])("shows native tiers and exact group62 quality for %s and rejects max before any request", async id => {
+    const config = { baseUrl: "https://token.secure-skill.com", modelGroup: "gpt-image-2.5特价", accountKeyGroupId: "62" };
+    const model = applySecureSkillImageCapabilities({ provider: "openai", config }, { id, name: id, operations: ["image.generate"], parameters: [], metadata: { imageFixedResolution: "1K", imageSizeContract: "group-1k-only" } });
+    expect(model.parameters?.find(p => p.key === "resolution")?.options?.map(o => o.value)).toEqual(["auto", "1K", "2K", "4K"]);
+    expect(model.parameters?.find(p => p.key === "aspect_ratio")?.options?.map(o => o.value)).toContain("1:3");
+    expect(model.parameters?.find(p => p.key === "size")).toMatchObject({ control: "select", default: "auto", allowCustomValue: false });
+    expect(model.parameters?.find(p => p.key === "size")?.options?.every(o => o.value === "auto" || o.label.startsWith("1K"))).toBe(true);
+    expect(model.parameters?.find(p => p.key === "quality")).toMatchObject({ default: "high", options: [{ value: "low", label: "low" }, { value: "medium", label: "medium" }, { value: "high", label: "high" }] });
+    expect(model.metadata).toMatchObject({ imageNativeResolutionParameter: "resolution", imageQualityOptionsCompleteEnum: true });
+    expect(model.metadata).not.toHaveProperty("imageFixedResolution");
+    const fetcher = vi.fn<typeof fetch>(), adapter = makeAdapter(fetcher, config.baseUrl, config);
+    await expect(adapter.submit({ ...request, model: id, parameters: { resolution: "4K", aspect_ratio: "1:3", quality: "max" } })).rejects.toThrow("最高 high");
+    expect(fetcher).not.toHaveBeenCalled();
+    fetcher.mockResolvedValueOnce(pending());
+    await adapter.submit({ ...request, model: id, parameters: { image_size: "4K", aspect_ratio: "auto", quality: "high" } });
+    expect(JSON.parse(String(fetcher.mock.calls[0]![1]?.body))).toMatchObject({ resolution: "4K", aspect_ratio: "auto", quality: "high" });
+    expect(secureSkillImageParameterIssues(config, id, { resolution: "4K", background: "transparent" })).toEqual([expect.objectContaining({ path: "parameters.background" })]);
   });
 });

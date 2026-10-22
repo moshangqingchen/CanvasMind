@@ -6,6 +6,8 @@ const models = new Set([
   "doubao-seedance-2-0-260128",
   "doubao-seedance-2-0-fast-260128",
   "doubao-seedance-2-5-260628",
+  "dreamina-seedance-2-0-fast",
+  "dreamina-seedance-2-0-mini",
 ]);
 const record = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const amount = (value: unknown): number | undefined => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
@@ -22,7 +24,8 @@ function officialSource(supplierSiteUrl?: string): boolean {
 export function secureSkillCatalogVideoDeclaration(modelId: unknown, platform: unknown, supplierSiteUrl?: string): boolean {
   return officialSource(supplierSiteUrl) && (platform === "flow2" && modelId === "omni" ||
     platform === "newtoken-sd" && (modelId === "video-2.0-fast" || modelId === "video-2.0-pro") ||
-    platform === "muse" && modelId === "muse-video");
+    platform === "muse" && modelId === "muse-video" ||
+    platform === "4stoken" && (modelId === "dreamina-seedance-2-0-fast" || modelId === "dreamina-seedance-2-0-mini"));
 }
 
 /** Secure Skill's own price page converts these fields from CNY/token to CNY/1M

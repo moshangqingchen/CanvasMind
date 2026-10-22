@@ -1,0 +1,83 @@
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "groups": [
+      {
+        "id": 4,
+        "name": "生图-openai-codex-按次",
+        "platform": "openai",
+        "subscription_type": "standard",
+        "is_exclusive": false,
+        "rate_multiplier": 0.7,
+        "user_rate_multiplier": null
+      }
+    ],
+    "selected_group_id": 4,
+    "token_multiplier": 0.7,
+    "image_multiplier": 0.7,
+    "image_quality_billing": false,
+    "models": [
+      {
+        "name": "gpt-image-2",
+        "platform": "openai",
+        "billing_mode": "image",
+        "input_price": null,
+        "output_price": null,
+        "cache_write_price": null,
+        "cache_read_price": null,
+        "image_input_price": null,
+        "image_output_price": null,
+        "per_request_price": null,
+        "image_tiers": {
+          "price_1k": 0.08,
+          "price_2k": 0.08,
+          "price_4k": 0.08,
+          "price_low": null,
+          "price_medium": null,
+          "price_high": null
+        }
+      },
+      {
+        "name": "gpt-image-2.5-flare",
+        "platform": "openai",
+        "billing_mode": "image",
+        "input_price": null,
+        "output_price": null,
+        "cache_write_price": null,
+        "cache_read_price": null,
+        "image_input_price": null,
+        "image_output_price": null,
+        "per_request_price": null,
+        "image_tiers": {
+          "price_1k": 0.08,
+          "price_2k": 0.08,
+          "price_4k": 0.08,
+          "price_low": null,
+          "price_medium": null,
+          "price_high": null
+        }
+      },
+      {
+        "name": "gpt-image-2.5-sunburst",
+        "platform": "openai",
+        "billing_mode": "image",
+        "input_price": null,
+        "output_price": null,
+        "cache_write_price": null,
+        "cache_read_price": null,
+        "image_input_price": null,
+        "image_output_price": null,
+        "per_request_price": null,
+        "image_tiers": {
+          "price_1k": 0.08,
+          "price_2k": 0.08,
+          "price_4k": 0.08,
+          "price_low": null,
+          "price_medium": null,
+          "price_high": null
+        }
+      }
+    ]
+  }
+}

@@ -3,7 +3,7 @@
 // Source: https://ai.cangyuansuanli.cn/docs-static/models/{id}.json
 // Public documentation does not grant a Key permission to use a model.
 export interface CangyuanVideoContractData {
- checkedAt?: string; sourceSha256?: string; sourceLastReviewed?: string; forbiddenResolutionValues?: readonly string[]; requiresReferenceImage?: boolean; requiresReferenceMedia?: boolean; facePolicy?: "open" | "backend" | "blocked"; warnings?: readonly string[]; fixedResolution?: string;
+ checkedAt?: string; sourceSha256?: string; sourceStatus?: string; sourceLastReviewed?: string; forbiddenResolutionValues?: readonly string[]; requiresReferenceImage?: boolean; requiresReferenceMedia?: boolean; facePolicy?: "open" | "backend" | "blocked"; warnings?: readonly string[]; fixedResolution?: string;
  fields: readonly string[];
  parameters: readonly { key: string; description: string; valueType?: string; required?: boolean; suggestions?: readonly (string | number)[]; suggestedDefault?: string | number | boolean; values?: readonly (string | number)[]; min?: number; max?: number; default?: string | number | boolean }[];
  references: { images: number | null; videos: number | null; audios: number | null };
@@ -18,7 +18,7 @@ export interface CangyuanVideoContractData {
 }
 export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanVideoContractData>> = {
   "sd8-seedance-2.5-s": {
-    "checkedAt": "2026-10-13T00:58:41.494Z",
+    "checkedAt": "2026-10-21T02:51:49.649Z",
     "facePolicy": "open",
     "fixedResolution": "720p",
     "fields": [
@@ -61,8 +61,9 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "frames": false,
     "framePairRequired": false,
     "allowFrameMediaMix": false,
-    "sourceSha256": "8eb902e88b76bac89e1b345c5cd69ec38a8fd850f1825db17a07a37c15062452",
-    "sourceLastReviewed": "2026-10-08"
+    "sourceSha256": "6e12d253171896dd3589baa546b9acbf36034356fb04830f9b0f3d50eaac1af8",
+    "sourceLastReviewed": "2026-10-18",
+    "sourceStatus": "deprecated"
   },
   "minimax-h3-2k": {
     "checkedAt": "2026-10-13T00:50:28.504Z",
@@ -2167,9 +2168,10 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "frames": false,
     "framePairRequired": false,
     "allowFrameMediaMix": false,
-    "checkedAt": "2026-10-13T00:58:39.071Z",
-    "sourceSha256": "42e62a282920b19e521590fad274742c6c839cd43c211d0cbb8d8e44ac73bbf0",
-    "sourceLastReviewed": "2026-09-15"
+    "checkedAt": "2026-10-21T02:51:52.226Z",
+    "sourceSha256": "844a84e59b9a1b0acbab21efd32b709e051addcd5eb5e944cac923a6f5f7d62c",
+    "sourceLastReviewed": "2026-10-18",
+    "sourceStatus": "deprecated"
   },
   "sd8-seedance-2.5": {
     "fields": [
@@ -2210,9 +2212,10 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "frames": false,
     "framePairRequired": false,
     "allowFrameMediaMix": false,
-    "checkedAt": "2026-10-13T00:58:34.232Z",
-    "sourceSha256": "c7833caf9ed75f317b6060bf1547d22a73e7ebc1b6db28a640ada22e23fa8af8",
-    "sourceLastReviewed": "2026-09-15"
+    "checkedAt": "2026-10-21T02:51:52.242Z",
+    "sourceSha256": "368b2025a71384fed4a4853143734b870e7bcbd7f64522babe5533b8224c9748",
+    "sourceLastReviewed": "2026-10-18",
+    "sourceStatus": "deprecated"
   },
   "doubao-seedance-2-0-260128": {
     "fields": [
@@ -4123,9 +4126,10 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "frames": false,
     "framePairRequired": false,
     "allowFrameMediaMix": false,
-    "checkedAt": "2026-10-13T00:53:16.977Z",
-    "sourceSha256": "4a576dd821fd3f8de39c068cc4f16ae1d37a3cca303c9880b132568a23ec6906",
-    "sourceLastReviewed": "2026-09-29"
+    "checkedAt": "2026-10-21T02:51:52.795Z",
+    "sourceSha256": "60f45e77a959880d5019be352be1749d98491fa2cf4e6492cfec9f9477fda884",
+    "sourceLastReviewed": "2026-10-18",
+    "sourceStatus": "deprecated"
   },
   "sd15-seedance-2.0": {
     "fields": [
@@ -4943,5 +4947,322 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "frames": false,
     "framePairRequired": false,
     "allowFrameMediaMix": false
+  },
+  "sd15-seedance-2.5-2": {
+    "checkedAt": "2026-10-21T02:54:38.666Z",
+    "sourceSha256": "4560e0a5de313e920e2036a7cb14f906b6dda5c0a84bb4f9e3d66a9c5aacb850",
+    "sourceLastReviewed": "2026-10-18",
+    "sourceStatus": "current",
+    "facePolicy": "open",
+    "warnings": [
+      "本页公共名就是请求里要传的名字。",
+      "未列出的字段不要发送。",
+      "视频只走 POST /v1/videos，再轮询 GET /v1/videos/{task_id}。"
+    ],
+    "fields": [
+      "duration",
+      "aspect_ratio",
+      "resolution",
+      "reference_image_urls",
+      "reference_videos",
+      "reference_audios"
+    ],
+    "parameters": [
+      {
+        "key": "duration",
+        "description": "视频时长，单位秒。最小 4。最大 30。",
+        "valueType": "integer",
+        "suggestedDefault": 5,
+        "min": 4,
+        "max": 30
+      },
+      {
+        "key": "aspect_ratio",
+        "description": "画面比例。推荐值：1:1 / 16:9 / 9:16；推荐值不代表完整允许集合。",
+        "valueType": "string",
+        "suggestions": [
+          "1:1",
+          "16:9",
+          "9:16"
+        ],
+        "suggestedDefault": "16:9"
+      },
+      {
+        "key": "resolution",
+        "description": "输出分辨率。推荐值：720p；推荐值不代表完整允许集合。",
+        "valueType": "string",
+        "suggestions": [
+          "720p"
+        ],
+        "suggestedDefault": "720p"
+      }
+    ],
+    "references": {
+      "images": 30,
+      "videos": 10,
+      "audios": 10
+    },
+    "frames": false,
+    "framePairRequired": false,
+    "allowFrameMediaMix": false
+  },
+  "sd8-seedance-2.5-n": {
+    "checkedAt": "2026-10-21T02:54:38.665Z",
+    "sourceSha256": "deac9d8a7facb46c309ee4cf4a8423c4ddfaee81aa186a5813a5aca82b912e84",
+    "sourceLastReviewed": "2026-10-18",
+    "sourceStatus": "current",
+    "facePolicy": "blocked",
+    "warnings": [
+      "本页公共名就是请求里要传的名字。",
+      "未列出的字段不要发送。",
+      "视频只走 POST /v1/videos，再轮询 GET /v1/videos/{task_id}。"
+    ],
+    "fields": [
+      "duration",
+      "aspect_ratio",
+      "resolution",
+      "reference_image_urls",
+      "reference_videos",
+      "reference_audios"
+    ],
+    "parameters": [
+      {
+        "key": "duration",
+        "description": "视频时长，单位秒。最小 30。最大 30。",
+        "valueType": "integer",
+        "suggestedDefault": 30,
+        "min": 30,
+        "max": 30
+      },
+      {
+        "key": "aspect_ratio",
+        "description": "画面比例。推荐值：21:9 / 16:9 / 4:3 / 1:1 / 3:4 / 9:16；推荐值不代表完整允许集合。",
+        "valueType": "string",
+        "suggestions": [
+          "21:9",
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ],
+        "suggestedDefault": "16:9"
+      },
+      {
+        "key": "resolution",
+        "description": "输出分辨率。推荐值：720p；推荐值不代表完整允许集合。",
+        "valueType": "string",
+        "suggestions": [
+          "720p"
+        ],
+        "suggestedDefault": "720p"
+      }
+    ],
+    "references": {
+      "images": 30,
+      "videos": 10,
+      "audios": 10
+    },
+    "frames": false,
+    "framePairRequired": false,
+    "allowFrameMediaMix": false
+  },
+  "sd17-seedance-2.5-4": {
+    "checkedAt": "2026-10-21T02:54:38.668Z",
+    "sourceSha256": "3527b447fadf2543f0f8932aac7e1afd258efede224066cf1b2fcd3c1c5c45c6",
+    "sourceLastReviewed": "2026-10-18",
+    "sourceStatus": "current",
+    "facePolicy": "open",
+    "warnings": [
+      "本页公共名就是请求里要传的名字。",
+      "未列出的字段不要发送。",
+      "视频只走 POST /v1/videos，再轮询 GET /v1/videos/{task_id}。"
+    ],
+    "fields": [
+      "duration",
+      "aspect_ratio",
+      "resolution",
+      "reference_image_urls",
+      "reference_videos",
+      "reference_audios"
+    ],
+    "parameters": [
+      {
+        "key": "duration",
+        "description": "视频时长，单位秒。最小 5。最大 30。",
+        "valueType": "integer",
+        "suggestedDefault": 5,
+        "min": 5,
+        "max": 30,
+        "default": 5
+      },
+      {
+        "key": "aspect_ratio",
+        "description": "画面比例。推荐值：16:9 / 9:16 / 1:1 / 4:3 / 21:9；推荐值不代表完整允许集合。",
+        "valueType": "string",
+        "suggestions": [
+          "16:9",
+          "9:16",
+          "1:1",
+          "4:3",
+          "21:9"
+        ],
+        "suggestedDefault": "16:9",
+        "default": "16:9"
+      },
+      {
+        "key": "resolution",
+        "description": "输出分辨率。推荐值：480p / 720p / 1080p；推荐值不代表完整允许集合。",
+        "valueType": "string",
+        "suggestions": [
+          "480p",
+          "720p",
+          "1080p"
+        ],
+        "suggestedDefault": "480p",
+        "default": "480p"
+      }
+    ],
+    "references": {
+      "images": 30,
+      "videos": 10,
+      "audios": 10
+    },
+    "frames": false,
+    "framePairRequired": false,
+    "allowFrameMediaMix": false
+  },
+  "sd17-seedance-2.0-4": {
+    "checkedAt": "2026-10-21T02:54:38.668Z",
+    "sourceSha256": "dc8fd1cc70b5158ccb315dd5938d915be8d04ec22e002e05dddfb8c6117805ea",
+    "sourceLastReviewed": "2026-10-18",
+    "sourceStatus": "current",
+    "facePolicy": "open",
+    "warnings": [
+      "本页公共名就是请求里要传的名字。",
+      "未列出的字段不要发送。",
+      "视频只走 POST /v1/videos，再轮询 GET /v1/videos/{task_id}。"
+    ],
+    "fields": [
+      "duration",
+      "aspect_ratio",
+      "resolution",
+      "reference_image_urls",
+      "reference_videos",
+      "reference_audios"
+    ],
+    "parameters": [
+      {
+        "key": "duration",
+        "description": "视频时长，单位秒。最小 5。最大 15。",
+        "valueType": "integer",
+        "suggestedDefault": 5,
+        "min": 5,
+        "max": 15,
+        "default": 5
+      },
+      {
+        "key": "aspect_ratio",
+        "description": "画面比例。推荐值：16:9 / 9:16 / 1:1 / 4:3 / 21:9；推荐值不代表完整允许集合。",
+        "valueType": "string",
+        "suggestions": [
+          "16:9",
+          "9:16",
+          "1:1",
+          "4:3",
+          "21:9"
+        ],
+        "suggestedDefault": "16:9",
+        "default": "16:9"
+      },
+      {
+        "key": "resolution",
+        "description": "输出分辨率。推荐值：480p / 720p；推荐值不代表完整允许集合。",
+        "valueType": "string",
+        "suggestions": [
+          "480p",
+          "720p"
+        ],
+        "suggestedDefault": "480p",
+        "default": "480p"
+      }
+    ],
+    "references": {
+      "images": 9,
+      "videos": 3,
+      "audios": 3
+    },
+    "frames": false,
+    "framePairRequired": false,
+    "allowFrameMediaMix": false
+  },
+  "sd16-seedance-2.5-2": {
+    "checkedAt": "2026-10-21T02:54:38.667Z",
+    "sourceSha256": "439a7fba0a2ba5f9ee4e8b0e33567febe14cea43295894a69f465e9a2d18e009",
+    "sourceLastReviewed": "2026-10-21",
+    "sourceStatus": "current",
+    "facePolicy": "open",
+    "warnings": [
+      "本页公共名就是请求里要传的名字。",
+      "未列出的字段不要发送。",
+      "视频只走 POST /v1/videos，再轮询 GET /v1/videos/{task_id}。"
+    ],
+    "fields": [
+      "duration",
+      "aspect_ratio",
+      "resolution",
+      "generate_audio",
+      "reference_image_urls",
+      "reference_videos",
+      "reference_audios"
+    ],
+    "parameters": [
+      {
+        "key": "duration",
+        "description": "视频时长，单位秒。最小 5。最大 30。",
+        "valueType": "integer",
+        "suggestedDefault": 5,
+        "min": 5,
+        "max": 30,
+        "default": 5
+      },
+      {
+        "key": "aspect_ratio",
+        "description": "画面比例。推荐值：16:9 / 9:16 / 1:1 / 4:3 / 3:4 / 21:9；推荐值不代表完整允许集合。",
+        "valueType": "string",
+        "suggestions": [
+          "16:9",
+          "9:16",
+          "1:1",
+          "4:3",
+          "3:4",
+          "21:9"
+        ]
+      },
+      {
+        "key": "resolution",
+        "description": "输出分辨率。推荐值：720p；推荐值不代表完整允许集合。",
+        "valueType": "string",
+        "suggestions": [
+          "720p"
+        ],
+        "suggestedDefault": "720p",
+        "default": "720p"
+      },
+      {
+        "key": "generate_audio",
+        "description": "是否生成音频。",
+        "valueType": "boolean"
+      }
+    ],
+    "references": {
+      "images": 30,
+      "videos": 10,
+      "audios": 10
+    },
+    "frames": false,
+    "framePairRequired": false,
+    "allowFrameMediaMix": false,
+    "fixedResolution": "720p"
   }
 };

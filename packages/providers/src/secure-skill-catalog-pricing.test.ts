@@ -8,6 +8,23 @@ const row = { name: id, pricing: { billing_mode: "token", input_price: .0000299,
   reference_video_output_price: .0000182, output_price_1080p: null, intervals: [] } };
 
 describe("Secure Skill official video token prices", () => {
+  it.each([
+    ["dreamina-seedance-2-0-fast", .0000222, .0000132, 22.2, 13.2],
+    ["dreamina-seedance-2-0-mini", .0000115, .000007, 11.5, 7],
+  ] as const)("keeps group60 %s video classification and exact token rates separate from task charges", (name, ordinary, reference, expected, expectedReference) => {
+    expect(secureSkillCatalogVideoDeclaration(name, "4stoken", options.supplierSiteUrl)).toBe(true);
+    expect(secureSkillCatalogVideoDeclaration(`${name}-preview`, "4stoken", options.supplierSiteUrl)).toBe(false);
+    expect(secureSkillCatalogVideoDeclaration(name, "openai", options.supplierSiteUrl)).toBe(false);
+    const result = secureSkillCatalogPricing({ name, pricing: { billing_mode: "token", input_price: ordinary, output_price: ordinary,
+      reference_video_output_price: reference, output_price_480p: ordinary, reference_video_output_price_480p: reference,
+      output_price_1080p: null, output_price_4k: null, intervals: [] } }, options)!;
+    expect(result.pricing).toMatchObject({ kind: "token", currency: "CNY" });
+    expect(modelPriceAmount(result.pricing, { token_kind: "input" })).toBe(expected);
+    expect(modelPriceAmount(result.pricing, { token_kind: "output", resolution: "480p", has_reference_video: "true" })).toBe(expectedReference);
+    expect(modelPriceAmount(result.pricing, { duration: 15, resolution: "480p" })).toBeUndefined();
+    expect(modelPriceAmount(result.pricing, { token_kind: "output", resolution: "1080p", has_reference_video: "false" })).toBeUndefined();
+    expect(result.priceLabel).not.toContain("/秒");
+  });
   it("imports exact GPT/Grok chat components per million, with one group multiplier", () => {
     const gpt = secureSkillCatalogPricing({ name: "gpt-5.4", pricing: { billing_mode: "token", input_price: 2.5e-6,
       output_price: 15e-6, cache_read_price: 2.5e-7, cache_write_price: 0, intervals: [] } }, { ...options, multiplier: .3 })!;

@@ -36,6 +36,7 @@ project development*.codex-temp*/
 *.tsbuildinfo
 .codex-temp/
 .codex-logs/
+/.codex-worktrees/
 # Generated originals and local supplier audit evidence are user data.
 /output/
 .codex-temp-*.json

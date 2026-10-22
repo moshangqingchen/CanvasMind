@@ -1,0 +1,205 @@
+{
+  "sourceUrl": "https://token.secure-skill.com/api/v1/pricing/channels",
+  "checkedAt": "2026-10-21T02:52:44.087Z",
+  "code": 0,
+  "data": [
+    {
+      "name": "gpt-image-2.5特价",
+      "description": "gpt-image-2.5特价，124k均0.08一张",
+      "platforms": [
+        {
+          "platform": "openai",
+          "groups": [
+            {
+              "id": 62,
+              "name": "gpt-image-2.5特价",
+              "platform": "openai",
+              "subscription_type": "standard",
+              "rate_multiplier": 1,
+              "is_exclusive": false,
+              "image_price_1k": 0.08,
+              "image_price_2k": 0.08,
+              "image_price_4k": 0.08
+            }
+          ],
+          "supported_models": [
+            {
+              "name": "gpt-image-2.5-flare",
+              "platform": "openai",
+              "pricing": {
+                "billing_mode": "image",
+                "input_price": null,
+                "output_price": null,
+                "reference_video_output_price": null,
+                "output_price_1080p": null,
+                "reference_video_output_price_1080p": null,
+                "output_price_4k": null,
+                "reference_video_output_price_4k": null,
+                "output_price_480p": null,
+                "reference_video_output_price_480p": null,
+                "cache_write_price": null,
+                "cache_read_price": null,
+                "image_output_price": null,
+                "per_request_price": 0.08,
+                "intervals": []
+              }
+            },
+            {
+              "name": "gpt-image-2.5-sunburst",
+              "platform": "openai",
+              "pricing": {
+                "billing_mode": "image",
+                "input_price": null,
+                "output_price": null,
+                "reference_video_output_price": null,
+                "output_price_1080p": null,
+                "reference_video_output_price_1080p": null,
+                "output_price_4k": null,
+                "reference_video_output_price_4k": null,
+                "output_price_480p": null,
+                "reference_video_output_price_480p": null,
+                "cache_write_price": null,
+                "cache_read_price": null,
+                "image_output_price": null,
+                "per_request_price": 0.08,
+                "intervals": []
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "kling-video-v4",
+      "description": "kling-video-v4，支持全参，720p：0.35/秒；1080p：0.45/秒，高速",
+      "platforms": [
+        {
+          "platform": "video",
+          "groups": [
+            {
+              "id": 61,
+              "name": "视频生成",
+              "platform": "video",
+              "subscription_type": "standard",
+              "rate_multiplier": 1,
+              "is_exclusive": false,
+              "image_price_1k": null,
+              "image_price_2k": null,
+              "image_price_4k": null
+            }
+          ],
+          "supported_models": [
+            {
+              "name": "kling-video-v4",
+              "platform": "video",
+              "pricing": {
+                "billing_mode": "per_second",
+                "input_price": null,
+                "output_price": null,
+                "reference_video_output_price": null,
+                "output_price_1080p": null,
+                "reference_video_output_price_1080p": null,
+                "output_price_4k": null,
+                "reference_video_output_price_4k": null,
+                "output_price_480p": null,
+                "reference_video_output_price_480p": null,
+                "cache_write_price": null,
+                "cache_read_price": null,
+                "image_output_price": null,
+                "per_request_price": null,
+                "intervals": [
+                  {
+                    "min_tokens": 0,
+                    "max_tokens": null,
+                    "tier_label": "720p",
+                    "input_price": null,
+                    "output_price": null,
+                    "cache_write_price": null,
+                    "cache_read_price": null,
+                    "per_request_price": 0.35
+                  },
+                  {
+                    "min_tokens": 0,
+                    "max_tokens": null,
+                    "tier_label": "1080p",
+                    "input_price": null,
+                    "output_price": null,
+                    "cache_write_price": null,
+                    "cache_read_price": null,
+                    "per_request_price": 0.45
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "海外sd2.0-fast/mini",
+      "description": "BytePlus 海外火山 Ark Seedance 视频模型；已开白，支持nsfw，支持全参数，官方url透传，素材库。支持全分辨率。",
+      "platforms": [
+        {
+          "platform": "4stoken",
+          "groups": [
+            {
+              "id": 60,
+              "name": "海外sd-fast/mini",
+              "platform": "4stoken",
+              "subscription_type": "standard",
+              "rate_multiplier": 1,
+              "is_exclusive": false,
+              "image_price_1k": null,
+              "image_price_2k": null,
+              "image_price_4k": null
+            }
+          ],
+          "supported_models": [
+            {
+              "name": "dreamina-seedance-2-0-fast",
+              "platform": "4stoken",
+              "pricing": {
+                "billing_mode": "token",
+                "input_price": 0.0000222,
+                "output_price": 0.0000222,
+                "reference_video_output_price": 0.0000132,
+                "output_price_1080p": null,
+                "reference_video_output_price_1080p": null,
+                "output_price_4k": null,
+                "reference_video_output_price_4k": null,
+                "output_price_480p": 0.0000222,
+                "reference_video_output_price_480p": 0.0000132,
+                "cache_write_price": null,
+                "cache_read_price": null,
+                "image_output_price": null,
+                "per_request_price": null,
+                "intervals": []
+              }
+            },
+            {
+              "name": "dreamina-seedance-2-0-mini",
+              "platform": "4stoken",
+              "pricing": {
+                "billing_mode": "token",
+                "input_price": 0.0000115,
+                "output_price": 0.0000115,
+                "reference_video_output_price": 0.000007,
+                "output_price_1080p": null,
+                "reference_video_output_price_1080p": null,
+                "output_price_4k": null,
+                "reference_video_output_price_4k": null,
+                "output_price_480p": 0.0000115,
+                "reference_video_output_price_480p": 0.000007,
+                "cache_write_price": null,
+                "cache_read_price": null,
+                "image_output_price": null,
+                "per_request_price": null,
+                "intervals": []
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

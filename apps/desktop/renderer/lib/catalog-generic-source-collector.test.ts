@@ -7,6 +7,16 @@ beforeEach(() => { vi.stubGlobal("fetch", vi.fn(() => { throw new Error("Unsched
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("one-entry generic supplier collectors", () => {
+  it("does not replace Cangyuan's native yuan label with generic NewAPI dollars", async () => {
+    const supplierSite = "https://ai.cangyuansuanli.cn";
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => Response.json({ success: true,
+      data: [{ model_name: "gpt-image-2-4k", enable_groups: ["IMAGE"], quota_type: 1, model_price: .1 }],
+      group_ratio: { IMAGE: 2 } }));
+    const result = await collectGenericSupplierSource({ url: `${supplierSite}/api/pricing`, siteUrl: supplierSite, entry: "pricing" }, { fetch, checkedAt });
+    expect(result.groups[0]?.models[0]?.priceLabel).toBe("¥0.2/请求");
+    expect(result.models[0]?.metadata?.priceLabel).toBe("¥0.2/请求");
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
   it("requires a complete exact-group declaration for explicit price withdrawal, never missing/null token fields", async () => {
     const payload = { data: [
       { model_name: "missing", enable_groups: ["group-a"] },

@@ -28,7 +28,7 @@ function executableOperations(connection: Connection, model: ModelDescriptor): r
   const supplier = remainingVideoSupplier(baseUrl);
   const group = config.accountKeyGroup ?? config.modelGroup ?? config.group ?? config.supplierGroupId;
   const description = config.supplierGroupDescription ?? config.groupDescription;
-  const context = { group: typeof group === "string" ? group : "",
+  const context = { baseUrl, manualProtocol: config.manualProtocol, group: typeof group === "string" ? group : "",
     officialGroupId: typeof config.accountKeyGroupId === "string" || typeof config.accountKeyGroupId === "number" ? config.accountKeyGroupId : undefined,
     groupDescription: typeof description === "string" ? description : "", model };
   const descriptor = supplier ? remainingVideoModel(supplier, model.id, model, context) : undefined;

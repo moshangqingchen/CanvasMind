@@ -143,8 +143,12 @@ function declaredLimits(row: Row, type: string): ModelDescriptor["limits"] {
 
 function catalogConflicts(row: Row, groupName: string): string[] {
   const name = text(row.name), notes: string[] = [];
-  if (name === "SD2.5-X-满参支持人脸") notes.push("描述时长4–30秒，目录枚举8–30秒；保留原文并按显式枚举校验。");
-  if (name === "SD2.5-C-满参支持人脸") notes.push("描述时长4–30秒，目录枚举5–30秒；保留原文并按显式枚举校验。");
+  if (["SD2.5-X-满参支持人脸", "SD2.5-C-满参支持人脸"].includes(name)) {
+    const description = /时长\s*(\d+)\s*[-–—]\s*(\d+)\s*秒/u.exec(text(row.desc));
+    const durations = Array.isArray(row.durations) ? row.durations.filter(value => typeof value === "number" && Number.isSafeInteger(value) && value > 0) as number[] : [];
+    if (description && durations.length && (Number(description[1]) !== Math.min(...durations) || Number(description[2]) !== Math.max(...durations)))
+      notes.push(`描述时长${description[1]}–${description[2]}秒，目录枚举${Math.min(...durations)}–${Math.max(...durations)}秒；保留原文并按显式枚举校验。`);
+  }
   if (name === "veo-omni-flash") notes.push("描述3/4/5/6/8/10秒，目录枚举仅10秒；保留原文并按显式枚举校验。");
   if (["veo-3.1-fast", "veo-3.1-lite"].includes(name)) notes.push("描述4/6/8秒，目录枚举仅8秒；保留原文并按显式枚举校验。");
   if (name === "SD-2.5-M9支持真人满血") notes.push("目录完整调用名为M9，描述写M4，目录分类拼接两个名称；不将两者视作别名。");

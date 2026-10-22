@@ -109,7 +109,7 @@ describe("October 14 supplier A recorded prices and official group membership", 
 describe("October 14 exact Jijiu material contracts", () => {
   it.each([
     ["SD2.0满血稳定933-线路三", 5, 15, "images", "video_refs", "audio_refs", 9, 3, 3],
-    ["SD2.0满血稳定933-线路四", 4, 15, "imageUrls", "videoUrls", "audioUrls", 9, 3, 3],
+    ["SD2.0满血稳定933-线路四", 4, 15, "images", "videos", "audios", 9, 3, 3],
     ["SD2.5特价30-10-10-线路二", 4, 30, "image_urls", "video_urls", "audio_urls", 30, 10, 10],
     ["满血seedance-2.5全参C", 4, 30, "images", "video_refs", "audio_refs", 30, 10, 10],
     ["wan3.0-video-S", 2, 30, "reference_images", "videos", "audios", 10, 5, 5],

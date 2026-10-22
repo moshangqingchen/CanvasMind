@@ -6,6 +6,7 @@ import {
   WEAI_AZURE_OPENAI_GROUP,
   WEAI_CATALOG,
   WEAI_CODEX_TOKEN_GROUP,
+  WEAI_CODEX_PER_REQUEST_GROUP,
   WEAI_GEMINI_GROUP,
   WEAI_GROUP_IDS,
   applyWeAiLivePricing,
@@ -67,7 +68,7 @@ describe("We-AI static catalog", () => {
     expect(priced?.metadata?.priceLabel).toBe("$0.031/次");
   });
 
-  it("contains all six authenticated marketplace groups in display order", () => {
+  it("contains the restored CODEX per-request group and six existing groups in display order", () => {
     expect(WEAI_CATALOG.map((group) => group.id)).toEqual(WEAI_GROUP_IDS);
     expect(
       WEAI_CATALOG.map((group) => [
@@ -76,6 +77,7 @@ describe("We-AI static catalog", () => {
         group.billingMode,
       ]),
     ).toEqual([
+      [WEAI_CODEX_PER_REQUEST_GROUP, 0.7, "per-request"],
       [WEAI_CODEX_TOKEN_GROUP, 0.7, "token"],
       [WEAI_GEMINI_GROUP, 1, "per-image"],
       [WEAI_AZURE_OPENAI_GROUP, 3, "token"],
