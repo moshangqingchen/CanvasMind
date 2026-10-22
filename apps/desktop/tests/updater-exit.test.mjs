@@ -9,7 +9,8 @@ const requestExit = source.slice(source.indexOf("async function requestExit("), 
 function fixture() {
   const calls = [];
   const context = {
-    waitingExit: false, quitting: false, backend: undefined, applyUpdate: false,
+    waitingExit: false, quitting: false, backend: undefined, applyUpdate: false, cancellingExit: undefined, exitEpoch: 0,
+    exitProgress: { progress() {}, event() {} },
     exitTimer: 1, updateTimer: 2, clearInterval: timer => calls.push(["clear", timer]),
     rendererRecovery: { stop: () => calls.push(["recovery-stop"]) },
     stopDevelopmentWatchers: async () => calls.push(["watchers-stop"]),

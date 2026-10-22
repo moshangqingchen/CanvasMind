@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { DesktopRendererRecovery, rendererLoadFailure } from "../src/renderer-recovery.mjs";
 import { themeBackground } from "../src/theme.mjs";
+import { exitActivityIsIdle } from "../src/exit-policy.mjs";
 
 const deferred = () => {
   let resolve;
@@ -161,6 +162,12 @@ test("only main-frame failures are logged and no URL query, fragment or credenti
 
 const mainSource = await readFile(new URL("../src/main.mjs", import.meta.url), "utf8");
 const functionSource = (name, next) => mainSource.slice(mainSource.indexOf(`async function ${name}(`), mainSource.indexOf(`\nasync function ${next}(`));
+const lifecycleSource = mainSource.slice(mainSource.indexOf("function readExitActivity("), mainSource.indexOf("\nasync function cancelExit("));
+function exitContext(context) {
+  return Object.assign(context, { cancellingExit: undefined, exitLifecycle: Promise.resolve(), exitActivityIsIdle,
+    exitProgress: { progress() {}, event() {}, error() {} },
+    readExitActivity: body => context.runtimeRequest("/api/desktop/lifecycle", body) });
+}
 const backendExitSource = mainSource.slice(mainSource.indexOf('    child.on("exit", (code) => {'), mainSource.indexOf("    const deadline = Date.now()"));
 const initializeSource = mainSource.slice(mainSource.indexOf('    handle("desktop:initialize",'), mainSource.indexOf('    ipcMain.on("desktop:prepared",'));
 
@@ -375,14 +382,14 @@ for (const response of [0, 1]) {
     const child = { pid: 42, on: (event, callback) => { assert.equal(event, "exit"); context.backendExited = callback; } };
     const context = { waitingExit: false, quitting: false, backend: child, child, starting: false, intentionalStop: false,
       applyUpdate: false, exitEpoch: 0, exitTimer: undefined, window: {}, send() {}, prepareRenderer: async () => {},
-      runtimeRequest: async () => ({ activeRuns: 0, activeWrites: 1 }), exitWaitPresentation: () => ({}),
+      runtimeRequest: async () => ({ draining: true, activeRuns: 0, activeVerifications: 0, activeWrites: 1 }), exitWaitPresentation: () => ({}),
       dialog: { showMessageBox: async (_window, value) => { calls.dialogs.push(value.type); entered.resolve(); return confirmation.promise; } },
       setInterval: () => { calls.timers++; return 1; }, clearInterval() {}, log: async () => {},
       referenceChannel: { stop: async () => {} }, rendererRecovery: { error: async message => { calls.failures.push(message); } },
       cancelExit: async () => { calls.cancellations++; }, finishExit: async () => {}, redact: value => value,
     };
     const requestExit = mainSource.slice(mainSource.indexOf("async function requestExit("), mainSource.indexOf("\nif (locked)"));
-    vm.runInNewContext(backendExitSource + requestExit, context);
+    vm.runInNewContext(backendExitSource + requestExit, exitContext(context));
     const exit = context.requestExit();
     await entered.promise;
     const oldEpoch = context.exitEpoch;
@@ -413,12 +420,12 @@ test("a missing renderer needs no ACK but safe exit still checks backend lifecyc
   let lifecycle = 0, dialogs = 0, cancelled = 0, finished = 0;
   const context = { waitingExit: false, quitting: false, backend: { pid: 42 }, applyUpdate: false, exitEpoch: 0,
     window: { webContents: { isDestroyed: () => false, isCrashed: () => true } },
-    send() {}, runtimeRequest: async (path, body) => { assert.equal(path, "/api/desktop/lifecycle"); assert.equal(body.draining, true); lifecycle++; return { activeRuns: 1, activeWrites: 1 }; },
+    send() {}, runtimeRequest: async (path, body) => { assert.equal(path, "/api/desktop/lifecycle"); assert.equal(body.draining, true); lifecycle++; return { draining: true, activeRuns: 1, activeVerifications: 0, activeWrites: 1 }; },
     exitWaitPresentation: () => ({}), dialog: { showMessageBox: async () => { dialogs++; return { response: 1 }; } },
     cancelExit: async () => { cancelled++; }, finishExit: async () => { finished++; },
   };
   const requestExit = mainSource.slice(mainSource.indexOf("async function requestExit("), mainSource.indexOf("\nif (locked)"));
-  await vm.runInNewContext(functionSource("prepareRenderer", "cancelExit") + requestExit + "; requestExit()", context);
+  await vm.runInNewContext(functionSource("prepareRenderer", "cancelExit") + requestExit + "; requestExit()", exitContext(context));
   assert.equal(lifecycle, 1);
   assert.equal(dialogs, 1);
   assert.equal(cancelled, 1);
@@ -436,7 +443,7 @@ test("a stale exit failure cannot cancel a newer exit or display its old error",
       runtimeRequest: async () => {
         requests++;
         if (requests === (failureAt === "initial" ? 1 : 2)) { entered.resolve(); return pending; }
-        return { activeRuns: 1, activeWrites: 1 };
+        return { draining: true, activeRuns: 1, activeVerifications: 0, activeWrites: 1 };
       },
       dialog: { showMessageBox: async (_window, value) => { dialogs.push(value.type); return { response: 0 }; } },
       setInterval: callback => { pollExit = callback; return 1; }, clearInterval() {},
@@ -444,7 +451,7 @@ test("a stale exit failure cannot cancel a newer exit or display its old error",
       redact: value => value, finishExit: async () => {},
     };
     const requestExit = mainSource.slice(mainSource.indexOf("async function requestExit("), mainSource.indexOf("\nif (locked)"));
-    vm.runInNewContext(requestExit, context);
+    vm.runInNewContext(requestExit, exitContext(context));
     const first = context.requestExit();
     if (failureAt === "poll") await first;
     const oldPoll = failureAt === "poll" ? pollExit() : first;
@@ -469,7 +476,7 @@ test("failed drain cancellation resumes a renderer crash while preserving the ba
     clearInterval() {}, runtimeRequest: async () => { throw new Error("drain reset failed"); },
     send() {}, show: () => { calls.shows++; }, rendererRecovery: recovery,
   });
-  vm.runInNewContext(functionSource("cancelExit", "finishExit"), context);
+  vm.runInNewContext(functionSource("cancelExit", "finishExit"), exitContext(context));
   await assert.rejects(context.cancelExit(), /drain reset failed/);
   await recovery.operation;
   assert.equal(context.waitingExit, false);
@@ -490,7 +497,7 @@ test("an old drain cancellation cannot reopen or clear a newer exit after its re
         updater: { patch: () => calls.push("update") }, show: () => calls.push("show"),
         rendererRecovery: { resume: () => calls.push("resume") },
       };
-      vm.runInNewContext(functionSource("cancelExit", "finishExit"), context);
+      vm.runInNewContext(functionSource("cancelExit", "finishExit"), exitContext(context));
       const cancellation = context.cancelExit();
       context.waitingExit = true;
       if (supersededBy === "new exit") context.exitEpoch++;
@@ -504,7 +511,7 @@ test("an old drain cancellation cannot reopen or clear a newer exit after its re
   }
 });
 
-test("an old exit response only clears draining when no newer exit owns it", async () => {
+test("a cancelled drain settles before another exit can take ownership", async () => {
   for (const newExit of [false, true]) {
     const response = deferred(), entered = deferred();
     let requests = 0, draining = false;
@@ -516,25 +523,25 @@ test("an old exit response only clears draining when no newer exit owns it", asy
       runtimeRequest: async (_path, body) => {
         if (++requests === 1) { entered.resolve(); await response.promise; }
         draining = body.draining;
-        return { activeRuns: 1, activeWrites: 0 };
+        return { draining, activeRuns: 1, activeVerifications: 0, activeWrites: 0 };
       }, finishExit: async () => {}, redact: value => value,
     };
     const requestExit = mainSource.slice(mainSource.indexOf("async function requestExit("), mainSource.indexOf("\nif (locked)"));
-    vm.runInNewContext(functionSource("cancelExit", "finishExit") + requestExit, context);
+    vm.runInNewContext(lifecycleSource + functionSource("cancelExit", "finishExit") + requestExit, exitContext(context));
     const oldExit = context.requestExit();
     await entered.promise;
-    await context.cancelExit();
-    if (newExit) await context.requestExit();
-    const epoch = context.exitEpoch;
+    const cancellation = context.cancelExit();
+    await context.requestExit();
+    assert.equal(requests, 1, "no new drain may overtake cancellation");
     response.resolve();
-    await oldExit;
+    await Promise.all([oldExit, cancellation]);
+    if (newExit) await context.requestExit();
     assert.equal(draining, newExit);
     assert.equal(context.waitingExit, newExit);
-    assert.equal(context.exitEpoch, epoch);
   }
 });
 
-test("an exit error awaiting cancellation cannot report or modify a newer exit", async () => {
+test("an exit error finishes cancellation before accepting a fresh exit", async () => {
   for (const failureAt of ["initial", "poll"]) {
     for (const outcome of ["resolve", "reject"]) {
       const entered = deferred();
@@ -549,26 +556,30 @@ test("an exit error awaiting cancellation cannot report or modify a newer exit",
         dialog: { showMessageBox: async (_window, value) => { calls.push(value.type); return { response: 0 }; } },
         runtimeRequest: async (_path, body) => {
           if (body?.draining === false) { entered.resolve(); return pending; }
-          if (!body || (++exits === 1 && failureAt === "initial")) throw new Error("old lifecycle failure");
-          return { activeRuns: 1, activeWrites: 0 };
+          if ((!body && exits === 1) || (++exits === 1 && failureAt === "initial")) throw new Error("old lifecycle failure");
+          return { draining: true, activeRuns: 1, activeVerifications: 0, activeWrites: 0 };
         },
       };
       const requestExit = mainSource.slice(mainSource.indexOf("async function requestExit("), mainSource.indexOf("\nif (locked)"));
-      vm.runInNewContext(functionSource("cancelExit", "finishExit") + requestExit, context);
+      vm.runInNewContext(functionSource("cancelExit", "finishExit") + requestExit, exitContext(context));
       const first = context.requestExit();
       if (failureAt === "poll") await first;
       const oldAttempt = failureAt === "poll" ? pollExit() : first;
       await entered.promise;
       await context.requestExit();
       const epoch = context.exitEpoch;
+      assert.equal(context.waitingExit, false, "new exit is blocked until cancellation completes");
       if (outcome === "resolve") release();
       else reject(new Error("old cancel failed"));
       await oldAttempt;
       assert.equal(context.exitEpoch, epoch);
+      assert.equal(context.waitingExit, false);
+      assert.equal(calls.includes("error"), true);
+      assert.equal(calls.includes("show"), true);
+      assert.equal(calls.includes("resume"), true);
+      await context.requestExit();
       assert.equal(context.waitingExit, true);
-      assert.equal(calls.includes("error"), false);
-      assert.equal(calls.includes("show"), false);
-      assert.equal(calls.includes("resume"), false);
+      assert.ok(context.exitEpoch > epoch);
     }
   }
 });

@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('superCanvasDesktop', Object.freeze({
   onOpenUpdate: (callback) => listen('desktop:open-update', callback),
   onUpdate: (callback) => listen('desktop:update-changed', callback),
   onDraining: (callback) => listen('desktop:draining', callback),
+  onExitProgress: (callback) => listen('desktop:exit-progress', callback),
   cancelExit: () => ipcRenderer.invoke('desktop:cancel-exit'),
   getReferenceChannel: () => ipcRenderer.invoke('desktop:reference-status'),
   saveReferenceChannel: (settings) => ipcRenderer.invoke('desktop:reference-save', settings),

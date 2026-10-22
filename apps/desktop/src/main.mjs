@@ -15,7 +15,7 @@ import { DesktopUpdater } from "./updater.mjs";
 import { createUpdateDiagnostics } from "./update-diagnostics.mjs";
 import { configureUpdates } from "./update-config.mjs";
 import { ReferenceChannel } from "./reference-channel.mjs";
-import { exitWaitPresentation } from "./exit-policy.mjs";
+import { createExitProgressReporter, exitActivityIsIdle, exitWaitPresentation } from "./exit-policy.mjs";
 import { DesktopRendererRecovery, rendererLoadFailure } from "./renderer-recovery.mjs";
 import { mediaToolEnvironment } from "./media-tools.mjs";
 import { applyThemeSource, readThemeSource, saveThemeSource, themeBackground } from "./theme.mjs";
@@ -43,7 +43,8 @@ if (!locked) app.exit(0);
 let window, tray, backend, origin, token, secrets, updater, rendererRecovery;
 let referenceChannel, configuringReference = false;
 let starting = false, quitting = false, intentionalStop = false, waitingExit = false, applyUpdate = false;
-let exitTimer, updateTimer;
+let exitTimer, updateTimer, cancellingExit;
+let exitLifecycle = Promise.resolve();
 let themeSource = "system", themeWrite = Promise.resolve();
 let exitEpoch = 0;
 const developmentWatchers = new Set();
@@ -71,6 +72,11 @@ async function log(message) {
   await mkdir(logRoot, { recursive: true });
   await appendFile(logPath, `${new Date().toISOString()} ${redact(message)}\n`).catch(() => {});
 }
+let exitLog = Promise.resolve();
+const exitProgress = createExitProgressReporter({
+  send: value => send("desktop:exit-progress", value),
+  log: message => { exitLog = exitLog.then(() => log(message)).catch(() => {}); return exitLog; },
+});
 const state = (phase, message, detail) => send("desktop:state", { phase, message, detail });
 const trusted = (event) => event.sender === window?.webContents && event.senderFrame === window.webContents.mainFrame &&
   (event.senderFrame.url === pathToFileURL(startupPath).href || isAppUrl(event.senderFrame.url, origin));
@@ -257,34 +263,64 @@ async function prepareRenderer() {
   if (window.webContents.isDestroyed() || window.webContents.isCrashed() || rendererRecovery?.isRecovering) return;
   if (!isAppUrl(window.webContents.getURL(), origin)) return;
   const id = randomUUID();
+  const epoch = exitEpoch;
   await new Promise((resolve, reject) => {
     const timeout = setTimeout(() => { preparations.delete(id); reject(new Error("保存画布超时，请返回软件检查保存状态")); }, 30000);
-    preparations.set(id, (error) => { clearTimeout(timeout); preparations.delete(id); error ? reject(new Error(error)) : resolve(); });
+    preparations.set(id, (error) => {
+      clearTimeout(timeout); preparations.delete(id);
+      if (error) reject(new Error(error));
+      else { if (epoch === exitEpoch) exitProgress.event("renderer-acknowledged"); resolve(); }
+    });
     send("desktop:prepare-exit", id);
   });
 }
+function readExitActivity(body) {
+  const expectedBackend = backend;
+  // A cancelled attempt must finish its drain before the corresponding resume;
+  // otherwise a late POST can leave the next attempt in the wrong state.
+  const request = exitLifecycle.then(() => {
+    if (backend !== expectedBackend) throw new Error("本地服务已变化，请重新确认退出状态");
+    return runtimeRequest("/api/desktop/lifecycle", body);
+  });
+  exitLifecycle = request.catch(() => {});
+  return request;
+}
 async function cancelExit() {
+  if (quitting) return;
+  if (cancellingExit) return cancellingExit;
+  if (!waitingExit) return;
+  exitProgress.event("cancel-requested");
   const epoch = ++exitEpoch;
   clearInterval(exitTimer); waitingExit = false;
-  try {
-    if (backend) await runtimeRequest("/api/desktop/lifecycle", { draining: false });
-  } finally {
-    if (epoch === exitEpoch && !quitting) {
-      send("desktop:draining", false);
-      if (applyUpdate) updater.patch({ phase: "ready" });
-      applyUpdate = false;
-      show();
-      void rendererRecovery.resume();
+  cancellingExit = (async () => {
+    try {
+      if (backend) await readExitActivity({ draining: false });
+    } finally {
+      if (epoch === exitEpoch && !quitting) {
+        send("desktop:draining", false);
+        exitProgress.event("cancelled");
+        if (applyUpdate) updater.patch({ phase: "ready" });
+        applyUpdate = false;
+        show();
+        void rendererRecovery.resume();
+      }
     }
-  }
+  })();
+  try { await cancellingExit; }
+  finally { cancellingExit = undefined; }
 }
-async function finishExit() {
-  if (!waitingExit || quitting) return;
-  const epoch = exitEpoch;
-  clearInterval(exitTimer); clearInterval(updateTimer);
-  await runtimeRequest("/api/desktop/lifecycle");
+async function finishExit(epoch) {
+  if (!waitingExit || quitting || epoch !== exitEpoch) return;
+  exitProgress.progress("checking", applyUpdate, undefined, epoch);
+  const finalActivity = await readExitActivity();
   if (epoch !== exitEpoch) return;
+  if (!exitActivityIsIdle(finalActivity)) {
+    exitProgress.progress("waiting", applyUpdate, finalActivity, epoch);
+    return finalActivity;
+  }
+  clearInterval(exitTimer); clearInterval(updateTimer);
   quitting = true; intentionalStop = true;
+  exitProgress.progress("closing", applyUpdate, finalActivity, epoch);
   rendererRecovery.stop();
   await referenceChannel?.stop();
   if (window && !window.isDestroyed()) window.destroy();
@@ -299,16 +335,19 @@ async function finishExit() {
       child.send({ type: "shutdown" });
     });
   }
+  await exitProgress.event("closed");
   if (applyUpdate) { updater.patch({ phase: "applying" }); electronUpdater.autoUpdater.quitAndInstall(false, true); }
   else app.quit();
 }
 async function requestExit(install = false) {
-  if (waitingExit || quitting) return;
+  if (waitingExit || quitting || cancellingExit) return;
   if (!backend) {
     quitting = true; applyUpdate = install;
+    exitProgress.progress("closing", install, { activeRuns: 0, activeVerifications: 0, activeWrites: 0 }, ++exitEpoch);
     clearInterval(exitTimer); clearInterval(updateTimer);
     rendererRecovery?.stop();
     await stopDevelopmentWatchers();
+    await exitProgress.event("closed");
     // A stopped local service has nothing left to drain, but a downloaded
     // upgrade still needs the installer rather than an ordinary app quit.
     if (install) {
@@ -320,15 +359,20 @@ async function requestExit(install = false) {
   waitingExit = true; applyUpdate = install;
   const epoch = ++exitEpoch;
   send("desktop:draining", true);
+  exitProgress.progress("saving", install, undefined, epoch);
   try {
     await prepareRenderer();
     if (epoch !== exitEpoch) return;
-    const current = await runtimeRequest("/api/desktop/lifecycle", { draining: true });
-    if (epoch !== exitEpoch) {
-      if (!waitingExit && !quitting) await runtimeRequest("/api/desktop/lifecycle", { draining: false });
-      return;
+    exitProgress.progress("checking", install, undefined, epoch);
+    let current = await readExitActivity({ draining: true });
+    if (epoch !== exitEpoch) return;
+    const idle = exitActivityIsIdle(current);
+    exitProgress.progress(idle ? "checking" : "waiting", install, current, epoch);
+    if (idle) {
+      current = await finishExit(epoch);
+      if (epoch !== exitEpoch || quitting) return;
     }
-    if (current.activeRuns || current.activeWrites) {
+    if (current) {
       const result = await dialog.showMessageBox(window, { type: "question", ...exitWaitPresentation(current, install),
         buttons: ["完成后继续", "返回软件"], defaultId: 0, cancelId: 1 });
       if (epoch !== exitEpoch) return;
@@ -336,13 +380,17 @@ async function requestExit(install = false) {
       if (install) updater.patch({ phase: "waiting_for_idle" });
       let checking = false;
       exitTimer = setInterval(async () => {
-        if (checking) return; checking = true;
+        if (checking || epoch !== exitEpoch || !waitingExit || quitting) return;
+        checking = true;
         try {
-          const value = await runtimeRequest("/api/desktop/lifecycle");
+          const value = await readExitActivity();
           if (epoch !== exitEpoch) return;
-          if (!value.activeRuns && !value.activeWrites) await finishExit();
+          const idle = exitActivityIsIdle(value);
+          exitProgress.progress("waiting", install, value, epoch);
+          if (idle) await finishExit(epoch);
         } catch (error) {
           if (epoch !== exitEpoch || quitting) return;
+          exitProgress.error(redact(error.message));
           const cancelledEpoch = exitEpoch + 1;
           await cancelExit().catch(() => {});
           if (cancelledEpoch !== exitEpoch || quitting) return;
@@ -350,9 +398,10 @@ async function requestExit(install = false) {
         }
         finally { checking = false; }
       }, 1500);
-    } else await finishExit();
+    }
   } catch (error) {
     if (epoch !== exitEpoch || quitting) return;
+    exitProgress.error(redact(error.message));
     const cancelledEpoch = exitEpoch + 1;
     await cancelExit().catch(() => {});
     if (cancelledEpoch !== exitEpoch || quitting) return;

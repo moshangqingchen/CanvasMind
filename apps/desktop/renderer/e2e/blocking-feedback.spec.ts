@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import type { DesktopExitProgress } from "../lib/desktop-client";
 
 function colorChannels(color: string) {
   const values = color.match(/[\d.]+/gu)!.map(Number);
@@ -76,7 +77,8 @@ test("退出等待与错误跟随主题并保持可读面板，长错误换行�
   const card = dialog.locator(":scope > div");
   await expect(dialog).toBeVisible();
   await expect(card).toHaveCSS("opacity", "1");
-  const title = dialog.getByRole("heading", { name: "正在保存并等待任务完成" });
+  const title = dialog.getByRole("heading", { name: "正在准备退出", exact: true });
+  await expect(dialog).not.toContainText("等待任务");
   const colors = await title.evaluate(element => ({
     text: getComputedStyle(element).color,
     background: getComputedStyle(element.closest("[role=dialog]")!.firstElementChild!).backgroundColor,
@@ -127,6 +129,70 @@ test("退出等待与错误跟随主题并保持可读面板，长错误换行�
   await expect(toast).toBeVisible();
   await expect(toast).toHaveCount(0, { timeout: 6000 });
   await updates.getByRole("button", { name: "立即检查", exact: true }).click({ trial: true });
+});
+
+test("退出进度按实际阶段和任务计数展示，安装独立措辞且检查失败可见", async ({ page }, info) => {
+  await page.addInitScript(() => {
+    let draining: (value: boolean) => void = () => {};
+    let progress: (value: DesktopExitProgress) => void = () => {};
+    const initial: DesktopExitProgress = { phase: "saving", install: false, activeRuns: null, activeVerifications: null, activeWrites: null };
+    Object.assign(window, {
+      showExitProgress: (value: DesktopExitProgress, start = false) => { if (start) draining(true); progress(value); },
+      finishExitAttempt: () => draining(false),
+      superCanvasDesktop: {
+        getUpdate: async () => ({ desktop: true, formatVersion: 1, enabled: true, managerAvailable: true,
+          repository: "moshangqingchen/CanvasMind", intervalSeconds: 21600, currentVersion: "0.2.122", phase: "idle" }),
+        update: async () => {}, onPrepareExit: () => () => {}, completePrepareExit: () => {},
+        onUpdate: () => () => {}, onOpenUpdate: () => () => {},
+        onDraining: (callback: (value: boolean) => void) => { draining = callback; callback(true); return () => {}; },
+        onExitProgress: (callback: (value: DesktopExitProgress) => void) => { progress = callback; callback(initial); return () => {}; },
+        cancelExit: async () => draining(false),
+      },
+    });
+  });
+  await page.goto("/");
+  const emit = (value: DesktopExitProgress, start = false) => page.evaluate(({ value, start }) =>
+    (window as unknown as { showExitProgress(value: DesktopExitProgress, start: boolean): void }).showExitProgress(value, start), { value, start });
+  const idle = { install: false, activeRuns: 0, activeVerifications: 0, activeWrites: 0 };
+  const dialog = page.getByRole("dialog", { name: "正在准备退出", exact: true });
+  await expect(dialog.getByRole("heading")).toHaveText("正在保存");
+  await expect(dialog).not.toContainText("等待任务");
+  await expect(dialog).not.toContainText("安装");
+  await emit({ ...idle, phase: "checking" });
+  await expect(dialog.getByRole("heading")).toHaveText("正在检查退出条件");
+  await emit({ ...idle, phase: "waiting", activeRuns: 3, activeVerifications: 1, activeWrites: 2 });
+  await expect(dialog.getByRole("heading")).toHaveText("正在等待当前操作完成");
+  await expect(dialog).toContainText("生成任务：2 个");
+  await expect(dialog).toContainText("供应商核验：1 项");
+  await expect(dialog).toContainText("保存与后台写入：2 项");
+  await emit({ ...idle, phase: "waiting", activeWrites: 1 });
+  await expect(dialog.getByRole("heading")).toHaveText("正在完成保存与后台写入");
+  await expect(dialog).not.toContainText("生成任务");
+  await emit({ ...idle, phase: "waiting" });
+  await expect(dialog.getByRole("heading")).toHaveText("正在检查退出条件");
+  await expect(dialog).not.toContainText("等待");
+  await dialog.getByRole("button", { name: "返回软件" }).click();
+  await expect(dialog).toBeHidden();
+
+  await emit({ ...idle, phase: "checking" }, true);
+  await emit({ ...idle, phase: "checking", error: "后台状态检查超时，退出已取消。" });
+  await expect(dialog.getByRole("alert")).toHaveText("后台状态检查超时，退出已取消。");
+  await page.evaluate(() => (window as unknown as { finishExitAttempt(): void }).finishExitAttempt());
+  await expect(page.getByRole("alert").filter({ hasText: "后台状态检查超时，退出已取消。" })).toHaveText("后台状态检查超时，退出已取消。");
+  await expect(dialog).toBeHidden();
+
+  await emit({ ...idle, phase: "saving", install: true }, true);
+  const installing = page.getByRole("dialog", { name: "正在准备安装更新", exact: true });
+  await expect(installing.getByRole("heading")).toHaveText("正在保存，准备安装更新");
+  await expect(installing).toContainText("安装已下载的更新");
+  await emit({ ...idle, phase: "waiting", install: true, activeRuns: 2, activeVerifications: 2 });
+  await expect(installing.getByRole("heading")).toHaveText("正在等待供应商核验完成");
+  await expect(installing).toContainText("供应商核验：2 项");
+  await expect(installing).not.toContainText("生成任务");
+  await page.screenshot({ path: info.outputPath("exit-install-verification.png") });
+  await emit({ ...idle, phase: "closing", install: true });
+  await expect(installing.getByRole("heading")).toHaveText("正在关闭软件并启动更新安装");
+  await expect(installing.getByRole("button", { name: "返回软件" })).toBeDisabled();
 });
 
 test("生产画布焦点不被旧样式覆盖，缩放控件内侧焦点可见", async ({ page, request }, info) => {

@@ -1,4 +1,6 @@
 import type { AppUpdateView } from "./client-api";
+import type { DesktopExitProgress } from "../../src/exit-policy.mjs";
+export type { DesktopExitProgress } from "../../src/exit-policy.mjs";
 
 export interface ReferenceChannelView { enabled: boolean; baseUrl: string; tokenConfigured: boolean; phase: string; message: string; port: number }
 export interface DesktopBridgeApi {
@@ -13,6 +15,7 @@ export interface DesktopBridgeApi {
   onOpenUpdate(callback: () => void): () => void;
   onUpdate(callback: (status: AppUpdateView) => void): () => void;
   onDraining(callback: (draining: boolean) => void): () => void;
+  onExitProgress?(callback: (progress: DesktopExitProgress) => void): () => void;
   cancelExit(): Promise<void>;
 }
 declare global { interface Window { superCanvasDesktop?: DesktopBridgeApi } }
