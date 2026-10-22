@@ -28,6 +28,7 @@ function fixtureSupplier(): SupplierRecord {
       ],
     },
     scanStatus: "live",
+    scanComplete: true,
     scannedAt: "2026-09-08T03:00:00.000Z",
     createdAt: "2026-09-08T03:00:00.000Z",
     updatedAt: "2026-09-08T03:00:00.000Z",
@@ -80,6 +81,8 @@ async function mockSuppliers(
             baseUrl: "https://fixture.example.com/v1",
             customGroup: true,
             modelScanStatus: "live",
+            modelScanComplete: true,
+            modelScanCheckedAt: suppliers[0]!.scannedAt,
             scannedModelIds: ["scanned-image"],
             ...(options.restVideo
               ? {
@@ -173,6 +176,7 @@ async function mockSuppliers(
           supplierKey: "custom-fixture",
           catalog: { groups: [] },
           scanStatus: "unscanned",
+          scanComplete: undefined,
         },
       ];
       await route.fulfill({ status: 201, json: suppliers[0] });
@@ -576,6 +580,52 @@ test("单家刷新独立于其他供应商，详情列出分组模型接口价�
   expect(api.writes).toEqual([]);
   expect(connection.apiKeySet).toBe(true);
   expect(record.catalog.groups.find(group => group.id === "personal")?.models[0]?.id).toBe("personal-model");
+});
+
+test("不完整旧基线的刷新详情逐项展示首次发现，不冒充新增或无变化", async ({ page }, testInfo) => {
+  const api = await mockSuppliers(page, { existing: true });
+  const record = api.suppliers()[0]!;
+  record.scanComplete = undefined;
+  const connection = api.connections()[0]!;
+  connection.config.modelScanComplete = false;
+  await page.route("**/api/suppliers/supplier-fixture/scan", async route => {
+    record.scannedAt = new Date().toISOString();
+    record.scanComplete = true;
+    record.catalog.groups.push({ id: "first-group", label: "本次发现的公开组", source: "catalog", models: [] });
+    connection.config = { ...connection.config, modelScanCheckedAt: record.scannedAt, modelScanComplete: true,
+      scannedModelIds: ["first-discovered-image"],
+      modelCatalogModels: [{ id: "first-discovered-image", name: "首次读到的模型", operations: ["image.generate"] }] };
+    await route.fulfill({ json: record });
+  });
+  await openSettings(page);
+  const settings = page.getByRole("dialog", { name: "供应商与模型设置" });
+  const row = settings.locator(".sm-supplier-row").filter({ has: page.locator(".sm-supplier-label strong").filter({ hasText: /^测试供应商$/u }) });
+  await row.getByRole("button", { name: "刷新 测试供应商", exact: true }).click();
+  await expect(settings.getByText("刷新完成：1 家供应商", { exact: true })).toBeVisible();
+  await row.getByRole("button", { name: "查看 测试供应商 刷新状态", exact: true }).click();
+  const details = page.getByRole("dialog", { name: "供应商刷新详情" });
+  const groups = details.getByRole("region", { name: "分组变化详情" });
+  await expect(groups.getByRole("heading", { name: "首次发现分组（2）", exact: true })).toBeVisible();
+  await expect(groups.getByText("本次发现的公开组", { exact: true })).toBeVisible();
+  await expect(groups.getByText("缺少完整旧基线，无法确认何时新增。", { exact: true })).toBeVisible();
+  await expect(groups).not.toContainText("未发现变化");
+  await expect(groups).not.toContainText("未发现公开分组变化");
+  await expect(groups).not.toContainText("新增分组（");
+  const models = details.getByRole("region", { name: "连接与模型详情" });
+  const discoveries = models.locator("details").filter({ has: page.getByText("首次发现模型（1）", { exact: true }) });
+  await expect(discoveries.getByText("first-discovered-image", { exact: true })).toBeVisible();
+  await expect(discoveries).toContainText("缺少同一身份的完整旧基线，无法确认何时新增。");
+  await expect(models).not.toContainText("新增模型（");
+  await expect(details.getByText("刷新会更新已保存目录与连接资料；未完成的项目保留上次配置。", { exact: true })).toBeVisible();
+  await groups.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("supplier-first-discovery-desktop.png") });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await groups.scrollIntoViewIfNeeded();
+  expect(await details.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath("supplier-first-discovery-mobile.png") });
+  await discoveries.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("supplier-first-discovery-models-mobile.png") });
+  expect(api.writes).toEqual([]);
 });
 
 test("全部刷新每家可查看独立失败项目，保留旧模型与已保存 Key", async ({ page }) => {

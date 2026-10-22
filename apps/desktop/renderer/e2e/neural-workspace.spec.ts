@@ -328,12 +328,14 @@ for (const theme of ["dark", "light"] as const) {
     const suppliers = settings.getByRole("complementary", {
       name: "供应商列表",
     });
-    await expect(
-      suppliers.getByRole("button", { name: /^晨星创作 \d+ 个已配置连接/ }),
-    ).toBeVisible();
-    await expect(
-      suppliers.getByRole("button", { name: /^纸月模型 \d+ 个已配置连接/ }),
-    ).toBeVisible();
+    const morningAccount = suppliers.locator('[data-supplier-id="neural-supplier-0"] .sm-supplier-item');
+    const moonAccount = suppliers.locator('[data-supplier-id="neural-supplier-1"] .sm-supplier-item');
+    for (const [account, name] of [[morningAccount, "晨星创作"], [moonAccount, "纸月模型"]] as const) {
+      await expect(account).toBeVisible();
+      await expect(account.locator("strong")).toHaveText(name);
+      await expect(account.locator(".sm-account-label")).toHaveText("未配置站点账号");
+      await expect(account).toContainText("1 个已配置连接");
+    }
     await expect(
       settings
         .locator(".sm-main")
@@ -365,12 +367,8 @@ for (const theme of ["dark", "light"] as const) {
       exact: true,
     });
     await supplierSearch.fill("纸月");
-    await expect(
-      suppliers.getByRole("button", { name: /^纸月模型 \d+ 个已配置连接/ }),
-    ).toBeVisible();
-    await expect(
-      suppliers.getByRole("button", { name: /^晨星创作 \d+ 个已配置连接/ }),
-    ).toHaveCount(0);
+    await expect(moonAccount).toBeVisible();
+    await expect(morningAccount).toHaveCount(0);
     await supplierSearch.clear();
     await settings.getByRole("tab", { name: "连接配置", exact: true }).click();
     const supplierName = settings.getByRole("textbox", {

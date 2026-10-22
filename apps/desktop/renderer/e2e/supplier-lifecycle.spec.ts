@@ -26,7 +26,7 @@ async function createFixture(request: APIRequestContext, name: string) {
   expect(created.ok()).toBeTruthy();
   return created.json();
 }
-async function settings(page: Page, name: string) {
+async function settings(page: Page, supplier: { id: string; name: string }) {
   await page.goto("/");
   await page.getByTestId("workspace-settings").or(page.getByRole("button", { name: "供应商与模型", exact: true })).click();
   const dialog = page.getByRole("dialog", { name: "供应商与模型设置" });
@@ -36,13 +36,14 @@ async function settings(page: Page, name: string) {
   // before branching on the actual responsive presentation.
   await expect(mobileSupplier).toBeAttached();
   if (await mobileSupplier.isVisible()) {
-    await mobileSupplier.selectOption({ label: name });
+    // Account labels are part of the option text; the saved ID identifies the
+    // intended account even when several accounts share a supplier name/site.
+    await mobileSupplier.selectOption({ value: supplier.id });
+    await expect(mobileSupplier).toHaveValue(supplier.id);
   } else {
-    await page
-      .getByRole("button", { name: new RegExp(name) })
-      .filter({ has: page.locator(".sm-supplier-label") })
-      .click();
+    await dialog.locator(`[data-supplier-id="${supplier.id}"] .sm-supplier-item`).click();
   }
+  await expect(dialog.getByRole("heading", { name: supplier.name, exact: true })).toBeVisible();
   return dialog;
 }
 test("供应商右键、键盘菜单、隐藏恢复及彻底删除不复活", async ({
@@ -51,7 +52,7 @@ test("供应商右键、键盘菜单、隐藏恢复及彻底删除不复活", as
 }, testInfo) => {
   const name = `生命周期-${Date.now()}`;
   const supplier = await createFixture(request, name);
-  const d = await settings(page, name);
+  const d = await settings(page, supplier);
   const item = d.locator(".sm-supplier-item").filter({ hasText: name });
   await item.click({ button: "right" });
   await expect(page.getByRole("menuitem", { name: "彻底删除" })).toBeVisible();
@@ -116,7 +117,7 @@ test("修改地址归档分组，历史恢复原地址与 Key，当前数量不�
   });
   expect(saved.ok()).toBeTruthy();
   const connection = await saved.json();
-  const d = await settings(page, name);
+  const d = await settings(page, supplier);
   await expect(d.locator(".sm-group-card")).toHaveCount(1);
   await d.getByRole("tab", { name: "连接配置", exact: true }).click();
   await d
@@ -167,7 +168,7 @@ test("窄屏更多菜单可操作，未完成运行阻止删除", async ({ page,
       });
     else await route.continue();
   });
-  const d = await settings(page, name);
+  const d = await settings(page, supplier);
   await d.getByRole("button", { name: `${name} 的更多操作` }).click();
   await page.getByRole("menuitem", { name: "彻底删除" }).click();
   await expect(

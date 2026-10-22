@@ -44,6 +44,30 @@ const modelEpochs = new Map<string, number>();
 const modelListCache = new Map<string, ModelListCacheEntry>();
 const pendingModelRequests = new Map<string, Promise<ModelDescriptor[]>>();
 const connectionModelVersions = new Map<string, string>();
+const availabilityEpochs = new Map<string, number>();
+const connectionAvailabilityScopes = new Map<string, string>();
+
+function availabilityScope(connection: ProviderConnectionView): string {
+  const config = connection.config ?? {};
+  return JSON.stringify([connection.provider, connection.apiKeySet, connection.apiKeyUsable, connection.credentialEpoch,
+    ...["baseUrl", "protocol", "directorProtocol", "preset", "supplierKey", "supplierId", "supplierSourceId", "supplierArchived",
+      "accountKeyId", "accountKeyGroupId", "accountKeyGroup", "modelGroup", "usage"].map(field => config[field])]);
+}
+
+function invalidateAvailability(id: string): void {
+  availabilityEpochs.set(id, (availabilityEpochs.get(id) ?? 0) + 1);
+  for (const key of availabilityCache.keys()) if (key.startsWith(`${id}:`)) availabilityCache.delete(key);
+  for (const key of pendingAvailability.keys()) if (key.startsWith(`${id}:`)) pendingAvailability.delete(key);
+}
+
+/** Catalog revisions and polling never change the identity of a channel read. */
+function reconcileAvailabilityScope(connection: ProviderConnectionView, replacedKey = false): void {
+  const scope = availabilityScope(connection);
+  const previous = connectionAvailabilityScopes.get(connection.id);
+  if (replacedKey || previous !== scope && (previous !== undefined || availabilityEpochs.has(connection.id)))
+    invalidateAvailability(connection.id);
+  connectionAvailabilityScopes.set(connection.id, scope);
+}
 
 export function getCachedModels(id: string): ModelDescriptor[] | undefined {
   const cached = modelListCache.get(id);
@@ -144,6 +168,8 @@ export interface ProviderConnectionView {
   apiKeySet: boolean;
   /** Response-only opaque identity; never sent back when saving a connection. */
   credentialEpoch?: string;
+  /** Response-only legacy account label; it does not establish a saved scan identity. */
+  supplierIdentityProjected?: true;
   apiKeyUsable?: boolean;
   apiKey: string;
 }
@@ -909,11 +935,10 @@ export function fetchConnections(): Promise<ProviderConnectionView[]> {
     const present = new Set<string>();
     for (const connection of connections) {
       present.add(connection.id);
+      reconcileAvailabilityScope(connection);
       const config = connection.config ?? {};
-      const version = JSON.stringify([connection.provider, connection.apiKeySet, connection.apiKeyUsable,
-        ...["baseUrl", "protocol", "preset", "supplierId", "supplierSourceId", "supplierArchived",
-          "accountKeyId", "accountKeyGroupId", "accountKeyGroup", "modelGroup", "usage",
-          "modelScanRequestId", "modelScanCheckedAt", "modelScanLastSuccessAt", "modelScanStatus",
+      const version = JSON.stringify([availabilityScope(connection),
+        ...["modelScanRequestId", "modelScanCheckedAt", "modelScanLastSuccessAt", "modelScanStatus",
           "modelScanAttemptStatus", "modelScanComplete", "scannedModelIds", "modelCatalogModels"].map(field => config[field])]);
       if (connectionModelVersions.get(connection.id) !== version &&
           (connectionModelVersions.has(connection.id) || modelListCache.has(connection.id) || pendingModelRequests.has(connection.id)))
@@ -924,6 +949,11 @@ export function fetchConnections(): Promise<ProviderConnectionView[]> {
       if (present.has(id)) continue;
       invalidateModelCache(id);
       connectionModelVersions.delete(id);
+    }
+    for (const id of connectionAvailabilityScopes.keys()) {
+      if (present.has(id)) continue;
+      invalidateAvailability(id);
+      connectionAvailabilityScopes.delete(id);
     }
     return connections;
   });
@@ -949,6 +979,7 @@ export async function saveConnection(input: {
   const saved = (await response.json()) as ProviderConnectionView;
   invalidateConnections();
   invalidateModelCache(saved.id);
+  reconcileAvailabilityScope(saved, Boolean(input.apiKey));
   return saved;
 }
 
@@ -1147,7 +1178,8 @@ export async function fetchCangyuanAvailability(
   if (options?.category) query.set("category", options.category);
   if (options?.latestStatus) query.set("latest_status", options.latestStatus);
   const suffix = query.size ? `?${query.toString()}` : "";
-  const epoch = modelEpochs.get(connectionId) ?? 0;
+  const epoch = availabilityEpochs.get(connectionId) ?? 0;
+  availabilityEpochs.set(connectionId, epoch);
   const key = `${connectionId}:${epoch}:${suffix}`;
   const cached = availabilityCache.get(key);
   if (cached && cached.expiresAt > Date.now())
@@ -1176,7 +1208,7 @@ export async function fetchCangyuanAvailability(
     )
       throw new Error("沧元渠道可用性返回格式不完整");
     const snapshot = payload as CangyuanAvailabilitySnapshotView;
-    if ((modelEpochs.get(connectionId) ?? 0) !== epoch)
+    if ((availabilityEpochs.get(connectionId) ?? 0) !== epoch)
       throw new ProviderModelsRequestError("连接已改变，请重新读取渠道状态", 409);
     // Bound memory when connection credentials are repeatedly changed.
     if (availabilityCache.size >= 128)
@@ -1188,7 +1220,7 @@ export async function fetchCangyuanAvailability(
   try {
     return await request;
   } finally {
-    pendingAvailability.delete(key);
+    if (pendingAvailability.get(key) === request) pendingAvailability.delete(key);
   }
 }
 
@@ -1199,4 +1231,6 @@ export async function deleteConnection(id: string): Promise<void> {
   if (!response.ok) throw new Error("删除供应商连接失败");
   invalidateConnections();
   invalidateModelCache(id);
+  invalidateAvailability(id);
+  connectionAvailabilityScopes.delete(id);
 }

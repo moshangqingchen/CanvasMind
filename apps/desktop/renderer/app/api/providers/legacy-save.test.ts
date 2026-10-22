@@ -15,6 +15,7 @@ vi.mock("../../../lib/server", () => ({
 vi.mock("../../../lib/supplier-verification", () => ({ scheduleSupplierVerification: mocks.schedule }));
 import { GET, POST } from "./route";
 import { legacySupplierId } from "../../../lib/supplier-service";
+import { ProviderConnectionRequestSchema } from "../../../lib/api-validation";
 
 beforeEach(() => { mocks.repository = new MemoryRepository(); mocks.schedule.mockReset(); });
 async function fixture() {
@@ -38,12 +39,18 @@ describe("first explicit legacy connection save", () => {
     const old = await mocks.repository.saveConnection({ id: "unbound-key", name: "Unbound", provider: "openai",
       encryptedSecret: "old-encrypted-key", config: { supplierKey: "custom-account", baseUrl: "https://legacy.example.test/v1", usage: "canvas" } });
     const before = mocks.repository.exportSnapshot();
-    const rows = await (await GET()).json() as { id: string; config: ProviderConnectionRecord["config"] }[];
+    const rows = await (await GET()).json() as { id: string; config: ProviderConnectionRecord["config"]; supplierIdentityProjected?: true }[];
     expect(rows.find(row => row.id === old.id)?.config.supplierId).toBe(legacySupplierId(old));
     expect(rows.find(row => row.id === "legacy-key")?.config.supplierId).toBe("legacy-supplier");
+    expect(rows.find(row => row.id === old.id)?.supplierIdentityProjected).toBe(true);
+    expect(rows.find(row => row.id === "legacy-key")).not.toHaveProperty("supplierIdentityProjected");
     expect(mocks.repository.exportSnapshot()).toEqual(before);
     const projected = rows.find(row => row.id === old.id)!;
+    expect(ProviderConnectionRequestSchema.safeParse({ id: old.id, name: old.name, provider: old.provider,
+      config: projected.config, supplierIdentityProjected: true }).success).toBe(false);
     expect((await save({ ...old, config: projected.config })).status).toBe(200);
+    expect(await mocks.repository.getConnection(old.id)).not.toHaveProperty("supplierIdentityProjected");
+    expect((await (await GET()).json()).find((row: { id: string }) => row.id === old.id)).not.toHaveProperty("supplierIdentityProjected");
     expect((await mocks.repository.getConnection(old.id))?.config.supplierId).toBe(legacySupplierId(old));
     expect((await mocks.repository.getConnection("legacy-key"))?.config.supplierId).toBe("legacy-supplier");
   });

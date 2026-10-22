@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { randomUUID } from "node:crypto";
 import { cangyuanCurrentModel } from "@super-canvas/providers";
 import { CANGYUAN_IMAGE_CONNECTOR } from "../lib/provider-presets";
 import type { CangyuanAvailabilityItem } from "../lib/cangyuan-availability-types";
@@ -12,12 +13,12 @@ test("渠道可用性按实际模型展示历史，准备中和停用不沿用�
     config: { supplierKey: "cangyuan", modelGroup: "IMAGE", usage: "canvas", baseUrl: "https://availability.invalid",
       defaultModel: modelId, connector: { ...structuredClone(CANGYUAN_IMAGE_CONNECTOR), models: [descriptor] } },
   } });
-  expect(connectionResponse.ok()).toBeTruthy();
+  expect(connectionResponse.ok(), await connectionResponse.text()).toBeTruthy();
   const connection = await connectionResponse.json();
   await page.route(`**/api/providers/${connection.id}/models*`, route => route.fulfill({
     json: [descriptor], headers: { "X-Model-Scan-Status": "live" },
   }));
-  const created = await request.post("/api/canvas", { data: { title: "渠道可用性回归", graph: {
+  const created = await request.post("/api/canvas", { data: { title: `渠道可用性回归-${randomUUID()}`, graph: {
     schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 1 }, edges: [], nodes: [{ id: "image", type: "workflow",
       position: { x: 80, y: 60 }, style: { width: 420, height: 180 }, data: {
         nodeType: "image-generation", label: "渠道监测", provider: "rest", connectionId: connection.id,
@@ -25,7 +26,7 @@ test("渠道可用性按实际模型展示历史，准备中和停用不沿用�
         outputs: [{ id: "images", kind: "image", label: "图片" }],
       } }],
   } } });
-  expect(created.ok()).toBeTruthy();
+  expect(created.ok(), await created.text()).toBeTruthy();
   const canvas = await created.json();
   const checkedAt = "2026-10-03T09:50:00Z";
   const endedAt = Date.parse(checkedAt) / 1000;
@@ -50,6 +51,17 @@ test("渠道可用性按实际模型展示历史，准备中和停用不沿用�
     await route.fulfill({ json: { checkedAt, enabled: mode !== "disabled", ready: mode === "ready",
       items: mode === "disabled" ? [] : items, source: "live" } });
   });
+  const pollAvailability = async (nextMode: typeof mode) => {
+    mode = nextMode;
+    const response = page.waitForResponse(value =>
+      new URL(value.url()).pathname === `/api/providers/${connection.id}/availability`);
+    // Both 60s timers may become due together. An ordinary model refresh must
+    // not invalidate the same account's independently requested availability.
+    await page.clock.fastForward(60_100);
+    const received = await response;
+    expect(received.status()).toBe(nextMode === "error" ? 503 : 200);
+    await received.finished();
+  };
   await page.clock.install({ time: new Date(checkedAt) });
   await page.goto(`/canvas/${canvas.id}`);
   await page.getByRole("button", { name: "打开 渠道监测 模型与参数", exact: true }).click();
@@ -60,8 +72,7 @@ test("渠道可用性按实际模型展示历史，准备中和停用不沿用�
   await expect(monitor.getByRole("img")).toHaveCount(48);
   await expect(monitor.locator('[data-tone="available"]')).toHaveCount(0);
 
-  mode = "ready";
-  await page.clock.fastForward(60_100);
+  await pollAvailability("ready");
   await expect(monitor.locator('[data-tone="available"]')).toHaveText("正常");
   await expect(monitor).toContainText("生成耗时中位数 8.1 秒");
   await expect(monitor).toContainText("每 10 分钟一块");
@@ -76,16 +87,13 @@ test("渠道可用性按实际模型展示历史，准备中和停用不沿用�
   await monitor.screenshot({ path: testInfo.outputPath("cangyuan-availability-monitor.png") });
   await page.screenshot({ path: testInfo.outputPath("cangyuan-availability.png") });
 
-  mode = "preparing";
-  await page.clock.fastForward(60_100);
+  await pollAvailability("preparing");
   await expect(monitor.locator('[data-tone="preparing"]')).toBeVisible();
   await expect(monitor).toContainText("上次读取");
   await expect(monitor.locator('[data-tone="available"]')).toHaveCount(0);
-  mode = "error";
-  await page.clock.fastForward(60_100);
+  await pollAvailability("error");
   await expect(monitor.locator('[data-tone="error"]')).toHaveText("更新失败");
-  mode = "disabled";
-  await page.clock.fastForward(60_100);
+  await pollAvailability("disabled");
   await expect(monitor.locator('[data-tone="disabled"]')).toHaveText("监测已停用");
   await expect(monitor.getByRole("img")).toHaveCount(0);
   expect(queries.length).toBeGreaterThanOrEqual(5);

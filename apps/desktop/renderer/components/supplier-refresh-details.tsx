@@ -41,7 +41,9 @@ export function SupplierRefreshDetails({ supplierName, result, running, canRefre
   if (typeof document === "undefined") return null;
   const connections = result?.connections ?? [];
   const groups = result?.groupChanges;
+  const firstDiscoveredGroups = groups?.firstDiscovered ?? [];
   const added = connections.reduce((count, item) => count + item.modelAddedIds.length, 0);
+  const firstDiscoveredModels = connections.reduce((count, item) => count + (item.modelFirstDiscoveredIds?.length ?? 0), 0);
   const missing = connections.reduce((count, item) => count + item.modelRemovedModels.length, 0);
   const interfaces = connections.reduce((count, item) => count + item.interfaceChanges.length, 0);
   const prices = connections.reduce((count, item) => count + item.priceChanges.length, 0);
@@ -80,8 +82,8 @@ export function SupplierRefreshDetails({ supplierName, result, running, canRefre
           {result?.snapshotOnly && <p className={styles.note}>仅展示已保存状态；刷新后可查看本次变化。</p>}
           <div className={styles.metrics}>
             <div><span>目录读取成功</span><strong>{confirmed}<small> / {connections.length}</small></strong></div>
-            <div><span>分组变化</span><strong>{changesAvailable ? groupChangeCount : "—"}</strong></div>
-            <div><span>模型新增 / 未再返回</span><strong>{changesAvailable ? <>{added}<small> / {missing}</small></> : "—"}</strong></div>
+            <div><span>分组变化</span><strong>{changesAvailable ? groupChangeCount : "—"}</strong>{changesAvailable && firstDiscoveredGroups.length > 0 && <small>首次发现 {firstDiscoveredGroups.length}</small>}</div>
+            <div><span>模型新增 / 未再返回</span><strong>{changesAvailable ? <>{added}<small> / {missing}</small></> : "—"}</strong>{changesAvailable && firstDiscoveredModels > 0 && <small>首次发现 {firstDiscoveredModels}</small>}</div>
             <div><span>接口 / 价格变化</span><strong>{changesAvailable ? <>{interfaces}<small> / {prices}</small></> : "—"}</strong></div>
           </div>
         </section>
@@ -109,11 +111,17 @@ export function SupplierRefreshDetails({ supplierName, result, running, canRefre
           {result.billing.todayError && <p>今日消耗：{result.billing.todayError}</p>}
         </section>}
         {groups && !result?.snapshotOnly && <section className={styles.section} aria-label="分组变化详情">
-          <div className={styles.sectionHeading}><h3>分组变化</h3><small>{groupChangeCount ? `${groupChangeCount} 项变化` : "未发现变化"}</small></div>
-          {groupChangeCount > 0 ? <div className={styles.groupChanges}>
+          <div className={styles.sectionHeading}><h3>分组变化</h3><small>{[
+            ...(groupChangeCount ? [`${groupChangeCount} 项变化`] : []),
+            ...(firstDiscoveredGroups.length ? [`首次发现 ${firstDiscoveredGroups.length}`] : []),
+          ].join("；") || "未发现变化"}</small></div>
+          {groupChangeCount + firstDiscoveredGroups.length > 0 ? <div className={styles.groupChanges}>
+            {firstDiscoveredGroups.length > 0 && <div><h4>首次发现分组（{firstDiscoveredGroups.length}）</h4><p>缺少完整旧基线，无法确认何时新增。</p><ul>{firstDiscoveredGroups.map(item => <li key={item.id}><strong>{item.label}</strong><code>{item.id}</code></li>)}</ul></div>}
+            {groupChangeCount > 0 && <>
             <div><h4>新增分组（{groups.added.length}）</h4>{groups.added.length ? <ul>{groups.added.map(item => <li key={item.id}><strong>{item.label}</strong><code>{item.id}</code></li>)}</ul> : <p>无新增</p>}</div>
             <div><h4>未再返回（{groups.missing.length}）</h4>{groups.missing.length ? <ul>{groups.missing.map(item => <li key={item.id}><strong>{item.label}</strong><code>{item.id}</code></li>)}</ul> : <p>无缺失</p>}</div>
             <div><h4>名称变化（{groups.renamed.length}）</h4>{groups.renamed.length ? <ul>{groups.renamed.map(item => <li key={item.id}><strong>{item.before} → {item.after}</strong><code>{item.id}</code></li>)}</ul> : <p>无更名</p>}</div>
+            </>}
           </div> : <p>未发现公开分组变化。</p>}
           <p className={styles.note}>未再返回的分组保留在历史中；手动分组和自定义模型保持已有配置。</p>
         </section>}
@@ -136,7 +144,8 @@ export function SupplierRefreshDetails({ supplierName, result, running, canRefre
                 label={`价格记录（${item.priceIssues.length} 个模型）`} /></summary>
               <ul>{item.priceIssues.map(model => <li key={model.id}><strong>{model.name}</strong><code>{model.id}</code><p>{model.message}</p></li>)}</ul>
             </details>}
-            {item.modelAddedIds.length + item.modelRemovedModels.length + item.interfaceChanges.length + item.priceChanges.length > 0 && <div className={styles.modelChanges}>
+            {changesAvailable && item.modelAddedIds.length + (item.modelFirstDiscoveredIds?.length ?? 0) + item.modelRemovedModels.length + item.interfaceChanges.length + item.priceChanges.length > 0 && <div className={styles.modelChanges}>
+              {!!item.modelFirstDiscoveredIds?.length && <details open><summary>首次发现模型（{item.modelFirstDiscoveredIds.length}）</summary><p>缺少同一身份的完整旧基线，无法确认何时新增。</p><ul>{item.modelFirstDiscoveredIds.map(id => <li key={id}><code>{id}</code></li>)}</ul></details>}
               {item.modelAddedIds.length > 0 && <details open><summary>新增模型（{item.modelAddedIds.length}）</summary><ul>{item.modelAddedIds.map(id => <li key={id}><code>{id}</code></li>)}</ul></details>}
               {item.modelRemovedModels.length > 0 && <details open><summary>未再返回的模型（{item.modelRemovedModels.length}）</summary><ul>{item.modelRemovedModels.map(model => <li key={model.id}><strong>{model.name}</strong><code>{model.id}</code></li>)}</ul></details>}
               {item.interfaceChanges.length > 0 && <details open><summary>接口变化（{item.interfaceChanges.length}）</summary><ul>{item.interfaceChanges.map(model => <li key={model.id}><strong>{model.name}</strong><code>{model.id}</code><span>{model.before} → {model.after}</span></li>)}</ul></details>}
@@ -145,7 +154,7 @@ export function SupplierRefreshDetails({ supplierName, result, running, canRefre
           </article>)}</div> : <p>尚未保存连接。可在供应商配置中添加分组与 Key，再读取实际可用模型。</p>}
         </section>
       </div>
-      <footer className={styles.footer}><p>刷新只读取资料；未完成的项目保留上次配置。</p><div>
+      <footer className={styles.footer}><p>刷新会更新已保存目录与连接资料；未完成的项目保留上次配置。</p><div>
         <button type="button" disabled={!canRefresh || running} onClick={onRefresh} className={styles.refresh}><RefreshCw size={15} className={running ? styles.spin : undefined} />{running ? "正在刷新…" : "重新刷新此供应商"}</button>
         <button type="button" onClick={onClose}>完成</button>
       </div></footer>

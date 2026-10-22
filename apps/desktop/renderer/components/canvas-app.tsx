@@ -202,6 +202,7 @@ import {
   CHENTU_PRESET_ID,
   isChentuOfficialImageGroup,
 } from "../lib/chentu-presets";
+import { requiresAuthoritativeModelScan } from "../lib/model-inventory-identity";
 import {
   FRIMODEL_PRESET_ID,
   friModelFallbackImageDescriptor,
@@ -1521,14 +1522,7 @@ function verifiedWeAiModelDescriptorsForConnection(
 function connectionRequiresAuthoritativeModelScan(
   connection: ProviderConnectionView,
 ): boolean {
-  return (
-    connection.provider === "cli" ||
-    Boolean(connection.config.supplierId) ||
-    verifiedWeAiModelDescriptorsForConnection(connection).length > 0 ||
-    connection.config.preset === "cyberafei-api" ||
-    connection.config.preset === CHENTU_PRESET_ID ||
-    connection.config.preset === FRIMODEL_PRESET_ID
-  );
+  return requiresAuthoritativeModelScan(connection, verifiedWeAiModelDescriptorsForConnection(connection).length > 0);
 }
 
 function modelDescriptorsForConnection(

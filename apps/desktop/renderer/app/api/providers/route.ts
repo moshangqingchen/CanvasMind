@@ -41,11 +41,9 @@ export async function GET(_request?: Request) {
         const supplier = connection.config.supplierId
           ? suppliers.get(String(connection.config.supplierId))
           : supplierRecords.find((record) => supplierOwnsStoredConnection(record, connection));
-        return maskConnection(
-          supplier && supplier.supplierKey === supplierKeyForConnection(connection)
-            ? { ...connection, config: { ...connection.config, supplierId: supplier.id, supplierName: supplier.name } }
-            : connection,
-        );
+        if (!supplier || supplier.supplierKey !== supplierKeyForConnection(connection)) return maskConnection(connection);
+        const masked = maskConnection({ ...connection, config: { ...connection.config, supplierId: supplier.id, supplierName: supplier.name } });
+        return connection.config.supplierId ? masked : { ...masked, supplierIdentityProjected: true };
       }),
     { headers: { "Cache-Control": "no-store" } },
   );
