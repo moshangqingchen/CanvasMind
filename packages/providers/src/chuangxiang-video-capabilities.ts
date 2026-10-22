@@ -42,6 +42,7 @@ const current: Readonly<Record<string, ChuangxiangVideoCapability>> = {
   "sd13-seedance-2.0-fast": capability(4, 15, ["480p", "720p"], 9, 3),
   "sd13-seedance-2.0-mini": capability(4, 15, ["480p", "720p"], 9, 3),
   "sd13-seedance-2.5": capability(4, 30, ["480p", "720p"], 30, 10),
+  "sd15-seedance-2.5-2": capability(4, 30, ["720p"], 30, 10, 10),
   "sd14-seedance-2.0": capability(4, 15, ["720p"], 9, 3, 3, true),
   "sd16-seedance-2.0": capability(4, 15, ["480p", "720p", "1080p", "4k"], 9, 3, 3, true),
   "sd16-seedance-2.0-fast": capability(4, 15, ["480p", "720p"], 9, 3, 3, true),
@@ -49,9 +50,12 @@ const current: Readonly<Record<string, ChuangxiangVideoCapability>> = {
   "sd17-seedance-2.0": capability(5, 15, ["720p"], 9, 0, 3),
   "sd17-seedance-2.0-2": capability(5, 15, ["720p"], 9, 0, 3),
   "sd17-seedance-2.0-3": capability(5, 15, ["720p"], 9, 0, 0, false, [5, 10, 15]),
+  "sd17-seedance-2.0-4": capability(5, 15, ["480p", "720p"], 9, 3, 3),
   "sd17-seedance-2.5": capability(5, 30, ["720p"], 30, 10),
   "sd17-seedance-2.5-2": capability(10, 30, ["720p"], 30, 10, 10),
   "sd17-seedance-2.5-3": capability(30, 30, ["720p"], 9),
+  "sd17-seedance-2.5-4": capability(5, 30, ["480p", "720p", "1080p"], 30, 10, 10),
+  "sd8-seedance-2.5-n": capability(30, 30, ["720p"], 30, 10, 10),
   "sd8-seedance-2.5-s": capability(30, 30, ["720p"], 30, 10, 10),
 };
 

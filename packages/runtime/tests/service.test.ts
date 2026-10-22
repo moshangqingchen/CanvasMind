@@ -1101,6 +1101,7 @@ describe("RunService", () => {
 
   it("durably preserves the accepted receipt after the first FileRepository persist fails", async () => {
     const root = await mkdtemp(join(tmpdir(), "super-canvas-receipt-checkpoint-"));
+    let unsubscribe: (() => void) | undefined;
     try {
       let failNext = false; let failed = false;
       const path = join(root, "state.json"), repository = new FileRepository(path, async (oldPath, newPath) => {
@@ -1112,15 +1113,29 @@ describe("RunService", () => {
       const provider = pollingAdapter([]), original = provider.adapter.submit.bind(provider.adapter);
       vi.spyOn(provider.adapter, "submit").mockImplementation(async request => { const receipt = await original(request); failNext = true; return receipt; });
       const storage = new MemoryStorage(), service = new AdapterRunService(provider.adapter, repository, storage);
+      const settledStatuses = new Map<string, unknown>();
+      const observeSettledRuns = (activeService: RunService) => activeService.subscribe(event => {
+        if (event.type === "run" && event.runId) settledStatuses.set(event.runId, event.payload.status);
+      });
+      unsubscribe = observeSettledRuns(service);
       const run = await service.createRun({ canvasId: canvas.id, clientRequestId: "file-receipt", scope: "node", nodeId: "image" });
+      // Reads can see the in-memory terminal status before the file replacement
+      // completes. The run event is published only after that write is durable.
+      await vi.waitFor(() => expect(settledStatuses.get(run.id)).toBe("needs_attention"), { timeout: 8_000 });
       expect((await waitForRun(service, run.id)).run.status).toBe("needs_attention"); expect(failed).toBe(true);
       const reloaded = new FileRepository(path);
+      expect((await reloaded.getRun(run.id))?.status).toBe("needs_attention");
       expect((await reloaded.listNodeRuns(run.id))[0]).toMatchObject({ status: "needs_attention", providerTaskId: "unexpected-submit",
         inputJson: { providerTask: { providerTaskId: "unexpected-submit", status: "running" } }, errorJson: { code: "provider_checkpoint_failed" } });
       const resumed = new AdapterRunService(provider.adapter, reloaded, storage);
-      await resumed.retryRun(run.id); expect((await waitForRun(resumed, run.id)).run.status).toBe("succeeded");
+      unsubscribe();
+      unsubscribe = observeSettledRuns(resumed);
+      await resumed.retryRun(run.id);
+      await vi.waitFor(() => expect(settledStatuses.get(run.id)).toBe("succeeded"), { timeout: 8_000 });
+      expect((await waitForRun(resumed, run.id)).run.status).toBe("succeeded");
+      expect((await new FileRepository(path).getRun(run.id))?.status).toBe("succeeded");
       expect(provider.calls()).toEqual({ submit: 1, poll: 1 });
-    } finally { await rm(root, { recursive: true, force: true }); }
+    } finally { unsubscribe?.(); await rm(root, { recursive: true, force: true }); }
   });
 
   it.each(["cancel", "shutdown"] as const)("keeps the known receipt without reviving execution after %s and a checkpoint failure", async action => {

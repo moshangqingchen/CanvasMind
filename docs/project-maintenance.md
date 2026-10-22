@@ -36,7 +36,7 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-清理仅操作工作区内的可重建路径。它逐层检查路径边界，拒绝穿过符号链接或 Windows junction，删除构建目录时也不跟随内部链接。`pnpm test:maintenance` 验证素材、备份、安装副本和目录链接的保护边界，CI 同样运行这些测试。
+清理仅操作工作区内的可重建路径。它逐层检查路径边界，拒绝穿过符号链接或 Windows junction，删除构建目录时也不跟随内部链接，并在实际删除每个目录前再次核对边界。Git 跟踪文件及其所在目录始终保留，即使名称与构建缓存匹配；执行时重新读取 Git 索引，防止旧清单删除后来纳入版本管理的文件，索引读取失败则停止。`pnpm test:maintenance` 验证素材、备份、安装副本、跟踪源码和目录链接的保护边界，CI 同样运行这些测试。
 
 `.codex-logs` 虽然名称含 logs，也包含不可重建的原始请求、未知扣费追查、安装器身份与数据库修复计划/回执；`output/imagegen` 保存供应商返回的原文件。两者不属于可直接删除的开发日志，普通清理和 `--deep` 都不会删除，也没有跳过这条保护的清理参数。需要整理其中真正可重建的文件时，先逐项核实来源、引用和独立保留副本，再单独处理；不要使用 `git clean -fdx` 代替项目清理。Git 忽略规则只防误提交，不是删除授权。
 
@@ -46,9 +46,9 @@ pnpm dev
 
 ## 质量检查与测试隔离
 
-`pnpm typecheck` 会先构建运行服务与导演引擎的共享依赖，支持干净检出。`pnpm test` 只收集各包源码中的单元测试，不扫描 `dist` 或 Next.js standalone 产物。`pnpm test:maintenance` 同时运行清理边界、素材 GC、供应商目录检查器和导演知识同步脚本的回归测试。
+`pnpm typecheck` 会先构建运行服务与导演引擎的共享依赖，支持干净检出。`pnpm test` 只收集各包源码中的单元测试，不扫描 `dist` 或 Next.js standalone 产物。`pnpm test:maintenance` 同时运行清理边界、素材 GC 和供应商目录检查器的回归测试；维护测试使用项目 `.codex-temp` 内的独立目录，结束时仅清理自身创建的测试资料。
 
-构建后运行 `pnpm --filter @super-canvas/desktop-ui e2e`。自动启动的测试服务使用每次独立的系统临时目录，隔离数据库、素材、项目归档、恢复文件和素材通道配置；结束时先停止服务，再清理该临时目录。显式设置 `PLAYWRIGHT_BASE_URL` 则使用调用方指定的服务，由调用方负责其数据隔离。不要指向正在使用的个人资料库。
+构建后运行 `pnpm --filter @super-canvas/desktop-ui e2e`。自动启动的测试服务使用项目 `.codex-temp` 内每次独立的目录，隔离数据库、素材、项目归档、恢复文件和素材通道配置；结束时先停止服务，再清理该临时目录。维护和 E2E 测试均拒绝将这个目录重定向到项目外的符号链接或 Windows junction。显式设置 `PLAYWRIGHT_BASE_URL` 则使用调用方指定的服务，由调用方负责其数据隔离。不要指向正在使用的个人资料库。
 
 画布性能数据和 CPU profile 写入 Playwright 的当前测试输出目录。历史遗留的 `apps/desktop/renderer/项目` 已加入 Git 与打包忽略规则，保留现有文件以供核对，不作为源码或安装包内容。
 

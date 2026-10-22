@@ -9,6 +9,18 @@ import {
 } from "./server";
 
 describe("maskConnection", () => {
+  it("exposes an opaque credential identity that changes only when encrypted Key material changes", () => {
+    const connection = { id: "manual-key", name: "Manual", provider: "openai" as const, config: {},
+      encryptedSecret: "encrypted-key-a", createdAt: "before", updatedAt: "before" };
+    const before = maskConnection(connection)!;
+    const renamed = maskConnection({ ...connection, name: "Renamed", updatedAt: "after" })!;
+    const rotated = maskConnection({ ...connection, encryptedSecret: "encrypted-key-b" })!;
+    expect(before.credentialEpoch).toMatch(/^[a-f0-9]{64}$/u);
+    expect(renamed.credentialEpoch).toBe(before.credentialEpoch);
+    expect(rotated.credentialEpoch).not.toBe(before.credentialEpoch);
+    expect(JSON.stringify([before, renamed, rotated])).not.toMatch(/encrypted-key-[ab]/u);
+    expect(maskConnection({ ...connection, encryptedSecret: undefined })?.credentialEpoch).toBeUndefined();
+  });
   it("deeply masks sensitive headers from legacy provider configs", () => {
     const masked = maskConnection({
       id: "legacy-rest",

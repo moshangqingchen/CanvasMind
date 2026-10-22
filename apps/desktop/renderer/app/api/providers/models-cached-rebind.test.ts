@@ -78,7 +78,7 @@ describe("cached protocol repair persistence", () => {
     expect(await mocks.repository.getConnection(id)).toEqual(original);
   });
 
-  it("keeps Secure61's directory-only Kling entry blocked on readonly reads", async () => {
+  it("projects Secure61's current Kling contract on readonly reads without persisting over the saved entry", async () => {
     const model: ModelDescriptor = { id: "kling-video-v4", name: "kling-video-v4", operations: ["video.generate", "video.image-to-video"], inputKinds: ["text", "image"], outputKinds: ["video"], parameters: [],
       metadata: { canvasRunnable: false, canvasUnavailableReason: "当前分组列出此型号，但尚未提供其参数与调用合同", priceLabel: "720p ¥0.35/秒 · 1080p ¥0.45/秒" } };
     const original = await mocks.repository.saveConnection({ id, provider: "openai", name: "Secure61 catalog", config: {
@@ -88,7 +88,8 @@ describe("cached protocol repair persistence", () => {
     const save = vi.spyOn(mocks.repository, "saveConnection");
     const response = await read("?cached=1&readonly=1");
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject([{ id: model.id, parameters: [], metadata: { canvasRunnable: false, priceLabel: model.metadata?.priceLabel } }]);
+    expect(await response.json()).toMatchObject([{ id: model.id, parameters: expect.arrayContaining([expect.objectContaining({ key: "duration", required: true, min: 1 })]),
+      metadata: { canvasRunnable: true, priceLabel: model.metadata?.priceLabel, videoContractCheckedAt: "2026-10-21" } }]);
     expect(save).not.toHaveBeenCalled();
     expect(await mocks.repository.getConnection(id)).toEqual(original);
   });

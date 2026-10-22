@@ -10,6 +10,14 @@ const repository = fileURLToPath(new URL("../../../..", import.meta.url));
 const output = resolve(repository, process.env.NEURAL_EVIDENCE_DIR ?? ".codex-logs/2026-10-16-redesign-v2/out");
 const ambient = (page: Page) => page.getByTestId("canvas-ambient-effects");
 const motion = (page: Page) => page.getByRole("button", { name: "画布动效", exact: true });
+interface AmbientFrameCapture {
+  epoch: number;
+  frameId: number | null;
+  active: boolean;
+  frames: number[];
+  pausedFrames: number;
+  decoratingDuringGesture: number;
+}
 // Action snapshots materially distort short frame-time measurements.
 test.use({ trace: "off", video: "off" });
 
@@ -121,51 +129,65 @@ test("200 节点画布动效开关的拖拽与缩放帧时 A/B", async ({ page }
   test.setTimeout(180_000);
   const fixture = await open(page, { count: 200 });
   await expect(page.locator(".react-flow__node")).toHaveCount(200);
-  const measurements: Array<{ enabled: boolean; gesture: string; frames: number; p50: number; p95: number; max: number }> = [];
+  const measurements: Array<{ enabled: boolean; gesture: string; frames: number; p50: number; p95: number; max: number; rawFrames: number[]; pausedFrames: number; decoratingDuringGesture: number }> = [];
   for (const enabled of [false, true, true, false]) {
     if ((await motion(page).getAttribute("aria-pressed")) !== String(enabled)) await motion(page).click();
     await page.waitForTimeout(350);
     for (const gesture of ["drag", "zoom"] as const) {
+      // Locator geometry and moving onto blank canvas are preparation, not the
+      // measured gesture. The latter starts a 210ms decorative trail in the on
+      // arm only; capturing it as "zoom" made the arms incomparable.
+      const box = gesture === "drag" ? await page.locator('.react-flow__node[data-id="ambient-0"] .node-head').boundingBox() : null;
+      if (gesture === "drag") expect(box).not.toBeNull();
+      const point = gesture === "drag" ? { x: box!.x + 70, y: box!.y + 14 } : await blankPoint(page);
+      await page.mouse.move(point.x, point.y);
+      await expect(ambient(page)).toHaveAttribute("data-frame-active", "false");
+      await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
       await page.evaluate(() => {
-        const w = window as typeof window & { __ambientFrameCapture?: { epoch: number; frameId: number | null; active: boolean; frames: number[] } };
+        const w = window as typeof window & { __ambientFrameCapture?: AmbientFrameCapture };
         const previousCapture = w.__ambientFrameCapture;
         if (previousCapture) {
           previousCapture.active = false;
           if (previousCapture.frameId !== null) cancelAnimationFrame(previousCapture.frameId);
         }
-        const capture = { epoch: (previousCapture?.epoch ?? 0) + 1, frameId: null as number | null, active: true, frames: [] as number[] };
+        const capture: AmbientFrameCapture = { epoch: (previousCapture?.epoch ?? 0) + 1, frameId: null, active: true, frames: [], pausedFrames: 0, decoratingDuringGesture: 0 };
         const epoch = capture.epoch; w.__ambientFrameCapture = capture;
+        const decoration = document.querySelector<HTMLElement>('[data-testid="canvas-ambient-effects"]');
         let previous = performance.now();
         const tick = (time: number) => {
           capture.frameId = null;
           if (!capture.active || w.__ambientFrameCapture !== capture || w.__ambientFrameCapture.epoch !== epoch) return;
           capture.frames.push(time - previous); previous = time;
+          if (decoration?.dataset.gesturePaused === "true") {
+            capture.pausedFrames++;
+            if (decoration.dataset.frameActive === "true") capture.decoratingDuringGesture++;
+          }
           capture.frameId = requestAnimationFrame(tick);
         };
         capture.frameId = requestAnimationFrame(tick);
       });
       if (gesture === "drag") {
-        const box = await page.locator('.react-flow__node[data-id="ambient-0"] .node-head').boundingBox();
-        expect(box).not.toBeNull();
-        await page.mouse.move(box!.x + 70, box!.y + 14); await page.mouse.down();
+        await page.mouse.down();
         await page.mouse.move(box!.x + 125, box!.y + 40, { steps: 80 });
         await page.mouse.move(box!.x + 70, box!.y + 14, { steps: 80 });
         await page.mouse.up();
       } else {
-        const point = await blankPoint(page); await page.mouse.move(point.x, point.y);
         for (let index = 0; index < 24; index++) { await page.mouse.wheel(0, index < 12 ? 5 : -5); await page.waitForTimeout(35); }
       }
       const metrics = await page.evaluate(() => {
-        const w = window as typeof window & { __ambientFrameCapture?: { epoch: number; frameId: number | null; active: boolean; frames: number[] } };
+        const w = window as typeof window & { __ambientFrameCapture?: AmbientFrameCapture };
         const capture = w.__ambientFrameCapture!;
         capture.active = false;
         if (capture.frameId !== null) cancelAnimationFrame(capture.frameId);
         capture.frameId = null;
-        const frames = capture.frames.slice(2).sort((a, b) => a - b);
+        const rawFrames = capture.frames.slice(2), frames = [...rawFrames].sort((a, b) => a - b);
         capture.frames = [];
-        return { frames: frames.length, p50: frames[Math.floor(frames.length * .5)] ?? 0, p95: frames[Math.floor(frames.length * .95)] ?? 0, max: frames.at(-1) ?? 0 };
+        return { frames: frames.length, p50: frames[Math.floor(frames.length * .5)] ?? 0, p95: frames[Math.floor(frames.length * .95)] ?? 0, max: frames.at(-1) ?? 0,
+          rawFrames, pausedFrames: capture.pausedFrames, decoratingDuringGesture: capture.decoratingDuringGesture };
       });
       expect(metrics.frames).toBeGreaterThan(15);
+      if (enabled) expect(metrics.pausedFrames, "真实手势期间应暂停装饰").toBeGreaterThan(0);
+      expect(metrics.decoratingDuringGesture, "真实手势期间不能继续绘制装饰").toBe(0);
       measurements.push({ enabled, gesture, ...metrics });
     }
   }
@@ -176,7 +198,7 @@ test("200 节点画布动效开关的拖拽与缩放帧时 A/B", async ({ page }
   });
   await mkdir(resolve(output, "canvas"), { recursive: true });
   const path = resolve(output, "canvas", "performance-200-nodes.json");
-  await writeFile(path, JSON.stringify({ at: new Date().toISOString(), fixture: "200 prompt nodes in a 25-column graph; real DOM drag and wheel; ABBA motion preference; new effects stop during gestures", measurements, comparisons }, null, 2));
+  await writeFile(path, JSON.stringify({ at: new Date().toISOString(), fixture: "200 prompt nodes in a 25-column graph; real DOM drag and wheel; ABBA motion preference; prepare pointer and settle decorative trail before frame capture; capture starts before mousedown/wheel; raw frame intervals and gesture suspension recorded", measurements, comparisons }, null, 2));
   await info.attach("canvas-effects-performance", { path, contentType: "application/json" });
   fixture.assertSafe();
   for (const result of comparisons) expect(result.addedP95, `${result.gesture} P95 增量目标`).toBeLessThanOrEqual(1);

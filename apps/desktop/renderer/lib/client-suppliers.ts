@@ -242,6 +242,11 @@ export function supplierOwnsConnection(
       return false;
     return savedId === supplier.id;
   }
+  // Saved accounts never borrow a Key by brand or address. The providers API
+  // projects an exact derived supplierId for legacy connections without writes.
+  // Name/address matching remains only for unsaved template selection.
+  if (supplier.record || supplier.state ||
+      !supplier.id.startsWith("template:") && supplier.id !== supplier.supplierKey) return false;
   if (providerConnectionSupplierKey(connection) !== supplier.supplierKey)
     return false;
   const apiIdentity = (value: unknown) => {

@@ -43,9 +43,9 @@ export function cOpenImageRoute(config: Readonly<Record<string, unknown>>, model
     // Group 125 uses the site's documented Images size field. Its own group
     // has no published tier enum or fixed quality; canvas presets stay user
     // choices and must not inherit group 99/115 restrictions.
-    if (stable ? stable === "125" : group === "adobe全参生图")
+    if (stable ? stable === "125" : ["adobe全参生图", "ad全参生图"].includes(group))
       return { supplier: "synora", group, tiers: [], docs: "https://synoralink.com/docs", userSizePresets: true };
-    if ((stable ? stable === "99" : group === "adobe中质量生图") && model === "gpt-image-2")
+    if ((stable ? stable === "99" : ["adobe中质量生图", "ad中质量生图"].includes(group)) && model === "gpt-image-2")
       return { supplier: "synora", group, tiers: ["4K"], quality: "medium", docs: "https://synoralink.com/docs" };
     if (stable ? ["115", "119"].includes(stable) : ["全参生图专线", "OAI官Key生图"].includes(group))
       return { supplier: "synora", group, tiers: (stable ? stable === "115" : group === "全参生图专线") ? ["4K"] : [], docs: "https://synoralink.com/docs" };

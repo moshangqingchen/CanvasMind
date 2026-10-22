@@ -176,6 +176,8 @@ export class LangframeAdapter implements ProviderAdapter {
     for (const asset of assets) {
       counts[asset.kind]++;
       if (asset.role === "mask") add("assets", "狼帧未声明蒙版字段，不能把蒙版当参考图发送", "unsupported_mask");
+      if ((asset.role === "firstFrame" || asset.role === "lastFrame") && (image || asset.kind !== "image"))
+        add("assets", "首尾帧角色只能用于视频的原始图片素材，不能转换成普通参考素材", "invalid_frame_role");
       if (image && asset.kind !== "image") add("assets", "图片接口只能接收参考图片");
       if (!asset.data?.length && !asset.url) add("assets", "参考素材缺少原始字节或 URL");
       if (!image && !await publicReferenceUrl(asset.url) && !(this.options.uploadReference && (asset.data?.length || asset.url?.startsWith("data:"))))

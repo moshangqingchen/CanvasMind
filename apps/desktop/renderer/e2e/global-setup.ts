@@ -83,6 +83,9 @@ export default async function globalSetup(config: FullConfig) {
 
   const port = process.env.PLAYWRIGHT_PORT ?? "3211";
   const environment = await createTestEnvironment(baseURL, desktopTestToken);
+  // Workers that seed project files need the owned isolated runtime's location.
+  // Never derive this from user-profile environment variables.
+  process.env.SUPERCANVAS_E2E_DATA_ROOT = environment.root;
   const server = spawn(
     process.execPath,
     ["./node_modules/next/dist/bin/next", "start", "-H", "127.0.0.1", "-p", port],

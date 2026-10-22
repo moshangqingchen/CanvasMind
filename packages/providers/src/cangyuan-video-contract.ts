@@ -47,8 +47,9 @@ export function cangyuanVideoModel(model: ModelDescriptor): ModelDescriptor {
       videoContractDocumentSha256: c.sourceSha256, videoContractSourceLastReviewed: c.sourceLastReviewed,
       ...(c.sourceStatus ? { videoContractSourceStatus: c.sourceStatus } : {}),
       ...(c.facePolicy ? { facePolicy: c.facePolicy } : {}), ...(c.fixedResolution ? { videoFixedResolution: c.fixedResolution } : {}),
-      ...(c.warnings?.length ? { videoContractWarnings: [...c.warnings] } : {}),
+      ...(c.warnings?.length || c.frameDescription ? { videoContractWarnings: [...(c.warnings ?? []), ...(c.frameDescription ? [c.frameDescription] : [])] } : {}),
       supportsFirstLastFrames: c.frames, videoSupportsFirstLastFrames: c.frames, framePairRequired: c.framePairRequired, allowFrameMediaMix: c.allowFrameMediaMix,
+      ...(c.frameDescription ? { videoFrameInputDescription: c.frameDescription } : {}), ...(c.allowFrameAudioMix !== undefined ? { allowFrameAudioMix: c.allowFrameAudioMix } : {}),
       videoReferenceImageLimit: images, videoReferenceVideoLimit: videos, videoReferenceAudioLimit: audios,
       requiresImageWithAudio: c.requiresImageWithAudio ?? false, referenceVideoObjects: c.videoObjects ?? false,
       referenceMimeTypes: c.inputMimeTypes, maxInputBytes: c.maxInputBytes, maxInputDimensions: c.maxInputDimensions,
@@ -110,6 +111,16 @@ export function validateCangyuanVideoRequest(request: NormalizedRequest): Valida
   if (!c) return [];
   const p = normalizeCangyuanVideoParameters(request), issues: ValidationIssue[] = [];
   const add = (path: string, message: string) => issues.push({ path, code: "invalid_parameter", message });
+  for (const asset of request.assets ?? []) {
+    if (asset.role && !["reference", "firstFrame", "lastFrame"].includes(asset.role) ||
+      (asset.role === "firstFrame" || asset.role === "lastFrame") && asset.kind !== "image") add("assets", "视频素材角色必须与原文件类型匹配；蒙版或未知角色不能转成参考素材。");
+  }
+  for (const [role, field] of [["firstFrame", "first_image_url"], ["lastFrame", "last_image_url"]] as const) {
+    const selected = request.assets?.filter(asset => asset.role === role) ?? [];
+    if (selected.length > 1) add("assets", "每个首尾帧角色只能指定一张原图，不能丢弃多余素材。");
+    if (selected.length && request.parameters?.[field] !== undefined && request.parameters[field] !== selected[0]!.url)
+      add(`parameters.${field}`, "已保存的首尾帧链接与所选原图不一致，请明确选择；原值保留。");
+  }
   if (!request.operation.startsWith("video.")) add("operation", "此沧元型号只支持视频生成。");
   if (request.parameters?.n !== undefined && request.parameters.n !== 1) add("parameters.n", "沧元视频每次只能创建一个任务。");
   for (const key of Object.keys(p)) if (!c.fields.includes(key)) add(`parameters.${key}`, `该型号官方合同未声明参数 ${key}。`);
@@ -175,6 +186,7 @@ export function validateCangyuanVideoRequest(request: NormalizedRequest): Valida
   if (!c.frames && (first || last)) add("assets", "此型号不支持首尾帧。");
   if ((last && !first) || c.framePairRequired && first !== last) add("assets", c.framePairRequired ? "该型号首尾帧必须成对提供。" : "尾帧必须搭配首帧。");
   if ((first || last) && count && !c.allowFrameMediaMix) add("assets", "此型号首尾帧与参考素材互斥。");
+  if ((first || last) && list(p.reference_audios).length && c.allowFrameAudioMix === false) add("assets", "此型号使用首尾帧时不支持参考音频。");
   for (const field of ["first_image_url", "last_image_url"] as const) if (p[field] !== undefined && !assetUrl(p[field])) add(`parameters.${field}`, "首尾帧必须使用该型号接受的公网素材链接。");
   if (c.requiresImageWithAudio && list(p.reference_audios).length && !list(p.reference_image_urls).length) add("assets", "牛来 Pro 参考音频必须搭配至少一张参考图。");
   if (request.model?.startsWith("omni-v2v") && !list(p.reference_videos).length) add("assets", "Omni v2v 必须提供参考视频。");

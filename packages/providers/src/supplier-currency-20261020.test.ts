@@ -23,3 +23,17 @@ describe("Cangyuan native catalog currency", () => {
       expect(parseSupplierCatalog(payload(), { supplierSiteUrl }).groups[0]?.models[0]?.priceLabel).toBe("$0.2/请求");
     });
 });
+
+describe("Chentu native catalog currency", () => {
+  it("keeps the same yuan tariff when an independent generic source follows the dedicated collector", () => {
+    const source = { supplierSiteUrl: "https://tu.988236.xyz" };
+    expect(parseSupplierCatalog(payload(), source).groups[0]?.models[0]?.priceLabel).toBe("¥0.2/请求");
+    expect(parseSupplierCatalog(payload("USD"), source).groups[0]?.models[0]?.priceLabel).toBe("$0.2/请求");
+    expect(parseSupplierCatalog(payload(), { ...source, currency: "USD" }).groups[0]?.models[0]?.priceLabel).toBe("$0.2/请求");
+  });
+
+  it.each(["https://tu.988236.xyz.evil.invalid", "https://tu.988236.xyz/custom", "https://user@tu.988236.xyz"])
+    ("does not apply the official currency convention to %s", supplierSiteUrl => {
+      expect(parseSupplierCatalog(payload(), { supplierSiteUrl }).groups[0]?.models[0]?.priceLabel).toBe("$0.2/请求");
+    });
+});

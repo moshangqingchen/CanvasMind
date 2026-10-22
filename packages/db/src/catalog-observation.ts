@@ -50,6 +50,17 @@ export interface CatalogObservationReservation {
 type SupplierGroup = SupplierRecord["catalog"]["groups"][number];
 export const catalogObservationGroupIdentity = (group: Pick<SupplierGroup, "id" | "supplierGroupId">): string =>
   group.supplierGroupId === undefined ? `name:${group.id}` : `site-id:${group.supplierGroupId}`;
+
+/** A renamed official group may retain missing aliases as historical evidence.
+ * Only one nonmissing row can own new observations; array order cannot decide.
+ * A lone missing row remains addressable for a later explicit return. */
+export function catalogObservationCurrentGroup(groups: readonly SupplierGroup[], identity: string): SupplierGroup | undefined {
+  const matches = groups.filter(group => catalogObservationGroupIdentity(group) === identity);
+  if (matches.length <= 1) return matches[0];
+  const current = matches.filter(group => group.status !== "missing");
+  if (current.length !== 1) fail("目录分组身份不唯一");
+  return current[0];
+}
 type GroupFields = Pick<SupplierGroup, "label" | "status" | "source" | "models">;
 type GroupDetails = NonNullable<SupplierGroup["details"]>;
 type OwnedGroupDetails = Omit<GroupDetails, "ledgerPrices">;
@@ -275,9 +286,7 @@ export function prepareCatalogObservation(view: CatalogObservationView, input: C
     const id = patch.kind === "insert" ? stableGroupId(patch.group) : patch.groupId;
     if (!id || touchedGroups.has(id)) fail("目录分组补丁身份重复");
     touchedGroups.add(id);
-    const matches = supplier.catalog.groups.filter(group => stableGroupId(group) === id);
-    if (matches.length > 1) fail("目录分组身份不唯一");
-    const group = matches[0];
+    const group = catalogObservationCurrentGroup(supplier.catalog.groups, id);
     if (patch.kind === "insert") {
       if (group || supplier.catalog.groups.some(row => row.id === patch.group.id) || patch.group.details?.ledgerPrices?.length) fail("目录分组已存在或包含非目录证据");
       supplier.catalog.groups.push(clone(patch.group));

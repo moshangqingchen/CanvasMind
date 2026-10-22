@@ -9,6 +9,7 @@ import { descriptorKinds, groupNameMatches, matchesModelText, supplierGroupMatch
 import { modelInventoryLastSuccessAt, modelInventoryScanStatus } from "../lib/model-inventory-status";
 import { modelInventoryStatusLabel } from "../lib/model-inventory-status-label";
 import { SupplierBillingSummary } from "./supplier-billing-summary";
+import { SupplierReadOnlyCheckPanel } from "./supplier-readonly-check-panel";
 import { DeferredPanelContent } from "./deferred-panel-content";
 import { VirtualList } from "./virtual-list";
 import { refreshAllSupplierAccounts, seedSupplierBilling, useSupplierBillingOverview } from "../lib/client-supplier-billing";
@@ -73,12 +74,14 @@ import {
   type SupplierCatalogGroup,
   type SupplierCatalogModel,
   type SupplierKind,
+  type SupplierInput,
   type SupplierModelProtocol,
   type SupplierRecord,
   type SupplierSiteAuthMode,
   type SupplierSiteLoginInput,
 } from "../lib/client-suppliers";
 import { supplierConnectionDraft } from "../lib/supplier-connection-draft";
+import { newSupplierAccountDraft, supplierAccountLabel, supplierAccountMatches, supplierAccountRows, type SupplierAccountFilter } from "../lib/supplier-account-browser";
 import "./supplier-manager.css";
 import { inventoryModels } from "../lib/model-availability";
 import { buildSupplierRefreshResult, recordSupplierRefreshResult, refreshAllSuppliers, refreshSupplier, supplierRefreshStatus, subscribeSupplierRefresh, type SupplierRefreshProgress, type SupplierRefreshResult } from "../lib/refresh-suppliers";
@@ -255,6 +258,8 @@ export function SupplierManager({
     targetSupplierId ?? (initialCangyuanGroup ? "template:cangyuan" : ""),
   );
   const [query, setQuery] = useState("");
+  const [accountFilter, setAccountFilter] = useState<SupplierAccountFilter>("all");
+  const [newAccountDraft, setNewAccountDraft] = useState<SupplierInput | undefined>();
   const [detailSession, setDetailSession] = useState(0);
   const [adding, setAdding] = useState(startAdding);
   const [loading, setLoading] = useState(true);
@@ -341,15 +346,19 @@ export function SupplierManager({
     setMenu({
       entry,
       x: Math.min(x, window.innerWidth - 225),
-      y: Math.min(y, window.innerHeight - 285),
+      y: Math.min(y, window.innerHeight - 325),
     });
   }
   async function menuAction(
-    action: "rename" | "scan" | "site" | "hide" | "delete",
+    action: "rename" | "scan" | "site" | "hide" | "delete" | "add-account",
   ) {
     if (!menu) return;
     const entry = menu.entry;
     setMenu(null);
+    if (action === "add-account") {
+      requestLeave(() => { setNewAccountDraft(newSupplierAccountDraft(entry)); setAdding(true); });
+      return;
+    }
     if (action === "site") {
       if (entry.siteUrl)
         window.open(entry.siteUrl, "_blank", "noopener,noreferrer");
@@ -481,11 +490,21 @@ export function SupplierManager({
 
   const selected = settingsSupplierTarget(entries, selectedId, initialCangyuanGroup);
   useLayoutEffect(() => { selectedRef.current = selected?.id; }, [selected?.id]);
-  const visibleEntries = entries.filter((entry) =>
-    `${entry.name} ${entry.siteUrl} ${entry.apiUrl}`
-      .toLocaleLowerCase()
-      .includes(query.toLocaleLowerCase()),
-  );
+  const selectedConnections = useMemo(() => selected ? connections.filter(connection => supplierOwnsConnection(selected, connection)) : [], [selected, connections]);
+  const selectedCredentialIdentity = JSON.stringify(selectedConnections.map(connection => ({
+    id: connection.id, epoch: connection.credentialEpoch ?? "", sourceId: connection.config.supplierSourceId ?? "",
+    provider: connection.provider,
+    scope: ["baseUrl", "modelGroup", "accountKeyGroupId", "accountKeyGroup", "protocol", "directorProtocol", "usage"].map(field => connection.config[field] ?? null),
+  })).sort((left, right) => left.id.localeCompare(right.id)));
+  const accountRows = useMemo(() => supplierAccountRows(entries, connections), [entries, connections]);
+  const visibleRows = accountRows.filter(row => supplierAccountMatches(row, query, accountFilter));
+  const visibleEntries = visibleRows.map(row => row.entry);
+  const accountCounts = {
+    all: accountRows.length,
+    saved: accountRows.filter(row => row.saved).length,
+    unconfigured: accountRows.filter(row => row.unconfigured).length,
+    attention: accountRows.filter(row => row.needsAttention).length,
+  };
   const supplierListRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!targetSupplierId || loading) return;
@@ -587,7 +606,7 @@ export function SupplierManager({
           className="sm-button sm-refresh-all"
           onClick={() => requestLeave(() => void refreshAllSuppliers())}
           disabled={refreshBusy || loading}
-          title="读取已保存供应商的最新分组和各 Key 的模型列表"
+          title="读取并保存已配置供应商的最新分组和各 Key 模型目录"
         >
           <RefreshCw size={16} className={refresh.running ? "sm-spin" : ""} />
           {refresh.running ? `正在刷新 ${refresh.completed}/${refresh.total}` : "刷新全部供应商"}
@@ -604,7 +623,7 @@ export function SupplierManager({
           type="button"
           className="sm-button sm-primary sm-add-supplier"
           onClick={() => {
-            if (!adding) requestLeave(() => { setAdding(true); setQuery(""); });
+            if (!adding || newAccountDraft) requestLeave(() => { setNewAccountDraft(undefined); setAdding(true); setQuery(""); });
           }}
         >
           <Plus size={16} /> 添加供应商
@@ -614,15 +633,22 @@ export function SupplierManager({
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索名称或地址"
+            placeholder="名称、账号、地址或连接"
             aria-label="搜索供应商"
           />
+          {query && <button type="button" className="sm-search-clear" aria-label="清除供应商搜索" onClick={() => setQuery("")}><X size={13} /></button>}
         </label>
+        <div className="sm-supplier-filter">
+          <select aria-label="筛选供应商账号" value={accountFilter} onChange={event => setAccountFilter(event.target.value as SupplierAccountFilter)}>
+            <option value="all">全部（{accountCounts.all}）</option>
+            <option value="saved">已保存（{accountCounts.saved}）</option>
+            <option value="unconfigured">待配置 Key（{accountCounts.unconfigured}）</option>
+            <option value="attention">需处理（{accountCounts.attention}）</option>
+          </select>
+          <span aria-live="polite">{visibleEntries.length} / {entries.length}</span>
+        </div>
         <div className="sm-supplier-list" ref={supplierListRef}>
-          {visibleEntries.map((entry) => {
-            const count = connections.filter((connection) =>
-              supplierOwnsConnection(entry, connection),
-            ).length;
+          {visibleRows.map(({ entry, connectionCount: count, accountLabel }) => {
             const result = refreshResult(entry);
             const refreshing = refresh.runningIds.includes(entry.id) || preparingRefreshId === entry.id;
             return (
@@ -648,7 +674,7 @@ export function SupplierManager({
                 <button
                   type="button"
                   className={`sm-supplier-item ${!adding && selected?.id === entry.id ? "is-selected" : ""}`}
-                  title={entry.name}
+                  title={`${entry.name} · ${accountLabel}\n${entry.siteUrl}`}
                   aria-pressed={!adding && selected?.id === entry.id}
                   key={entry.id}
                   onClick={() => {
@@ -667,6 +693,7 @@ export function SupplierManager({
                   </span>
                   <span className="sm-supplier-label">
                     <strong>{entry.name}</strong>
+                    <small className="sm-account-label" title={accountLabel}>{accountLabel}</small>
                     <small>
                       {count
                         ? `${count} 个已配置连接`
@@ -705,7 +732,9 @@ export function SupplierManager({
             );
           })}
           {!visibleEntries.length && (
-            <p className="sm-muted sm-list-empty">没有找到供应商</p>
+            <div className="sm-muted sm-list-empty" role="status"><p>没有符合条件的供应商</p>
+              {(query || accountFilter !== "all") && <button type="button" className="sm-button" onClick={() => { setQuery(""); setAccountFilter("all"); }}>清除筛选</button>}
+            </div>
           )}
         </div>
         <div className="sm-mobile-supplier"><span>供应商</span>
@@ -713,7 +742,8 @@ export function SupplierManager({
             setDetailSession(value => value + 1); setSelectedId(event.target.value); setAdding(false);
           })}>
             <option value="" disabled>选择供应商</option>
-            {visibleEntries.map(entry => <option key={entry.id} value={entry.id}>{entry.name}</option>)}
+            {selected && !visibleEntries.some(entry => entry.id === selected.id) && <option value={selected.id}>{selected.name} · 当前账号（筛选外）</option>}
+            {visibleRows.map(({ entry, accountLabel }) => <option key={entry.id} value={entry.id}>{entry.name} · {accountLabel}</option>)}
           </select>
           {selected && !adding && <button
             type="button"
@@ -731,6 +761,8 @@ export function SupplierManager({
           onClick={() => {
             requestLeave(() => {
               setShowHidden((v) => !v);
+              setAccountFilter("all");
+              setQuery("");
               setSelectedId("");
               setAdding(false);
             });
@@ -750,11 +782,15 @@ export function SupplierManager({
         </div>
       </aside>
       <main className="sm-main">
+        {!adding && selected?.record && <SupplierReadOnlyCheckPanel
+          key={`${selected.id}:${selected.record.state?.sourceId ?? "legacy"}:${selected.record.state?.revision ?? selected.record.updatedAt}:${selectedCredentialIdentity}`}
+          supplierId={selected.record.id} supplierName={selected.name}
+        />}
         <CatalogCheckSettings
           ready={!loading}
           review={catalogReview}
           selectedSupplierId={selected?.record?.id}
-          selectedConnectionIds={connections.filter(connection => selected && supplierOwnsConnection(selected, connection)).map(connection => connection.id)}
+          selectedConnectionIds={selectedConnections.map(connection => connection.id)}
           refreshVersion={String(refresh.completed) + ":" + String(refresh.running)}
           onSelectConnection={id => {
             const connection = connections.find(item => item.id === id);
@@ -773,7 +809,7 @@ export function SupplierManager({
             <p role="status" aria-live="polite">
               {refresh.running ? `正在刷新：${refresh.current}（${refresh.completed}/${refresh.total}）` : `刷新完成：${refresh.completed || supplierRefreshResults.length} 家供应商`}
             </p>
-            <p className="sm-muted">分开核对目录、模型、接口与账号账务。查看每家详情可定位失败项目与本次变化；刷新只读取资料。</p>
+            <p className="sm-muted">刷新会保存分组、模型、报价与账号账务。查看每家详情可定位失败项目与本次变化。</p>
             {!refresh.running && <p className="sm-muted">本次处理 {refresh.completed || supplierRefreshResults.length} 家，以下保留 {supplierRefreshResults.length} 家最近结果；读取时间见详情。</p>}
             <div className="sm-refresh-overview" aria-label="刷新结果统计">
               {([["updated", "已更新"], ["partial", "已取得部分数据"], ["failed", "刷新失败"]] as const).map(([status, label]) => <div key={status} data-status={status}>
@@ -804,6 +840,8 @@ export function SupplierManager({
           </div>
         ) : adding ? (
           <NewSupplierForm
+            key={newAccountDraft ? JSON.stringify(newAccountDraft) : "new-supplier"}
+            initialDraft={newAccountDraft}
             onCreated={updateRecord}
             onCancel={() => requestLeave(() => setAdding(false))}
             onScanned={recordScanResult}
@@ -882,6 +920,9 @@ export function SupplierManager({
             <button role="menuitem" onClick={() => void menuAction("rename")}>
               重命名
             </button>
+            <button role="menuitem" onClick={() => void menuAction("add-account")}>
+              添加同站点账号
+            </button>
             <button role="menuitem" onClick={() => void menuAction("scan")}>
               扫描当前地址
             </button>
@@ -906,23 +947,28 @@ export function SupplierManager({
 }
 
 function NewSupplierForm({
+  initialDraft,
   onCreated,
   onCancel,
   onScanned,
 }: {
+  initialDraft?: SupplierInput;
   onCreated: (record: SupplierRecord) => void;
   onCancel: () => void;
   onScanned: (before: SupplierRecord, after: SupplierRecord, priorConnections: readonly ProviderConnectionView[]) => Promise<void>;
 }) {
-  const [templateKey, setTemplateKey] = useState("");
-  const [name, setName] = useState("");
-  const [siteUrl, setSiteUrl] = useState("");
-  const [apiUrl, setApiUrl] = useState("");
+  const [templateKey, setTemplateKey] = useState(initialDraft?.supplierKey ?? "");
+  const [name, setName] = useState(initialDraft?.name ?? "");
+  const [siteUrl, setSiteUrl] = useState(initialDraft?.siteUrl ?? "");
+  const [apiUrl, setApiUrl] = useState(initialDraft?.apiUrl ?? "");
+  const [kind, setKind] = useState<SupplierKind>(initialDraft?.kind ?? "auto");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  const dirty = Boolean(templateKey || name || siteUrl || apiUrl);
+  const dirty = templateKey !== (initialDraft?.supplierKey ?? "") || name !== (initialDraft?.name ?? "") ||
+    siteUrl !== (initialDraft?.siteUrl ?? "") || apiUrl !== (initialDraft?.apiUrl ?? "") || kind !== (initialDraft?.kind ?? "auto");
   useSettingsDraft({ label: "新供应商", dirty, busy, onDiscard: () => {
-    setTemplateKey(""); setName(""); setSiteUrl(""); setApiUrl("");
+    setTemplateKey(initialDraft?.supplierKey ?? ""); setName(initialDraft?.name ?? ""); setSiteUrl(initialDraft?.siteUrl ?? "");
+    setApiUrl(initialDraft?.apiUrl ?? ""); setKind(initialDraft?.kind ?? "auto");
   } });
   async function create(scan: boolean) {
     setBusy(true);
@@ -936,7 +982,7 @@ function NewSupplierForm({
         ...(templateKey ? { supplierKey: templateKey } : {}),
         siteUrl: site,
         apiUrl: api,
-        kind: "auto",
+        kind,
       });
       // Saving succeeds independently of discovery. A failed scan must not lose the new supplier.
       if (scan) {
@@ -966,28 +1012,36 @@ function NewSupplierForm({
   return (
     <section className="sm-new-supplier">
       {dirty && <p className="sm-draft-note">有未保存的配置</p>}
-      <span className="sm-kicker">添加供应商</span>
-      <h2>让创作，连接更多可能。</h2>
+      <span className="sm-kicker">{initialDraft ? "添加同站点账号" : "添加供应商"}</span>
+      <h2>{initialDraft ? "为这个站点添加独立账号" : "让创作，连接更多可能。"}</h2>
       <p className="sm-lead">
-        填写你的中转站地址，自动识别平台并读取公开的分组和模型。
+        {initialDraft ? "已填入站点与 API 地址。为账号设置便于区分的名称，保存后独立配置登录与 Key。" : "填写你的中转站地址，自动识别平台并读取公开的分组和模型。"}
       </p>
       <div className="sm-form-card">
         <label className="sm-field">
           <span>供应商模板</span>
           <select
             value={templateKey}
+            disabled={busy}
             onChange={(e) => {
               const key = e.target.value;
               setTemplateKey(key);
+              if (initialDraft?.supplierKey === key) {
+                setName(initialDraft.name); setSiteUrl(initialDraft.siteUrl ?? "");
+                setApiUrl(initialDraft.apiUrl ?? ""); setKind(initialDraft.kind ?? "auto");
+                return;
+              }
               const profile = PROVIDER_SUPPLIER_PROFILES.find(
                 (p) => p.key === key,
               );
               setName(profile?.label ?? "");
               setSiteUrl(profile?.websiteUrl ?? "");
               setApiUrl(DEFAULT_API_URLS[key] ?? "");
+              setKind("auto");
             }}
           >
             <option value="">自定义站点</option>
+            {initialDraft?.supplierKey && !(initialDraft.supplierKey in DEFAULT_API_URLS) && <option value={initialDraft.supplierKey}>沿用当前站点类型</option>}
             {PROVIDER_SUPPLIER_PROFILES.filter(
               (p) => p.key in DEFAULT_API_URLS,
             ).map((p) => (
@@ -995,6 +1049,12 @@ function NewSupplierForm({
                 {p.label}
               </option>
             ))}
+          </select>
+        </label>
+        <label className="sm-field">
+          <span>平台类型</span>
+          <select value={kind} disabled={busy} onChange={event => setKind(event.target.value as SupplierKind)}>
+            {Object.entries(KIND_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
         </label>
         <label className="sm-field">
@@ -1421,6 +1481,7 @@ function SupplierDetail({
           <SupplierIdentity name={entry.name} large />
           <div>
             <h2>{entry.name}</h2>
+            <p className="sm-detail-account" title={record?.id}>{supplierAccountLabel(record)}{record && <span>独立保存连接与账务</span>}</p>
             <p>{record?.scannedAt ? `最近尝试 ${new Date(record.scannedAt).toLocaleString("zh-CN")}` : "连接供应商，读取分组与模型"}</p>
           </div>
         </div>

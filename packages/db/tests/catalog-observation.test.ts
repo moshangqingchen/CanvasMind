@@ -249,6 +249,40 @@ function change(token: CatalogObservationReservation, connection: ProviderConnec
     state: [{ key: `job:${token.sourceKey}`, value: { status: "completed", count: 1 } }] };
 }
 describe("catalog observation atomic storage", () => {
+  it.each(["memory", "file"] as const)("updates only the unique nonmissing stable-ID alias and preserves history in %s", async backend => {
+    const file = backend === "file" ? await testPath() : undefined, repository = file ? new FileRepository(file) : new MemoryRepository();
+    const { supplier, connections } = await seed(repository), connection = connections[0]!;
+    const original = supplier.catalog.groups[0]!;
+    const historical = { ...original, id: "old-alias", label: "Historical alias", status: "missing" as const,
+      models: [{ id: "historical-only", capability: "image" as const, priceLabel: "Historical price" }], details: { source: "model-plaza" as const, stale: true } };
+    const current = { ...original, id: "current-alias", status: "available" as const };
+    const updated = await repository.saveSupplier({ ...supplier, catalog: { groups: [historical, current, ...supplier.catalog.groups.slice(1)] } });
+    const token = await reserve(repository, updated, connection);await repository.commitCatalogObservation(change(token, connection));
+    const after = (await repository.getSupplier(supplier.id))!;
+    expect(after.catalog.groups[0]).toEqual(historical);
+    expect(after.catalog.groups[1]).toMatchObject({ id: current.id, supplierGroupId: original.supplierGroupId, status: "available", models: [{ id: "model-a", priceLabel: "¥0.20/张" }] });
+    expect((await repository.getConnection(connection.id))!.encryptedSecret).toBe(connection.encryptedSecret);
+    expect((await repository.getConnection(connection.id))!.config.defaultModel).toBe(connection.config.defaultModel);
+    if (file) expect((await new FileRepository(file).getSupplier(supplier.id))!.catalog).toEqual(after.catalog);
+    const latest = (await repository.getConnection(connection.id))!, nextToken = await reserve(repository, after, latest);
+    const expected = after.catalog.groups[1]!.models;
+    await repository.saveSupplier({ ...after, catalog: { groups: after.catalog.groups.map(group => group.id === current.id
+      ? { ...group, models: [{ id: "foreground-edit", capability: "image" as const }] } : group) } });
+    const beforeConflict = repository.exportSnapshot();
+    await expect(repository.commitCatalogObservation({ reservation: nextToken, groups: [{ kind: "fields", groupId: `site-id:${original.supplierGroupId}`,
+      fields: { expected: { models: expected }, set: { models: [{ id: "stale-new-price", capability: "image" }] } } }],
+      state: [{ key: "must-not-publish", value: { status: "completed" } }] })).rejects.toThrow("目标字段已改变");
+    expect(repository.exportSnapshot()).toEqual(beforeConflict);
+  });
+  it.each(["available", "missing"] as const)("keeps two %s stable-ID aliases ambiguous and commits nothing", async status => {
+    const repository = new MemoryRepository(), { supplier, connections } = await seed(repository);
+    const duplicate = await repository.saveSupplier({ ...supplier, catalog: { groups: [
+      { ...supplier.catalog.groups[0]!, status }, { ...supplier.catalog.groups[0]!, id: "other-alias", status },
+    ] } });
+    const token = await reserve(repository, duplicate, connections[0]!), before = repository.exportSnapshot();
+    await expect(repository.commitCatalogObservation(change(token, connections[0]!))).rejects.toThrow("分组身份不唯一");
+    expect(repository.exportSnapshot()).toEqual(before);
+  });
   it("accepts disjoint groups/sources against latest records without whole-supplier CAS", async () => {
     const repository = new MemoryRepository(), { supplier, connections } = await seed(repository);
     const a = await reserve(repository, supplier, connections[0]!), b = await reserve(repository, supplier, connections[1]!);

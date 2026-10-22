@@ -13,13 +13,14 @@ describe("词元商家目录的连接设置保存", () => {
         operations: ["image.generate"], metadata: Object.fromEntries(Array.from({ length: 25 }, (_, field) => [`fact-${field}`, field])) })),
       modelScanGroups: { all: [] }, autoModelInterfaces: { all: {} }, manualModels: [{ id: "custom", capability: "image" }],
       accountKeyGroup: "default" };
-    const input = { id: "connection", name: "词元", provider: "openai", config };
+    const input = { id: "connection", name: "词元", provider: "openai", config, credentialEpoch: "response-only-identity" };
     expect(ProviderConnectionRequestSchema.safeParse(input).success).toBe(false);
     const fetcher = vi.fn().mockResolvedValue(Response.json({ id: input.id, config, apiKeySet: true }));
     vi.stubGlobal("fetch", fetcher);
     const { saveConnection } = await import("./client-api");
     await saveConnection(input);
     const posted = JSON.parse(fetcher.mock.calls[0][1].body);
+    expect(posted).not.toHaveProperty("credentialEpoch");
     expect(ProviderConnectionRequestSchema.safeParse(posted).success).toBe(true);
     expect(posted.config).toMatchObject({ defaultModel: input.config.defaultModel, supplierSourceId: "source",
       accountKeyGroup: "default", scannedModelIds: input.config.scannedModelIds, manualModels: input.config.manualModels });

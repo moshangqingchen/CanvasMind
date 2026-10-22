@@ -168,6 +168,27 @@ describe("C exact official groups preserve open image inputs without borrowed pi
     expect(applyCOpenImageCapabilities({ provider: "openai", config: scopes[0]! }, stale).parameters?.some(p => p.key === "background")).toBe(false);
   });
 
+  it("keeps Synora renamed group 99 medium-only after menu projection and rejects old quality before transport", async () => {
+    const config = { baseUrl: "https://synoralink.com/v1", accountKeyGroupId: "99", modelGroup: "ad中质量生图" };
+    const model = applyUserImageSizePresets(applyCOpenImageCapabilities({ provider: "openai", config }, stale));
+    expect(model.parameters?.find(parameter => parameter.key === "quality")).toMatchObject({ default: "medium", options: [{ value: "medium", label: "medium" }] });
+    expect(cOpenImageRoute({ ...config, accountKeyGroupId: undefined }, gpt[0]!)).toMatchObject({ quality: "medium" });
+    expect(cOpenImageRoute({ ...config, accountKeyGroupId: "999" }, gpt[0]!)).toBeUndefined();
+    expect(cOpenImageRoute({ ...config, accountKeyGroupId: "125", modelGroup: "ad全参生图" }, gpt[1]!)?.quality).toBeUndefined();
+    expect(cOpenImageRoute({ ...config, accountKeyGroupId: undefined, modelGroup: "ad全参生图" }, gpt[1]!)).toMatchObject({ userSizePresets: true });
+    const fetch = vi.fn<FetchImplementation>(async () => Response.json({ data: [{ b64_json: "aW1hZ2U=" }] }));
+    const adapter = new OpenAIImageAdapter(new StaticConnectionResolver([{ id: "synora99", provider: "openai", apiKey: "fixture",
+      baseUrl: config.baseUrl, settings: { ...config, scannedModelIds: [gpt[0]!], modelCatalogModels: [model] } }]), { fetch });
+    const parameters = { size: "3840x2160", quality: "high" }, before = structuredClone(parameters);
+    await expect(adapter.submit({ connectionId: "synora99", operation: "image.generate", model: gpt[0]!, prompt: "offline fixture",
+      idempotencyKey: "mock-only", parameters })).rejects.toThrow();
+    expect(parameters).toEqual(before);
+    expect(fetch).not.toHaveBeenCalled();
+    await adapter.submit({ connectionId: "synora99", operation: "image.generate", model: gpt[0]!, prompt: "offline fixture",
+      idempotencyKey: "mock-only", parameters: { size: "3840x2160", quality: "medium" } });
+    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toMatchObject({ model: gpt[0], size: "3840x2160", quality: "medium" });
+  });
+
   it("reuses only Hang75's exact original generated transparent PNG fields, keeping other operations and extras scoped", () => {
     const config = scopes[7]!, parameters = { size: "1024x1024", quality: "high", n: 1, background: "transparent", output_format: "png" };
     for (const id of config.models) {

@@ -1,25 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {
-  mkdtemp,
-  mkdir,
-  writeFile,
-  readFile,
-  rm,
-  symlink,
-  lstat,
-} from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, writeFile, readFile, symlink, lstat } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { applyCleanup, planCleanup, validateCleanupTarget } from "./clean.mjs";
+import { createMaintenanceFixture } from "./test-fixture.mjs";
 
 async function fixture(t) {
-  const root = await mkdtemp(path.join(tmpdir(), "supercanvas-clean-test-"));
-  t.after(async () => {
-    assert.equal(path.dirname(root), tmpdir());
-    assert.match(path.basename(root), /^supercanvas-clean-test-/u);
-    await rm(root, { recursive: true, force: true });
-  });
+  const root = await createMaintenanceFixture(t, "supercanvas-clean-test-");
   const put = async (name) => {
     const target = path.join(root, name);
     await mkdir(path.dirname(target), { recursive: true });
@@ -167,6 +155,89 @@ test("rejects workspace root, outside paths and non-generated paths in supplied 
     ),
   );
 });
+
+test("protects tracked files even when they match generated output names", async (t) => {
+  const { root, put } = await fixture(t);
+  const tracked = [
+    "out/source.ts",
+    "packages/core/dist/retained.js",
+    "contract.log",
+  ];
+  for (const name of [...tracked, "apps/desktop/renderer/.next-old/cache.bin"])
+    await put(name);
+  execFileSync("git", ["init", "--quiet", root], { windowsHide: true });
+  execFileSync("git", ["add", "--", ...tracked], {
+    cwd: root,
+    windowsHide: true,
+  });
+  const plan = await planCleanup(root, { deep: true });
+  assert.deepEqual(
+    plan.map((entry) => entry.path),
+    ["apps/desktop/renderer/.next-old"],
+  );
+  await applyCleanup(root, plan);
+  for (const name of tracked) assert.ok(await readFile(path.join(root, name)));
+  await assert.rejects(
+    applyCleanup(root, [{ path: "out" }]),
+    /Not a generated/u,
+  );
+});
+
+test("rechecks the Git index before applying an earlier cleanup plan", async (t) => {
+  const { root, put } = await fixture(t);
+  await put("out/retained.ts");
+  execFileSync("git", ["init", "--quiet", root], { windowsHide: true });
+  const plan = await planCleanup(root);
+  assert.equal(plan[0].path, "out");
+  execFileSync("git", ["add", "out/retained.ts"], {
+    cwd: root,
+    windowsHide: true,
+  });
+  await assert.rejects(applyCleanup(root, plan), /Not a generated/u);
+  assert.ok(await readFile(path.join(root, "out/retained.ts")));
+});
+
+test("refuses cleanup when the checkout index cannot be read", async (t) => {
+  const { root, put } = await fixture(t);
+  await put("out/cache.bin");
+  await writeFile(path.join(root, ".git"), "gitdir: missing-checkout\n");
+  await assert.rejects(planCleanup(root));
+  await assert.rejects(applyCleanup(root, [{ path: "out" }]));
+  assert.ok(await readFile(path.join(root, "out/cache.bin")));
+});
+
+test(
+  "matches tracked paths without case sensitivity on Windows",
+  { skip: process.platform !== "win32" },
+  async (t) => {
+    const { root, put } = await fixture(t);
+    await put(".next-cache/source.ts");
+    execFileSync("git", ["init", "--quiet", root], { windowsHide: true });
+    const object = execFileSync(
+      "git",
+      ["hash-object", "-w", ".next-cache/source.ts"],
+      { cwd: root, windowsHide: true, encoding: "utf8" },
+    ).trim();
+    execFileSync(
+      "git",
+      [
+        "update-index",
+        "--add",
+        "--cacheinfo",
+        "100644",
+        object,
+        ".next-CACHE/source.ts",
+      ],
+      { cwd: root, windowsHide: true },
+    );
+    assert.deepEqual(await planCleanup(root), []);
+    await assert.rejects(
+      applyCleanup(root, [{ path: ".next-cache" }]),
+      /Not a generated/u,
+    );
+    assert.ok(await readFile(path.join(root, ".next-cache/source.ts")));
+  },
+);
 
 test("rejects linked ancestors and never follows links inside generated output", async (t) => {
   const { root, put } = await fixture(t);

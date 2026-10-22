@@ -63,6 +63,7 @@ export default async function neuralGlobalSetup(config: FullConfig) {
     await copyFile(suppliedFfmpeg, ffmpegTarget);
   }
   const environment = await createTestEnvironment(baseURL, token);
+  process.env.SUPERCANVAS_E2E_DATA_ROOT = environment.root;
   const guard = join(environment.root, "neural-loopback-only.cjs");
   const networkLog = join(output, "neural-server-external-attempts.jsonl");
   const requestLog = join(output, "neural-server-request-hosts.jsonl");

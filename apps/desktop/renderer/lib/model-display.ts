@@ -11,6 +11,8 @@ import { evaluateImageParameters } from "@super-canvas/providers/image-parameter
 import { modelPickerPriceCompact, modelPickerPriceData } from "./model-picker-data";
 import { mikotoImageRatioIssues } from "@super-canvas/providers/supplier-image-constraints";
 import { cyberafeiSeedance25SizePreferenceIssues } from "@super-canvas/providers/cyberafei-seedance25-video-contract";
+import { chuangxiangWanBillingSeconds, isChuangxiangWanVideoModel, normalizeChuangxiangVideoParameters } from "@super-canvas/providers/chuangxiang-video-contract";
+import { jijiuVideoBillingSeconds } from "@super-canvas/providers/jijiu-video-contract";
 
 /** A missing local quote is not evidence that the supplier never published one. */
 export function displayPriceLabel(label: unknown, status?: unknown): string {
@@ -263,6 +265,17 @@ export function modelPriceSummary(model: import("@super-canvas/providers").Model
 /** The estimate and its tariff branch share parameter defaults, aliases and validation. */
 export function modelEstimatedQuote(model: ModelDescriptor | null | undefined, parameters: Readonly<Record<string, unknown>>) {
   if (!model) return undefined;
+  if (model.metadata?.referenceVideoPricingUnpublished === true && parameters.has_reference_video !== false) return undefined;
+  const capabilitySource = model.metadata?.videoCapabilitySource as Record<string, unknown> | undefined;
+  const chuangxiangWan = model.metadata?.chuangxiangWanVideoContract === true && isChuangxiangWanVideoModel(model.id) &&
+    capabilitySource?.url === "https://vapi.chuangxiangai.asia/api/v1/model-plaza" && capabilitySource.groupId === "27";
+  const jijiuInputSeconds = model.metadata?.jijiuVideoContract === true && model.metadata.jijiuReferenceVideoDurationBilling === true &&
+    model.metadata.documentationUrl === "https://newapi.jijiucanvas.com/docs/api-docs.md" &&
+    ["SD2.0满血稳定933-线路二", "稳定seedance-2.5全参D"].includes(model.id);
+  const billedSeconds = chuangxiangWan ? chuangxiangWanBillingSeconds(model.id, parameters)
+    : jijiuInputSeconds ? jijiuVideoBillingSeconds(model.id, parameters) : undefined;
+  if ((chuangxiangWan || jijiuInputSeconds) && billedSeconds === undefined) return undefined;
+  if (chuangxiangWan) parameters = normalizeChuangxiangVideoParameters({ connectionId: "quote-only", idempotencyKey: "quote-only", operation: "video.generate", prompt: "", model: model.id, parameters });
   if (model.metadata?.mikotoImageContract === true && model.metadata.imageResolutionTierParameter === "size_tier" &&
       mikotoImageRatioIssues(parameters).length) return undefined;
   model = applyUserImageSizePresets(normalizeTk1688CnyModel(model));
@@ -298,8 +311,8 @@ export function modelEstimatedQuote(model: ModelDescriptor | null | undefined, p
   if (count === undefined) return undefined;
   if (!Number.isInteger(count) || count < 1) return undefined;
   const perSecond = pricing.billingUnit === "second" || pricing.kind === "per-second";
-  const duration = Number(values.duration ?? values.duration_seconds ?? values.seconds);
-  if (perSecond && (!Number.isFinite(duration) || duration <= 0 || model.metadata?.approximateVideoDurationSeconds || model.metadata?.billingIncludesInputDuration === true)) return undefined;
+  const duration = billedSeconds ?? Number(values.duration ?? values.duration_seconds ?? values.seconds);
+  if (perSecond && (!Number.isFinite(duration) || duration <= 0 || model.metadata?.approximateVideoDurationSeconds || model.metadata?.billingIncludesInputDuration === true && billedSeconds === undefined)) return undefined;
   const total = Number((amount * count * (perSecond ? duration : 1)).toPrecision(12));
   return { cost: `${total} ${pricing.currency === "credits" ? "额度" : pricing.currency}${pricing.confidence === "exact" ? "" : "（参考）"}${pricing.timeMultipliers?.length ? "（上海当前时段价，以提交时刻为准）" : ""}`,
     tierIndex: quote.tier ? pricing.tiers?.indexOf(quote.tier) : undefined, parameters: priceParameters };

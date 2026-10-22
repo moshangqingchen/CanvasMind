@@ -1,6 +1,7 @@
 import type { ModelDescriptor, ModelParameterDescriptor, NormalizedRequest, ProviderAssetInput, ValidationIssue } from "./contracts.js";
 import type { RestModelConnectorOverride } from "./rest.js";
 import { JIASU_VIDEO_CATALOG } from "./jiasu-video-catalog-data.js";
+import { JIASU_VIDEO_UPDATE_20261021 } from "./jiasu-video-update-20261021.js";
 import { jiasuVideoApiExampleContract, latestJiasuVideoApiExampleContract, type JiasuVideoApiExampleContract } from "./jiasu-api-example-contract.js";
 export { latestJiasuVideoApiExampleContract } from "./jiasu-api-example-contract.js";
 import { seedanceDurationFallback, seedanceDurationFallbackDescription, seedanceDurationFallbackMetadata } from "./seedance-duration-fallback.js";
@@ -9,6 +10,7 @@ export const JIASU_VIDEO_DOCS = "https://aijiasu.apifox.cn/";
 export const JIASU_VIDEO_QUERY_DOCS = "https://aijiasu.apifox.cn/api-511071739";
 const specialMinimax = "minimax-h3-933-2k-支持真人";
 const october14CatalogIds = new Set(["sd-2.0-mini-503-J3", "ov-Seedance 2.0-720p-nsp-gz-15s", "seedance2.5-xing特惠"]);
+const october21CatalogIds = new Set(JIASU_VIDEO_UPDATE_20261021.map(row => row.id));
 const compatibleProtocolEvidence = {
   sourceUrl: "https://ai.jiasuapi.com/static/js/index.238e22c636.js",
   checkedAt: "2026-10-14T23:32:27.812Z", sourceSha256: "654cea5eb78c5f8634027ac1b6c13fd5351ef49e4268a4c7d8300dd63400e10c",
@@ -17,7 +19,7 @@ const compatibleProtocolEvidence = {
 type Row = Record<string, unknown>;
 const record = (value: unknown): Row => value && typeof value === "object" && !Array.isArray(value) ? value as Row : {};
 const array = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
-const catalog = new Map(JIASU_VIDEO_CATALOG.map(row => [row.id, row]));
+const catalog = new Map<string, { id: string; description: string; apiParameters: unknown }>([...JIASU_VIDEO_CATALOG, ...JIASU_VIDEO_UPDATE_20261021].map(row => [row.id, row]));
 export const jiasuVideoModelIds = (): string[] => [...catalog.keys(), specialMinimax];
 
 interface ResolutionEvidence {
@@ -157,6 +159,19 @@ function durationParameter(id: string, facts: { description: string; apiParamete
     descriptor.default = 12;
     descriptor.constraints = [{ when: [{ parameter: "resolution", values: ["720p"] }], max: 12 }, { when: [{ parameter: "resolution", values: ["480p"] }], max: 15 }];
   }
+  if (id === "sd-2.5-J3-doubao") {
+    descriptor.min = 4; descriptor.max = 30;
+    descriptor.description = "当前型号逐档描述明确4–30秒；同页通用参数range仍为1–60，采用型号专属范围，保留原始冲突。";
+  }
+  if (id === "minimax-h3" && declaredRange(facts.apiParameters, "resolution")?.default === "768p") {
+    descriptor.description = "当前型号参数表为5–30秒、默认30秒、768p；同字段旧描述和通用文档仍为4–15秒/2k，保留冲突，按最新型号表发送。";
+  }
+  if (id === "sd-2.0-mini-503-J3" && !declared && !proseRange && !proseMaximum) {
+    // This update changes the resolution, not the previous exact-model time
+    // limit. An omitted new duration row is not evidence for expanding it.
+    descriptor.min = 1; descriptor.max = 12;
+    descriptor.description = "当前更新未重述时长，保留同完整型号上一有效说明的12秒上限；1秒下限为用户指定家族兜底。";
+  }
   return descriptor;
 }
 function resolutions(id: string, facts: { description: string; apiParameters: Row[] }): string[] {
@@ -227,6 +242,10 @@ export function jiasuVideoModel(id: string, current?: ModelDescriptor, group?: s
   parameters.push({ key: "size", label: "输出像素尺寸", control: "text", valueType: "string", allowCustomValue: true,
     placeholder: "如 1280x720", description: "供应商 OpenAI 兼容说明中的 WIDTHxHEIGHT 像素字段；与 resolution 档位分别发送，留空不发送。" });
   parameters.push(...additionalDeclarations(facts.apiParameters).flatMap(row => { const parameter = declaredScalarParameter(row); return parameter ? [parameter] : []; }));
+  if (id === "sd-2.5-J3-doubao") {
+    const resolution = parameters.find(p => p.key === "resolution");
+    if (resolution) resolution.description = "720p：30图/10视频/10音频且素材合计≤100MiB；1080p：9图/3音频，不提交参考视频；均4–30秒。";
+  }
   const supported = (kind: "image" | "video" | "audio") => refs[{ image: "maxInputImages", video: "maxInputVideos", audio: "maxInputAudios" }[kind] as keyof typeof refs] !== 0;
   const { jiasuResolutionEvidence: _previousEvidence, jiasuDeclaredResolutions: _previousDeclared, jiasuContractGroup: _previousGroup,
     durationRangeUnverified: _previousDurationRange, resolutionRangeUnverified: _previousResolutionRange,
@@ -240,7 +259,7 @@ export function jiasuVideoModel(id: string, current?: ModelDescriptor, group?: s
     limits: { ...current?.limits, ...refs }, metadata: { ...currentMetadata, supplier: "jiasu", modality: "video", catalogCapability: "video", operationsSource: "declared", outputKindsSource: "declared",
       protocol: "openai-videos", documentationUrl: id === specialMinimax ? "https://aijiasu.apifox.cn/api-520050937" : JIASU_VIDEO_DOCS,
       endpointPath: facts.apiExampleContract?.submitPath ?? "/v1/video/generations", endpointMethod: "POST", parameterSource: "supplier-documented-contract", protocolEvidence: "supplier-documentation", generationVerified: false,
-      videoContractCheckedAt: String(current?.metadata?.jiasuCatalogCheckedAt ?? (october14CatalogIds.has(id) ? "2026-10-14" : "2026-10-09")),
+      videoContractCheckedAt: String(current?.metadata?.jiasuCatalogCheckedAt ?? (october21CatalogIds.has(id) ? "2026-10-21" : october14CatalogIds.has(id) ? "2026-10-14" : "2026-10-09")),
       jiasuCompatibleProtocolEvidence: compatibleProtocolEvidence, videoSupportedResolutions: sizes, videoMinDuration: duration.min, videoMaxDuration: duration.max,
       ...(!duration.options?.length && (duration.min === undefined || duration.max === undefined) ? { durationRangeUnverified: true } : {}),
       ...seedanceDurationFallbackMetadata(durationFallback),
@@ -383,6 +402,11 @@ export function jiasuVideoRequestIssues(request: NormalizedRequest, model?: Mode
   }
   for (const [kind, limit] of [["image", descriptor.limits?.maxInputImages], ["video", descriptor.limits?.maxInputVideos], ["audio", descriptor.limits?.maxInputAudios]] as const)
     if (limit !== undefined && counts[kind] > limit) add("assets", `当前佳速型号最多接受 ${limit} 个${kind === "image" ? "图片" : kind === "video" ? "视频" : "音频"}素材。`);
+  if (request.model === "sd-2.5-J3-doubao") {
+    const limits = p.resolution === "1080p" ? { image: 9, video: 0, audio: 3 } : { image: 30, video: 10, audio: 10 };
+    for (const kind of ["image", "video", "audio"] as const) if (counts[kind] > limits[kind]) add("assets", `当前${String(p.resolution)}最多${limits[kind]}个${kind}参考素材。`);
+    if (p.resolution === "720p" && (request.assets ?? []).reduce((sum, a) => sum + (a.data?.byteLength ?? 0), 0) > 100 * 1024 * 1024) add("assets", "此型号720p参考素材总大小不能超过100MiB。");
+  }
   if (frames.first_frame > 1 || frames.end_frame > 1) add("assets", "首帧和尾帧分别最多一张。");
   if ((frames.first_frame > 0 || frames.end_frame > 0) && counts.audio > 0)
     add("assets", "佳速首尾帧生成不能同时使用参考音频，包括 audios 或 materials 中的 audio。");

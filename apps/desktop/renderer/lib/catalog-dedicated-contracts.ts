@@ -2,8 +2,10 @@ import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type { ProviderConnectionRecord, SupplierRecord } from "@super-canvas/db";
 import { bananaImageRoute, canApplyCangyuanCurrentContract, isCangyuanMusicRequest, isCangyuanNativeSeedanceRequest,
+  isCangyuanVideoRequest, isCangyuanCurrentRequest, cangyuanCurrentModel, cangyuanCurrentTransport, cangyuanVideoModel,
   isChuangxiangVideoConnection, isChuangxiangImageConnection, isChuangxiangMidjourneyConnection, isJiasuImageConnection,
   isJijiuGptImage, jijiuImageGroupAllowed, isPdogImageConnection, isSecureSkillImageConnection, isSecureSkillSeedreamConnection,
+  isTk1688ApiUrl,
   remainingVideoModel, remainingVideoSupplier, remainingVideoTransport, type ModelDescriptor, type ProviderOperation, type RestConnectorConfig } from "@super-canvas/providers";
 import { cOpenImageRoute } from "@super-canvas/providers/c-open-image-contract";
 import { isGenimageImageConnection } from "@super-canvas/providers/genimage-image-capabilities";
@@ -34,6 +36,14 @@ function nativeAdapter(connection: ProviderConnectionRecord, model: ModelDescrip
     !["openai", "weai", "rest"].includes(provider) || !model.operations.length || model.metadata?.canvasRunnable === false || denied(model)) return;
   const image = model.operations.every(operation => operation.startsWith("image."));
   if (image) {
+    // The existing OpenAI adapter preserves these exact merchant IDs and uses
+    // Tk1688's own size/quality policy. A public description is never a route
+    // or permission predicate; the caller still requires current-Key evidence.
+    const tkUrl = isTk1688ApiUrl(baseUrl) ? new URL(baseUrl) : undefined;
+    if (provider === "openai" && tkUrl && !tkUrl.search && !tkUrl.hash && /^\/(?:v1\/?)?$/u.test(tkUrl.pathname) &&
+      !["empty", "unauthorized"].includes(String(config.modelScanStatus)) && !protectedModel(model) &&
+      config.autoProtocol !== false && (!Array.isArray(config.manualModels) || !config.manualModels.some(row => record(row).id === id)) &&
+      /^(?:gpt-image-2(?:-(?:low|medium|high))?|gpt-image-2\.5(?:-(?:flare|sunburst))?)(?:@s\d+c\d+)?$/u.test(id)) return "tk1688-images";
     const banana = bananaImageRoute(connection, id);
     if (banana && !banana.unavailableReason) return "banana-native";
     if (provider === "openai" && cOpenImageRoute(config, id)) return "c-open-native";
@@ -55,6 +65,7 @@ function nativeAdapter(connection: ProviderConnectionRecord, model: ModelDescrip
   }
   if (model.operations.every(operation => operation === "music.generate") && provider === "rest" && isCangyuanMusicRequest(id, baseUrl)) return "cangyuan-music";
   if (model.operations.every(operation => operation.startsWith("video."))) {
+    if (provider === "rest" && isCangyuanVideoRequest(id, baseUrl)) return "cangyuan-video";
     if (["openai", "rest"].includes(provider) && isCangyuanNativeSeedanceRequest(id, baseUrl)) return "cangyuan-video";
     if (["openai", "rest"].includes(provider) && isChuangxiangVideoConnection(config, id)) return "chuangxiang-video";
     const supplier = remainingVideoSupplier(baseUrl), context = { baseUrl, manualProtocol: config.manualProtocol,
@@ -76,6 +87,16 @@ function builtinRestContract(connection: ProviderConnectionRecord, model: ModelD
   const config = connection.config, supplier = supplierKeyForConnection(connection), context = { baseUrl: config.baseUrl,
     group: String(config.accountKeyGroup ?? config.modelGroup ?? ""), model, manualProtocol: config.manualProtocol,
     officialGroupId: typeof config.accountKeyGroupId === "string" || typeof config.accountKeyGroupId === "number" ? config.accountKeyGroupId : undefined };
+  if (supplier === "cangyuan" && new URL(String(config.baseUrl)).origin === "https://ai.cangyuansuanli.cn" &&
+    config.autoProtocol !== false && isCangyuanCurrentRequest(model.id, String(config.baseUrl)) &&
+    (!Array.isArray(config.manualModels) || !config.manualModels.some(row => record(row).id === model.id))) {
+    const descriptor = completeBuiltinDescriptor(cangyuanCurrentModel(model)), transport = cangyuanCurrentTransport(model.id);
+    if (model.outputKinds?.length && !model.outputKinds.some(kind => descriptor.outputKinds?.includes(kind))) return;
+    if (transport?.submit && transport.output) return { adapter: "cangyuan-current", model: descriptor,
+      connector: { auth: { type: "bearer" }, assetsRequirePublicUrls: descriptor.metadata?.remoteMediaUrlsOnly === true,
+        statusMap: { queued: "queued", in_progress: "running", completed: "succeeded", failed: "failed" },
+        restrictModels: true, models: [descriptor], ...transport, submit: transport.submit, output: transport.output } };
+  }
   if (supplier === "cyberafei") {
     const endpoints = model.metadata?.endpointTypes;
     const descriptor = cyberAfeiDocumentedModel(model.id, Array.isArray(endpoints) && endpoints.length ? { endpointTypes: endpoints.filter((value): value is string => typeof value === "string") } : undefined, context);
@@ -109,9 +130,16 @@ function completeBuiltinDescriptor(model: ModelDescriptor): ModelDescriptor {
     outputKinds: model.outputKinds ?? (image ? ["image"] : video ? ["video"] : []) };
 }
 function preservePrice(original: ModelDescriptor, descriptor: ModelDescriptor): ModelDescriptor {
+  // These fields constrain a quote's legal billing basis. They belong to the
+  // current exact contract, even though their names contain pricing/billing.
+  // Historical numeric-price metadata must never replace those restrictions.
+  const contractBillingFields = new Set(["billingIncludesInputDuration", "referenceVideoPricingUnpublished", "referenceVideoPricingSourceUrl",
+    "referenceVideoPricingUpdatedAt", "priceContractWarning", "videoReferenceVideoBilling", "jijiuReferenceVideoDurationBilling",
+    "videoAutomaticBillingSeconds", "chentuBillingUsageSchema", "cangyuanAudioBillingBasis", "cangyuanAudioBillingEvidence", "cangyuanAudioRawBillingValues"]);
+  const priceField = (key: string) => /price|pricing|billing/iu.test(key) && !contractBillingFields.has(key);
   const metadata = { ...descriptor.metadata };
-  for (const key of Object.keys(metadata)) if (/price|pricing|billing/iu.test(key)) delete metadata[key];
-  for (const [key, value] of Object.entries(original.metadata ?? {})) if (/price|pricing|billing/iu.test(key)) metadata[key] = value;
+  for (const key of Object.keys(metadata)) if (priceField(key)) delete metadata[key];
+  for (const [key, value] of Object.entries(original.metadata ?? {})) if (priceField(key)) metadata[key] = value;
   return { ...descriptor, name: original.name, pricing: original.pricing, metadata };
 }
 
@@ -157,6 +185,12 @@ export function collectCatalogDedicatedContracts(connection: ProviderConnectionR
   const nativeCandidates = bindScannedModelProtocols(safeConnection, prepared, safeConnection).models;
   let projected = models.map((original, index) => {
     let candidate = nativeCandidates[index] ?? original;
+    // Rest's Cangyuan adapter normalizes roles into the exact documented fields
+    // before sending its native video contract; it does not inherit a saved URL.
+    if (connection.provider === "rest" && supplierKeyForConnection(safeConnection) === "cangyuan" && matchesSupplierTemplate(safeConnection) &&
+      connection.config.manualProtocol !== true && connection.config.autoProtocol !== false && !protectedModel(original) && !denied(original) &&
+      isCangyuanVideoRequest(original.id, String(connection.config.baseUrl)))
+      candidate = cangyuanVideoModel({ ...candidate, metadata: { ...candidate.metadata, canvasRunnable: true } });
     const builtin = builtinRestContract(safeConnection, candidate);
     if (builtin) candidate = builtin.model;
     const adapter = builtin?.adapter ?? nativeAdapter(safeConnection, candidate);

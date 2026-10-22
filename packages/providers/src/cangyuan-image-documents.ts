@@ -4397,5 +4397,213 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
         "required": false
       }
     }
+  },
+  "flux-3-image": {
+    "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/flux-3-image.json",
+    "checkedAt": "2026-10-22T04:13:16.529Z",
+    "sha256": "525d128f580568cbe657a4666dcabacc9b294e35722aa6dd83a4f3871390f8b9",
+    "sourceLastReviewed": "2026-10-21",
+    "intro": "按文字生成图片，也可以带最多 10 张参考图做修改。清晰度分 768sq、1K、1.5K、2K、4K，比例档更多，默认 auto。只要 1K/2K/4K 且要更省时用 flux-3-klein。",
+    "fields": {
+      "model": "固定传 flux-3-image。",
+      "prompt": "画面内容的文字描述。必填。带参考图时写清楚要保留什么、改什么。最少 1 字符。",
+      "n": "请求张数。本型号固定 1 张，成片以任务结果为准。最小 1。最大 1。",
+      "size": "画面比例。客户字段是 size。默认 auto，跟参考图或模型自己判断。可选从 21:9 到 9:21 的多档。推荐值：auto / 21:9 / 2:1 / 16:9 / 3:2 / 7:5 / 4:3 / 5:4 / 1:1 / 4:5 / 3:4 / 5:7 / 2:3 / 9:16 / 1:2 / 9:21；推荐值不代表完整允许集合。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 10 个。",
+      "resolution": "输出清晰度。768sq、1K、1.5K、2K、4K。默认 1K。不同清晰度计费不同，提交前看价目。推荐值：768sq / 1K / 1.5K / 2K / 4K；推荐值不代表完整允许集合。"
+    },
+    "ratios": [
+      "21:9",
+      "2:1",
+      "16:9",
+      "3:2",
+      "7:5",
+      "4:3",
+      "5:4",
+      "1:1",
+      "4:5",
+      "3:4",
+      "5:7",
+      "2:3",
+      "9:16",
+      "1:2",
+      "9:21"
+    ],
+    "pixelOptions": [],
+    "customPixels": false,
+    "autoSize": true,
+    "omitSizeAutomatic": false,
+    "qualityOptions": [],
+    "maxReferences": 10,
+    "editing": true,
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "请求张数。本型号固定 1 张，成片以任务结果为准。最小 1。最大 1。",
+        "min": 1,
+        "max": 1
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例。客户字段是 size。默认 auto，跟参考图或模型自己判断。可选从 21:9 到 9:21 的多档。推荐值：auto / 21:9 / 2:1 / 16:9 / 3:2 / 7:5 / 4:3 / 5:4 / 1:1 / 4:5 / 3:4 / 5:7 / 2:3 / 9:16 / 1:2 / 9:21；推荐值不代表完整允许集合。",
+        "suggestions": [
+          "auto",
+          "21:9",
+          "2:1",
+          "16:9",
+          "3:2",
+          "7:5",
+          "4:3",
+          "5:4",
+          "1:1",
+          "4:5",
+          "3:4",
+          "5:7",
+          "2:3",
+          "9:16",
+          "1:2",
+          "9:21"
+        ],
+        "default": "auto",
+        "suggestedDefault": "auto"
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。"
+      },
+      "resolution": {
+        "type": "string",
+        "description": "输出清晰度。768sq、1K、1.5K、2K、4K。默认 1K。不同清晰度计费不同，提交前看价目。推荐值：768sq / 1K / 1.5K / 2K / 4K；推荐值不代表完整允许集合。",
+        "suggestions": [
+          "768sq",
+          "1K",
+          "1.5K",
+          "2K",
+          "4K"
+        ],
+        "default": "1K",
+        "suggestedDefault": "1K"
+      }
+    }
+  },
+  "flux-3-klein": {
+    "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/flux-3-klein.json",
+    "checkedAt": "2026-10-22T04:13:16.539Z",
+    "sha256": "98e1d8c01e062fa8373749e93200a8cb9db4989385ad267ffd98514672fc2413",
+    "sourceLastReviewed": "2026-10-21",
+    "intro": "按文字生成图片，也可以带最多 10 张参考图做修改。清晰度分 1K、2K、4K，比例用 size。这是 Flux 3 里更省的一档。要更多比例或 768sq、1.5K 时用 flux-3-image。",
+    "fields": {
+      "model": "固定传 flux-3-klein。",
+      "prompt": "画面内容的文字描述。必填。带参考图时写清楚要保留什么、改什么。最少 1 字符。",
+      "n": "请求张数。本型号固定 1 张，成片以任务结果为准。最小 1。最大 1。",
+      "size": "画面比例。客户字段是 size。auto 表示跟参考图走。默认 1:1。推荐值：1:1 / 16:9 / 9:16 / 4:3 / 3:4 / 3:2 / 2:3 / 21:9 / 9:21 / auto；推荐值不代表完整允许集合。",
+      "output_format": "输出图片格式。默认 png。客户字段是 output_format。支持值：png / jpeg / webp。无法识别的值按未传处理。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 10 个。",
+      "enable_prompt_expansion": "是否自动把提示词写得更完整。默认开启。提示词已经写细时可以关掉。",
+      "resolution": "输出清晰度。1K 约一百万像素，2K 约四百万，4K 最高约一千六百万。默认 1K。不同清晰度计费不同，提交前看价目。推荐值：1K / 2K / 4K；推荐值不代表完整允许集合。",
+      "seed": "随机种子。相同提示和种子便于复现。不填则每次不同。"
+    },
+    "ratios": [
+      "1:1",
+      "16:9",
+      "9:16",
+      "4:3",
+      "3:4",
+      "3:2",
+      "2:3",
+      "21:9",
+      "9:21"
+    ],
+    "pixelOptions": [],
+    "customPixels": false,
+    "autoSize": true,
+    "omitSizeAutomatic": false,
+    "qualityOptions": [],
+    "maxReferences": 10,
+    "editing": true,
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "请求张数。本型号固定 1 张，成片以任务结果为准。最小 1。最大 1。",
+        "min": 1,
+        "max": 1
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例。客户字段是 size。auto 表示跟参考图走。默认 1:1。推荐值：1:1 / 16:9 / 9:16 / 4:3 / 3:4 / 3:2 / 2:3 / 21:9 / 9:21 / auto；推荐值不代表完整允许集合。",
+        "suggestions": [
+          "1:1",
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4",
+          "3:2",
+          "2:3",
+          "21:9",
+          "9:21",
+          "auto"
+        ],
+        "default": "1:1",
+        "suggestedDefault": "1:1"
+      },
+      "output_format": {
+        "type": "string",
+        "description": "输出图片格式。默认 png。客户字段是 output_format。支持值：png / jpeg / webp。无法识别的值按未传处理。",
+        "enum": [
+          "png",
+          "jpeg",
+          "webp"
+        ],
+        "default": "png",
+        "suggestedDefault": "png"
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。"
+      },
+      "enable_prompt_expansion": {
+        "type": "boolean",
+        "description": "是否自动把提示词写得更完整。默认开启。提示词已经写细时可以关掉。",
+        "default": true,
+        "suggestedDefault": true
+      },
+      "resolution": {
+        "type": "string",
+        "description": "输出清晰度。1K 约一百万像素，2K 约四百万，4K 最高约一千六百万。默认 1K。不同清晰度计费不同，提交前看价目。推荐值：1K / 2K / 4K；推荐值不代表完整允许集合。",
+        "suggestions": [
+          "1K",
+          "2K",
+          "4K"
+        ],
+        "default": "1K",
+        "suggestedDefault": "1K"
+      },
+      "seed": {
+        "type": "string",
+        "description": "随机种子。相同提示和种子便于复现。不填则每次不同。"
+      }
+    }
   }
 };

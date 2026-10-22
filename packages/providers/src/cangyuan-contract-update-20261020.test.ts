@@ -15,6 +15,7 @@ const fixture = JSON.parse(readFileSync(new URL("./fixtures/cangyuan-contract-up
   pricingRows: Record<string, unknown>[];
 };
 const fresh = ["sd8-seedance-2.5-n", "sd15-seedance-2.5-2", "sd16-seedance-2.5-2", "sd17-seedance-2.0-4", "sd17-seedance-2.5-4"];
+const latestSchemas = JSON.parse(readFileSync(new URL("./fixtures/cangyuan-contract-update-20261021.json", import.meta.url), "utf8")).schemas as typeof fixture.schemas;
 const baseUrl = "https://ai.cangyuansuanli.cn";
 const request = (id: string, parameters: Record<string, unknown> = {}): NormalizedRequest => ({ connectionId: "offline", model: id,
   operation: "video.generate", prompt: "offline contract", parameters, idempotencyKey: "offline-contract" });
@@ -25,7 +26,7 @@ describe("Cangyuan current exact video additions", () => {
   afterEach(() => { expect(globalThis.fetch).not.toHaveBeenCalled(); vi.unstubAllGlobals(); });
 
   it.each(fresh)("roundtrips %s's declared fields, reference roles and original task using mocked transport", async id => {
-    const evidence = fixture.schemas.find(row => row.id === id)!;
+    const evidence = latestSchemas.find(row => row.id === id) ?? fixture.schemas.find(row => row.id === id)!;
     const model = descriptor(id), contract = CANGYUAN_CURRENT_VIDEO_CONTRACTS[id]!;
     expect(model.metadata).toMatchObject({ videoContractDocumentSha256: evidence.sha256,
       cangyuanVideoContractCheckedAt: evidence.checkedAt, videoContractSourceStatus: "current", supportsFirstLastFrames: false });

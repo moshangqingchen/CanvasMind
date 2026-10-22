@@ -1,6 +1,8 @@
 import type { ModelDescriptor, ModelParameterDescriptor, NormalizedRequest, ValidationIssue } from "./contracts.js";
 import type { RestModelConnectorOverride } from "./rest.js";
 import { CHUANGXIANG_CURRENT_VIDEO_IDS, CHUANGXIANG_VIDEO_CAPABILITY_SOURCE, chuangxiangVideoCapability } from "./chuangxiang-video-capabilities.js";
+import { CHUANGXIANG_WAN_VIDEO_IDS, chuangxiangWanVideoModel, isChuangxiangWanVideoModel, normalizeChuangxiangWanVideoParameters, validateChuangxiangWanVideoRequest } from "./chuangxiang-wan-video-contract.js";
+export { chuangxiangWanBillingSeconds, isChuangxiangWanVideoModel } from "./chuangxiang-wan-video-contract.js";
 
 export const CHUANGXIANG_VIDEO_DOCS = "https://vapi.chuangxiangai.asia/docs/video";
 export const CHUANGXIANG_VIDEO_POLL_INTERVAL_MS = 10_000;
@@ -14,7 +16,8 @@ export function chuangxiangVideoTransport(): RestModelConnectorOverride {
       mappings: [
         { target: "/model", source: { kind: "request", path: "$.model" } },
         { target: "/prompt", source: { kind: "request", path: "$.prompt" } },
-        ...["duration", "resolution", "aspect_ratio", "n", "reference_image_urls", "reference_videos", "reference_audios", "first_image_url", "last_image_url"].map(key => ({ target: `/${key}`, source: { kind: "request" as const, path: `$.parameters.${key}` }, omitIfUndefined: true, omitIfEmpty: true })),
+        ...["duration", "resolution", "aspect_ratio", "n", "generate_audio", "reference_image_urls", "reference_videos", "reference_audios", "first_image_url", "last_image_url",
+          "image_url", "image_urls", "images", "video_reference", "video_references", "video_url", "video_urls", "audio_url", "audio_urls", "audio_reference", "audio_references"].map(key => ({ target: `/${key}`, source: { kind: "request" as const, path: `$.parameters.${key}` }, omitIfUndefined: true, omitIfEmpty: true })),
       ], response },
     poll: { path: "/v1/videos/generations/{taskId}", method: "GET", bodyMode: "none", response },
     pollIntervalMs: CHUANGXIANG_VIDEO_POLL_INTERVAL_MS,
@@ -24,6 +27,7 @@ export function chuangxiangVideoTransport(): RestModelConnectorOverride {
 }
 const exactModels = new Set([
   ...CHUANGXIANG_CURRENT_VIDEO_IDS,
+  ...CHUANGXIANG_WAN_VIDEO_IDS,
   "grok-imagine-video", "grok-imagine-video-1.5", "gv3-grok-video-1.5", "kling-3.0", "kling-3.0-pro", "kl1-kling-3.0", "kl2-kling-3.0",
   "wan4-wan3.0", "wan5-wan3.0", "ve1-veo-3.1-fast", "happyhorse-1.1", "mm2-minimax-h3", "mm2-minimax-h3-max", "mm3-minimax-h3-2k", "niulai-pro",
   "sd7-seedance-2.0-720p", "sd7-seedance-2.0-1080p", "sd8-seedance-2.5", "sd8-seedance-2.5-s", "sd15-seedance-2.0", "sd15-seedance-2.5",
@@ -82,6 +86,7 @@ function references(id: string): { images: number; videos: number; audios: numbe
 
 export function chuangxiangVideoModel(id: string, current?: ModelDescriptor): ModelDescriptor {
   const model = current ?? { id, name: id, operations: ["video.generate", "video.image-to-video"] };
+  if (isChuangxiangWanVideoModel(id)) return chuangxiangWanVideoModel(id, model);
   if (!isChuangxiangVideoModel(id)) return model;
   const refs = references(id), durations = secondsOptions(id), published = chuangxiangVideoCapability(id);
   const resolutions = published ? [...published.resolutions] : id === "sd8-seedance-2.5" ? undefined : Array.isArray(model.metadata?.videoSupportedResolutions) ? model.metadata.videoSupportedResolutions.filter((v): v is string => typeof v === "string")
@@ -98,11 +103,13 @@ export function chuangxiangVideoModel(id: string, current?: ModelDescriptor): Mo
     ...(resolutions?.length ? [{ key: "resolution", label: "输出分辨率", control: "select" as const, valueType: "string" as const,
       default: resolutions[0]!, required: true, options: resolutions.map(value => ({ label: value, value })), description: "供应商当前完整型号的分辨率枚举；应用初选第一项，不代表供应商省略字段时的默认值。" }] : []),
     { key: "n", label: "生成数量", control: "number", valueType: "integer", min: 1, max: 1, default: 1 },
+    ...(chuangxiangVideoSupportsAudio(id) ? [{ key: "generate_audio", label: "生成声音", control: "select" as const, valueType: "boolean" as const,
+      options: [{ value: true, label: "生成" }, { value: false, label: "不生成" }], description: "省略时使用供应商默认行为。" }] : []),
   ];
   return { ...model, parameters, operations: refs ? refs.images > 0 || refs.frames ? ["video.generate", "video.image-to-video"] : ["video.generate"] : model.operations, outputKinds: ["video"],
     ...(refs ? { inputKinds: ["text", ...(refs.images > 0 || refs.frames ? ["image" as const, "image[]" as const] : []), ...(refs.videos ? ["video" as const, "video[]" as const] : []), ...(refs.audios ? ["audio" as const, "audio[]" as const] : [])],
       limits: { ...model.limits, maxInputImages: refs.images + (refs.frames ? 2 : 0), maxInputVideos: refs.videos, maxInputAudios: refs.audios,
-        ...(id === "mm3-minimax-h3-2k" ? { maxInputAssets: 10, maxTotalInputVideoDurationSeconds: 15 } : {}), ...(id.startsWith("omni-v2v") ? { requiresInputVideo: true } : {}) } } : {}),
+        ...(id === "mm3-minimax-h3-2k" ? { maxInputAssets: 10, maxTotalInputVideoDurationSeconds: 15 } : {}) } } : {}),
     metadata: { ...model.metadata, documentationUrl: CHUANGXIANG_VIDEO_DOCS, remoteMediaUrlsOnly: true, operationsSource: "declared", outputKindsSource: "declared", catalogCapability: "video",
       chuangxiangVideoContractCheckedAt: published ? CHUANGXIANG_VIDEO_CAPABILITY_SOURCE.docsSampledAt : "2026-10-07", videoPollingTimeoutMs: CHUANGXIANG_VIDEO_TIMEOUT_MS,
       ...(published ? { videoSupportedResolutions: [...published.resolutions], videoMinDuration: published.minDuration, videoMaxDuration: published.maxDuration,
@@ -129,6 +136,10 @@ export function applyChuangxiangCurrentVideoCapabilities(connection: { provider:
 }
 
 const array = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
+function chuangxiangVideoSupportsAudio(id: string): boolean {
+  return ["kling-3.0", "kling-3.0-pro", "sd13-seedance-2.0", "sd13-seedance-2.0-fast", "sd13-seedance-2.0-mini", "sd13-seedance-2.5",
+    "sd16-seedance-2.0", "sd16-seedance-2.0-fast", "sd16-seedance-2.0-mini"].includes(id);
+}
 const publicHttps = (value: unknown): boolean => {
   if (typeof value !== "string") return false;
   try { const url = new URL(value); return url.protocol === "https:" && !url.username && !url.password &&
@@ -137,6 +148,7 @@ const publicHttps = (value: unknown): boolean => {
 
 /** Normalize canvas assets into the documented wire fields; no network or generation. */
 export function normalizeChuangxiangVideoParameters(request: NormalizedRequest): Record<string, unknown> {
+  if (isChuangxiangWanVideoModel(request.model)) return normalizeChuangxiangWanVideoParameters(request);
   const p = { ...request.parameters };
   if (p.duration === undefined && p.seconds !== undefined) p.duration = p.seconds;
   delete p.seconds;
@@ -157,6 +169,7 @@ export function normalizeChuangxiangVideoParameters(request: NormalizedRequest):
 
 export function validateChuangxiangVideoRequest(request: NormalizedRequest): ValidationIssue[] {
   if (!isChuangxiangVideoModel(request.model)) return [];
+  if (isChuangxiangWanVideoModel(request.model)) return validateChuangxiangWanVideoRequest(request);
   const p = normalizeChuangxiangVideoParameters(request), id = request.model!, refs = references(id), issues: ValidationIssue[] = [];
   const add = (path: string, message: string) => issues.push({ path, code: "invalid_parameter", message });
   if (!request.operation.startsWith("video.")) add("operation", "此创想型号只支持视频生成。");
@@ -170,7 +183,8 @@ export function validateChuangxiangVideoRequest(request: NormalizedRequest): Val
     add("parameters.duration", `该完整型号时长范围为 ${published.minDuration}–${published.maxDuration} 秒；请修改原值后提交。`);
   if (published && p.resolution !== undefined && !published.resolutions.includes(String(p.resolution)))
     add("parameters.resolution", `该完整型号只支持 ${published.resolutions.join(" / ")}。`);
-  for (const key of Object.keys(p)) if (!["duration", "resolution", "aspect_ratio", "n", "reference_image_urls", "reference_videos", "reference_audios", "first_image_url", "last_image_url"].includes(key)) add(`parameters.${key}`, `创想公开视频合同未声明参数 ${key}。`);
+  for (const key of Object.keys(p)) if (!["duration", "resolution", "aspect_ratio", "n", "reference_image_urls", "reference_videos", "reference_audios", "first_image_url", "last_image_url", ...(chuangxiangVideoSupportsAudio(id) ? ["generate_audio"] : [])].includes(key)) add(`parameters.${key}`, `创想公开视频合同未声明参数 ${key}。`);
+  if (p.generate_audio !== undefined && typeof p.generate_audio !== "boolean") add("parameters.generate_audio", "生成声音须为布尔值。");
   if (id === "sd8-seedance-2.5" && p.resolution !== undefined) add("parameters.resolution", "SD8 2.5 不接受 resolution 字段。");
   if (id === "sd8-seedance-2.5-s" && p.resolution !== undefined && p.resolution !== "720p") add("parameters.resolution", "SD8 2.5 S 只支持 720p。");
   const counts: Record<string, number> = {};
@@ -194,11 +208,12 @@ export function validateChuangxiangVideoRequest(request: NormalizedRequest): Val
   if (refs?.frames === false && (first || last)) add("assets", "该型号不支持首尾帧。");
   if (last && !first) add("assets", "尾帧必须搭配首帧。");
   const referenceCount = Object.values(counts).reduce((sum, n) => sum + n, 0);
+  if (id === "grok-imagine-video-1.5" && p.resolution === "1080p" && (counts.reference_image_urls ?? 0) > 1) add("assets", "此型号1080p仅接受一张参考图；请明确调整素材，程序不会静默丢图。");
   if ((id.startsWith("sd14-") || id.startsWith("omni-fast") || id === "niulai-pro") && (first || last) && referenceCount) add("assets", "该型号首尾帧不能与参考素材数组混用。");
   if (id === "mm3-minimax-h3-2k" && referenceCount > 10) add("assets", "MM3 所有参考素材合计不能超过 10 个。");
   if (id === "niulai-pro" && counts.reference_audios && !counts.reference_image_urls) add("assets", "牛来 Pro 参考音频必须搭配至少一张参考图。");
   if ((id.startsWith("omni-fast") || id.startsWith("sd16-")) && first !== last) add("assets", "该型号的首尾帧必须成对提供。");
-  if (id.startsWith("omni-v2v") && (!counts.reference_videos || counts.reference_videos > 2)) add("assets", "Omni v2v 必须提供 1–2 段参考视频。");
+  if (id.startsWith("omni-v2v") && !counts.reference_videos && !counts.reference_image_urls) add("assets", "Omni v2v 必须提供参考图片或视频。");
   if (id.startsWith("sd12-") && counts.reference_audios && (!(counts.reference_image_urls || counts.reference_videos) || first)) add("assets", "SD12 音频须搭配参考图或视频，且不能与首帧混用。");
   for (const asset of request.assets ?? []) if (!publicHttps(asset.url) || asset.kind === "image" && asset.role === "mask" || asset.role && asset.role !== "reference" && asset.kind !== "image") add("assets", "创想视频素材需要兼容角色及公网 HTTPS 链接。");
   return issues;

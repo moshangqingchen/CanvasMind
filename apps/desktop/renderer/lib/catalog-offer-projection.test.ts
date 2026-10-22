@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CatalogPipelineState, ProviderConnectionRecord, SupplierRecord } from "@super-canvas/db";
+import { MemoryRepository, catalogObservationIdentity, catalogPipelineSettingKey, type CatalogPipelineState, type ProviderConnectionRecord, type SupplierRecord } from "@super-canvas/db";
 import type { CatalogReadObservation } from "./catalog-read-contracts";
 import { catalogConnectionScopes, catalogReadItem } from "./catalog-source-plan";
 import { projectCatalogOffers } from "./catalog-offer-projection";
@@ -21,6 +21,70 @@ function observation(complete = true, optionsOnly = false): CatalogReadObservati
       details: { source: "model-plaza", description: "Updated declaration" } }] } };
 }
 describe("independent public offer projection", () => {
+  it.each([false, true])("publishes to the unique current stable-ID group and retains its missing alias, reversed=%s", async reverse => {
+    const repository = new MemoryRepository();
+    const historical = { ...structuredClone(supplier.catalog.groups[0]!), id: "adobe中质量生图", label: "adobe中质量生图", supplierGroupId: "99", status: "missing" as const,
+      models: [{ id: "historical-only", capability: "image" as const }], details: { source: "model-plaza" as const, stale: true, description: "Historical declaration", ledgerPrices: [] } };
+    const current = { ...structuredClone(supplier.catalog.groups[0]!), id: "ad中质量生图", label: "ad中质量生图", supplierGroupId: "99", source: "catalog" as const, status: "available" as const };
+    const saved = await repository.saveSupplier({ ...supplier, catalog: { groups: reverse ? [current, historical] : [historical, current] } });
+    const selected = await repository.saveConnection({ ...connection, config: { ...connection.config, accountKeyGroupId: "99", modelGroup: current.id } });
+    const fact = observation();fact.facts.supplierGroups = [{ ...current, models: [{ id: "current-new", capability: "image" }], details: { source: "model-plaza", description: "Current declaration" } }];
+    const reservation = await repository.reserveCatalogObservation({ identity: catalogObservationIdentity(saved, [selected]), expectedMode: "daily",
+      sourceKey: fact.receipt.spec.sourceKey, observationCycleId: "daily-1" });
+    fact.receipt.context.identityEpoch = reservation.identityEpoch;fact.receipt.context.dispatchSeq = reservation.dispatchSeq;
+    const pipeline = await repository.getApplicationSetting(catalogPipelineSettingKey(saved.id)) as unknown as CatalogPipelineState;
+    const projected = projectCatalogOffers(pipeline, saved, fact, "daily", at);
+    expect(projected.groups).toHaveLength(1);
+    expect(projected.groups[0]).toMatchObject({ kind: "fields", groupId: "site-id:99", fields: { expected: { label: current.label, status: "available" },
+      set: { status: "available", models: [expect.objectContaining({ id: "current-new" })] } } });
+    await repository.commitCatalogObservation({ reservation, groups: projected.groups, state: projected.state });
+    const after = (await repository.getSupplier(saved.id))!.catalog.groups;
+    expect(after.find(group => group.id === historical.id)).toEqual(historical);
+    expect(after.find(group => group.id === current.id)).toMatchObject({ supplierGroupId: "99", status: "available", models: [expect.objectContaining({ id: "current-new" })],
+      details: { description: "Current declaration" } });
+    expect((await repository.getConnection(selected.id))!.config).toEqual(selected.config);
+  });
+  it.each(["available", "missing"] as const)("rejects two %s aliases of one stable ID instead of choosing by order", status => {
+    const row = { ...structuredClone(supplier.catalog.groups[0]!), supplierGroupId: "99", status };
+    const before = { ...supplier, catalog: { groups: [{ ...row, id: "old-alias", details: { ...row.details!, stale: true } }, { ...row, id: "new-alias" }] } };
+    const fact = observation();fact.facts.supplierGroups![0]!.supplierGroupId = "99";
+    for (const groups of [before.catalog.groups, [...before.catalog.groups].reverse()])
+      expect(() => projectCatalogOffers(state(), { ...before, catalog: { groups } }, fact, "daily", at)).toThrow("分组身份不唯一");
+  });
+  it("withdraws only the unique current stable-ID row while retaining its missing historical alias", () => {
+    const row = { ...structuredClone(supplier.catalog.groups[0]!), supplierGroupId: "99" };
+    const historical = { ...row, id: "old-alias", status: "missing" as const }, current = { ...row, id: "current-alias", status: "available" as const };
+    const before = { ...supplier, catalog: { groups: [historical, current] } }, fact = observation();fact.facts.supplierGroups = [];
+    const pipeline = state();pipeline.entries[`offers:${fact.receipt.spec.sourceKey}`] = { schemaVersion: 1, lastDispatchSeq: 0, groups: { "site-id:99": ["old"] } };
+    expect(projectCatalogOffers(pipeline, before, fact, "daily", at).groups).toEqual([{ kind: "fields", groupId: "site-id:99",
+      fields: { expected: { status: "available" }, set: { status: "missing" } } }]);
+    expect(before.catalog.groups).toEqual([historical, current]);
+  });
+  it("keeps exact existing media declarations when a generic price-only row arrives", () => {
+    const before = structuredClone(supplier);
+    before.catalog.groups[0]!.models = [{ id: "same", capability: "image", protocol: "openai-images", outputKinds: ["image"],
+      limits: { maxOutputImages: 1 }, metadata: { tk1688Catalog: true, tk1688SupportedResolutions: ["1K", "2K", "4K"],
+        tk1688Parameters: [{ key: "quality", options: [{ value: "medium" }] }], priceLabel: "old label",
+        billingIncludesInputDuration: true, referenceVideoPricingUnpublished: true, priceContractWarning: "Declared reference billing", priceSourceUrl: "https://old.example" } }];
+    const fact = observation();
+    fact.receipt.spec.entryId = "supplier:pricing:site-account";
+    fact.facts.supplierGroups![0]!.models = [{ id: "same", capability: "image", protocol: "unknown",
+      metadata: { outputKindsSource: "inferred", priceLabel: "new label" } }];
+    const patch = projectCatalogOffers(state(), before, fact, "daily", at).groups[0];
+    expect(patch?.kind === "fields" && patch.fields?.set.models?.[0]).toMatchObject({ id: "same", protocol: "openai-images",
+      outputKinds: ["image"], limits: { maxOutputImages: 1 }, metadata: { tk1688Catalog: true,
+        tk1688SupportedResolutions: ["1K", "2K", "4K"], tk1688Parameters: [{ key: "quality" }], priceLabel: "new label",
+        billingIncludesInputDuration: true, referenceVideoPricingUnpublished: true, priceContractWarning: "Declared reference billing" } });
+    fact.facts.supplierGroups![0]!.models[0]!.limits = { maxOutputImages: 2 };
+    const updated = projectCatalogOffers(state(), before, fact, "daily", at).groups[0];
+    expect(updated?.kind === "fields" && updated.fields?.set.models?.[0]?.limits).toEqual({ maxOutputImages: 2 });
+    fact.facts.supplierGroups![0]!.models[0] = { id: "same", capability: "other", outputKinds: [], metadata: { outputKindsSource: "declared" } };
+    const declared = projectCatalogOffers(state(), before, fact, "daily", at).groups[0];
+    expect(declared?.kind === "fields" && declared.fields?.set.models?.[0]).toMatchObject({ capability: "other", outputKinds: [] });
+    fact.facts.supplierGroups![0]!.models[0]!.metadata = { outputKindsSource: "inferred" };
+    const inferred = projectCatalogOffers(state(), before, fact, "daily", at).groups[0];
+    expect(inferred?.kind === "fields" && inferred.fields?.set.models?.[0]).toMatchObject({ capability: "image", outputKinds: ["image"] });
+  });
   it("records an actual published group price change without treating a sample timestamp as a change", () => {
     const before = structuredClone(supplier);
     before.catalog.groups[0]!.details!.rateMultiplier = 1;

@@ -1,10 +1,41 @@
 import { lstat, readdir, realpath, rm } from "node:fs/promises";
+import { execFile } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 
 const workspaceRoot = fileURLToPath(new URL("../", import.meta.url));
 const generatedDirectory =
   /^(?:\.next(?:-.*)?|out|playwright-report|test-results(?:-.*)?|\.ui-[a-z0-9-]+-results)$/u;
+const runFile = promisify(execFile);
+const pathKey = (value) =>
+  process.platform === "win32" ? value.toLowerCase() : value;
+
+async function trackedPaths(root) {
+  // Source archives have no Git index. In a checkout (including worktrees), a
+  // failed index read must stop cleanup rather than risk deleting tracked files.
+  try {
+    await lstat(path.join(root, ".git"));
+  } catch (error) {
+    if (error.code === "ENOENT") return new Set();
+    throw error;
+  }
+  const { stdout } = await runFile("git", ["ls-files", "--cached", "-z"], {
+    cwd: root,
+    windowsHide: true,
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  const protectedPaths = new Set();
+  for (const filename of stdout.split("\0").filter(Boolean)) {
+    let current = filename;
+    // Protect a candidate directory if any tracked file lives beneath it.
+    while (current && current !== ".") {
+      protectedPaths.add(pathKey(current));
+      current = path.posix.dirname(current);
+    }
+  }
+  return protectedPaths;
+}
 
 async function entries(directory) {
   try {
@@ -63,10 +94,13 @@ export async function planCleanup(
   { deep = false, measureFiles = true } = {},
 ) {
   const canonicalRoot = await realpath(root);
+  const protectedPaths = await trackedPaths(canonicalRoot);
   const candidates = new Map();
   const add = async (relativePath, reason) => {
+    const normalized = relativePath.replaceAll("\\", "/");
+    if (protectedPaths.has(pathKey(normalized))) return;
     const target = await validateCleanupTarget(canonicalRoot, relativePath);
-    if (target) candidates.set(relativePath.replaceAll("\\", "/"), reason);
+    if (target) candidates.set(normalized, reason);
   };
   const inspectOutputs = async (relativeRoot, keepDesktop = false) => {
     for (const entry of await entries(path.join(canonicalRoot, relativeRoot))) {
@@ -147,10 +181,14 @@ export async function applyCleanup(root, plan) {
     if (!allowed.has(entry.path))
       throw new Error(`Not a generated cleanup target: ${entry.path}`);
     const target = await validateCleanupTarget(root, entry.path);
-    if (target) validated.push(target);
+    if (target) validated.push(entry.path);
   }
-  for (const target of validated)
-    await rm(target, { recursive: true, force: true });
+  for (const relativePath of validated) {
+    // Recheck immediately before deletion: another target may take a long time
+    // to remove, and a parent directory must not be replaced with a junction.
+    const target = await validateCleanupTarget(root, relativePath);
+    if (target) await rm(target, { recursive: true, force: true });
+  }
 }
 
 async function main() {
@@ -170,6 +208,7 @@ async function main() {
         files: plan.reduce((sum, entry) => sum + entry.files, 0),
         targets: plan,
         preserved: [
+          "Git 跟踪文件及其所在目录",
           "画布、素材、密钥与备份",
           "已安装 App",
           "安装包",

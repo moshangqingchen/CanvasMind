@@ -206,29 +206,36 @@ function smartModel(base: string, skus: ModelDescriptor[], checkedAt: string): M
 
 /** Key inventory + authenticated account aliases + active marketplace entries
  * constrain merchant additions. Public catalogs alone never grant Key access. */
+export function restrictTk1688MarketplaceInventory<T extends { models: ModelDescriptor[]; excludedModelIds: string[]; complete: boolean; checkedAt: string }>(
+  parsed: T, options: { accountModelIds?: readonly string[]; keyModelIds?: readonly string[] } = {}): T {
+  const account = options.accountModelIds ? new Set(options.accountModelIds) : undefined;
+  const keys = options.keyModelIds ? new Set(options.keyModelIds) : undefined;
+  const skus = parsed.models.filter(model => model.metadata?.tk1688Routing === "merchant" &&
+    (!keys || keys.has(model.id) || account?.has(model.id) && keys.has(String(model.metadata?.tk1688BaseModel))) &&
+    (!account || account.has(model.id) || keys?.has(model.id)));
+  const families = new Map<string, ModelDescriptor[]>();
+  for (const model of skus) { const base = String(model.metadata?.tk1688BaseModel); families.set(base, [...families.get(base) ?? [], model]); }
+  const smart = [...families].filter(([base]) => !keys || keys.has(base)).map(([base, models]) => smartModel(base, models, parsed.checkedAt));
+  return { ...parsed, models: [...smart, ...skus] };
+}
+
 export function parseTk1688Marketplace(payload: unknown, statusPayload?: unknown,
   options: { checkedAt?: string; accountModelIds?: readonly string[]; keyModelIds?: readonly string[] } = {}) {
   const checkedAt = options.checkedAt ?? new Date().toISOString();
   const root = record(payload), data = record(root?.data), items = data?.items;
   if (!root || root.success === false || !Array.isArray(items)) return { models: [] as ModelDescriptor[], excludedModelIds: [] as string[], complete: false, checkedAt };
   const statusRoot = record(statusPayload), status = statusRoot?.success === false ? undefined : record(statusRoot?.data);
-  const account = options.accountModelIds ? new Set(options.accountModelIds) : undefined;
-  const keys = options.keyModelIds ? new Set(options.keyModelIds) : undefined;
   const skus = items.flatMap(value => {
     const row = record(value);
     if (!row || row.status !== "active" || row.channel_alive === false || !["per_request", "per_token"].includes(String(row.charge_type))) return [];
     const model = skuModel(row, checkedAt, status);
     if (!model) return [];
-    if (keys && !keys.has(model.id) && !(account?.has(model.id) && keys.has(String(model.metadata?.tk1688BaseModel)))) return [];
-    if (account && !account.has(model.id) && !keys?.has(model.id)) return [];
     return [model];
   });
-  const families = new Map<string, ModelDescriptor[]>();
-  for (const model of skus) { const base = String(model.metadata?.tk1688BaseModel); families.set(base, [...families.get(base) ?? [], model]); }
-  const smart = [...families].filter(([base]) => !keys || keys.has(base)).map(([base, models]) => smartModel(base, models, checkedAt));
   const excludedModelIds = items.flatMap(value => {
     const row = record(value);
     return row && (row.status !== "active" || row.channel_alive === false) && text(row.alias, 256) ? [text(row.alias, 256)] : [];
   });
-  return { models: [...smart, ...skus], excludedModelIds, complete: number(data?.total) === undefined || Number(data?.total) === items.length, checkedAt };
+  return restrictTk1688MarketplaceInventory({ models: skus, excludedModelIds,
+    complete: number(data?.total) === undefined || Number(data?.total) === items.length, checkedAt }, options);
 }

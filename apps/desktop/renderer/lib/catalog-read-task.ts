@@ -7,7 +7,7 @@ import { collectCatalogSupplementRead, type CatalogSupplementEntry } from "./cat
 import { collectCatalogInterfaceDocument, discoverCatalogInterfaceEntries } from "./catalog-interface-document-collector";
 import { collectMiaowuSchema } from "./provider-inventory-collector";
 import { catalogReadReason, type CatalogReadItemSpec, type CatalogReadObservation } from "./catalog-read-contracts";
-import { modelInventoryFailure } from "./model-inventory-failure";
+import { ModelInventoryReadError, modelInventoryFailure } from "./model-inventory-failure";
 import { catalogInventoryModelsValid } from "./catalog-inventory-policy";
 
 /** Persisted discovery input, without credentials or HTTP bodies. */
@@ -71,12 +71,14 @@ export async function collectCatalogReadTask(task: CatalogReadTask, connection: 
       complete: succeeded && value.complete, freshness: "live", checkedAt: value.checkedAt,
       coverage: { domain, modelIds: [...new Set(value.facts.models.map(model => model.id))], exhaustive: succeeded && value.complete && ["key-list", "offers"].includes(domain) },
       ...(!succeeded || !value.complete ? { reason: catalogReadReason(value.failure?.code ?? "incomplete", value.failure?.httpStatus) } : {}),
+      ...(value.failure?.code === "timeout" ? { failureCode: "timeout" as const } : {}),
       ...(value.failure?.httpStatus ? { httpStatus: value.failure.httpStatus } : {}),
       ...(startedAt ? { attemptId, startedAt, completedAt: now(), attemptedUrls } : {}) }, facts: value.facts } };
   } catch (error) {
     const failure = modelInventoryFailure(error);
     return { discovered, observation: { receipt: { spec, context: deps.context, status: "failed", complete: false, freshness: "live", checkedAt: now(),
       reason: deps.signal?.aborted ? "cancelled" : catalogReadReason(failure.code, failure.httpStatus),
+      ...(error instanceof ModelInventoryReadError && error.code === "timeout" ? { failureCode: "timeout" as const } : {}),
       ...(failure.httpStatus ? { httpStatus: failure.httpStatus } : {}), ...(startedAt ? { attemptId, startedAt, completedAt: now(), attemptedUrls } : {}) }, facts: { models: [] } } };
   }
 }

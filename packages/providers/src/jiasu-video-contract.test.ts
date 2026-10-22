@@ -88,7 +88,7 @@ describe("Jiasu exact video supplier contract", () => {
 
   it("classifies every published complete video ID, including short aliases, without borrowing another supplier", () => {
     const ids = jiasuVideoModelIds();
-    expect(ids).toHaveLength(29);
+    expect(ids).toHaveLength(31);
     const scan = scanProviderModelCatalog({ data: ids.map(id => ({ id })) }, { baseUrl: "https://ai.jiasuapi.com/v1", modelGroup: "vip" });
     expect(scan.models.every(model => model.outputKinds?.includes("video") && model.metadata?.canvasRunnable === true)).toBe(true);
     expect(scanProviderModelCatalog({ data: [{ id: "sd-2.0-J2" }] }, { baseUrl: "https://other.example/v1" }).models[0]?.operations).toEqual([]);
@@ -315,10 +315,10 @@ describe("Jiasu exact video supplier contract", () => {
   });
 
   it("uses minimax-h3's exact catalog ranges separately from the dedicated fixed-duration model", () => {
-    expect(normalizeJiasuVideoParameters(request("minimax-h3", {}, [video]))).toEqual({ duration: 15, ratio: "16:9", resolution: "2k", videos: [{ url: video.url, duration_seconds: 6 }] });
+    expect(normalizeJiasuVideoParameters(request("minimax-h3", {}, [video]))).toEqual({ duration: 30, ratio: "16:9", resolution: "768p", videos: [{ url: video.url, duration_seconds: 6 }] });
     expect(jiasuVideoModel("minimax-h3")?.limits?.maxInputAssets).toBe(10);
-    expect(jiasuVideoModel("minimax-h3")?.parameters?.find(parameter => parameter.key === "duration")).toMatchObject({ default: 15, min: 4, max: 15 });
-    expect(jiasuVideoRequestIssues(request("minimax-h3", { duration: 4, aspect_ratio: "3:4", videos: [video.url] }))).toEqual([]);
+    expect(jiasuVideoModel("minimax-h3")?.parameters?.find(parameter => parameter.key === "duration")).toMatchObject({ default: 30, min: 5, max: 30 });
+    expect(jiasuVideoRequestIssues(request("minimax-h3", { duration: 5, aspect_ratio: "3:4", videos: [video.url] }))).toEqual([]);
     const special = "minimax-h3-933-2k-支持真人";
     expect(normalizeJiasuVideoParameters(request(special, {}, [video]))).toMatchObject({ duration: 15, resolution: "2k", videos: [{ url: video.url, duration_seconds: 6 }] });
     expect(jiasuVideoRequestIssues(request(special, { videos: [{ url: video.url, duration_seconds: 16 }] }))).toEqual(expect.arrayContaining([expect.objectContaining({ path: "assets" })]));

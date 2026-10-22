@@ -1,4 +1,4 @@
-import { catalogObservationGroupIdentity, type CatalogGroupPatch, type CatalogPipelineState, type JsonObject,
+import { catalogObservationCurrentGroup, catalogObservationGroupIdentity, type CatalogGroupPatch, type CatalogPipelineState, type JsonObject,
   type ProviderConnectionRecord, type SupplierRecord } from "@super-canvas/db";
 import { isDeepStrictEqual } from "node:util";
 import type { ModelDescriptor } from "@super-canvas/providers";
@@ -14,6 +14,22 @@ type OfferState = { schemaVersion: 1; lastDispatchSeq: number; groups: Record<st
 const json = (value: unknown) => value as JsonObject;
 const capability = (model: ModelDescriptor): Group["models"][number]["capability"] => model.outputKinds?.includes("image") ? "image"
   : model.outputKinds?.includes("video") ? "video" : model.outputKinds?.includes("audio") ? "music" : model.outputKinds?.includes("text") ? "chat" : "other";
+
+/** Generic price rows do not revoke a separately read same-group contract.
+ * Explicit fields still replace their old value; prices use the reducer below. */
+function retainCatalogDeclaration(previous: Group["models"][number] | undefined, current: Group["models"][number]) {
+  if (!previous) return current;
+  const contractBillingFields = new Set(["billingIncludesInputDuration", "referenceVideoPricingUnpublished", "priceContractWarning",
+    "videoReferenceVideoBilling", "jijiuReferenceVideoDurationBilling", "videoAutomaticBillingSeconds", "chentuBillingUsageSchema",
+    "cangyuanAudioBillingBasis", "cangyuanAudioBillingEvidence", "cangyuanAudioRawBillingValues"]);
+  const metadata = Object.fromEntries(Object.entries(previous.metadata ?? {}).filter(([key]) =>
+    (contractBillingFields.has(key) || !/price|pricing|billing/iu.test(key)) && !/^tk1688(?:FxRate|PlatformMarkupPercent|RetailPriceIncludesMarkup)/u.test(key)));
+  return { ...previous, ...current,
+    ...(current.protocol === "unknown" && previous.protocol ? { protocol: previous.protocol } : {}),
+    ...((current.capability === "other" && current.metadata?.outputKindsSource !== "declared" || current.metadata?.outputKindsSource === "inferred") && previous.outputKinds?.length
+      ? { capability: previous.capability, outputKinds: previous.outputKinds } : {}),
+    metadata: { ...metadata, ...current.metadata } };
+}
 
 /** These are offers only. This projection never writes a Key's membership. */
 function groupsFromFact(fact: CatalogReadObservation): Group[] {
@@ -56,12 +72,14 @@ export function projectCatalogOffers(pipeline: CatalogPipelineState, supplier: S
   const incoming = groupsFromFact(fact), groupOptionsOnly = receipt.coverage?.domain === "group-options";
   const contribution: OfferState = { schemaVersion: 1, lastDispatchSeq: receipt.context.dispatchSeq, groups: {} };
   for (const group of incoming) {
-    const identity = catalogObservationGroupIdentity(group), old = supplier.catalog.groups.find(row => catalogObservationGroupIdentity(row) === identity);
+    const identity = catalogObservationGroupIdentity(group), old = catalogObservationCurrentGroup(supplier.catalog.groups, identity);
     contribution.groups[identity] = groupOptionsOnly ? prior?.groups[identity] ?? [] : group.models.map(model => model.id);
     if (old?.source === "manual") continue;
     const otherIds = new Set(Object.entries(pipeline.entries).filter(([entryKey]) => entryKey.startsWith("offers:") && entryKey !== key)
       .flatMap(([, value]) => (value as unknown as OfferState).groups?.[identity] ?? []));
-    const models = groupOptionsOnly ? old?.models ?? [] : [...group.models,
+    const genericPricing = receipt.spec.entryId.startsWith("supplier:pricing:");
+    const declarations = genericPricing ? group.models.map(model => retainCatalogDeclaration(old?.models.find(row => row.id === model.id), model)) : group.models;
+    const models = groupOptionsOnly ? old?.models ?? [] : [...declarations,
       ...(old?.models ?? []).filter(model => otherIds.has(model.id) && !group.models.some(current => current.id === model.id))];
     // Public prices share the exact same reducer/selector as connection menus.
     const virtual: ProviderConnectionRecord = { id: `offer:${supplier.id}:${identity}`, name: group.label, provider: "openai",
@@ -102,7 +120,7 @@ export function projectCatalogOffers(pipeline: CatalogPipelineState, supplier: S
     if (Object.hasOwn(contribution.groups, identity)) continue;
     const other = Object.entries(pipeline.entries).some(([entryKey, value]) => entryKey.startsWith("offers:") && entryKey !== key &&
       Object.hasOwn((value as unknown as OfferState).groups ?? {}, identity));
-    const old = supplier.catalog.groups.find(group => catalogObservationGroupIdentity(group) === identity);
+    const old = catalogObservationCurrentGroup(supplier.catalog.groups, identity);
     if (!other && old && old.source !== "manual" && old.status !== "missing") {
       result.groups.push({ kind: "fields", groupId: identity, fields: { expected: { status: old.status }, set: { status: "missing" } } });
       result.changes.push({ kind: "group-removed", groupId: identity, before: "该来源目录不再列出此分组" });

@@ -1,4 +1,5 @@
 import { isJijiuApiUrl, isJijiuVideoModel, isJijiuWanVideoModel, jijiuVideoModelIds, jijiuVideoModel, jijiuVideoTransport, normalizeJijiuVideoParameters, jijiuVideoRequestIssues, jijiuVideoGroupMismatch, JIJIU_VIDEO_DOCS } from "./jijiu-video-contract.js";
+export { jijiuVideoBillingSeconds } from "./jijiu-video-contract.js";
 import type { ModelDescriptor, ModelParameterDescriptor, NormalizedRequest, ProviderAssetInput, ValidationIssue } from "./contracts.js";
 import type { RestModelConnectorOverride } from "./rest.js";
 import { modelSupportsGenerationMedia } from "./model-media.js";
@@ -6,6 +7,7 @@ import { seedanceDurationFallback, seedanceDurationFallbackDescription, seedance
 import { isJiasuApiUrl, isJiasuVideoModel, jiasuVideoModelIds, jiasuVideoModel, jiasuVideoTransport, normalizeJiasuVideoParameters, jiasuVideoRequestIssues, jiasuVideoGroupMismatch, JIASU_VIDEO_DOCS } from "./jiasu-video-contract.js";
 import { SECURE_MUSE_MODEL_ID, SECURE_MUSE_DOCS, isSecureMuseVideoModel, secureMuseVideoModel, secureMuseVideoTransport, normalizeSecureMuseVideoParameters, secureMuseVideoRequestIssues } from "./secure-muse-video-contract.js";
 import { SECURE_WAN_VIDEO_CONTRACT } from "./secure-wan-video-contract.js";
+import { SECURE_KLING_MODEL_ID, isSecureKlingScope, secureKlingVideoModel, normalizeSecureKlingVideoParameters, secureKlingVideoTransport, secureKlingVideoRequestIssues } from "./secure-kling-video-contract.js";
 import { SECURE_BYTEPLUS_MODEL_IDS, SECURE_BYTEPLUS_VIDEO_CONTRACT, isSecureByteplusVideoScope, secureByteplusVideoTransport } from "./secure-byteplus-video-contract.js";
 import { isCyberafeiSeedance25PriceSizeContract, cyberafeiSeedance25SizePreferenceIssues, cyberafeiSeedance25OwnPriceTiers } from "./cyberafei-seedance25-video-contract.js";
 
@@ -340,6 +342,7 @@ function directoryContractFor(supplier: RemainingVideoSupplier, id: string, cont
 }
 
 function supplierContractFor(supplier: RemainingVideoSupplier, id: string, context: RemainingVideoContext = {}): VideoContract | undefined {
+  if (supplier === "secure" && id === SECURE_KLING_MODEL_ID) return !["manual", "paid-test"].includes(String(context.model?.metadata?.source)) && context.model?.metadata?.protocolEvidence !== "paid-test" && isSecureKlingScope(id, context) ? { resolutions: ["720p", "1080p"], ratios: [], directoryContract: true, docs: SECURE_MUSE_DOCS } : undefined;
   if (supplier === "secure" && (SECURE_BYTEPLUS_MODEL_IDS as readonly string[]).includes(id) && !isSecureByteplusVideoScope(id, context)) return undefined;
   if (supplier === "secure" && id === SECURE_MUSE_MODEL_ID) return isSecureMuseVideoModel(id, context.group ?? String(context.model?.metadata?.modelGroup ?? ""))
     ? { resolutions: ["720p"], ratios: portrait, directoryContract: true, docs: SECURE_MUSE_DOCS } : undefined;
@@ -399,7 +402,7 @@ export function remainingVideoSupplier(baseUrl: unknown): RemainingVideoSupplier
     return host === "tu.988236.xyz" ? "chentu" : ["api.frimodel.com", "platform.frimodel.com"].includes(host) ? "frimodel" : host === "video.we-token.cc" ? "weai" : host === "token.secure-skill.com" ? "secure" : host === "api.3365api.cn" ? "cyberafei" : host === "api.miaowuai.store" ? "miaowu" : host === "api.mikoto.vip" ? "mikoto" : host === "api.hangzhale.com" ? "hangzhale" : undefined;
   } catch { return undefined; }
 }
-export const remainingVideoModelIds = (supplier: RemainingVideoSupplier): string[] => supplier === "jijiu" ? jijiuVideoModelIds() : supplier === "jiasu" ? jiasuVideoModelIds() : supplier === "secure" ? [...Object.keys(contracts[supplier]), SECURE_MUSE_MODEL_ID] : Object.keys(contracts[supplier]);
+export const remainingVideoModelIds = (supplier: RemainingVideoSupplier): string[] => supplier === "jijiu" ? jijiuVideoModelIds() : supplier === "jiasu" ? jiasuVideoModelIds() : supplier === "secure" ? [...Object.keys(contracts[supplier]), SECURE_MUSE_MODEL_ID, SECURE_KLING_MODEL_ID] : Object.keys(contracts[supplier]);
 export const isRemainingVideoModel = (supplier: RemainingVideoSupplier | undefined, id: string | undefined, context?: RemainingVideoContext): boolean => Boolean(supplier && id && contractFor(supplier, id, context));
 export const remainingVideoRequiresPublicUrls = (supplier: RemainingVideoSupplier, id: string, context?: RemainingVideoContext): boolean => {
   if (supplier === "jijiu" && isJijiuWanVideoModel(id)) return false;
@@ -440,12 +443,16 @@ function defaultDuration(c: VideoContract): number | undefined {
   return !c.durationOptional && hasDurationRange(c) ? Math.min(c.max!, Math.max(c.min!, 5)) : undefined;
 }
 export function remainingVideoModel(supplier: RemainingVideoSupplier, id: string, current?: ModelDescriptor, context?: RemainingVideoContext): ModelDescriptor | undefined {
+  if (supplier === "secure" && id === SECURE_KLING_MODEL_ID) return contractFor(supplier, id, context) ? secureKlingVideoModel(current ?? context?.model) : undefined;
   if (supplier === "secure" && id === SECURE_MUSE_MODEL_ID) return contractFor(supplier, id, { model: current, ...context }) ? secureMuseVideoModel(current ?? context?.model, context?.officialGroupId) : undefined;
   if (supplier === "jijiu") return jijiuVideoModel(id, current ?? context?.model, context?.group);
   if (supplier === "jiasu") return jiasuVideoModel(id, current ?? context?.model, context?.group);
   const c = contractFor(supplier, id, { model: current, ...context }); if (!c) return undefined;
   const byteplus = supplier === "secure" && isSecureByteplusVideoScope(id, context ?? {});
   const metadata = { ...current?.metadata };
+  delete metadata.referenceVideoPricingUnpublished;
+  delete metadata.referenceVideoPricingSourceUrl;
+  delete metadata.referenceVideoPricingUpdatedAt;
   delete metadata.durationRangeSource;
   delete metadata.durationRangeFallbackFamily;
   delete metadata.userFallbackDurationRange;
@@ -501,6 +508,8 @@ export function remainingVideoModel(supplier: RemainingVideoSupplier, id: string
       ...(c.sourceVideoChat ? { videoEditEndpointPath: "/v1/chat/completions", videoReferenceEncoding: "prompt-urls", videoCoreEditOnly: true, sourceVideoPriceMode: "edit",
         videoEffectiveMode: c.chatVideo ? "edit" : "generate" } : {}),
       videoReferenceImageLimit: c.images, videoReferenceVideoLimit: c.videos, videoReferenceAudioLimit: c.audios,
+      ...(supplier === "secure" && String(context?.officialGroupId) === "58" && ["wan3.0-video", "wan3.0-video-prime"].includes(id)
+        ? { referenceVideoPricingUnpublished: true, referenceVideoPricingSourceUrl: "https://token.secure-skill.com/api/v1/groups/available", referenceVideoPricingUpdatedAt: "2026-10-22T10:57:06.049575+08:00" } : {}),
       ...(c.declaredReferenceLimits ? { supplierDeclaredReferenceLimits: c.declaredReferenceLimits } : {}),
       ...(c.missingReferenceFields ? { missingReferenceWireFields: [...c.missingReferenceFields], referenceContractSourceUrl: "https://tu.988236.xyz/api/pricing" } : {}),
       ...(c.resultRetentionSeconds ? { resultRetention: { seconds: c.resultRetentionSeconds, sourceUrl: "https://tu.988236.xyz/api/pricing", checkedAt: c.checkedAt, startsAt: "generation-completed", certainty: "supplier-declared" } } : {}),
@@ -523,6 +532,7 @@ export function isRemainingVideoPublicHttpsUrl(value: unknown): value is string 
 const imageRoles = (assets: readonly ProviderAssetInput[], role: "firstFrame" | "lastFrame") => assets.filter(a => a.kind === "image" && a.role === role).map(a => a.url);
 /** Produces only documented wire fields and keeps the user's asset order. */
 export function normalizeRemainingVideoParameters(supplier: RemainingVideoSupplier, request: NormalizedRequest, context?: RemainingVideoContext): Record<string, unknown> {
+  if (supplier === "secure" && request.model === SECURE_KLING_MODEL_ID && contractFor(supplier, request.model, context)) return normalizeSecureKlingVideoParameters(request);
   if (supplier === "secure" && request.model === SECURE_MUSE_MODEL_ID && contractFor(supplier, request.model, context)) return normalizeSecureMuseVideoParameters(request);
   if (supplier === "jijiu") return normalizeJijiuVideoParameters(request);
   if (supplier === "jiasu") return normalizeJiasuVideoParameters(request, context?.model, context?.group);
@@ -610,6 +620,7 @@ export function normalizeRemainingVideoParameters(supplier: RemainingVideoSuppli
   return p;
 }
 export function remainingVideoTransport(supplier: RemainingVideoSupplier, id: string, context?: RemainingVideoContext): RestModelConnectorOverride | undefined {
+  if (supplier === "secure" && id === SECURE_KLING_MODEL_ID) return contractFor(supplier, id, context) ? secureKlingVideoTransport() : undefined;
   if (supplier === "secure" && isSecureByteplusVideoScope(id, context ?? {})) return secureByteplusVideoTransport();
   if (supplier === "secure" && id === SECURE_MUSE_MODEL_ID) return contractFor(supplier, id, context) ? secureMuseVideoTransport() : undefined;
   if (supplier === "jijiu") return isJijiuVideoModel(id, context?.model) ? jijiuVideoTransport(id) : undefined;
@@ -659,6 +670,7 @@ export function remainingVideoTransport(supplier: RemainingVideoSupplier, id: st
       ...(c.flow || c.pollPath === "/v1/videos/tasks/{taskId}" ? {} : { contentFallback: { path: c.contentPath ?? "/v1/videos/{taskId}/content" } }) } };
 }
 export function remainingVideoRequestIssues(supplier: RemainingVideoSupplier, request: NormalizedRequest, context?: RemainingVideoContext): ValidationIssue[] {
+  if (supplier === "secure" && request.model === SECURE_KLING_MODEL_ID && contractFor(supplier, request.model, context)) return secureKlingVideoRequestIssues(request);
   if (supplier === "secure" && request.model === SECURE_MUSE_MODEL_ID && contractFor(supplier, request.model, context)) return secureMuseVideoRequestIssues(request, context?.officialGroupId);
   if (supplier === "jijiu") return jijiuVideoRequestIssues(request, context?.model, context?.group);
   if (supplier === "jiasu") return jiasuVideoRequestIssues(request, context?.model, context?.group);

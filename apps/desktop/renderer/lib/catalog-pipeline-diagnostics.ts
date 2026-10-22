@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { type CatalogPipelineState, type JsonObject, type ProviderConnectionRecord, type Repository } from "@super-canvas/db";
 import type { ModelDescriptor } from "@super-canvas/providers";
 import type { CatalogInventoryState } from "./catalog-inventory-policy";
+import { hydrateCatalogTk1688Inventory } from "./catalog-tk1688-state-storage";
 import type { CatalogContractState } from "./catalog-contract-policy";
 import type { CatalogReadObservation, CatalogReadItemSpec } from "./catalog-read-contracts";
 import type { CatalogSchedulerState } from "./catalog-read-scheduler";
@@ -117,7 +118,7 @@ export function buildCatalogPipelineDiagnostics(snapshots: readonly PipelineSnap
           ...(catalogDiagnosticSourceUrl(slot.identity.submit) ? { sourceUrl: catalogDiagnosticSourceUrl(slot.identity.submit) } : {}) });
       }
       if (!key.startsWith("membership:")) continue;
-      const inventory = value as unknown as CatalogInventoryState;
+      const inventory = hydrateCatalogTk1688Inventory(value as unknown as CatalogInventoryState)!;
       if (!known.has(inventory.connectionId)) continue;
       for (const source of Object.values(inventory.sources)) {
         const candidate = source.candidate;

@@ -12,13 +12,14 @@ import {
   saveProviderConnection,
 } from "../../../lib/server";
 import { CHENTU_PRESET_ID } from "../../../lib/chentu-presets";
-import { clearEmptyScanConfirmation } from "../../../lib/model-scan-confirmation";
+import { reconcileConnectionInventory } from "../../../lib/connection-inventory-state";
 import { supplierKeyForConnection } from "../../../lib/supplier-identity";
 import { shouldAutomaticallyVerifyConnection } from "../../../lib/supplier-verification-service";
 import {
   listSupplierRecords,
+  supplierOwnsStoredConnection,
   assertCurrentSupplierConnection,
-  supplierConfigForConnection,
+  prepareSupplierConnection,
   SupplierServiceError,
 } from "../../../lib/supplier-service";
 import {
@@ -28,20 +29,21 @@ import {
 
 export async function GET(_request?: Request) {
   void _request;
-  // Reconcile legacy source ownership once, without fetching model catalogs.
-  // A list read must never replace a saved connector or its default model.
-  const suppliers = new Map(
-    (await listSupplierRecords()).map((supplier) => [supplier.id, supplier]),
-  );
+  // Project current names without migrating accounts or fetching model catalogs.
+  const supplierRecords = await listSupplierRecords();
+  const suppliers = new Map(supplierRecords.map((supplier) => [supplier.id, supplier]));
   const connections = await repository.listConnections();
   return Response.json(
     connections
       .filter((c) => c.config.supplierArchived !== true)
       .map((connection) => {
-        const supplier = suppliers.get(String(connection.config.supplierId ?? ""));
+        if (["fake", "cli"].includes(connection.provider)) return maskConnection(connection);
+        const supplier = connection.config.supplierId
+          ? suppliers.get(String(connection.config.supplierId))
+          : supplierRecords.find((record) => supplierOwnsStoredConnection(record, connection));
         return maskConnection(
           supplier && supplier.supplierKey === supplierKeyForConnection(connection)
-            ? { ...connection, config: { ...connection.config, supplierName: supplier.name } }
+            ? { ...connection, config: { ...connection.config, supplierId: supplier.id, supplierName: supplier.name } }
             : connection,
         );
       }),
@@ -62,8 +64,8 @@ export async function POST(request: Request) {
   }
 
   try {
-    const config = { ...(parsed.data.config ?? {}) };
-    const existing = parsed.data.id
+    let config = { ...(parsed.data.config ?? {}) };
+    let existing = parsed.data.id
       ? await repository.getConnection(parsed.data.id)
       : null;
     if (parsed.data.id && !existing)
@@ -112,17 +114,14 @@ export async function POST(request: Request) {
         return jsonError("不能将已有连接切换到其他供应商，请新建独立连接", 409);
     }
     validateManualProviderModels(parsed.data.provider, config);
-    Object.assign(
-      config,
-      await supplierConfigForConnection({
-        provider: parsed.data.provider,
-        config,
-      }),
-    );
+    const binding = await prepareSupplierConnection({
+      provider: parsed.data.provider, config, existingConnection: existing ?? undefined,
+    });
+    Object.assign(config, binding.config);
+    existing = binding.existingConnection ?? existing;
     // A newly submitted key starts a fresh availability sequence. Do not let
     // an empty response recorded for the previous key confirm this key.
     if (parsed.data.apiKey) {
-      clearEmptyScanConfirmation(config);
       delete config.accountKeyId;
       delete config.accountKeyGroup;
       delete config.accountKeyImportedAt;
@@ -157,124 +156,9 @@ export async function POST(request: Request) {
       else if (existing?.config.capabilityBlocks)
         config.capabilityBlocks = existing.config.capabilityBlocks;
     }
-    if (config.customGroup === true) {
-      const previousGroup =
-        typeof existing?.config.modelGroup === "string"
-          ? existing.config.modelGroup
-          : "";
-      const nextGroup =
-        typeof config.modelGroup === "string" ? config.modelGroup : "";
-      const previousBaseUrl =
-        typeof existing?.config.baseUrl === "string"
-          ? existing.config.baseUrl
-          : "";
-      const nextBaseUrl =
-        typeof config.baseUrl === "string" ? config.baseUrl : "";
-      const scopeChanged =
-        Boolean(parsed.data.apiKey) ||
-        previousGroup !== nextGroup ||
-        previousBaseUrl !== nextBaseUrl;
-      const scanFields = [
-        "modelScanStatus",
-        "modelScanCheckedAt",
-        "modelScanLastSuccessAt",
-        "scannedModelIds",
-        "modelScanGroups",
-        "modelCatalogModels",
-        "modelCatalogSource",
-      ] as const;
-      for (const field of scanFields) {
-        if (scopeChanged) delete config[field];
-        else if (existing?.config[field] !== undefined)
-          config[field] = existing.config[field];
-        else delete config[field];
-      }
-    } else if (existing?.config.customGroup === true) {
-      for (const field of [
-        "modelScanStatus",
-        "modelScanCheckedAt",
-        "modelScanLastSuccessAt",
-        "scannedModelIds",
-        "modelScanGroups",
-        "modelCatalogModels",
-        "modelCatalogSource",
-      ])
-        delete config[field];
-    }
-    if (parsed.data.provider === "weai" || config.supplierKey === "weai") {
-      const previousGroup =
-        typeof existing?.config.modelGroup === "string"
-          ? existing.config.modelGroup
-          : "";
-      const nextGroup =
-        typeof config.modelGroup === "string" ? config.modelGroup : "";
-      const previousBaseUrl =
-        typeof existing?.config.baseUrl === "string"
-          ? existing.config.baseUrl
-          : "";
-      const nextBaseUrl =
-        typeof config.baseUrl === "string" ? config.baseUrl : "";
-      const previousProtocol =
-        typeof existing?.config.protocol === "string"
-          ? existing.config.protocol
-          : "";
-      const nextProtocol =
-        typeof config.protocol === "string" ? config.protocol : "";
-      const capabilityScopeChanged =
-        Boolean(parsed.data.apiKey) ||
-        previousGroup !== nextGroup ||
-        previousBaseUrl !== nextBaseUrl ||
-        previousProtocol !== nextProtocol;
-      const scanFields = [
-        "modelScanStatus",
-        "modelScanCheckedAt",
-        "scannedModelIds",
-      ] as const;
-      for (const field of scanFields) {
-        if (capabilityScopeChanged) delete config[field];
-        else if (existing?.config[field] !== undefined)
-          config[field] = existing.config[field];
-        else delete config[field];
-      }
-      if (capabilityScopeChanged) delete config.unavailableModels;
-      else if (existing?.config.unavailableModels !== undefined)
-        config.unavailableModels = existing.config.unavailableModels;
-    }
-    // Never trust scan state submitted by the browser; scope it to the saved credentials.
-    const identityFields = [
-      "baseUrl",
-      "modelGroup",
-      "protocol",
-      "directorProtocol",
-      "usage",
-      "supplierSourceId",
-      "accountKeyGroup",
-    ];
-    const identityChanged =
-      !!parsed.data.apiKey ||
-      !existing ||
-      existing.provider !== parsed.data.provider ||
-      identityFields.some((k) => config[k] !== existing.config[k]);
-    for (const field of [
-      "modelScanStatus",
-      "modelScanAttemptStatus",
-      "modelScanCheckedAt",
-      "modelScanLastSuccessAt",
-      "scannedModelIds",
-      "modelScanGroups",
-      "modelCatalogModels",
-      "modelCatalogSource",
-      "weAiLivePricing",
-      "modelProtocolTemplate",
-      "autoModelInterfaces",
-      "unknownModels",
-      "unavailableModels",
-    ]) {
-      if (identityChanged) delete config[field];
-      else if (existing?.config[field] !== undefined)
-        config[field] = existing.config[field];
-      else delete config[field];
-    }
+    const inventory = reconcileConnectionInventory(config, existing, parsed.data.provider, Boolean(parsed.data.apiKey));
+    config = inventory.config;
+    const { identityChanged } = inventory;
     if (!identityChanged && existing?.provider === parsed.data.provider && existing.config.preset === config.preset
       && [CHENTU_PRESET_ID, "cyberafei-api"].includes(String(config.preset))) {
       // Preserve the server's protocol on an ordinary settings save. Its

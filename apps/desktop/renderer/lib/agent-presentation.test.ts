@@ -26,6 +26,15 @@ describe("agent presentation", () => {
     expect(safeAgentLink("file:///C:/private")).toBeUndefined();
     expect(safeAgentLink("https://example.com")).toBe("https://example.com/");
   });
+  it("preserves fenced code indentation and literal markup through the active message parser", () => {
+    expect(agentMarkdown("说明\n```html\r\n  <script>alert(1)</script>\r\n```\n完成")).toEqual([
+      { kind: "paragraph", text: "说明" },
+      { kind: "code", language: "html", text: "  <script>alert(1)</script>" },
+      { kind: "paragraph", text: "完成" },
+    ]);
+    expect(agentMarkdown("```js\npartial")).toEqual([{ kind: "code", language: "js", text: "partial" }]);
+    expect(agentMarkdown("```\na\n```\n```ts\nb\n```").filter(block => block.kind === "code")).toHaveLength(2);
+  });
   it("reconciles only a durable final reply for the same request", () => {
     const session: AgentSession = { id:"s", canvasId:"c", title:"", plans:[], messages:[{ id:"m", role:"assistant", content:"partial", createdAt:"", metadata:{ requestId:"a", kind:"tool" } }] };
     expect(hasAgentTurnReply(session, "a")).toBe(false);

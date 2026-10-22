@@ -2,6 +2,7 @@ import { test as base, expect, type APIRequestContext, type ConsoleMessage } fro
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { freemem } from "node:os";
+import { randomUUID } from "node:crypto";
 import sharp from "sharp";
 import type { CanvasDocument } from "../components/types";
 import { clickBlankCanvas } from "./canvas-test-actions";
@@ -158,9 +159,9 @@ test(`画布 50/200/500 提示词与混合图片节点性能门槛 ${scene}/${co
       })),
     };
     const created = await request.post("/api/canvas", {
-      data: { title: `性能 ${scene} ${count}`, graph },
+      data: { title: `性能 ${scene} ${count} ${randomUUID()}`, graph },
     });
-    expect(created.ok()).toBeTruthy();
+    expect(created.ok(), `Canvas fixture creation failed (${created.status()}): ${await created.text()}`).toBeTruthy();
     const initial = await created.json();
     await page.goto(`/canvas/${initial.id}`);
     await page.locator('.react-flow__node[data-id="perf-0"]').waitFor();
@@ -363,7 +364,9 @@ test(`画布 50/200/500 提示词与混合图片节点性能门槛 ${scene}/${co
     expect.soft(row.system.valid, `${row.scene}/${row.count}/${row.gesture}: available RAM must be >= 6 GiB`).toBe(true);
     expect.soft(row.samples, `${row.scene}/${row.count}/${row.gesture}: insufficient frame samples`).toBeGreaterThan(10);
     if (process.env.CANVAS_PERF_PROFILE_ONLY !== "1") {
-      expect.soft(row.p95, `${row.scene}/${row.count}/${row.gesture}: P95 regression`).toBeLessThanOrEqual(p95Budget(row.scene, row.count));
+      // Keep raw timings in evidence; remove only binary subtraction noise at
+      // nanosecond precision (66.70000000000073 is the same 66.7 ms frame).
+      expect.soft(Math.round(row.p95 * 1e6) / 1e6, `${row.scene}/${row.count}/${row.gesture}: P95 regression`).toBeLessThanOrEqual(p95Budget(row.scene, row.count));
     }
   }
 });

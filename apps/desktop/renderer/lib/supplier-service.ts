@@ -1,5 +1,6 @@
 import { matchesSupplierTemplate } from "./supplier-template-source";
 import { createHash, randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import {
   SupplierConflictError,
   referencesConnections,
@@ -34,6 +35,10 @@ import { planSupplierAgentMediaImport, type SupplierMediaScanReceipt } from "./s
 import { isScannedSupplierGroup } from "./supplier-group-source";
 import { openSupplierSiteSession } from "./supplier-site-session";
 import { supplierBillingForDisplay } from "./supplier-billing-display";
+import { reconcileSupplierGroupNames } from "./supplier-group-reconciliation";
+import { resetConnectionInventory } from "./connection-inventory-state";
+import { legacySupplierId, oldBrandedSupplierId, supplierOwnsStoredConnection } from "./supplier-stored-identity";
+export { legacySupplierId, supplierOwnsStoredConnection } from "./supplier-stored-identity";
 
 const url = z
   .string()
@@ -223,18 +228,6 @@ const safeUrl = (value: unknown) => {
     return "";
   }
 };
-export function legacySupplierId(
-  connection: Pick<ProviderConnectionRecord, "provider" | "config">,
-): string {
-  const namespace = supplierKeyForConnection(connection);
-  const address = normalizeSupplierSiteBase(safeUrl(connection.config.baseUrl));
-  const identity = `${namespace}|${address}`;
-  return `supplier-${createHash("sha256").update(identity).digest("hex").slice(0, 24)}`;
-}
-
-function oldBrandedId(c: ProviderConnectionRecord) {
-  return `supplier-${createHash("sha256").update(supplierKeyForConnection(c)).digest("hex").slice(0, 24)}`;
-}
 function legacySupplier(connection: ProviderConnectionRecord): SupplierRecord {
   const supplierKey = supplierKeyForConnection(connection);
   const profile = builtins.get(supplierKey);
@@ -258,44 +251,19 @@ function legacySupplier(connection: ProviderConnectionRecord): SupplierRecord {
   };
 }
 
-/** Derive old suppliers without writing on a page load. Saved connection IDs stay intact. */
+/** Read-only projection; legacy migration belongs to an explicit write transaction. */
 export async function listSupplierRecords(): Promise<SupplierRecord[]> {
   const [stored, connections] = await Promise.all([
     repository.listSuppliers(),
     repository.listConnections(),
   ]);
-  // Existing persisted suppliers migrate once. Derived legacy entries remain read-only until saved.
-  const normalized: SupplierRecord[] = [];
-  for (const record of stored) {
-    if (record.state) {
-      normalized.push(record);
-      continue;
-    }
-    const owned = connections.filter((c) => owns(record, c));
-    const migrated = initialize(record, owned);
-    try {
-      normalized.push(
-        await repository.commitSupplier({
-          supplier: {
-            ...migrated.supplier,
-            state: { ...migrated.supplier.state!, revision: 1 },
-          },
-          expectedRevision: 0,
-          expectedConnections: owned,
-          connections: migrated.connections,
-        }),
-      );
-    } catch (e) {
-      if (!(e instanceof SupplierConflictError)) throw e;
-      normalized.push((await repository.getSupplier(record.id)) ?? record);
-    }
-  }
-  const byId = new Map(normalized.map((supplier) => [supplier.id, supplier]));
+  const byId = new Map(stored.map((supplier) => [supplier.id, supplier]));
   for (const connection of connections) {
     // Local CLI accounts have their own settings; they are not HTTP suppliers.
     if (connection.provider === "cli") continue;
     const supplier = legacySupplier(connection);
-    if (!connection.config.supplierId && byId.has(oldBrandedId(connection)))
+    const oldBranded = byId.get(oldBrandedSupplierId(connection));
+    if (!connection.config.supplierId && oldBranded && supplierOwnsStoredConnection(oldBranded, connection))
       continue;
     if (!byId.has(supplier.id)) byId.set(supplier.id, supplier);
   }
@@ -304,6 +272,10 @@ export async function listSupplierRecords(): Promise<SupplierRecord[]> {
 export async function getSupplierRecord(
   id: string,
 ): Promise<SupplierRecord | null> {
+  // Most lookups already have a persisted identity. Avoid loading every
+  // account and connection for each model, billing or generation request.
+  const stored = await repository.getSupplier(id);
+  if (stored) return stored;
   return (
     (await listSupplierRecords()).find((supplier) => supplier.id === id) ?? null
   );
@@ -317,7 +289,10 @@ export function mergeSupplierCatalog(
 ): SupplierRecord["catalog"] {
   const groups = new Map<string, SupplierRecord["catalog"]["groups"][number]>();
   const retainModels = (models: SupplierRecord["catalog"]["groups"][number]["models"]) => models.map(model => ({
-    ...model, metadata: { ...model.metadata, supplierCatalogModelStale: true },
+    ...model, metadata: { ...model.metadata, supplierCatalogModelStale: true,
+      ...(model.metadata?.priceSource !== "generated-result" && model.metadata?.priceSource !== "manual" &&
+        (model.priceLabel || model.metadata?.priceLabel || model.metadata?.chuangxiangCatalogPricing || model.metadata?.officialCatalogPricing)
+        ? { priceStatus: "partial" } : {}) },
   }));
   for (const group of current.groups)
     groups.set(
@@ -331,21 +306,33 @@ export function mergeSupplierCatalog(
   for (const group of incoming.groups) {
     // Returned public entries are display data; PATCH cannot rewrite them as trusted scans.
     if (!scanning && group.source === "catalog") continue;
+    const freshRows = scanning && group.supplierGroupId !== undefined ? incoming.groups.filter(item =>
+      item.supplierGroupId === group.supplierGroupId && item.details?.stale !== true && item.source !== "manual" && item.status !== "missing") : [];
+    const uniqueFresh = freshRows.length === 1;
+    const freshAlias = uniqueFresh && freshRows[0]!.id !== group.id;
+    // A preserved old-name placeholder is history, never a second current group.
+    if (group.details?.stale === true && freshAlias) continue;
     const named = groups.get(group.id);
     const identified = group.supplierGroupId ? current.groups.filter(item => item.supplierGroupId === group.supplierGroupId && item.status !== "missing") : [];
+    const freshIdentified = identified.filter(item => item.details?.stale !== true);
     const previous = named && !(group.supplierGroupId && named.supplierGroupId && group.supplierGroupId !== named.supplierGroupId)
-      ? named : identified.length === 1 ? identified[0] : undefined;
+      ? named : freshIdentified.length === 1 ? freshIdentified[0] : identified.length === 1 ? identified[0] : undefined;
     const previousLedger = previous?.details?.ledgerPrices;
     const retainLedger = scanning && previousLedger?.length && !group.details?.ledgerPrices?.length &&
       group.supplierGroupId !== undefined && group.supplierGroupId === previous?.supplierGroupId;
     const retainedModels = scanning && (!complete || group.details?.stale === true) && previous
       ? retainModels(previous.models.filter(model => !group.models.some(incoming => incoming.id === model.id))) : [];
+    if (uniqueFresh && group.supplierGroupId !== undefined && group.details?.stale !== true)
+      for (const [name, old] of groups) if (name !== group.id && old.source !== "manual" && old.supplierGroupId === group.supplierGroupId)
+        groups.set(name, { ...old, status: "missing", models: retainModels(old.models),
+          details: { source: "model-plaza", ...old.details, stale: true } });
     groups.set(group.id, {
       ...group,
       ...(retainedModels.length ? { models: [...group.models, ...retainedModels] } : {}),
       ...(scanning && (!complete || group.details?.stale === true) && ((!group.details && previous?.details) || retainedModels.length)
         ? { details: { source: "model-plaza", ...previous?.details, ...group.details, stale: true } } : {}),
-      ...(retainLedger ? { details: { source: "model-plaza", ...previous?.details, ...group.details, ledgerPrices: previousLedger } } : {}),
+      ...(retainLedger ? { details: { source: "model-plaza", ...(group.details ?? previous?.details), ledgerPrices: previousLedger,
+        ...(retainedModels.length || group.details?.stale === true || !group.details ? { stale: true } : {}) } } : {}),
       source: scanning ? "catalog" : "manual",
       status: "available",
     });
@@ -353,10 +340,6 @@ export function mergeSupplierCatalog(
   return { groups: [...groups.values()] };
 }
 
-const owns = (s: SupplierRecord, c: ProviderConnectionRecord) =>
-  c.config.supplierId === s.id ||
-  (!c.config.supplierId &&
-    (legacySupplierId(c) === s.id || oldBrandedId(c) === s.id));
 const addresses = (s: Pick<SupplierRecord, "siteUrl" | "apiUrl">) => ({
   siteUrl: supplierDirectoryBase(s.siteUrl || s.apiUrl),
   apiUrl:
@@ -419,35 +402,6 @@ function archive(
     archivedAt: new Date().toISOString(),
     reason,
   };
-}
-function invalidateInventory(config: ProviderConnectionRecord["config"]) {
-  const next = { ...config };
-  for (const key of [
-    "modelScanCheckedAt",
-    "modelScanLastSuccessAt",
-    "modelScanAttemptStatus",
-    "modelScanError",
-    "modelScanErrorCode",
-    "modelScanHttpStatus",
-    "scannedModelIds",
-    "modelScanGroups",
-    "modelCatalogModels",
-    "modelProtocolTemplate",
-    "autoModelInterfaces",
-    "weAiLivePricing",
-    "unavailableModels",
-    "unknownModels",
-    "catalogCheckedAt",
-    "catalogSource",
-    "modelScanRequestId",
-    "modelAddedIds",
-    "modelRemovedModels",
-  ])
-    delete next[key];
-  next.modelScanStatus = "unscanned";
-  next.modelScanComplete = false;
-  next.modelCatalogSource = "unverified";
-  return next;
 }
 function initialize(
   s: SupplierRecord,
@@ -538,7 +492,7 @@ async function context(id: string, expectedRevision?: number) {
   )
     throw new SupplierConflictError();
   const expectedConnections = (await repository.listConnections()).filter((c) =>
-    owns(original, c),
+    supplierOwnsStoredConnection(original, c),
   );
   return {
     ...initialize(original, expectedConnections),
@@ -642,7 +596,7 @@ export async function patchSupplierRecord(
     connections = connections.map((c) =>
       c.config.supplierArchived === true
         ? c
-        : { ...c, config: invalidateInventory(c.config) },
+        : { ...c, config: resetConnectionInventory(c.config) },
     );
   }
   if (siteLogin === null) delete next.state.siteLogin;
@@ -716,20 +670,17 @@ export async function assertCurrentSupplierConnection(
       409,
     );
 }
-export async function supplierConfigForConnection(input: {
+export async function prepareSupplierConnection(input: {
   provider: string;
   config: Record<string, unknown>;
-}): Promise<Record<string, unknown>> {
-  if (!input.config.supplierId) return input.config;
+  existingConnection?: ProviderConnectionRecord;
+}): Promise<{ config: Record<string, unknown>; existingConnection?: ProviderConnectionRecord }> {
+  let existingConnection = input.existingConnection;
+  if (!input.config.supplierId) return { config: input.config, existingConnection };
   const ctx = await context(string(input.config.supplierId));
   let s = ctx.supplier;
   if (s.supplierKey !== supplierKeyForConnection(input))
     throw new SupplierServiceError("分组不能关联到其他供应商的命名空间", 409);
-  if (
-    !(await repository.getSupplier(s.id)) ||
-    !(await repository.getSupplier(s.id))?.state
-  )
-    s = await commit(ctx, s);
   if (
     (input.config.supplierSourceId &&
       input.config.supplierSourceId !== s.state!.sourceId) ||
@@ -745,13 +696,29 @@ export async function supplierConfigForConnection(input: {
       "请先在供应商连接地址中修改 API 地址，旧配置将自动归档",
       409,
     );
-  return {
+  const stored = await repository.getSupplier(s.id);
+  if (!stored?.state) {
+    // Migrate only the exact snapshot the caller validated. A concurrent edit
+    // must not become a new baseline for overwriting the connection.
+    if (existingConnection && !isDeepStrictEqual(existingConnection,
+      ctx.expectedConnections.find(connection => connection.id === existingConnection!.id)))
+      throw new SupplierConflictError();
+    s = await commit(ctx, s);
+    if (existingConnection) {
+      const migrated = ctx.connections.find(connection => connection.id === existingConnection!.id)!;
+      const current = await repository.getConnection(existingConnection.id);
+      if (!current || !isDeepStrictEqual(current, { ...migrated, updatedAt: current.updatedAt }))
+        throw new SupplierConflictError();
+      existingConnection = current;
+    }
+  }
+  return { existingConnection, config: {
     ...input.config,
     baseUrl: s.apiUrl,
     supplierId: s.id,
     supplierName: s.name,
     supplierSourceId: s.state!.sourceId,
-  };
+  } };
 }
 
 export async function scanSupplierRecord(
@@ -768,10 +735,12 @@ export async function scanSupplierRecord(
   let supplier = await commit(ctx, {
     ...ctx.supplier,
     state: { ...ctx.supplier.state!, scanId },
-  }, options.catalogOnly ? [] : undefined);
+  // A first explicit scan must migrate the legacy supplier and its connection
+  // identities atomically, even when only its catalog is being refreshed.
+  }, options.catalogOnly && ctx.expectedRevision > 0 ? [] : undefined);
   let initialConnections = currentConnections(
     supplier,
-    (await repository.listConnections()).filter((c) => owns(supplier, c)),
+    (await repository.listConnections()).filter((c) => supplierOwnsStoredConnection(supplier, c)),
   );
   // Keep the original consumer choices across account synchronization. A user
   // edit/deletion during catalog reads must not become the new import baseline.
@@ -860,6 +829,8 @@ export async function scanSupplierRecord(
       if (!connection.encryptedSecret || connection.config.usage === "disabled") continue;
       const groupId = connection.config.accountKeyGroup ?? connection.config.modelGroup;
       if (typeof groupId !== "string" || !groupId || known.has(groupId)) continue;
+      if (connection.config.accountKeyGroupId !== undefined && result.groups.some(group => group.details?.stale !== true &&
+          group.supplierGroupId === String(connection.config.accountKeyGroupId))) continue;
       const previous = supplier.catalog.groups.find(group => group.id === groupId);
       if (previous?.source === "manual") continue;
       result.groups.push({ id: groupId, label: previous?.label ?? groupId, source: "catalog",
@@ -908,13 +879,26 @@ export async function scanSupplierRecord(
       throw error;
     }
     initialConnections = currentConnections(supplier,
-      (await repository.listConnections()).filter(connection => owns(supplier, connection)));
+      (await repository.listConnections()).filter(connection => supplierOwnsStoredConnection(supplier, connection)));
     // A newly imported local agent may also acquire media on its first Key
     // read. Existing records retain their original frozen identity above.
     mediaInitialConnections.push(...initialConnections.filter(connection =>
       !current.connections.some(existing => existing.id === connection.id)));
   }
   let connectionFailure = false;
+  if (!["failed", "unauthorized"].includes(result.status)) {
+    const current = await context(id, supplier.state!.revision);
+    const reconciled = reconcileSupplierGroupNames(current.supplier, current.connections, result.groups, mediaInitialConnections);
+    const renamed = reconciled.filter((connection, index) => connection !== current.connections[index]);
+    if (renamed.length) {
+      try { supplier = await commit(current, current.supplier, renamed); }
+      catch (error) {
+        if (error instanceof SupplierConflictError) return (await getSupplierRecord(id))!;
+        throw error;
+      }
+      initialConnections = currentConnections(supplier, (await repository.listConnections()).filter(connection => supplierOwnsStoredConnection(supplier, connection)));
+    }
+  }
   const mediaReceipts: SupplierMediaScanReceipt[] = [];
   for (const connection of options.catalogOnly ? [] : initialConnections) {
     if (

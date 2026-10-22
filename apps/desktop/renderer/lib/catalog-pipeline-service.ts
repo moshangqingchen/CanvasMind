@@ -3,7 +3,7 @@ import { isDeepStrictEqual } from "node:util";
 import { catalogConnectionIdentity, catalogSupplierIdentity, catalogLegacyObservationOwner, catalogObservationIdentity,
   SupplierConflictError, type CatalogObservationCommit, type CatalogObservationReservation,
   type CatalogPipelineState, type JsonObject, type ProviderConnectionRecord, type Repository, type SupplierRecord } from "@super-canvas/db";
-import type { ModelDescriptor } from "@super-canvas/providers";
+import { isTk1688ApiUrl, type ModelDescriptor } from "@super-canvas/providers";
 import { catalogConnectionScopes, catalogReadPipelineEnabled, catalogSourcePlan } from "./catalog-source-plan";
 import { readCatalogObservationStore, catalogLegacyConnectionEntryKey } from "./catalog-observation-store";
 import { catalogMode, CATALOG_MODE_SETTING } from "./supplier-catalog-policy";
@@ -20,6 +20,8 @@ import type { CatalogChangeRecord } from "./supplier-catalog-contracts";
 import type { CatalogPipelineChanges, CatalogPipelineConnectionDiagnostic } from "./catalog-pipeline-diagnostics";
 import { projectCatalogOffers } from "./catalog-offer-projection";
 import { collectCatalogDedicatedContracts, normalizeCatalogDedicatedPriceFacts } from "./catalog-dedicated-contracts";
+import { applyCatalogTk1688Descriptors, projectCatalogTk1688Membership } from "./catalog-tk1688-membership";
+import { compactCatalogTk1688Inventory, hydrateCatalogTk1688Inventory } from "./catalog-tk1688-state-storage";
 import { catalogManualRefreshFenceKey, catalogManualRefreshPatches, catalogManualRefreshReady, readCatalogManualRefreshFence } from "./catalog-manual-refresh-fence";
 import { createCatalogPublisher } from "./catalog-publisher";
 import { createCatalogHttpDispatcher, createCatalogSchedulerStore, createCatalogTransportCoordinator,
@@ -339,7 +341,7 @@ export function createCatalogPipelineService(deps: CatalogPipelineDependencies) 
         if (catalogConnectionIdentity(fresh.connection) !== catalogConnectionIdentity(snapshot.connection)) { result.superseded++; break; }
         const reservation = await write(() => repository.reserveCatalogObservation({ identity: identity(), sourceKey: job.sourceKey,
           observationCycleId: job.observationCycleId, expectedMode: mode, manual: scheduledMode === "manual" }));
-        const inventory = saved.entries[inventoryKey(connectionId)] as unknown as CatalogInventoryState | undefined;
+        const inventory = hydrateCatalogTk1688Inventory(saved.entries[inventoryKey(connectionId)] as unknown as CatalogInventoryState | undefined);
         const collected = await collectCatalogReadTask(task, snapshot.connection, snapshot.supplier, inventory?.visibleModels ?? modelsOf(snapshot.connection), {
           enabled: true, apiKey: readers.apiKey, fetchFor: spec => readers.wrapTransport?.(spec, dispatcher.fetchFor(job.id, abort.signal)) ??
             dispatcher.fetchFor(job.id, abort.signal), now: () => new Date(clock.now()).toISOString(),
@@ -448,16 +450,23 @@ function preparePublication(pipeline: CatalogPipelineState, connection: Provider
   observation: CatalogReadObservation, scheduler: CatalogSchedulerState, owner: string, now: number, mode: CatalogScheduledMode,
   requiredSourceKeys: string[], manualConfirmation: CatalogPipelineRunOptions["manualConfirmation"],
   work: { jobId?: string; discovered: CatalogReadTask[]; supplier?: SupplierRecord; sessionStartedAt: number; revision: string }): CatalogObservationCommit {
-  const priorInventory = pipeline.entries[inventoryKey(connection.id)] as unknown as CatalogInventoryState | undefined;
+  const priorInventory = hydrateCatalogTk1688Inventory(pipeline.entries[inventoryKey(connection.id)] as unknown as CatalogInventoryState | undefined);
   const observations = Object.entries(pipeline.entries).filter(([key]) => key.startsWith("fact:")).map(([, value]) => value as unknown as CatalogReadObservation)
     .filter(row => row.receipt.context.observationCycleId === observation.receipt.context.observationCycleId && row.receipt.spec.sourceKey !== observation.receipt.spec.sourceKey &&
       row.receipt.context.identityEpoch === pipeline.identityEpoch && applicableFact(row, connection, work.supplier));
   observations.push(observation);
-  const reduction = reduceCatalogInventory(priorInventory, { connectionId: connection.id, identityEpoch: pipeline.identityEpoch,
-    observationCycleId: observation.receipt.context.observationCycleId, observedAt: new Date(now).toISOString(), mode, requiredSourceKeys, observations,
-    initialModels: modelsOf(connection), manualConfirmation, validatedPartialModelIds: Object.fromEntries(observations.filter(row => row.facts.validatedMembershipModelIds)
-      .map(row => [row.receipt.spec.sourceKey, row.facts.validatedMembershipModelIds!])) });
   const manualFence = readCatalogManualRefreshFence(pipeline, connection.id);
+  // Raw facts stay unchanged in fact:* below. Only this projection can expand
+  // a Tk1688 bare Key family through authenticated account + active market.
+  const tk1688 = projectCatalogTk1688Membership(connection, work.supplier, observations,
+    { identityEpoch: pipeline.identityEpoch, observationCycleId: observation.receipt.context.observationCycleId,
+      localProjectionDispatchSeq: reservation.dispatchSeq, ...(manualFence ? { keyFence: manualFence } : {}) });
+  const membershipObservations = tk1688.observations;
+  const reduction = reduceCatalogInventory(priorInventory, { connectionId: connection.id, identityEpoch: pipeline.identityEpoch,
+    observationCycleId: observation.receipt.context.observationCycleId, observedAt: new Date(now).toISOString(), mode, requiredSourceKeys, observations: membershipObservations,
+    initialModels: modelsOf(connection), manualConfirmation, validatedPartialModelIds: Object.fromEntries(membershipObservations.filter(row => row.facts.validatedMembershipModelIds)
+      .map(row => [row.receipt.spec.sourceKey, row.facts.validatedMembershipModelIds!])) });
+  reduction.visibleModels = applyCatalogTk1688Descriptors(reduction.visibleModels, tk1688.descriptors);
   const holdManualDisplay = !catalogManualRefreshReady(manualFence, reduction.state, requiredSourceKeys, reduction.manifestComplete);
   if (holdManualDisplay) {
     // Real source baselines/counters still advance independently. Their old
@@ -520,9 +529,11 @@ function preparePublication(pipeline: CatalogPipelineState, connection: Provider
     row.receipt.reason === "authentication");
   const modelScanStatus = denied ? "unauthorized" : reduction.manifestComplete ? prices.models.length ? "live" : "empty" : connection.config.modelScanStatus ?? "unscanned";
   const effective = { ...connection, config: { ...connection.config, modelScanStatus } };
-  const freshKeyModels = observations.filter(row => row.receipt.spec.role === "key-membership" && row.receipt.spec.authScope.principalRef === connection.id &&
+  const freshKeyModels = [...observations, ...membershipObservations].filter(row => row.receipt.spec.role === "key-membership" && row.receipt.spec.authScope.principalRef === connection.id &&
     row.receipt.status === "succeeded" && row.receipt.complete && row.receipt.freshness === "live" &&
     (!manualFence || row.receipt.context.dispatchSeq > manualFence.dispatchedThrough)).flatMap(row => row.facts.models);
+  const freshDerivedMembers = new Set(membershipObservations.filter(row => row.facts.membershipDerivation?.complete)
+    .flatMap(row => row.facts.models.map(model => model.id)));
   const reconciled = prices.models.map(model => {
     const current = freshKeyModels.filter(fresh => fresh.id === model.id), rejection = current.find(fresh => fresh.metadata?.canvasRunnable === false);
     if (rejection) return { ...model, metadata: { ...model.metadata, canvasRunnable: false,
@@ -530,11 +541,22 @@ function preparePublication(pipeline: CatalogPipelineState, connection: Provider
     if (modelScanStatus !== "live" || !current.length || connection.config.manualProtocol === true ||
       ["manual", "paid-test"].includes(String(model.metadata?.source)) || model.metadata?.protocolEvidence === "paid-test") return model;
     const metadata = { ...model.metadata }; delete metadata.canvasRunnable; delete metadata.canvasUnavailableReason;
+    if (freshDerivedMembers.has(model.id))
+      metadata.catalogMembershipVerified = provenMembers.has(model.id);
     return { ...model, metadata };
   });
   // Native predicates consult scan status and exact current refusals. Reconcile
   // a new successful Key result before selecting an adapter, not afterwards.
-  const dedicated = collectCatalogDedicatedContracts(effective, work.supplier, reconciled, knownFacts,
+  const dedicatedFacts = knownFacts.flatMap(row => {
+    const derived = membershipObservations.find(projected => projected.facts.membershipDerivation &&
+      projected.receipt.spec.sourceKey === row.receipt.spec.sourceKey &&
+      projected.receipt.context.observationCycleId === row.receipt.context.observationCycleId &&
+      projected.receipt.context.identityEpoch === row.receipt.context.identityEpoch);
+    // Missing account/market evidence does not invalidate exact raw Key rows.
+    // Only the complete three-way projection can supply fresh derived aliases.
+    return derived ? derived.facts.membershipDerivation?.complete ? [derived] : [derived, row] : [row];
+  });
+  const dedicated = collectCatalogDedicatedContracts(effective, work.supplier, reconciled, dedicatedFacts,
     { identityEpoch: pipeline.identityEpoch, observationCycleId: observation.receipt.context.observationCycleId, membershipModelIds: [...provenMembers] });
   contracts = reduceCatalogContracts(contracts, [...contractObservations, ...dedicated.contracts]);
   const scope = observation.receipt.spec.applyScope;
@@ -588,7 +610,8 @@ function preparePublication(pipeline: CatalogPipelineState, connection: Provider
   const patches: CatalogObservationCommit["state"] = [
     ...offers.state,
     ...(work.jobId ? [{ key: factKey(observation.receipt.spec.sourceKey), expected: pipeline.entries[factKey(observation.receipt.spec.sourceKey)], value: json(observation) }] : []),
-    { key: inventoryKey(connection.id), expected: pipeline.entries[inventoryKey(connection.id)], value: json(reduction.state) },
+    { key: inventoryKey(connection.id), expected: pipeline.entries[inventoryKey(connection.id)], value: json(isTk1688ApiUrl(String(connection.config.baseUrl))
+      ? compactCatalogTk1688Inventory(reduction.state) : reduction.state) },
     ...(!holdManualDisplay ? [{ key: contractKey(connection.id), expected: pipeline.entries[contractKey(connection.id)], value: json(contracts) },
       { key: contractEpochKey(connection.id), expected: pipeline.entries[contractEpochKey(connection.id)], value: { identityEpoch: pipeline.identityEpoch,
         fingerprints: contractFingerprints } },

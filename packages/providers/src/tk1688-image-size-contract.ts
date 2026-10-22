@@ -40,11 +40,13 @@ export function tk1688DescriptionFacts(description: string) {
     ? `${Number(fixed[1])}x${Number(fixed[2])}` : undefined;
   const exclusiveResolutions = /(?<!不|非)(?:仅(?:支持|限)?|只(?:支持|有|能)|限定|限|固定)\s*([124](?:\s*(?:k\s*)?[/、,，]\s*[124]){0,2})\s*k\b/iu.test(description);
   const omitN = /(?:不支持|禁止|不接受|不传)\s*(?:参数\s*)?[`"']?n\b|(?:does not support|unsupported)\s+[`"']?n\b/iu.test(description);
-  const qualityMatch = /(?:quality|质量)\s*(?:支持|档位|可选|为|[:：=])?\s*([a-z]+(?:(?:\s*[,，、/|]\s*)[a-z]+)+)/iu.exec(description);
-  const quality = qualityMatch ? [...new Set(qualityMatch[1]!.toLowerCase().split(/\s*[,，、/|]\s*/u)
-    .filter(value => ["auto", "low", "medium", "high", "max"].includes(value)))] : [];
+  const exclusiveQuality = /(?<!不|非)(?:仅|只)(?:支持|接受|允许|开放)\s*(?:(?:quality|质量)(?:档位)?\s*[:：=]?\s*)?((?:auto|low|medium|high|xhigh|max)(?:\s*(?:[,，、/|]|或|和|与)\s*(?:auto|low|medium|high|xhigh|max))*)(?![a-z])/iu.exec(description);
+  const qualityMatch = exclusiveQuality ?? /(?:quality|质量)\s*(?:支持|档位|可选|为|[:：=])?\s*([a-z]+(?:(?:\s*[,，、/|]\s*)[a-z]+)+)/iu.exec(description);
+  const quality = qualityMatch ? [...new Set(qualityMatch[1]!.toLowerCase().split(/\s*(?:[,，、/|]|或|和|与)\s*/u)
+    .filter(value => ["auto", "low", "medium", "high", "xhigh", "max"].includes(value)))] : [];
   const origins = resolutionOrigins(description);
   return { resolutions: tiers.filter(tier => supported.has(tier)), unsupportedResolutions, exclusiveResolutions, referenceSize, fixedSize, omitN, quality,
+    exclusiveQuality: Boolean(exclusiveQuality),
     nativeResolutions: origins.nativeResolutions.filter(tier => !unsupportedResolutions.includes(tier)),
     upscaledResolutions: origins.upscaledResolutions.filter(tier => !unsupportedResolutions.includes(tier)) };
 }
@@ -102,6 +104,30 @@ export function normalizeTk1688ImageSizeContract<T extends Partial<ImageModel>>(
     options: [{ value: fixedSize, label: `固定 ${fixedSize.replace("x", " × ")}` }], description: "当前商家明确限定的固定像素尺寸。",
   } : openSizeParameter();
   let parameters = [...(model.parameters ?? []).filter(parameter => parameter.key !== "size"), size];
+  if (facts?.exclusiveQuality && facts.quality.length) {
+    // A merchant's explicit closed quality enum survives saved-catalog repair
+    // and the application-wide highest-quality presets. Never apply it to the
+    // bare smart route, whose description combines several different SKUs.
+    const quality: ModelParameterDescriptor = { key: "quality", label: "质量", control: "select", valueType: "string",
+      default: facts.quality[0]!, options: facts.quality.map(value => ({ value, label: value })),
+      description: `当前商家仅支持 ${facts.quality.join("、")} 质量；旧选择保留，请明确修改后提交。` };
+    parameters = [...parameters.filter(parameter => parameter.key !== "quality"), quality];
+    Object.assign(metadata, { tk1688QualityDeclared: true, tk1688QualitySource: "merchant-description",
+      imageQualityOptionsCompleteEnum: true, imageQualityCompleteEnumSource: "tk1688-exclusive-merchant-description",
+      imageApplicationQualityDefault: quality.default });
+  } else if (metadata.imageQualityCompleteEnumSource === "tk1688-exclusive-merchant-description") {
+    delete metadata.imageQualityOptionsCompleteEnum;
+    delete metadata.imageQualityCompleteEnumSource;
+    const values = facts?.quality.length ? facts.quality : ["auto", "high", "medium", "low"];
+    parameters = [...parameters.filter(parameter => parameter.key !== "quality"), {
+      key: "quality", label: "质量", control: "select", valueType: "string", default: values[0]!,
+      options: values.map(value => ({ value, label: value })), description: facts?.quality.length
+        ? "当前商家明确声明的质量档位。" : "词元生图工作台通用控件；商家未单独声明质量档位。",
+    }];
+    metadata.tk1688QualityDeclared = Boolean(facts?.quality.length);
+    metadata.tk1688QualitySource = facts?.quality.length ? "merchant-description" : "official-image-station-common";
+    delete metadata.imageApplicationQualityDefault;
+  }
   if (!fixedSize) {
     const availableTiers = tiers.filter(tier =>
       !(Array.isArray(metadata.imageUnsupportedResolutions) && metadata.imageUnsupportedResolutions.includes(tier)) &&

@@ -5,6 +5,7 @@ import { openSupplierSiteSession, supplierSiteLoginCacheIdentity } from "./suppl
 import { isAgentTextModel } from "./agent-model-capabilities";
 import { catalogScopedMap } from "./catalog-scope-cache";
 import { readCatalogLoaderJson, type CatalogLoaderReadOptions } from "./catalog-loader-http";
+import { restrictTk1688MarketplaceInventory } from "@super-canvas/providers/tk1688-catalog";
 
 type Connection = { provider: string; config: Readonly<Record<string, unknown>> };
 type CatalogRead = { marketplace?: unknown; status?: unknown; accountModelIds?: string[]; checkedAt: string; complete: boolean };
@@ -60,8 +61,14 @@ export function tk1688InventoryDefaultModel(connection: Connection, models: read
  * visible active marketplace aliases in that same family. */
 export function mergeTk1688ModelInventory(models: readonly ModelDescriptor[], marketplace: unknown, status: unknown,
   options: { accountModelIds?: readonly string[]; checkedAt?: string; savedModels?: readonly ModelDescriptor[] } = {}): ModelDescriptor[] {
-  const parsed = parseTk1688Marketplace(marketplace, status, options.accountModelIds === undefined ? { checkedAt: options.checkedAt }
-    : { keyModelIds: models.map(model => model.id), accountModelIds: options.accountModelIds, checkedAt: options.checkedAt });
+  return mergeTk1688NormalizedModelInventory(models, parseTk1688Marketplace(marketplace, status, { checkedAt: options.checkedAt }), options);
+}
+
+/** Same permission join for the pipeline's already normalized GET evidence. */
+export function mergeTk1688NormalizedModelInventory(models: readonly ModelDescriptor[], catalog: ReturnType<typeof parseTk1688Marketplace>,
+  options: { accountModelIds?: readonly string[]; savedModels?: readonly ModelDescriptor[] } = {}): ModelDescriptor[] {
+  const parsed = restrictTk1688MarketplaceInventory(catalog, options.accountModelIds === undefined ? {}
+    : { keyModelIds: models.map(model => model.id), accountModelIds: options.accountModelIds });
   if (!parsed.complete) {
     const keys = new Set(models.map(model => model.id));
     const saved = (options.savedModels ?? []).filter(model => model.metadata?.tk1688Catalog === true &&

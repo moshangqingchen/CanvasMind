@@ -1,12 +1,13 @@
 import { beforeEach, afterEach, describe, it, expect, vi } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync, rmSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 const mocks = vi.hoisted(() => ({ fetch: vi.fn(), localFetch: vi.fn(), hasProxy: vi.fn() }));
 vi.mock("@super-canvas/providers", async importOriginal => ({ ...await importOriginal<object>(), providerFetch: mocks.fetch, hasProviderHttpProxy: mocks.hasProxy }));
 import { verifyProviderAssetToken } from "@super-canvas/providers";
 import { LocalReferenceChannelError, localReferenceChannel, localReferenceChannelConfigured, localReferenceUrls } from "../src/reference-channel.js";
 let root: string; let path: string;
+const fixtureParent = join(realpathSync(fileURLToPath(new URL("../../../", import.meta.url))), ".codex-temp");
 const bytes = (text: string) => new TextEncoder().encode(text);
 const original = (id: string, text = "original-file") => ({ id, mimeType: "image/png", data: bytes(text) });
 const references = [original("reference-1"), original("reference-2", "second-original")];
@@ -19,15 +20,19 @@ function routeAssets(reply: (url: string) => Response | Promise<Response>) {
 const getUrls = (assets = references) => localReferenceUrls(assets.map(asset => asset.id), assets);
 
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), "supercanvas-channel-test-")); path = join(root, "state.json");
+  mkdirSync(fixtureParent, { recursive: true });
+  if (realpathSync(fixtureParent) !== fixtureParent) throw new Error("Channel test directory must stay in the workspace");
+  root = mkdtempSync(join(fixtureParent, "supercanvas-channel-test-")); path = join(root, "state.json");
   vi.stubEnv("SUPERCANVAS_DESKTOP", "true"); vi.stubEnv("SUPERCANVAS_REFERENCE_CHANNEL_FILE", path); vi.stubEnv("MASTER_KEY", "isolated-test-key");
   vi.stubEnv("SUPERCANVAS_DESKTOP_TOKEN", "private-desktop-test-token");
   vi.stubGlobal("fetch", mocks.localFetch);
   mocks.fetch.mockReset();
   mocks.localFetch.mockReset(); mocks.hasProxy.mockReset().mockReturnValue(false);
 });
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); rmSync(root, { recursive: true, force: true }); });
-const save = (extra = {}) => writeFileSync(path, JSON.stringify({ enabled: true, ready: true, baseUrl: "https://assets.example.com", updatedAt: Date.now(), instance: "desktop-instance", ...extra }));
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.unstubAllGlobals();
+  if (dirname(realpathSync(root)) !== fixtureParent) throw new Error("Invalid channel test fixture directory");
+  rmSync(root, { recursive: true, force: true }); });
+const save = (extra = {}) => writeFileSync(path, JSON.stringify({ enabled: true, ready: true, baseUrl: "https://assets.example.test", updatedAt: Date.now(), instance: "desktop-instance", ...extra }));
 
 describe("local reference channel", () => {
   it("keeps an offline configured channel distinct from opting out", async () => {
@@ -38,7 +43,7 @@ describe("local reference channel", () => {
     save({ enabled: false }); expect(localReferenceChannelConfigured()).toBe(false);
   });
   it("rejects disabled, stale, non-HTTPS or unready channels", () => {
-    for (const extra of [{ enabled: false }, { ready: false }, { updatedAt: Date.now() - 100_000 }, { baseUrl: "http://assets.example.com" }]) { save(extra); expect(localReferenceChannel()).toBeNull(); }
+    for (const extra of [{ enabled: false }, { ready: false }, { updatedAt: Date.now() - 100_000 }, { baseUrl: "http://assets.example.test" }]) { save(extra); expect(localReferenceChannel()).toBeNull(); }
   });
   it("returns only the same one-hour URLs whose complete original bytes were read, preserving order", async () => {
     save();
@@ -146,15 +151,21 @@ describe("local reference channel", () => {
   });
   it("applies an asset timeout through the full body read", async () => {
     save(); const originalTimeout = AbortSignal.timeout.bind(AbortSignal);
+    const controllers: AbortController[] = [];
     vi.spyOn(AbortSignal, "timeout").mockImplementation(milliseconds => {
       if (milliseconds !== 60_000) return originalTimeout(milliseconds);
-      const controller = new AbortController(); setTimeout(() => controller.abort(), 5); return controller.signal;
+      const controller = new AbortController(); controllers.push(controller); return controller.signal;
     });
     const cancel = vi.fn();
-    routeAssets(() => new Response(new ReadableStream({ cancel }), { headers: { "content-type": "image/png" } }));
+    routeAssets(() => new Response(new ReadableStream({
+      // Expire only once the reader requests body bytes, not while DNS or the
+      // event loop happens to be slow. A zero buffer prevents eager pulls.
+      pull() { controllers.at(-1)!.abort(); }, cancel,
+    }, { highWaterMark: 0 }), { headers: { "content-type": "image/png" } }));
     const error = await getUrls([references[0]!]).catch(error => error) as LocalReferenceChannelError;
     expect(error.diagnostics).toMatchObject([{ code: "timeout", attempts: 2 }]);
     expect(mocks.fetch).toHaveBeenCalledTimes(3);
+    expect(controllers).toHaveLength(2);
     expect(cancel).toHaveBeenCalledTimes(2);
   });
   it("retains diagnostics for every asset, including successful peers", async () => {
@@ -195,7 +206,7 @@ describe("desktop public-reference probe relay", () => {
       expect(verifyProviderAssetToken({ token, assetId, secret: "isolated-test-key" })).toBe(true);
       if (index > 0) {
         const submitted = new URL(urls[assets.findIndex(asset => asset.id === assetId)]!);
-        expect(submitted.origin).toBe("https://assets.example.com");
+        expect(submitted.origin).toBe("https://assets.example.test");
         expect(submitted.pathname).toBe(`/api/provider-assets/${assetId}`);
         expect(submitted.search).toBe(relay.search);
         expect(submitted.href).not.toContain("private-desktop-test-token");
@@ -211,7 +222,7 @@ describe("desktop public-reference probe relay", () => {
     expect(mocks.fetch).toHaveBeenCalledTimes(2);
     expect(mocks.localFetch).not.toHaveBeenCalled();
     expect(mocks.hasProxy).not.toHaveBeenCalled();
-    expect(mocks.fetch.mock.calls.every(([url]) => new URL(url).origin === "https://assets.example.com")).toBe(true);
+    expect(mocks.fetch.mock.calls.every(([url]) => new URL(url).origin === "https://assets.example.test")).toBe(true);
   });
 
   it("keeps an explicitly configured provider proxy authoritative, without needing relay credentials", async () => {

@@ -9,7 +9,7 @@ describe("supplier account amounts", () => {
   it("reads only Langframe's declared credits and does not sum recent ledger or generation pages", async () => {
     const profile = { ok: true, user: { account: "user@example.com", credits: "12.35", currency: "CNY",
       ledger: [{ amount: 900, type: "consume" }], generations: [{ cost: 800 }, { cost: 700 }] } };
-    const fetcher = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => Response.json(profile));
+    const fetcher = vi.fn<(url: string | URL | Request, init?: RequestInit) => Promise<Response>>(async () => Response.json(profile));
     const result = await readSupplierBilling({ siteUrl: "https://vipprompt.cn", sourceId: "wolf", kind: "langframe" }, fetcher);
     expect(result).toMatchObject({ status: "partial", balance: 12.35, unit: "credits", used: undefined,
       todayUsed: undefined, requests: undefined, todayStatus: "missing", sourceUrl: "https://vipprompt.cn/api/me" });

@@ -1,0 +1,3510 @@
+{
+  "sourceUrl": "https://vapi.chuangxiangai.asia/api/v1/model-plaza",
+  "sampledAt": "2026-10-22T04:13:15.022Z",
+  "groupId": 27,
+  "models": [
+    {
+      "id": "grok-imagine-video",
+      "capability": {
+        "min_duration": 1,
+        "max_duration": 15,
+        "default_duration": 8,
+        "automatic_duration": false,
+        "max_count": 1,
+        "max_reference_images": 1,
+        "max_reference_videos": 0,
+        "max_reference_audios": 0,
+        "resolutions": [
+          "480p",
+          "720p"
+        ],
+        "default_resolution": "480p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：16:9 / 9:16 / 1:1。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "reference_image_urls",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考图数组。数量上限：1。image_urls 为兼容别名，不能同时传入。"
+          }
+        ],
+        "rules": [
+          "单次创建一个视频任务；n 可省略或填写 1。",
+          "素材仅接受公网 HTTPS URL；不能使用本地路径、Base64 或本站 /v1/files 文件 ID。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 8,
+          "model": "grok-imagine-video",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "480p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_second",
+        "prices": {
+          "480p": 0.942,
+          "720p": 1.295
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "grok-imagine-video-1.5",
+      "capability": {
+        "min_duration": 1,
+        "max_duration": 15,
+        "default_duration": 8,
+        "automatic_duration": false,
+        "max_count": 1,
+        "max_reference_images": 7,
+        "max_reference_videos": 0,
+        "max_reference_audios": 0,
+        "resolutions": [
+          "480p",
+          "720p",
+          "1080p"
+        ],
+        "default_resolution": "480p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：16:9 / 9:16 / 1:1。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "reference_image_urls",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考图数组。数量上限：7。image_urls 为兼容别名，不能同时传入。"
+          }
+        ],
+        "rules": [
+          "1080p 最多使用 1 张参考图。",
+          "单次创建一个视频任务；n 可省略或填写 1。",
+          "素材仅接受公网 HTTPS URL；不能使用本地路径、Base64 或本站 /v1/files 文件 ID。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 8,
+          "model": "grok-imagine-video-1.5",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "480p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_second",
+        "prices": {
+          "1080p": 3.765,
+          "480p": 1.365,
+          "720p": 1.977
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "gv4-grok-imagine-video-1.5",
+      "capability": {
+        "min_duration": 6,
+        "max_duration": 15,
+        "default_duration": 6,
+        "automatic_duration": false,
+        "max_count": 1,
+        "max_reference_images": 7,
+        "max_reference_videos": 0,
+        "max_reference_audios": 0,
+        "resolutions": [
+          "480p",
+          "720p"
+        ],
+        "default_resolution": "480p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：16:9 / 9:16 / 1:1。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "reference_image_urls",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考图数组。数量上限：7。image_urls 为兼容别名，不能同时传入。"
+          }
+        ],
+        "rules": [
+          "单次创建一个视频任务；n 可省略或填写 1。",
+          "素材仅接受公网 HTTPS URL；不能使用本地路径、Base64 或本站 /v1/files 文件 ID。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 6,
+          "model": "gv4-grok-imagine-video-1.5",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "480p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_request",
+        "prices": {
+          "480p": 14.2,
+          "720p": 14.2
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "happyhorse-1.1",
+      "capability": {
+        "min_duration": 3,
+        "max_duration": 15,
+        "default_duration": 8,
+        "automatic_duration": false,
+        "max_count": 1,
+        "max_reference_images": 9,
+        "max_reference_videos": 0,
+        "max_reference_audios": 0,
+        "resolutions": [
+          "720p",
+          "1080p"
+        ],
+        "default_resolution": "720p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：16:9 / 9:16 / 1:1 / 4:3 / 3:4 / 21:9 / 9:21 / 5:4 / 4:5。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "reference_image_urls",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考图数组。数量上限：9。image_urls 为兼容别名，不能同时传入。"
+          }
+        ],
+        "rules": [
+          "单次创建一个视频任务；n 可省略或填写 1。",
+          "素材仅接受公网 HTTPS URL；不能使用本地路径、Base64 或本站 /v1/files 文件 ID。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 8,
+          "model": "happyhorse-1.1",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "720p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_request",
+        "prices": {
+          "1080p": 44.8,
+          "720p": 33
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "kling-3.0",
+      "capability": {
+        "min_duration": 3,
+        "max_duration": 15,
+        "default_duration": 8,
+        "automatic_duration": false,
+        "max_count": 1,
+        "max_reference_images": 1,
+        "max_reference_videos": 0,
+        "max_reference_audios": 0,
+        "resolutions": [
+          "720p"
+        ],
+        "default_resolution": "720p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：16:9 / 9:16 / 1:1。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "reference_image_urls",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考图数组。数量上限：1。image_urls 为兼容别名，不能同时传入。"
+          },
+          {
+            "name": "generate_audio",
+            "type": "boolean",
+            "required": false,
+            "description": "是否生成声音。"
+          }
+        ],
+        "rules": [
+          "固定输出档位；resolution 可省略，填写时仅用于选择本站计费档位。",
+          "单次创建一个视频任务；n 可省略或填写 1。",
+          "素材仅接受公网 HTTPS URL；不能使用本地路径、Base64 或本站 /v1/files 文件 ID。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 8,
+          "model": "kling-3.0",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "720p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_request",
+        "prices": {
+          "720p": 29.5
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "kling-3.0-pro",
+      "capability": {
+        "min_duration": 3,
+        "max_duration": 15,
+        "default_duration": 8,
+        "automatic_duration": false,
+        "max_count": 1,
+        "max_reference_images": 4,
+        "max_reference_videos": 0,
+        "max_reference_audios": 0,
+        "resolutions": [
+          "720p"
+        ],
+        "default_resolution": "720p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：16:9 / 9:16 / 1:1。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "reference_image_urls",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考图数组。数量上限：4。image_urls 为兼容别名，不能同时传入。"
+          },
+          {
+            "name": "generate_audio",
+            "type": "boolean",
+            "required": false,
+            "description": "是否生成声音。"
+          }
+        ],
+        "rules": [
+          "固定输出档位；resolution 可省略，填写时仅用于选择本站计费档位。",
+          "单次创建一个视频任务；n 可省略或填写 1。",
+          "素材仅接受公网 HTTPS URL；不能使用本地路径、Base64 或本站 /v1/files 文件 ID。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 8,
+          "model": "kling-3.0-pro",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "720p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_request",
+        "prices": {
+          "720p": 34.2
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "mm3-minimax-h3-2k",
+      "capability": {
+        "min_duration": 15,
+        "max_duration": 15,
+        "default_duration": 15,
+        "automatic_duration": false,
+        "max_count": 1,
+        "max_reference_images": 9,
+        "max_reference_videos": 3,
+        "max_reference_audios": 3,
+        "resolutions": [
+          "2k"
+        ],
+        "default_resolution": "2k",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：16:9 / 9:16 / 1:1。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "reference_image_urls",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考图数组。数量上限：9。image_urls 为兼容别名，不能同时传入。"
+          },
+          {
+            "name": "reference_videos",
+            "type": "object[]",
+            "required": false,
+            "description": "每项为 {url, duration}；HTTPS URL，正整数秒；最多 3 个，参考视频合计不超过 15 秒。"
+          },
+          {
+            "name": "reference_audios",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考音频数组。数量上限：3。"
+          }
+        ],
+        "rules": [
+          "图片、视频、音频合计最多 10 个。",
+          "单次创建一个视频任务；n 可省略或填写 1。",
+          "素材仅接受公网 HTTPS URL；不能使用本地路径、Base64 或本站 /v1/files 文件 ID。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 15,
+          "model": "mm3-minimax-h3-2k",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "2k"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_request",
+        "prices": {
+          "2k": 34.2
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "mm4-minimax-h3-2k",
+      "capability": {
+        "min_duration": 5,
+        "max_duration": 15,
+        "default_duration": 5,
+        "automatic_duration": false,
+        "max_count": 1,
+        "max_reference_images": 9,
+        "max_reference_videos": 3,
+        "max_reference_audios": 3,
+        "resolutions": [
+          "2k"
+        ],
+        "default_resolution": "2k",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：21:9 / 16:9 / 4:3 / 1:1 / 3:4 / 9:16。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "reference_image_urls",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考图数组。数量上限：9。image_urls 为兼容别名，不能同时传入。"
+          },
+          {
+            "name": "reference_videos",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考视频数组。数量上限：3。"
+          },
+          {
+            "name": "reference_audios",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考音频数组。数量上限：3。"
+          }
+        ],
+        "rules": [
+          "单次创建一个视频任务；n 可省略或填写 1。",
+          "素材仅接受公网 HTTPS URL；不能使用本地路径、Base64 或本站 /v1/files 文件 ID。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 5,
+          "model": "mm4-minimax-h3-2k",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "2k"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_request",
+        "prices": {
+          "2k": 22.4
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "omni-fast",
+      "capability": {
+        "min_duration": 1,
+        "max_duration": 15,
+        "default_duration": 10,
+        "automatic_duration": false,
+        "max_count": 1,
+        "max_reference_images": 5,
+        "max_reference_videos": 0,
+        "max_reference_audios": 0,
+        "resolutions": [
+          "720p"
+        ],
+        "default_resolution": "720p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：16:9 / 9:16。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "reference_image_urls",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考图数组。数量上限：5。image_urls 为兼容别名，不能同时传入。"
+          },
+          {
+            "name": "first_image_url / last_image_url",
+            "type": "string",
+            "required": false,
+            "description": "公网 HTTPS 首帧 / 尾帧；尾帧必须搭配首帧。"
+          }
+        ],
+        "rules": [
+          "首尾帧必须成对提供。",
+          "首尾帧与参考素材数组互斥。",
+          "单次创建一个视频任务；n 可省略或填写 1。",
+          "素材仅接受公网 HTTPS URL；不能使用本地路径、Base64 或本站 /v1/files 文件 ID。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 10,
+          "model": "omni-fast",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "720p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_request",
+        "prices": {
+          "720p": 7.8
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "omni-fast-no-water",
+      "capability": {
+        "min_duration": 1,
+        "max_duration": 15,
+        "default_duration": 10,
+        "automatic_duration": false,
+        "max_count": 1,
+        "max_reference_images": 5,
+        "max_reference_videos": 0,
+        "max_reference_audios": 0,
+        "resolutions": [
+          "720p"
+        ],
+        "default_resolution": "720p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：16:9 / 9:16。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "reference_image_urls",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考图数组。数量上限：5。image_urls 为兼容别名，不能同时传入。"
+          },
+          {
+            "name": "first_image_url / last_image_url",
+            "type": "string",
+            "required": false,
+            "description": "公网 HTTPS 首帧 / 尾帧；尾帧必须搭配首帧。"
+          }
+        ],
+        "rules": [
+          "首尾帧必须成对提供。",
+          "首尾帧与参考素材数组互斥。",
+          "单次创建一个视频任务；n 可省略或填写 1。",
+          "素材仅接受公网 HTTPS URL；不能使用本地路径、Base64 或本站 /v1/files 文件 ID。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 10,
+          "model": "omni-fast-no-water",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "720p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_request",
+        "prices": {
+          "720p": 9.6
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "omni-v2v",
+      "capability": {
+        "min_duration": 1,
+        "max_duration": 15,
+        "default_duration": 10,
+        "automatic_duration": false,
+        "max_count": 1,
+        "max_reference_images": 5,
+        "max_reference_videos": 2,
+        "max_reference_audios": 0,
+        "resolutions": [
+          "720p"
+        ],
+        "default_resolution": "720p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：16:9 / 9:16。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "reference_image_urls",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考图数组。数量上限：5。image_urls 为兼容别名，不能同时传入。"
+          },
+          {
+            "name": "reference_videos",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考视频数组。数量上限：2。"
+          }
+        ],
+        "rules": [
+          "须提供参考图片或视频；编辑请求请同时提供参考图。",
+          "单次创建一个视频任务；n 可省略或填写 1。",
+          "素材仅接受公网 HTTPS URL；不能使用本地路径、Base64 或本站 /v1/files 文件 ID。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 10,
+          "model": "omni-v2v",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "reference_image_urls": [
+            "https://example.com/reference.png"
+          ],
+          "resolution": "720p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_request",
+        "prices": {
+          "720p": 10.4
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "omni-v2v-no-water",
+      "capability": {
+        "min_duration": 1,
+        "max_duration": 15,
+        "default_duration": 10,
+        "automatic_duration": false,
+        "max_count": 1,
+        "max_reference_images": 5,
+        "max_reference_videos": 2,
+        "max_reference_audios": 0,
+        "resolutions": [
+          "720p"
+        ],
+        "default_resolution": "720p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：16:9 / 9:16。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "reference_image_urls",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考图数组。数量上限：5。image_urls 为兼容别名，不能同时传入。"
+          },
+          {
+            "name": "reference_videos",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考视频数组。数量上限：2。"
+          }
+        ],
+        "rules": [
+          "须提供参考图片或视频；编辑请求请同时提供参考图。",
+          "单次创建一个视频任务；n 可省略或填写 1。",
+          "素材仅接受公网 HTTPS URL；不能使用本地路径、Base64 或本站 /v1/files 文件 ID。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 10,
+          "model": "omni-v2v-no-water",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "reference_image_urls": [
+            "https://example.com/reference.png"
+          ],
+          "resolution": "720p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_request",
+        "prices": {
+          "720p": 11.8
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "sd13-seedance-2.0",
+      "capability": {
+        "min_duration": 4,
+        "max_duration": 15,
+        "default_duration": 8,
+        "automatic_duration": false,
+        "max_count": 1,
+        "max_reference_images": 9,
+        "max_reference_videos": 3,
+        "max_reference_audios": 0,
+        "resolutions": [
+          "480p",
+          "720p",
+          "1080p",
+          "4k"
+        ],
+        "default_resolution": "480p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：auto / 21:9 / 16:9 / 4:3 / 1:1 / 3:4 / 9:16。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "reference_image_urls",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考图数组。数量上限：9。image_urls 为兼容别名，不能同时传入。"
+          },
+          {
+            "name": "reference_videos",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考视频数组。数量上限：3。"
+          },
+          {
+            "name": "generate_audio",
+            "type": "boolean",
+            "required": false,
+            "description": "是否生成声音。"
+          }
+        ],
+        "rules": [
+          "单次创建一个视频任务；n 可省略或填写 1。",
+          "素材仅接受公网 HTTPS URL；不能使用本地路径、Base64 或本站 /v1/files 文件 ID。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 8,
+          "model": "sd13-seedance-2.0",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "480p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_request",
+        "prices": {
+          "1080p": 187.8,
+          "480p": 83.7,
+          "4k": 187.8,
+          "720p": 83.7
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "sd13-seedance-2.0-fast",
+      "capability": {
+        "min_duration": 4,
+        "max_duration": 15,
+        "default_duration": 8,
+        "automatic_duration": false,
+        "max_count": 1,
+        "max_reference_images": 9,
+        "max_reference_videos": 3,
+        "max_reference_audios": 0,
+        "resolutions": [
+          "480p",
+          "720p"
+        ],
+        "default_resolution": "480p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：auto / 21:9 / 16:9 / 4:3 / 1:1 / 3:4 / 9:16。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "reference_image_urls",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考图数组。数量上限：9。image_urls 为兼容别名，不能同时传入。"
+          },
+          {
+            "name": "reference_videos",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考视频数组。数量上限：3。"
+          },
+          {
+            "name": "generate_audio",
+            "type": "boolean",
+            "required": false,
+            "description": "是否生成声音。"
+          }
+        ],
+        "rules": [
+          "单次创建一个视频任务；n 可省略或填写 1。",
+          "素材仅接受公网 HTTPS URL；不能使用本地路径、Base64 或本站 /v1/files 文件 ID。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 8,
+          "model": "sd13-seedance-2.0-fast",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "480p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_request",
+        "prices": {
+          "480p": 66.8,
+          "720p": 66.8
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "sd13-seedance-2.0-mini",
+      "capability": {
+        "min_duration": 4,
+        "max_duration": 15,
+        "default_duration": 8,
+        "automatic_duration": false,
+        "max_count": 1,
+        "max_reference_images": 9,
+        "max_reference_videos": 3,
+        "max_reference_audios": 0,
+        "resolutions": [
+          "480p",
+          "720p"
+        ],
+        "default_resolution": "480p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：auto / 21:9 / 16:9 / 4:3 / 1:1 / 3:4 / 9:16。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "reference_image_urls",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考图数组。数量上限：9。image_urls 为兼容别名，不能同时传入。"
+          },
+          {
+            "name": "reference_videos",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考视频数组。数量上限：3。"
+          },
+          {
+            "name": "generate_audio",
+            "type": "boolean",
+            "required": false,
+            "description": "是否生成声音。"
+          }
+        ],
+        "rules": [
+          "单次创建一个视频任务；n 可省略或填写 1。",
+          "素材仅接受公网 HTTPS URL；不能使用本地路径、Base64 或本站 /v1/files 文件 ID。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 8,
+          "model": "sd13-seedance-2.0-mini",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "480p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_request",
+        "prices": {
+          "480p": 20,
+          "720p": 42.8
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "sd13-seedance-2.5",
+      "capability": {
+        "min_duration": 4,
+        "max_duration": 30,
+        "default_duration": 5,
+        "automatic_duration": false,
+        "max_count": 1,
+        "max_reference_images": 30,
+        "max_reference_videos": 10,
+        "max_reference_audios": 0,
+        "resolutions": [
+          "480p",
+          "720p"
+        ],
+        "default_resolution": "480p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：auto / 21:9 / 16:9 / 4:3 / 1:1 / 3:4 / 9:16。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "reference_image_urls",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考图数组。数量上限：30。image_urls 为兼容别名，不能同时传入。"
+          },
+          {
+            "name": "reference_videos",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考视频数组。数量上限：10。"
+          },
+          {
+            "name": "generate_audio",
+            "type": "boolean",
+            "required": false,
+            "description": "是否生成声音。"
+          }
+        ],
+        "rules": [
+          "单次创建一个视频任务；n 可省略或填写 1。",
+          "素材仅接受公网 HTTPS URL；不能使用本地路径、Base64 或本站 /v1/files 文件 ID。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 5,
+          "model": "sd13-seedance-2.5",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "480p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_request",
+        "prices": {
+          "480p": 121.5,
+          "720p": 260.5
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "sd15-seedance-2.5-2",
+      "capability": {
+        "min_duration": 4,
+        "max_duration": 30,
+        "default_duration": 5,
+        "automatic_duration": false,
+        "max_count": 1,
+        "max_reference_images": 30,
+        "max_reference_videos": 10,
+        "max_reference_audios": 10,
+        "resolutions": [
+          "720p"
+        ],
+        "default_resolution": "720p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：16:9 / 9:16 / 1:1。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "reference_image_urls",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考图数组。数量上限：30。image_urls 为兼容别名，不能同时传入。"
+          },
+          {
+            "name": "reference_videos",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考视频数组。数量上限：10。"
+          },
+          {
+            "name": "reference_audios",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考音频数组。数量上限：10。"
+          }
+        ],
+        "rules": [
+          "单次创建一个视频任务；n 可省略或填写 1。",
+          "素材仅接受公网 HTTPS URL；不能使用本地路径、Base64 或本站 /v1/files 文件 ID。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 5,
+          "model": "sd15-seedance-2.5-2",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "720p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_request",
+        "prices": {
+          "720p": 77.648
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "sd16-seedance-2.0",
+      "capability": {
+        "min_duration": 4,
+        "max_duration": 15,
+        "default_duration": 5,
+        "automatic_duration": false,
+        "max_count": 1,
+        "max_reference_images": 9,
+        "max_reference_videos": 3,
+        "max_reference_audios": 3,
+        "resolutions": [
+          "480p",
+          "720p",
+          "1080p",
+          "4k"
+        ],
+        "default_resolution": "480p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：16:9 / 9:16 / 1:1 / 4:3 / 3:4 / 21:9。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "reference_image_urls",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考图数组。数量上限：9。image_urls 为兼容别名，不能同时传入。"
+          },
+          {
+            "name": "reference_videos",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考视频数组。数量上限：3。"
+          },
+          {
+            "name": "reference_audios",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考音频数组。数量上限：3。"
+          },
+          {
+            "name": "first_image_url / last_image_url",
+            "type": "string",
+            "required": false,
+            "description": "公网 HTTPS 首帧 / 尾帧；尾帧必须搭配首帧。"
+          },
+          {
+            "name": "generate_audio",
+            "type": "boolean",
+            "required": false,
+            "description": "是否生成声音。"
+          }
+        ],
+        "rules": [
+          "首尾帧必须成对提供。",
+          "单次创建一个视频任务；n 可省略或填写 1。",
+          "素材仅接受公网 HTTPS URL；不能使用本地路径、Base64 或本站 /v1/files 文件 ID。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 5,
+          "model": "sd16-seedance-2.0",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "480p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_request",
+        "prices": {
+          "1080p": 123.6,
+          "480p": 56.5,
+          "4k": 341.2,
+          "720p": 78.9
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "sd16-seedance-2.0-fast",
+      "capability": {
+        "min_duration": 4,
+        "max_duration": 15,
+        "default_duration": 5,
+        "automatic_duration": false,
+        "max_count": 1,
+        "max_reference_images": 9,
+        "max_reference_videos": 3,
+        "max_reference_audios": 3,
+        "resolutions": [
+          "480p",
+          "720p"
+        ],
+        "default_resolution": "480p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：16:9 / 9:16 / 1:1 / 4:3 / 3:4 / 21:9。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "reference_image_urls",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考图数组。数量上限：9。image_urls 为兼容别名，不能同时传入。"
+          },
+          {
+            "name": "reference_videos",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考视频数组。数量上限：3。"
+          },
+          {
+            "name": "reference_audios",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考音频数组。数量上限：3。"
+          },
+          {
+            "name": "first_image_url / last_image_url",
+            "type": "string",
+            "required": false,
+            "description": "公网 HTTPS 首帧 / 尾帧；尾帧必须搭配首帧。"
+          },
+          {
+            "name": "generate_audio",
+            "type": "boolean",
+            "required": false,
+            "description": "是否生成声音。"
+          }
+        ],
+        "rules": [
+          "首尾帧必须成对提供。",
+          "单次创建一个视频任务；n 可省略或填写 1。",
+          "素材仅接受公网 HTTPS URL；不能使用本地路径、Base64 或本站 /v1/files 文件 ID。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 5,
+          "model": "sd16-seedance-2.0-fast",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "480p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_request",
+        "prices": {
+          "480p": 45.9,
+          "720p": 63.6
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "sd16-seedance-2.0-mini",
+      "capability": {
+        "min_duration": 4,
+        "max_duration": 15,
+        "default_duration": 5,
+        "automatic_duration": false,
+        "max_count": 1,
+        "max_reference_images": 9,
+        "max_reference_videos": 3,
+        "max_reference_audios": 3,
+        "resolutions": [
+          "480p",
+          "720p"
+        ],
+        "default_resolution": "480p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：16:9 / 9:16 / 1:1 / 4:3 / 3:4 / 21:9。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "reference_image_urls",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考图数组。数量上限：9。image_urls 为兼容别名，不能同时传入。"
+          },
+          {
+            "name": "reference_videos",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考视频数组。数量上限：3。"
+          },
+          {
+            "name": "reference_audios",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考音频数组。数量上限：3。"
+          },
+          {
+            "name": "first_image_url / last_image_url",
+            "type": "string",
+            "required": false,
+            "description": "公网 HTTPS 首帧 / 尾帧；尾帧必须搭配首帧。"
+          },
+          {
+            "name": "generate_audio",
+            "type": "boolean",
+            "required": false,
+            "description": "是否生成声音。"
+          }
+        ],
+        "rules": [
+          "首尾帧必须成对提供。",
+          "单次创建一个视频任务；n 可省略或填写 1。",
+          "素材仅接受公网 HTTPS URL；不能使用本地路径、Base64 或本站 /v1/files 文件 ID。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 5,
+          "model": "sd16-seedance-2.0-mini",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "480p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_request",
+        "prices": {
+          "480p": 34.2,
+          "720p": 49.5
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "sd17-seedance-2.0",
+      "capability": {
+        "min_duration": 5,
+        "max_duration": 15,
+        "default_duration": 5,
+        "automatic_duration": false,
+        "max_count": 1,
+        "max_reference_images": 9,
+        "max_reference_videos": 0,
+        "max_reference_audios": 3,
+        "resolutions": [
+          "720p"
+        ],
+        "default_resolution": "720p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：16:9 / 9:16 / 1:1 / 4:3 / 3:4 / 21:9。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "reference_image_urls",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考图数组。数量上限：9。image_urls 为兼容别名，不能同时传入。"
+          },
+          {
+            "name": "reference_audios",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考音频数组。数量上限：3。"
+          }
+        ],
+        "rules": [
+          "单次创建一个视频任务；n 可省略或填写 1。",
+          "素材仅接受公网 HTTPS URL；不能使用本地路径、Base64 或本站 /v1/files 文件 ID。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 5,
+          "model": "sd17-seedance-2.0",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "720p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_request",
+        "prices": {
+          "720p": 44.2
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "sd17-seedance-2.0-2",
+      "capability": {
+        "min_duration": 5,
+        "max_duration": 15,
+        "default_duration": 5,
+        "automatic_duration": false,
+        "max_count": 1,
+        "max_reference_images": 9,
+        "max_reference_videos": 0,
+        "max_reference_audios": 3,
+        "resolutions": [
+          "720p"
+        ],
+        "default_resolution": "720p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：16:9 / 9:16 / 1:1 / 4:3 / 3:4 / 21:9。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "reference_image_urls",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考图数组。数量上限：9。image_urls 为兼容别名，不能同时传入。"
+          },
+          {
+            "name": "reference_audios",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考音频数组。数量上限：3。"
+          }
+        ],
+        "rules": [
+          "单次创建一个视频任务；n 可省略或填写 1。",
+          "素材仅接受公网 HTTPS URL；不能使用本地路径、Base64 或本站 /v1/files 文件 ID。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 5,
+          "model": "sd17-seedance-2.0-2",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "720p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_request",
+        "prices": {
+          "720p": 53
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "sd17-seedance-2.0-3",
+      "capability": {
+        "min_duration": 5,
+        "max_duration": 15,
+        "default_duration": 5,
+        "durations": [
+          5,
+          10,
+          15
+        ],
+        "automatic_duration": false,
+        "max_count": 1,
+        "max_reference_images": 9,
+        "max_reference_videos": 0,
+        "max_reference_audios": 0,
+        "resolutions": [
+          "720p"
+        ],
+        "default_resolution": "720p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：16:9 / 9:16 / 1:1 / 4:3 / 3:4 / 21:9。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "reference_image_urls",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考图数组。数量上限：9。image_urls 为兼容别名，不能同时传入。"
+          }
+        ],
+        "rules": [
+          "单次创建一个视频任务；n 可省略或填写 1。",
+          "素材仅接受公网 HTTPS URL；不能使用本地路径、Base64 或本站 /v1/files 文件 ID。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 5,
+          "model": "sd17-seedance-2.0-3",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "720p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_request",
+        "prices": {
+          "720p": 34.2
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "sd17-seedance-2.0-4",
+      "capability": {
+        "min_duration": 5,
+        "max_duration": 15,
+        "default_duration": 5,
+        "automatic_duration": false,
+        "max_count": 1,
+        "max_reference_images": 9,
+        "max_reference_videos": 3,
+        "max_reference_audios": 3,
+        "resolutions": [
+          "480p",
+          "720p"
+        ],
+        "default_resolution": "480p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：16:9 / 9:16 / 1:1 / 4:3 / 21:9。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "reference_image_urls",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考图数组。数量上限：9。image_urls 为兼容别名，不能同时传入。"
+          },
+          {
+            "name": "reference_videos",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考视频数组。数量上限：3。"
+          },
+          {
+            "name": "reference_audios",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考音频数组。数量上限：3。"
+          }
+        ],
+        "rules": [
+          "单次创建一个视频任务；n 可省略或填写 1。",
+          "素材仅接受公网 HTTPS URL；不能使用本地路径、Base64 或本站 /v1/files 文件 ID。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 5,
+          "model": "sd17-seedance-2.0-4",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "480p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_second",
+        "prices": {
+          "480p": 4.471,
+          "720p": 5.412
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "sd17-seedance-2.5-2",
+      "capability": {
+        "min_duration": 10,
+        "max_duration": 30,
+        "default_duration": 10,
+        "automatic_duration": false,
+        "max_count": 1,
+        "max_reference_images": 30,
+        "max_reference_videos": 10,
+        "max_reference_audios": 10,
+        "resolutions": [
+          "720p"
+        ],
+        "default_resolution": "720p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：16:9 / 9:16 / 1:1 / 4:3 / 3:4 / 21:9。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "reference_image_urls",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考图数组。数量上限：30。image_urls 为兼容别名，不能同时传入。"
+          },
+          {
+            "name": "reference_videos",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考视频数组。数量上限：10。"
+          },
+          {
+            "name": "reference_audios",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考音频数组。数量上限：10。"
+          }
+        ],
+        "rules": [
+          "单次创建一个视频任务；n 可省略或填写 1。",
+          "素材仅接受公网 HTTPS URL；不能使用本地路径、Base64 或本站 /v1/files 文件 ID。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 10,
+          "model": "sd17-seedance-2.5-2",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "720p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_request",
+        "prices": {
+          "720p": 88.3
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "sd17-seedance-2.5-4",
+      "capability": {
+        "min_duration": 5,
+        "max_duration": 30,
+        "default_duration": 5,
+        "automatic_duration": false,
+        "max_count": 1,
+        "max_reference_images": 30,
+        "max_reference_videos": 10,
+        "max_reference_audios": 10,
+        "resolutions": [
+          "480p",
+          "720p",
+          "1080p"
+        ],
+        "default_resolution": "480p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：16:9 / 9:16 / 1:1 / 4:3 / 21:9。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "reference_image_urls",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考图数组。数量上限：30。image_urls 为兼容别名，不能同时传入。"
+          },
+          {
+            "name": "reference_videos",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考视频数组。数量上限：10。"
+          },
+          {
+            "name": "reference_audios",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考音频数组。数量上限：10。"
+          }
+        ],
+        "rules": [
+          "单次创建一个视频任务；n 可省略或填写 1。",
+          "素材仅接受公网 HTTPS URL；不能使用本地路径、Base64 或本站 /v1/files 文件 ID。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 5,
+          "model": "sd17-seedance-2.5-4",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "480p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_second",
+        "prices": {
+          "1080p": 23.532,
+          "480p": 5.883,
+          "720p": 8.236
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "sd8-seedance-2.5-n",
+      "capability": {
+        "min_duration": 30,
+        "max_duration": 30,
+        "default_duration": 30,
+        "automatic_duration": false,
+        "max_count": 1,
+        "max_reference_images": 30,
+        "max_reference_videos": 10,
+        "max_reference_audios": 10,
+        "resolutions": [
+          "720p"
+        ],
+        "default_resolution": "720p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：16:9 / 9:16 / 1:1 / 4:3 / 3:4 / 21:9。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "reference_image_urls",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考图数组。数量上限：30。image_urls 为兼容别名，不能同时传入。"
+          },
+          {
+            "name": "reference_videos",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考视频数组。数量上限：10。"
+          },
+          {
+            "name": "reference_audios",
+            "type": "string[]",
+            "required": false,
+            "description": "公网 HTTPS 参考音频数组。数量上限：10。"
+          }
+        ],
+        "rules": [
+          "单次创建一个视频任务；n 可省略或填写 1。",
+          "素材仅接受公网 HTTPS URL；不能使用本地路径、Base64 或本站 /v1/files 文件 ID。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 30,
+          "model": "sd8-seedance-2.5-n",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "720p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_request",
+        "prices": {
+          "720p": 94.118
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "wan3.0-image-1080p",
+      "capability": {
+        "min_duration": 4,
+        "max_duration": 30,
+        "default_duration": 8,
+        "automatic_duration": true,
+        "automatic_billing_seconds": 8,
+        "max_count": 1000,
+        "max_reference_images": 10,
+        "max_reference_videos": 0,
+        "resolutions": [
+          "1080p"
+        ],
+        "default_resolution": "1080p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": false,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：16:9 / 9:16 / 1:1 / adaptive。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "n / count",
+            "type": "integer",
+            "required": false,
+            "description": "生成数量，默认 1；本站单次上限 1000。同时传入时必须相同，费用乘以数量。"
+          },
+          {
+            "name": "seconds / duration_seconds",
+            "type": "integer",
+            "required": false,
+            "description": "duration 的别名；同时传入时必须相同。-1 表示自动时长。"
+          },
+          {
+            "name": "image_url / image_urls / images",
+            "type": "string | string[]",
+            "required": false,
+            "description": "公网 HTTP(S) 参考图片；所有图片字段合计最多 10 张。"
+          },
+          {
+            "name": "audio_url / audio_urls / audio_reference / audio_references",
+            "type": "string | string[] | object[]",
+            "required": false,
+            "description": "公网 HTTP(S) 音频链接，或 {url} 对象数组。"
+          },
+          {
+            "name": "generate_audio / generateAudio",
+            "type": "boolean",
+            "required": false,
+            "description": "音频生成偏好；省略时使用模型默认行为。"
+          }
+        ],
+        "rules": [
+          "此型号不接受参考视频。",
+          "duration=-1 时自动决定成片时长，按 8 秒计费，不按成片实际时长重算。",
+          "图片宽高应在 300–6000 像素；禁止 Base64、data URL 和本地路径。",
+          "不要混用同类素材别名；所有别名均累计计数。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 8,
+          "model": "wan3.0-image-1080p",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "1080p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_second",
+        "prices": {
+          "1080p": 4.471
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "wan3.0-image-480p",
+      "capability": {
+        "min_duration": 4,
+        "max_duration": 30,
+        "default_duration": 8,
+        "automatic_duration": true,
+        "automatic_billing_seconds": 8,
+        "max_count": 1000,
+        "max_reference_images": 10,
+        "max_reference_videos": 0,
+        "resolutions": [
+          "480p"
+        ],
+        "default_resolution": "480p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": false,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：16:9 / 9:16 / 1:1 / adaptive。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "n / count",
+            "type": "integer",
+            "required": false,
+            "description": "生成数量，默认 1；本站单次上限 1000。同时传入时必须相同，费用乘以数量。"
+          },
+          {
+            "name": "seconds / duration_seconds",
+            "type": "integer",
+            "required": false,
+            "description": "duration 的别名；同时传入时必须相同。-1 表示自动时长。"
+          },
+          {
+            "name": "image_url / image_urls / images",
+            "type": "string | string[]",
+            "required": false,
+            "description": "公网 HTTP(S) 参考图片；所有图片字段合计最多 10 张。"
+          },
+          {
+            "name": "audio_url / audio_urls / audio_reference / audio_references",
+            "type": "string | string[] | object[]",
+            "required": false,
+            "description": "公网 HTTP(S) 音频链接，或 {url} 对象数组。"
+          },
+          {
+            "name": "generate_audio / generateAudio",
+            "type": "boolean",
+            "required": false,
+            "description": "音频生成偏好；省略时使用模型默认行为。"
+          }
+        ],
+        "rules": [
+          "此型号不接受参考视频。",
+          "duration=-1 时自动决定成片时长，按 8 秒计费，不按成片实际时长重算。",
+          "图片宽高应在 300–6000 像素；禁止 Base64、data URL 和本地路径。",
+          "不要混用同类素材别名；所有别名均累计计数。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 8,
+          "model": "wan3.0-image-480p",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "480p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_second",
+        "prices": {
+          "480p": 3.53
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "wan3.0-image-720p",
+      "capability": {
+        "min_duration": 4,
+        "max_duration": 30,
+        "default_duration": 8,
+        "automatic_duration": true,
+        "automatic_billing_seconds": 8,
+        "max_count": 1000,
+        "max_reference_images": 10,
+        "max_reference_videos": 0,
+        "resolutions": [
+          "720p"
+        ],
+        "default_resolution": "720p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": false,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：16:9 / 9:16 / 1:1 / adaptive。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "n / count",
+            "type": "integer",
+            "required": false,
+            "description": "生成数量，默认 1；本站单次上限 1000。同时传入时必须相同，费用乘以数量。"
+          },
+          {
+            "name": "seconds / duration_seconds",
+            "type": "integer",
+            "required": false,
+            "description": "duration 的别名；同时传入时必须相同。-1 表示自动时长。"
+          },
+          {
+            "name": "image_url / image_urls / images",
+            "type": "string | string[]",
+            "required": false,
+            "description": "公网 HTTP(S) 参考图片；所有图片字段合计最多 10 张。"
+          },
+          {
+            "name": "audio_url / audio_urls / audio_reference / audio_references",
+            "type": "string | string[] | object[]",
+            "required": false,
+            "description": "公网 HTTP(S) 音频链接，或 {url} 对象数组。"
+          },
+          {
+            "name": "generate_audio / generateAudio",
+            "type": "boolean",
+            "required": false,
+            "description": "音频生成偏好；省略时使用模型默认行为。"
+          }
+        ],
+        "rules": [
+          "此型号不接受参考视频。",
+          "duration=-1 时自动决定成片时长，按 8 秒计费，不按成片实际时长重算。",
+          "图片宽高应在 300–6000 像素；禁止 Base64、data URL 和本地路径。",
+          "不要混用同类素材别名；所有别名均累计计数。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 8,
+          "model": "wan3.0-image-720p",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "720p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_second",
+        "prices": {
+          "720p": 4.236
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "wan3.0-image-prime-1080p",
+      "capability": {
+        "min_duration": 4,
+        "max_duration": 30,
+        "default_duration": 8,
+        "automatic_duration": true,
+        "automatic_billing_seconds": 8,
+        "max_count": 1000,
+        "max_reference_images": 10,
+        "max_reference_videos": 0,
+        "resolutions": [
+          "1080p"
+        ],
+        "default_resolution": "1080p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": false,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：16:9 / 9:16 / 1:1 / adaptive。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "n / count",
+            "type": "integer",
+            "required": false,
+            "description": "生成数量，默认 1；本站单次上限 1000。同时传入时必须相同，费用乘以数量。"
+          },
+          {
+            "name": "seconds / duration_seconds",
+            "type": "integer",
+            "required": false,
+            "description": "duration 的别名；同时传入时必须相同。-1 表示自动时长。"
+          },
+          {
+            "name": "image_url / image_urls / images",
+            "type": "string | string[]",
+            "required": false,
+            "description": "公网 HTTP(S) 参考图片；所有图片字段合计最多 10 张。"
+          },
+          {
+            "name": "audio_url / audio_urls / audio_reference / audio_references",
+            "type": "string | string[] | object[]",
+            "required": false,
+            "description": "公网 HTTP(S) 音频链接，或 {url} 对象数组。"
+          },
+          {
+            "name": "generate_audio / generateAudio",
+            "type": "boolean",
+            "required": false,
+            "description": "音频生成偏好；省略时使用模型默认行为。"
+          }
+        ],
+        "rules": [
+          "此型号不接受参考视频。",
+          "duration=-1 时自动决定成片时长，按 8 秒计费，不按成片实际时长重算。",
+          "图片宽高应在 300–6000 像素；禁止 Base64、data URL 和本地路径。",
+          "不要混用同类素材别名；所有别名均累计计数。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 8,
+          "model": "wan3.0-image-prime-1080p",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "1080p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_second",
+        "prices": {
+          "1080p": 5.295
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "wan3.0-image-prime-480p",
+      "capability": {
+        "min_duration": 4,
+        "max_duration": 30,
+        "default_duration": 8,
+        "automatic_duration": true,
+        "automatic_billing_seconds": 8,
+        "max_count": 1000,
+        "max_reference_images": 10,
+        "max_reference_videos": 0,
+        "resolutions": [
+          "480p"
+        ],
+        "default_resolution": "480p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": false,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：16:9 / 9:16 / 1:1 / adaptive。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "n / count",
+            "type": "integer",
+            "required": false,
+            "description": "生成数量，默认 1；本站单次上限 1000。同时传入时必须相同，费用乘以数量。"
+          },
+          {
+            "name": "seconds / duration_seconds",
+            "type": "integer",
+            "required": false,
+            "description": "duration 的别名；同时传入时必须相同。-1 表示自动时长。"
+          },
+          {
+            "name": "image_url / image_urls / images",
+            "type": "string | string[]",
+            "required": false,
+            "description": "公网 HTTP(S) 参考图片；所有图片字段合计最多 10 张。"
+          },
+          {
+            "name": "audio_url / audio_urls / audio_reference / audio_references",
+            "type": "string | string[] | object[]",
+            "required": false,
+            "description": "公网 HTTP(S) 音频链接，或 {url} 对象数组。"
+          },
+          {
+            "name": "generate_audio / generateAudio",
+            "type": "boolean",
+            "required": false,
+            "description": "音频生成偏好；省略时使用模型默认行为。"
+          }
+        ],
+        "rules": [
+          "此型号不接受参考视频。",
+          "duration=-1 时自动决定成片时长，按 8 秒计费，不按成片实际时长重算。",
+          "图片宽高应在 300–6000 像素；禁止 Base64、data URL 和本地路径。",
+          "不要混用同类素材别名；所有别名均累计计数。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 8,
+          "model": "wan3.0-image-prime-480p",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "480p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_second",
+        "prices": {
+          "480p": 4.118
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "wan3.0-image-prime-720p",
+      "capability": {
+        "min_duration": 4,
+        "max_duration": 30,
+        "default_duration": 8,
+        "automatic_duration": true,
+        "automatic_billing_seconds": 8,
+        "max_count": 1000,
+        "max_reference_images": 10,
+        "max_reference_videos": 0,
+        "resolutions": [
+          "720p"
+        ],
+        "default_resolution": "720p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": false,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：16:9 / 9:16 / 1:1 / adaptive。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "n / count",
+            "type": "integer",
+            "required": false,
+            "description": "生成数量，默认 1；本站单次上限 1000。同时传入时必须相同，费用乘以数量。"
+          },
+          {
+            "name": "seconds / duration_seconds",
+            "type": "integer",
+            "required": false,
+            "description": "duration 的别名；同时传入时必须相同。-1 表示自动时长。"
+          },
+          {
+            "name": "image_url / image_urls / images",
+            "type": "string | string[]",
+            "required": false,
+            "description": "公网 HTTP(S) 参考图片；所有图片字段合计最多 10 张。"
+          },
+          {
+            "name": "audio_url / audio_urls / audio_reference / audio_references",
+            "type": "string | string[] | object[]",
+            "required": false,
+            "description": "公网 HTTP(S) 音频链接，或 {url} 对象数组。"
+          },
+          {
+            "name": "generate_audio / generateAudio",
+            "type": "boolean",
+            "required": false,
+            "description": "音频生成偏好；省略时使用模型默认行为。"
+          }
+        ],
+        "rules": [
+          "此型号不接受参考视频。",
+          "duration=-1 时自动决定成片时长，按 8 秒计费，不按成片实际时长重算。",
+          "图片宽高应在 300–6000 像素；禁止 Base64、data URL 和本地路径。",
+          "不要混用同类素材别名；所有别名均累计计数。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 8,
+          "model": "wan3.0-image-prime-720p",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "720p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_second",
+        "prices": {
+          "720p": 4.706
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "wan3.0-video-1080p",
+      "capability": {
+        "min_duration": 4,
+        "max_duration": 30,
+        "default_duration": 8,
+        "automatic_duration": true,
+        "automatic_billing_seconds": 8,
+        "max_count": 1000,
+        "max_reference_images": 10,
+        "resolutions": [
+          "1080p"
+        ],
+        "default_resolution": "1080p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": false,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：16:9 / 9:16 / 1:1 / adaptive。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "n / count",
+            "type": "integer",
+            "required": false,
+            "description": "生成数量，默认 1；本站单次上限 1000。同时传入时必须相同，费用乘以数量。"
+          },
+          {
+            "name": "seconds / duration_seconds",
+            "type": "integer",
+            "required": false,
+            "description": "duration 的别名；同时传入时必须相同。-1 表示自动时长。"
+          },
+          {
+            "name": "image_url / image_urls / images",
+            "type": "string | string[]",
+            "required": false,
+            "description": "公网 HTTP(S) 参考图片；所有图片字段合计最多 10 张。"
+          },
+          {
+            "name": "video_reference / video_references / video_url / video_urls",
+            "type": "object[]",
+            "required": false,
+            "description": "每项为 {url, duration}，duration 可用 seconds；公开 HTTP(S) URL，正整数秒。同 URL 时长必须一致。"
+          },
+          {
+            "name": "audio_url / audio_urls / audio_reference / audio_references",
+            "type": "string | string[] | object[]",
+            "required": false,
+            "description": "公网 HTTP(S) 音频链接，或 {url} 对象数组。"
+          },
+          {
+            "name": "generate_audio / generateAudio",
+            "type": "boolean",
+            "required": false,
+            "description": "音频生成偏好；省略时使用模型默认行为。"
+          }
+        ],
+        "rules": [
+          "计费秒数 = 输出计费秒数 + 去重后的参考视频秒数，再乘生成数量。",
+          "duration=-1 时自动决定成片时长，按 8 秒计费，不按成片实际时长重算。",
+          "图片宽高应在 300–6000 像素；禁止 Base64、data URL 和本地路径。",
+          "不要混用同类素材别名；所有别名均累计计数。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 8,
+          "model": "wan3.0-video-1080p",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "1080p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_second",
+        "prices": {
+          "1080p": 4.706
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "wan3.0-video-480p",
+      "capability": {
+        "min_duration": 4,
+        "max_duration": 30,
+        "default_duration": 8,
+        "automatic_duration": true,
+        "automatic_billing_seconds": 8,
+        "max_count": 1000,
+        "max_reference_images": 10,
+        "resolutions": [
+          "480p"
+        ],
+        "default_resolution": "480p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": false,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：16:9 / 9:16 / 1:1 / adaptive。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "n / count",
+            "type": "integer",
+            "required": false,
+            "description": "生成数量，默认 1；本站单次上限 1000。同时传入时必须相同，费用乘以数量。"
+          },
+          {
+            "name": "seconds / duration_seconds",
+            "type": "integer",
+            "required": false,
+            "description": "duration 的别名；同时传入时必须相同。-1 表示自动时长。"
+          },
+          {
+            "name": "image_url / image_urls / images",
+            "type": "string | string[]",
+            "required": false,
+            "description": "公网 HTTP(S) 参考图片；所有图片字段合计最多 10 张。"
+          },
+          {
+            "name": "video_reference / video_references / video_url / video_urls",
+            "type": "object[]",
+            "required": false,
+            "description": "每项为 {url, duration}，duration 可用 seconds；公开 HTTP(S) URL，正整数秒。同 URL 时长必须一致。"
+          },
+          {
+            "name": "audio_url / audio_urls / audio_reference / audio_references",
+            "type": "string | string[] | object[]",
+            "required": false,
+            "description": "公网 HTTP(S) 音频链接，或 {url} 对象数组。"
+          },
+          {
+            "name": "generate_audio / generateAudio",
+            "type": "boolean",
+            "required": false,
+            "description": "音频生成偏好；省略时使用模型默认行为。"
+          }
+        ],
+        "rules": [
+          "计费秒数 = 输出计费秒数 + 去重后的参考视频秒数，再乘生成数量。",
+          "duration=-1 时自动决定成片时长，按 8 秒计费，不按成片实际时长重算。",
+          "图片宽高应在 300–6000 像素；禁止 Base64、data URL 和本地路径。",
+          "不要混用同类素材别名；所有别名均累计计数。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 8,
+          "model": "wan3.0-video-480p",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "480p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_second",
+        "prices": {
+          "480p": 3.53
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "wan3.0-video-720p",
+      "capability": {
+        "min_duration": 4,
+        "max_duration": 30,
+        "default_duration": 8,
+        "automatic_duration": true,
+        "automatic_billing_seconds": 8,
+        "max_count": 1000,
+        "max_reference_images": 10,
+        "resolutions": [
+          "720p"
+        ],
+        "default_resolution": "720p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": false,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：16:9 / 9:16 / 1:1 / adaptive。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "n / count",
+            "type": "integer",
+            "required": false,
+            "description": "生成数量，默认 1；本站单次上限 1000。同时传入时必须相同，费用乘以数量。"
+          },
+          {
+            "name": "seconds / duration_seconds",
+            "type": "integer",
+            "required": false,
+            "description": "duration 的别名；同时传入时必须相同。-1 表示自动时长。"
+          },
+          {
+            "name": "image_url / image_urls / images",
+            "type": "string | string[]",
+            "required": false,
+            "description": "公网 HTTP(S) 参考图片；所有图片字段合计最多 10 张。"
+          },
+          {
+            "name": "video_reference / video_references / video_url / video_urls",
+            "type": "object[]",
+            "required": false,
+            "description": "每项为 {url, duration}，duration 可用 seconds；公开 HTTP(S) URL，正整数秒。同 URL 时长必须一致。"
+          },
+          {
+            "name": "audio_url / audio_urls / audio_reference / audio_references",
+            "type": "string | string[] | object[]",
+            "required": false,
+            "description": "公网 HTTP(S) 音频链接，或 {url} 对象数组。"
+          },
+          {
+            "name": "generate_audio / generateAudio",
+            "type": "boolean",
+            "required": false,
+            "description": "音频生成偏好；省略时使用模型默认行为。"
+          }
+        ],
+        "rules": [
+          "计费秒数 = 输出计费秒数 + 去重后的参考视频秒数，再乘生成数量。",
+          "duration=-1 时自动决定成片时长，按 8 秒计费，不按成片实际时长重算。",
+          "图片宽高应在 300–6000 像素；禁止 Base64、data URL 和本地路径。",
+          "不要混用同类素材别名；所有别名均累计计数。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 8,
+          "model": "wan3.0-video-720p",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "720p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_second",
+        "prices": {
+          "720p": 4.471
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "wan3.0-video-prime-1080p",
+      "capability": {
+        "min_duration": 4,
+        "max_duration": 30,
+        "default_duration": 8,
+        "automatic_duration": true,
+        "automatic_billing_seconds": 8,
+        "max_count": 1000,
+        "max_reference_images": 10,
+        "resolutions": [
+          "1080p"
+        ],
+        "default_resolution": "1080p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": false,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：16:9 / 9:16 / 1:1 / adaptive。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "n / count",
+            "type": "integer",
+            "required": false,
+            "description": "生成数量，默认 1；本站单次上限 1000。同时传入时必须相同，费用乘以数量。"
+          },
+          {
+            "name": "seconds / duration_seconds",
+            "type": "integer",
+            "required": false,
+            "description": "duration 的别名；同时传入时必须相同。-1 表示自动时长。"
+          },
+          {
+            "name": "image_url / image_urls / images",
+            "type": "string | string[]",
+            "required": false,
+            "description": "公网 HTTP(S) 参考图片；所有图片字段合计最多 10 张。"
+          },
+          {
+            "name": "video_reference / video_references / video_url / video_urls",
+            "type": "object[]",
+            "required": false,
+            "description": "每项为 {url, duration}，duration 可用 seconds；公开 HTTP(S) URL，正整数秒。同 URL 时长必须一致。"
+          },
+          {
+            "name": "audio_url / audio_urls / audio_reference / audio_references",
+            "type": "string | string[] | object[]",
+            "required": false,
+            "description": "公网 HTTP(S) 音频链接，或 {url} 对象数组。"
+          },
+          {
+            "name": "generate_audio / generateAudio",
+            "type": "boolean",
+            "required": false,
+            "description": "音频生成偏好；省略时使用模型默认行为。"
+          }
+        ],
+        "rules": [
+          "计费秒数 = 输出计费秒数 + 去重后的参考视频秒数，再乘生成数量。",
+          "duration=-1 时自动决定成片时长，按 8 秒计费，不按成片实际时长重算。",
+          "图片宽高应在 300–6000 像素；禁止 Base64、data URL 和本地路径。",
+          "不要混用同类素材别名；所有别名均累计计数。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 8,
+          "model": "wan3.0-video-prime-1080p",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "1080p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_second",
+        "prices": {
+          "1080p": 5.295
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "wan3.0-video-prime-480p",
+      "capability": {
+        "min_duration": 4,
+        "max_duration": 30,
+        "default_duration": 8,
+        "automatic_duration": true,
+        "automatic_billing_seconds": 8,
+        "max_count": 1000,
+        "max_reference_images": 10,
+        "resolutions": [
+          "480p"
+        ],
+        "default_resolution": "480p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": false,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：16:9 / 9:16 / 1:1 / adaptive。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "n / count",
+            "type": "integer",
+            "required": false,
+            "description": "生成数量，默认 1；本站单次上限 1000。同时传入时必须相同，费用乘以数量。"
+          },
+          {
+            "name": "seconds / duration_seconds",
+            "type": "integer",
+            "required": false,
+            "description": "duration 的别名；同时传入时必须相同。-1 表示自动时长。"
+          },
+          {
+            "name": "image_url / image_urls / images",
+            "type": "string | string[]",
+            "required": false,
+            "description": "公网 HTTP(S) 参考图片；所有图片字段合计最多 10 张。"
+          },
+          {
+            "name": "video_reference / video_references / video_url / video_urls",
+            "type": "object[]",
+            "required": false,
+            "description": "每项为 {url, duration}，duration 可用 seconds；公开 HTTP(S) URL，正整数秒。同 URL 时长必须一致。"
+          },
+          {
+            "name": "audio_url / audio_urls / audio_reference / audio_references",
+            "type": "string | string[] | object[]",
+            "required": false,
+            "description": "公网 HTTP(S) 音频链接，或 {url} 对象数组。"
+          },
+          {
+            "name": "generate_audio / generateAudio",
+            "type": "boolean",
+            "required": false,
+            "description": "音频生成偏好；省略时使用模型默认行为。"
+          }
+        ],
+        "rules": [
+          "计费秒数 = 输出计费秒数 + 去重后的参考视频秒数，再乘生成数量。",
+          "duration=-1 时自动决定成片时长，按 8 秒计费，不按成片实际时长重算。",
+          "图片宽高应在 300–6000 像素；禁止 Base64、data URL 和本地路径。",
+          "不要混用同类素材别名；所有别名均累计计数。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 8,
+          "model": "wan3.0-video-prime-480p",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "480p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_second",
+        "prices": {
+          "480p": 4.118
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    },
+    {
+      "id": "wan3.0-video-prime-720p",
+      "capability": {
+        "min_duration": 4,
+        "max_duration": 30,
+        "default_duration": 8,
+        "automatic_duration": true,
+        "automatic_billing_seconds": 8,
+        "max_count": 1000,
+        "max_reference_images": 10,
+        "resolutions": [
+          "720p"
+        ],
+        "default_resolution": "720p",
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "description": "使用本页完整模型名。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": false,
+            "description": "描述画面、动作、镜头及声音。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "description": "时长范围、可选值和默认值见上方能力卡。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "description": "仅使用本页列出的可用档位；建议显式填写。"
+          },
+          {
+            "name": "aspect_ratio",
+            "type": "string",
+            "required": false,
+            "description": "推荐画面比例：16:9 / 9:16 / 1:1 / adaptive。推荐值不表示完整允许集合。"
+          },
+          {
+            "name": "n / count",
+            "type": "integer",
+            "required": false,
+            "description": "生成数量，默认 1；本站单次上限 1000。同时传入时必须相同，费用乘以数量。"
+          },
+          {
+            "name": "seconds / duration_seconds",
+            "type": "integer",
+            "required": false,
+            "description": "duration 的别名；同时传入时必须相同。-1 表示自动时长。"
+          },
+          {
+            "name": "image_url / image_urls / images",
+            "type": "string | string[]",
+            "required": false,
+            "description": "公网 HTTP(S) 参考图片；所有图片字段合计最多 10 张。"
+          },
+          {
+            "name": "video_reference / video_references / video_url / video_urls",
+            "type": "object[]",
+            "required": false,
+            "description": "每项为 {url, duration}，duration 可用 seconds；公开 HTTP(S) URL，正整数秒。同 URL 时长必须一致。"
+          },
+          {
+            "name": "audio_url / audio_urls / audio_reference / audio_references",
+            "type": "string | string[] | object[]",
+            "required": false,
+            "description": "公网 HTTP(S) 音频链接，或 {url} 对象数组。"
+          },
+          {
+            "name": "generate_audio / generateAudio",
+            "type": "boolean",
+            "required": false,
+            "description": "音频生成偏好；省略时使用模型默认行为。"
+          }
+        ],
+        "rules": [
+          "计费秒数 = 输出计费秒数 + 去重后的参考视频秒数，再乘生成数量。",
+          "duration=-1 时自动决定成片时长，按 8 秒计费，不按成片实际时长重算。",
+          "图片宽高应在 300–6000 像素；禁止 Base64、data URL 和本地路径。",
+          "不要混用同类素材别名；所有别名均累计计数。",
+          "提交时预留费用，成功结算；失败或任务超时释放预留。价格使用提交时的快照。"
+        ],
+        "example": {
+          "duration": 8,
+          "model": "wan3.0-video-prime-720p",
+          "prompt": "清晨的海岸，海浪轻拍沙滩，镜头缓慢向前移动",
+          "resolution": "720p"
+        }
+      },
+      "pricing": {
+        "billing_mode": "per_second",
+        "prices": {
+          "720p": 4.471
+        }
+      },
+      "effectiveRateMultiplier": 0.1
+    }
+  ]
+}

@@ -53,9 +53,9 @@ describe("supplier settings boundaries", () => {
     expect(url).toContain("cached=1");
     expect(url).not.toContain("refresh=1");
   });
-  it("keeps explicit parents and legacy custom origins isolated", () => {
+  it("keeps saved accounts explicit while preserving legacy template origin matching", () => {
     const supplier = {
-      id: "supplier-a",
+      id: "template:custom-gateway",
       supplierKey: "custom-gateway",
       apiUrl: "https://one.example.com",
     };
@@ -87,9 +87,13 @@ describe("supplier settings boundaries", () => {
     expect(
       supplierOwnsConnection(
         supplier,
-        connection({ supplierId: "supplier-a" }),
+        connection({ supplierId: supplier.id }),
       ),
     ).toBe(true);
+    const saved = { ...supplier, id: "supplier-a" };
+    expect(supplierOwnsConnection(saved, connection())).toBe(false);
+    expect(supplierOwnsConnection(saved, connection({ supplierId: saved.id }))).toBe(true);
+    expect(supplierOwnsConnection({ ...saved, id: "supplier-b" }, connection({ supplierId: saved.id }))).toBe(false);
   });
 
   it("never reuses a canvas group connection as an agent connection", () => {
@@ -110,7 +114,7 @@ describe("supplier settings boundaries", () => {
     "isolates legacy %s gateways on the same host and preserves API prefixes",
     (provider) => {
       const supplier = {
-        id: "gateway-a",
+        id: `template:${provider}`,
         supplierKey: provider,
         apiUrl: "https://one.example.com/gateway-a/v1",
       };

@@ -18,6 +18,7 @@ export interface SupplierConnectionRefreshResult {
   lastSuccessAt?: string;
   modelCount: number;
   modelAddedIds: string[];
+  modelFirstDiscoveredIds?: string[];
   modelRemovedModels: Array<{ id: string; name: string }>;
   interfaceChanges: SupplierModelChange[];
   priceChanges: SupplierModelChange[];
@@ -38,6 +39,7 @@ export interface SupplierRefreshResult {
     added: Array<{ id: string; label: string }>;
     missing: Array<{ id: string; label: string }>;
     renamed: Array<{ id: string; before: string; after: string }>;
+    firstDiscovered?: Array<{ id: string; label: string }>;
   };
   keySync?: { status: "live" | "partial" | "failed"; message: string; imported: number; preserved: number; skipped: number };
   billing?: SupplierBillingSnapshot;
@@ -56,6 +58,25 @@ export function safeRefreshMessage(value: unknown, fallback: string): string {
 const models = (connection?: ProviderConnectionView): ModelDescriptor[] =>
   Array.isArray(connection?.config.modelCatalogModels)
     ? (connection!.config.modelCatalogModels as unknown as ModelDescriptor[]).filter(model => model && typeof model.id === "string") : [];
+const normalizedAddress = (value: unknown): string => {
+  try { return typeof value === "string" && value ? new URL(value).href.replace(/\/+$/u, "") : ""; }
+  catch { return typeof value === "string" ? value : ""; }
+};
+function sameConnectionScope(before: ProviderConnectionView, after: ProviderConnectionView): boolean {
+  const identity = (connection: ProviderConnectionView) => {
+    const config = connection.config, stableGroup = String(config.accountKeyGroupId ?? "");
+    return [connection.provider, connection.apiKeySet, connection.credentialEpoch, config.supplierId, config.supplierSourceId,
+      normalizedAddress(config.baseUrl), config.accountKeyId, config.protocol, config.directorProtocol, config.usage,
+      config.preset, stableGroup ? `official:${stableGroup}` : `name:${String(config.accountKeyGroup ?? config.modelGroup ?? "default")}`];
+  };
+  return JSON.stringify(identity(before)) === JSON.stringify(identity(after));
+}
+/** A late response must not become a newer observation merely because its time differs. */
+function newerObservation(current: unknown, previous: unknown): boolean {
+  if (typeof current !== "string" || !current || current === previous) return false;
+  const next = Date.parse(current), old = typeof previous === "string" ? Date.parse(previous) : NaN;
+  return !Number.isFinite(next) || !Number.isFinite(old) || next > old;
+}
 function interfaceLabel(model: ModelDescriptor): string {
   const metadata = model.metadata;
   const parts = [metadata?.protocol, metadata?.autoInterfacePath,
@@ -115,10 +136,14 @@ export function buildSupplierRefreshResult(
   checkedAt = new Date().toISOString(),
   options: { snapshotOnly?: boolean } = {},
 ): SupplierRefreshResult {
-  const sameSource = !before.state?.sourceId || before.state.sourceId === after.state?.sourceId;
+  const sameSource = before.id === after.id && before.supplierKey === after.supplierKey &&
+    normalizedAddress(before.siteUrl) === normalizedAddress(after.siteUrl) && normalizedAddress(before.apiUrl) === normalizedAddress(after.apiUrl) &&
+    JSON.stringify(before.siteLogin ?? null) === JSON.stringify(after.siteLogin ?? null) &&
+    (!before.state?.sourceId || before.state.sourceId === after.state?.sourceId);
   // scanId changes at request start, so it cannot prove a superseding scan completed.
-  const directoryFresh = options.snapshotOnly || Boolean(after.scannedAt && after.scannedAt !== before.scannedAt);
+  const directoryFresh = options.snapshotOnly || newerObservation(after.scannedAt, before.scannedAt);
   const directoryOk = sameSource && directoryFresh && ["live", "empty"].includes(after.scanStatus);
+  const directoryBaseline = Boolean(before.scanLastSuccessAt ?? before.scannedAt) && before.scanComplete === true;
   const groupIdentity = (group: SupplierRecord["catalog"]["groups"][number]) => /^\d+$/u.test(group.supplierGroupId ?? "")
     ? `official:${group.supplierGroupId}` : `name:${group.id}`;
   const oldGroups = new Map(before.catalog.groups.filter(group => group.source !== "manual" && group.status !== "missing").map(group => [groupIdentity(group), group]));
@@ -132,9 +157,11 @@ export function buildSupplierRefreshResult(
   const groupChanges: NonNullable<SupplierRefreshResult["groupChanges"]> = {
     added: [], missing: [], renamed: [],
   };
-  if (directoryOk && !options.snapshotOnly) {
+  if (directoryOk && !options.snapshotOnly && !directoryBaseline) {
+    groupChanges.firstDiscovered = newGroups.map(({ id, label }) => ({ id, label }));
+  } else if (directoryOk && !options.snapshotOnly) {
     groupChanges.added = newGroups.filter(group => !previousGroup(group)).map(({ id, label }) => ({ id, label }));
-    if (after.scanComplete === true) groupChanges.missing = [...oldGroups.values()]
+    if (after.scanComplete === true && newGroups.length > 0) groupChanges.missing = [...oldGroups.values()]
       .filter(group => !retainedIdentities.has(groupIdentity(group))).map(({ id, label }) => ({ id, label }));
     groupChanges.renamed = newGroups.filter(group => previousGroup(group) &&
       (previousGroup(group)!.label !== group.label || previousGroup(group)!.id !== group.id))
@@ -143,6 +170,7 @@ export function buildSupplierRefreshResult(
   const prior = new Map(priorConnections.filter(connection => supplierOwnsConnection(before, connection)).map(connection => [connection.id, connection]));
   const owned = finalConnections.filter(connection => supplierOwnsConnection(after, connection));
   const connectedGroupIdentities = new Set<string>();
+  let incompleteComparisons = false;
   const connections: SupplierConnectionRefreshResult[] = owned.map(connection => {
     const old = prior.get(connection.id);
     const savedGroupId = String(connection.config.accountKeyGroup ?? connection.config.modelGroup ?? "default");
@@ -154,8 +182,7 @@ export function buildSupplierRefreshResult(
     const groupId = selectedGroup?.id ?? savedGroupId;
     const group = selectedGroup?.label ?? savedGroupId;
     const scanStatus = modelInventoryScanStatus(connection.config);
-    const fresh = sameSource && (options.snapshotOnly || Boolean(connection.config.modelScanCheckedAt &&
-      connection.config.modelScanCheckedAt !== old?.config.modelScanCheckedAt));
+    const fresh = sameSource && (options.snapshotOnly || newerObservation(connection.config.modelScanCheckedAt, old?.config.modelScanCheckedAt));
     const confirmed = connection.apiKeySet && fresh && ["live", "empty"].includes(scanStatus);
     const status: SupplierConnectionRefreshResult["status"] = !connection.apiKeySet ? "unconfigured" :
       !fresh ? "unconfirmed" : confirmed ? (scanStatus === "empty" ? "empty" : "updated") :
@@ -166,13 +193,18 @@ export function buildSupplierRefreshResult(
       Array.isArray(old.config.scannedModelIds) ? old.config.scannedModelIds.map(id => ({ id, name: id })) : []),
       ...inventoryModels(old?.config.modelCatalogModels)].map(model => [model.id, model]));
     const currentIds = new Set(actualModels.map(model => model.id));
-    const changesAllowed = confirmed && !options.snapshotOnly;
+    const hasBaseline = Boolean(old?.apiKeySet && sameConnectionScope(old, connection) &&
+      modelInventoryLastSuccessAt(old.config) && old.config.modelScanComplete === true);
+    if (!hasBaseline) incompleteComparisons = true;
+    const changesAllowed = confirmed && !options.snapshotOnly && hasBaseline;
+    const firstDiscovered = confirmed && !options.snapshotOnly && !hasBaseline ? actualModels.map(model => model.id) : [];
     const fallback = status === "unconfigured" ? "尚未配置分组 API Key，请配置后读取模型。" :
       status === "empty" ? "本次请求成功，供应商返回模型：0。" : status === "updated" ? `本次 Key 目录返回模型：${actualModels.length}。` :
         scanStatus === "unauthorized" ? "分组 Key 鉴权失败，请检查有效期和分组权限。" :
           status === "unconfirmed" ? "本次 Key 目录：—；保留已有模型与配置。" : "模型读取失败，保留上次成功结果；请检查网络或供应商接口。";
     const httpStatus = connection.config.modelScanHttpStatus;
-    const message = safeRefreshMessage(status === "failed" ? connection.config.modelScanError : undefined, fallback);
+    const message = safeRefreshMessage(status === "failed" ? connection.config.modelScanError : undefined, fallback) +
+      (firstDiscovered.length ? ` 本次首次发现 ${firstDiscovered.length} 个模型，缺少同一身份的完整旧基线，无法确认何时新增。` : "");
     return {
       id: connection.id, name: connection.name, group, groupId, status,
       message: status === "failed" && typeof httpStatus === "number" && httpStatus >= 400 && httpStatus <= 599
@@ -180,12 +212,15 @@ export function buildSupplierRefreshResult(
       checkedAt: typeof connection.config.modelScanCheckedAt === "string" ? connection.config.modelScanCheckedAt : undefined,
       lastSuccessAt: modelInventoryLastSuccessAt(connection.config), modelCount: actualModels.length,
       modelAddedIds: changesAllowed ? actualModels.filter(model => !oldInventory.has(model.id)).map(model => model.id) : [],
-      modelRemovedModels: changesAllowed && connection.config.modelScanComplete !== false ? [...oldInventory.values()].filter(model => !currentIds.has(model.id)) : [],
+      ...(firstDiscovered.length ? { modelFirstDiscoveredIds: firstDiscovered } : {}),
+      modelRemovedModels: changesAllowed && connection.config.modelScanComplete === true && actualModels.length > 0
+        ? [...oldInventory.values()].filter(model => !currentIds.has(model.id)) : [],
       interfaceChanges: changesAllowed ? actualModels.flatMap(model => {
         const old = oldModels.get(model.id);
-        const previous = old ? interfaceLabel(old) : "—";
+        if (!old) return [];
+        const previous = interfaceLabel(old);
         const next = interfaceLabel(model);
-        const changed = !old || interfaceIdentity(old, prior.get(connection.id)) !== interfaceIdentity(model, connection);
+        const changed = interfaceIdentity(old, prior.get(connection.id)) !== interfaceIdentity(model, connection);
         return changed ? [{ id: model.id, name: model.name ?? model.id, before: previous,
           after: previous === next ? `${next}（参数、查询或结果定义已更新）` : next }] : [];
       }) : [],
@@ -224,15 +259,17 @@ export function buildSupplierRefreshResult(
   const priceReadFailed = connections.reduce((count, connection) => count + (["updated", "empty"].includes(connection.status)
     ? connection.priceIssues?.filter(issue => issue.failed).length ?? 0 : 0), 0);
   const billingIncomplete = options.snapshotOnly && billing && (["failed", "partial"].includes(billing.status) || billing.todayStatus === "failed");
-  const incomplete = !directoryOk || after.scanComplete === false || Boolean(after.scanError) || pending > 0 || interfacePending || priceReadFailed || billingIncomplete ||
+  const incomplete = !directoryOk || after.scanComplete !== true || owned.some(connection => connection.config.modelScanComplete !== true) ||
+    Boolean(after.scanError) || pending > 0 || interfacePending || priceReadFailed || billingIncomplete ||
     (syncFresh && sync.status !== "live");
   const added = connections.reduce((sum, item) => sum + item.modelAddedIds.length, 0);
+  const firstDiscovered = connections.reduce((sum, item) => sum + (item.modelFirstDiscoveredIds?.length ?? 0), 0);
   const removed = connections.reduce((sum, item) => sum + item.modelRemovedModels.length, 0);
-  const removalCount = pending || owned.some(connection => connection.config.modelScanComplete === false) ? "—" : removed;
+  const removalCount = pending || incompleteComparisons || owned.some(connection => connection.config.modelScanComplete !== true || models(connection).length === 0) ? "—" : removed;
   return {
     id: after.id, name: after.name, checkedAt, sourceId: after.state?.sourceId, snapshotOnly: options.snapshotOnly === true,
     status: incomplete ? (confirmed || directoryOk ? "partial" : "failed") : "updated",
-    message: `${directoryOk ? `分组新增 ${groupChanges.added.length}、未再返回 ${after.scanComplete === true ? groupChanges.missing.length : "—"}、更名 ${groupChanges.renamed.length}` : "本次目录：—；保留原分组"}；Key 目录读取 ${confirmed}/${keyed.length}；模型新增 ${added}、未再返回 ${removalCount}${pending ? `；无本次目录数据的连接 ${pending}` : ""}${interfacePending ? `；接口字段记录 ${interfacePending} 个模型` : ""}${priceReadFailed ? `；价格读取异常 ${priceReadFailed} 个模型` : ""}`,
+    message: `${directoryOk ? `分组新增 ${groupChanges.added.length}、未再返回 ${directoryBaseline && after.scanComplete === true && newGroups.length > 0 ? groupChanges.missing.length : "—"}、更名 ${groupChanges.renamed.length}${groupChanges.firstDiscovered?.length ? `、首次发现 ${groupChanges.firstDiscovered.length}（无法确认何时新增）` : ""}` : "本次目录：—；保留原分组"}；Key 目录读取 ${confirmed}/${keyed.length}；模型新增 ${added}、未再返回 ${removalCount}${firstDiscovered ? `、首次发现 ${firstDiscovered}（无法确认何时新增）` : ""}${pending ? `；无本次目录数据的连接 ${pending}` : ""}${interfacePending ? `；接口字段记录 ${interfacePending} 个模型` : ""}${priceReadFailed ? `；价格读取异常 ${priceReadFailed} 个模型` : ""}`,
     directory: { status: directoryOk ? "updated" : ["failed", "unauthorized"].includes(after.scanStatus) ? "failed" : "unconfirmed",
       message: safeRefreshMessage(after.scanError, directoryOk ? `本次目录返回分组：${newGroups.length}；完整目录：${after.scanComplete === undefined ? "—" : String(after.scanComplete)}。${after.scanComplete === true ? "" : "保留未返回的历史分组。"}` : "本次目录：—；保留上次结果。"), checkedAt: after.scannedAt },
     connections, groupChanges, keySync, billing,

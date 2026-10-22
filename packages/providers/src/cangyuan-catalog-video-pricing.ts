@@ -2,6 +2,7 @@ import type { StructuredModelPricing } from "./contracts.js";
 import { mediaExpressionPricing, mediaPricingLabel } from "./media-billing.js";
 
 const currentExpressionIds = new Set([
+  "sd8-seedance-2.5-n",
   "sd16-seedance-2.5-2", "sd17-seedance-2.0-4", "sd17-seedance-2.5-4",
   "sd11-seedance-2.0", "sd11-seedance-2.0-fast", "sd11-seedance-2.0-mini", "sd11-seedance-2.5",
   "mm2-minimax-h3", "mm2-minimax-h3-max", "wan4-wan3.0", "kl1-kling-3.0",
@@ -44,7 +45,7 @@ export function cangyuanCatalogVideoPricing(value: unknown, options: {
     const expression = typeof row.billing_expr === "string" ? row.billing_expr : "";
     if (row.billing_capability !== "video" ||
       second !== /\bvs\b/u.test(expression) ||
-      row.request_unit !== undefined && !["second", "request", "call"].includes(String(row.request_unit))) return undefined;
+      row.request_unit !== undefined && !["second", "request", "call", "generation"].includes(String(row.request_unit))) return undefined;
     const pricing = mediaExpressionPricing(expression, { currency, multiplier: options.multiplier,
       checkedAt: options.checkedAt ?? "", sourceUrl: "https://ai.cangyuansuanli.cn/api/pricing", unit: second ? "second" : "request" });
     return pricing ? { pricing, priceLabel: mediaPricingLabel(pricing), metadata } : undefined;

@@ -26,6 +26,11 @@
       "import": "./dist/jijiu-image-contract.js",
       "default": "./dist/jijiu-image-contract.js"
     },
+    "./jijiu-video-contract": {
+      "types": "./src/jijiu-video-contract.ts",
+      "import": "./dist/jijiu-video-contract.js",
+      "default": "./dist/jijiu-video-contract.js"
+    },
     "./hang-image-contract": {
       "types": "./src/hang-image-contract.ts",
       "import": "./dist/hang-image-contract.js",

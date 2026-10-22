@@ -11,6 +11,23 @@ const supplier: SupplierRecord = { id: "cangyuan", name: "沧元", supplierKey: 
   siteUrl: "https://ai.cangyuansuanli.cn", kind: "newapi", scanStatus: "live", createdAt: "now", updatedAt: "now", catalog: { groups: [] } };
 
 describe("Cangyuan exact image contracts across refresh, switch and reload", () => {
+  it.each(["flux-3-image", "flux-3-klein"])("keeps %s native resolution, ratio and optional fields through the actual UI defaults and save/reload", id => {
+    const descriptor = model(id), expected = id === "flux-3-image" ? ["768sq", "1K", "1.5K", "2K", "4K"] : ["1K", "2K", "4K"];
+    const connection = { id: "key", provider: "rest", config: { baseUrl: supplier.apiUrl, preset: "cangyuan-gpt-image-2", accountKeyGroup: "IMAGE", connector: cangyuanConnectorForModels("IMAGE", [descriptor]) } };
+    const result = effectiveImageCapabilities({ supplier, connection, model: JSON.parse(JSON.stringify(descriptor)), fingerprint: "flux-exact" });
+    const controls = parameterDescriptorsForValues("image-generation", "rest", result.model, {});
+    const native = nativeImageResolutionControl(controls, result.model)!;
+    expect(native.resolution.key).toBe("resolution");
+    expect(native.resolution.options?.map(o => o.value)).toEqual(expected);
+    expect(controls.find(p => p.key === "quality")).toBeUndefined();
+    expect(controls.find(p => p.key === "size" && p.control === "dimensions")).toBeUndefined();
+    const saved = { resolution: "4K", aspect_ratio: "9:21", ...(id === "flux-3-klein" ? { output_format: "webp", enable_prompt_expansion: false, seed: "0" } : {}) };
+    const parameters = parametersWithDefaults(controls, saved), restored = JSON.parse(JSON.stringify(parameters));
+    expect(normalizedParametersForModel("image-generation", "rest", result.model, restored)).toMatchObject(saved);
+    expect(cangyuanCurrentRequestIssues({ connectionId: "key", operation: "image.edit", model: id, prompt: "offline", parameters: restored, idempotencyKey: "offline" }, supplier.apiUrl)).toEqual([]);
+    expect(declaredImageOutputDimensions(result.model, "4K", "9:21")).toBeUndefined();
+    expect(nativeImageRatioOptionLabel(result.model, native.resolution, "4K", { label: "9:21", value: "9:21" })).toBe("4K · 9:21");
+  });
   it("shows Nano 2.1's declared reference pixels without promising or sending exact output dimensions", () => {
     const current = model("gemini-nano-banana-2.1");
     const control = nativeImageResolutionControl(parameterDescriptorsForValues("image-generation", "rest", current, {}), current)!;

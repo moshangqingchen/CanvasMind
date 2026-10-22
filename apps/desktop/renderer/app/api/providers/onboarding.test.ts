@@ -10,7 +10,7 @@ vi.mock("../../../lib/server", () => ({
 }));
 vi.mock("../../../lib/supplier-service", () => ({
   assertCurrentSupplierConnection: async () => {},
-  supplierConfigForConnection: async (input: { config: Record<string, unknown> }) => input.config,
+  prepareSupplierConnection: async (input: { config: Record<string, unknown>; existingConnection?: ProviderConnectionRecord }) => input,
   SupplierServiceError: class extends Error {},
 }));
 vi.mock("../../../lib/supplier-verification", () => ({ scheduleSupplierVerification: mocks.schedule }));
@@ -33,6 +33,29 @@ const save = (input: Record<string, unknown>) => POST(new Request("http://localh
 }));
 
 describe("saving a supplier Key automatically starts onboarding", () => {
+  it("does not accept browser-supplied completion, errors or empty-directory confirmations", async () => {
+    const config = { ...connection.config, modelScanStatus: "live", modelScanComplete: true,
+      modelScanError: null, modelScanHttpStatus: null, emptyScanConfirmations: 1, emptyScanScope: "saved-scope" };
+    mocks.get.mockResolvedValue({ ...connection, config });
+    const response = await save({ id: connection.id, config: { ...config, modelScanComplete: false,
+      modelScanError: "injected", modelScanHttpStatus: 401, emptyScanConfirmations: 2 } });
+    expect(response.status).toBe(200);
+    expect(mocks.save.mock.calls[0]![0].config).toMatchObject(config);
+    expect((await save({ id: connection.id, apiKey: "replacement-fixture", config })).status).toBe(200);
+    const changed = mocks.save.mock.calls[1]![0].config;
+    expect(changed).toMatchObject({ modelScanStatus: "unscanned", modelScanComplete: false });
+    expect(changed).not.toHaveProperty("modelScanError");
+    expect(changed).not.toHaveProperty("emptyScanConfirmations");
+    expect(changed).not.toHaveProperty("emptyScanScope");
+  });
+  it("invalidates a complete directory when the official group ID changes but its name stays equal", async () => {
+    const config = { ...connection.config, accountKeyGroupId: "10", modelScanComplete: true,
+      modelScanStatus: "live", modelCatalogModels: [{ id: "old-group-image" }] };
+    mocks.get.mockResolvedValue({ ...connection, config });
+    expect((await save({ id: connection.id, config: { ...config, accountKeyGroupId: "11" } })).status).toBe(200);
+    expect(mocks.save.mock.calls[0]![0].config).toMatchObject({ accountKeyGroupId: "11", modelScanStatus: "unscanned", modelScanComplete: false });
+    expect(mocks.save.mock.calls[0]![0].config).not.toHaveProperty("modelCatalogModels");
+  });
   it("persists the new connection before scheduling, without waiting for image generation", async () => {
     mocks.schedule.mockImplementation(() => {
       expect(mocks.save).toHaveBeenCalledOnce();

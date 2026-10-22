@@ -176,6 +176,47 @@ describe("catalog price observations", () => {
     const isolated = reduceCatalogPrices(undefined, { connection: conn, models: [model()], observations: [market, status], identityEpoch: "epoch", mode: "daily", observedAt: at(1) });
     expect(isolated.models[0]?.pricing).toBeUndefined();
   });
+  it("keeps an exact CNY merchant retail price over a newer generic account expression", () => {
+    const id = "gpt-image-2@s1c581", item = { ...model(), id };
+    const conn = { ...connection([item]), config: { ...connection([item]).config, baseUrl: "https://api.tk1688.com/v1" } };
+    const scopes = catalogConnectionScopes(conn), market = observation(0, []), status = observation(0, []), generic = observation(1, []);
+    market.receipt.spec = catalogReadItem("tk1688-marketplace", "https://tk1688.com/api/marketplace/listings", "catalog-offer", scopes.anonymous, scopes.apply);
+    market.facts.sourceFacts = { kind: "tk1688", value: { source: "marketplace", sourceUrl: "https://tk1688.com/api/marketplace/listings", checkedAt: at(0), complete: true,
+      models: [{ ...item, metadata: { tk1688Catalog: true, tk1688OriginalPricing: { ...price(.1), currency: "USD" }, tk1688OriginalPriceLabel: "$0.1/次" } }],
+      catalogOffers: [{ modelId: id, baseModelId: "gpt-image-2", active: true }], excludedModelIds: [] } };
+    status.receipt.spec = catalogReadItem("tk1688-status", "https://tk1688.com/api/status", "price", scopes.anonymous, scopes.apply);
+    status.receipt.context.dispatchSeq = 2;
+    status.facts.sourceFacts = { kind: "tk1688", value: { source: "status", sourceUrl: "https://tk1688.com/api/status", checkedAt: at(0), complete: true, paymentFxRateCnyPerUsd: 7 } };
+    generic.receipt.spec = catalogReadItem("supplier:pricing:site-account", "https://tk1688.com/api/pricing", "catalog-offer", scopes.account, scopes.apply);
+    generic.facts.models = [{ ...item, metadata: { priceLabel: "按条件/用量计费，详见供应商规则" } }];
+    const result = reduceCatalogPrices(undefined, { connection: conn, models: [item], observations: [market, status, generic],
+      identityEpoch: "epoch", mode: "daily", observedAt: at(1) });
+    expect(result.models[0]?.pricing).toMatchObject({ currency: "CNY", unitAmount: .7 });
+    expect(Object.values(result.state.entries)).toHaveLength(2);
+    expect(Object.values(result.state.entries).some(row => row.sourceUrl === "https://tk1688.com/api/pricing" && row.label?.includes("按条件"))).toBe(true);
+    const failed = structuredClone(market);
+    failed.receipt = { ...failed.receipt, status: "failed", complete: false, checkedAt: at(2),
+      context: { ...failed.receipt.context, dispatchSeq: 3, observationCycleId: "failed-market-cycle" } };
+    failed.facts = { models: [], sourceFacts: { kind: "tk1688", value: {
+      source: "marketplace", sourceUrl: "https://tk1688.com/api/marketplace/listings", checkedAt: at(2), complete: false, models: [], catalogOffers: [], excludedModelIds: [] } } };
+    const retained = reduceCatalogPrices(result.state, { connection: conn, models: result.models, observations: [failed],
+      identityEpoch: "epoch", mode: "daily", observedAt: at(2) });
+    expect(retained.models[0]?.pricing).toMatchObject({ currency: "CNY", unitAmount: .7 });
+    expect(Object.values(retained.state.entries).find(row => row.sourceKey === market.receipt.spec.sourceKey)).toMatchObject({ scopePriority: 3, status: "unknown" });
+    expect(selectModelQuote(retained.models[0]!).estimatePricing).toBeUndefined();
+    const replacement = structuredClone(failed);
+    replacement.receipt = { ...replacement.receipt, status: "succeeded", complete: true, checkedAt: at(3),
+      context: { ...replacement.receipt.context, dispatchSeq: 4, observationCycleId: "replacement-market-cycle" },
+      coverage: { domain: "price-fragment", modelIds: [id], groupIdentities: ["site-id:1"], exhaustive: true } };
+    replacement.facts = { models: [], sourceFacts: { kind: "tk1688", value: {
+      source: "marketplace", sourceUrl: "https://tk1688.com/api/marketplace/listings", checkedAt: at(3), complete: true,
+      models: [{ ...item, pricing: { ...price(.2, 3), currency: "USD" } }], catalogOffers: [{ modelId: id, baseModelId: "gpt-image-2", active: true }], excludedModelIds: [] } } };
+    const replaced = reduceCatalogPrices(retained.state, { connection: conn, models: retained.models, observations: [replacement],
+      identityEpoch: "epoch", mode: "daily", observedAt: at(3) });
+    const replacedEntry = Object.values(replaced.state.entries).find(row => row.sourceKey === market.receipt.spec.sourceKey);
+    expect(replacedEntry?.pricing).toMatchObject({ currency: "USD", unitAmount: .2 });
+    expect(replacedEntry?.scopePriority).toBe(0);
+  });
   it("keeps sampling-only updates out of change records and never invents a zero quote", () => {
     expect(reduce(connection([model(price(.1))]), [observation(1, [model(price(.1, 1))])]).changes).toEqual([]);
     let conn = connection([model()]), state: CatalogPriceState | undefined;

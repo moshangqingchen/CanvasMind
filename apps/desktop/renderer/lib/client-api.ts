@@ -142,6 +142,8 @@ export interface ProviderConnectionView {
   provider: string;
   config: Record<string, unknown>;
   apiKeySet: boolean;
+  /** Response-only opaque identity; never sent back when saving a connection. */
+  credentialEpoch?: string;
   apiKeyUsable?: boolean;
   apiKey: string;
 }
@@ -937,7 +939,8 @@ export async function saveConnection(input: {
   const response = await fetch("/api/providers", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ ...input, config: tk1688ConnectionWriteConfig(input.id, input.config) }),
+    body: JSON.stringify({ id: input.id, name: input.name, provider: input.provider, apiKey: input.apiKey,
+      config: tk1688ConnectionWriteConfig(input.id, input.config) }),
   });
   if (!response.ok)
     throw new Error(

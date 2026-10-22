@@ -14,12 +14,12 @@ async function fixture(page: Page, count = 3, options: { metadata?: boolean; gro
       id: groupIndex ? `z-after-${groupIndex}` : "vip", label: groupIndex ? `后续分组 ${groupIndex}` : "创作组", source: "catalog", supplierGroupId: options.metadata === false ? undefined : groupIndex ? String(7 + groupIndex) : "007",
       details: options.metadata === false ? undefined : { source: "key-groups", rateMultiplier: 1.25 },
       models: [{ id: "public-only", name: "公开目录模型", capability: "image" }] })) },
-    scanStatus: "live", scannedAt: "2026-09-22T03:00:00.000Z", scanLastSuccessAt: options.metadata === false ? undefined : "2026-09-21T03:00:00.000Z",
+    scanStatus: "live", scanComplete: true, scannedAt: "2026-09-22T03:00:00.000Z", scanLastSuccessAt: options.metadata === false ? undefined : "2026-09-21T03:00:00.000Z",
     createdAt: "2026-09-21T03:00:00.000Z", updatedAt: "2026-09-21T03:00:00.000Z",
   }));
   let connections: ProviderConnectionView[] = suppliers.map(supplier => ({
     id: `connection-${supplier.id}`, name: `${supplier.name}主账号`, provider: "openai", apiKey: "", apiKeySet: true,
-    config: { supplierId: supplier.id, supplierKey: supplier.supplierKey, baseUrl: supplier.apiUrl, modelGroup: "vip", usage: "canvas", modelCatalogModels: models, scannedModelIds: models.map(model => model.id), modelScanStatus: "live", modelScanCheckedAt: "2026-09-22T03:00:00.000Z", modelScanLastSuccessAt: options.metadata === false ? undefined : "2026-09-21T03:00:00.000Z" },
+    config: { supplierId: supplier.id, supplierKey: supplier.supplierKey, baseUrl: supplier.apiUrl, modelGroup: "vip", usage: "canvas", modelCatalogModels: models, scannedModelIds: models.map(model => model.id), modelScanStatus: "live", modelScanComplete: true, modelScanCheckedAt: "2026-09-22T03:00:00.000Z", modelScanLastSuccessAt: options.metadata === false ? undefined : "2026-09-21T03:00:00.000Z" },
   }));
   const calls: { method: string; path: string; cached: boolean }[] = [];
   const writes: Record<string, unknown>[] = [];

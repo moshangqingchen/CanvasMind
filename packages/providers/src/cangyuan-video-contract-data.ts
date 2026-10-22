@@ -7,7 +7,7 @@ export interface CangyuanVideoContractData {
  fields: readonly string[];
  parameters: readonly { key: string; description: string; valueType?: string; required?: boolean; suggestions?: readonly (string | number)[]; suggestedDefault?: string | number | boolean; values?: readonly (string | number)[]; min?: number; max?: number; default?: string | number | boolean }[];
  references: { images: number | null; videos: number | null; audios: number | null };
- frames: boolean; framePairRequired: boolean; allowFrameMediaMix: boolean;
+ frames: boolean; framePairRequired: boolean; allowFrameMediaMix: boolean; allowFrameAudioMix?: boolean; frameDescription?: string;
  inputMimeTypes?: { image?: readonly string[]; video?: readonly string[]; audio?: readonly string[] }; maxInputBytes?: { image?: number; video?: number; audio?: number };
  maxInputDimensions?: { video?: { width: number; height: number } };
  videoObjects?: boolean; maxTotalInputVideoDurationSeconds?: number; maxInputAssets?: number;
@@ -66,7 +66,7 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "sourceStatus": "deprecated"
   },
   "minimax-h3-2k": {
-    "checkedAt": "2026-10-13T00:50:28.504Z",
+    "checkedAt": "2026-10-22T04:13:14.386Z",
     "minInputVideoDurationSeconds": 2,
     "maxInputVideoDurationSeconds": 15,
     "minInputAudioDurationSeconds": 2,
@@ -118,13 +118,15 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "framePairRequired": true,
     "allowFrameMediaMix": false,
     "maxTotalInputVideoDurationSeconds": 15,
-    "sourceSha256": "9393fcb34229103f8b2f20a87120f19c562f0623649b7d1561f3d0eebc8f6f99",
+    "sourceSha256": "725fee7af69df96930ac4caed81f4fea717c61a789f41a07dbd4d95de1e96655",
     "sourceLastReviewed": "2026-09-15",
     "maxInputBytes": {
       "image": 26214400,
       "video": 209715200,
       "audio": 15728640
-    }
+    },
+    "sourceStatus": "current",
+    "frameDescription": "首尾帧与多模态（参考图/视频/音频）二选一。上传文件最多 26214400 字节（25 MiB）。"
   },
   "seedance-2.0-720p": {
     "fields": [
@@ -365,7 +367,7 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "sourceLastReviewed": "2026-09-15"
   },
   "wan3.0-video": {
-    "checkedAt": "2026-10-13T00:50:34.617Z",
+    "checkedAt": "2026-10-22T04:13:14.455Z",
     "maxTotalInputVideoDurationSeconds": 15,
     "maxTotalInputAudioDurationSeconds": 15,
     "fields": [
@@ -417,8 +419,10 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "frames": true,
     "framePairRequired": true,
     "allowFrameMediaMix": false,
-    "sourceSha256": "b07c853e2aad490c23b09080e8d956891b94568e4914abb8a97b02e833d45f51",
-    "sourceLastReviewed": "2026-09-15"
+    "sourceSha256": "7f354377c713f7e9f450779dfd1873c437c0c5c180ae52df44fe6929d7aafa80",
+    "sourceLastReviewed": "2026-09-15",
+    "sourceStatus": "current",
+    "frameDescription": "首尾帧须成对提供，且与参考图、参考视频、参考音频互斥。"
   },
   "grok-video": {
     "fields": [
@@ -798,12 +802,14 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "frames": true,
     "framePairRequired": true,
     "allowFrameMediaMix": false,
-    "checkedAt": "2026-10-13T00:50:45.348Z",
-    "sourceSha256": "d61bd90562e28f2c4ae80d0c61b0039fc5f7bbc864a0819fcb5ba2d7fbfe9670",
+    "checkedAt": "2026-10-22T04:13:14.511Z",
+    "sourceSha256": "e4143217f6af0036a6ad442e4342993422b32da8ef0feb628e8a49c89005844b",
     "sourceLastReviewed": "2026-09-15",
     "maxInputBytes": {
       "image": 31457280
-    }
+    },
+    "sourceStatus": "current",
+    "frameDescription": "首尾帧须成对提供，且与普通参考图互斥。上传文件最多 31457280 字节（30 MiB）。"
   },
   "veo-3.1-fast": {
     "fields": [
@@ -860,12 +866,14 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "frames": true,
     "framePairRequired": true,
     "allowFrameMediaMix": false,
-    "checkedAt": "2026-10-13T00:50:52.992Z",
-    "sourceSha256": "cb3e18167e9dc5d5352a8e15df07fbead09e97931dffccbce690944ba28c5dc5",
+    "checkedAt": "2026-10-22T04:13:14.524Z",
+    "sourceSha256": "68a71044dcbc657dafa104eea7a3f46edc6a7a450da46a79c650c019000c8560",
     "sourceLastReviewed": "2026-09-15",
     "maxInputBytes": {
       "image": 31457280
-    }
+    },
+    "sourceStatus": "current",
+    "frameDescription": "仅支持成对首尾帧。上传文件最多 31457280 字节（30 MiB）。"
   },
   "kling-3.0": {
     "fields": [
@@ -1015,12 +1023,14 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "frames": true,
     "framePairRequired": true,
     "allowFrameMediaMix": false,
-    "checkedAt": "2026-10-13T00:50:54.517Z",
-    "sourceSha256": "6926e281599cce41b0f942fe384e534cc8cf9796d44035440b2722cae1cbda3e",
+    "checkedAt": "2026-10-22T04:13:14.528Z",
+    "sourceSha256": "665f9ab5ab0176473d070b2617272f116c89eb8e78c7bb495efd87cc151c64f9",
     "sourceLastReviewed": "2026-09-15",
     "maxInputBytes": {
       "image": 31457280
-    }
+    },
+    "sourceStatus": "current",
+    "frameDescription": "仅支持成对首尾帧。上传文件最多 31457280 字节（30 MiB）。"
   },
   "gemini-omni-flash": {
     "fields": [
@@ -1065,12 +1075,14 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "frames": true,
     "framePairRequired": true,
     "allowFrameMediaMix": false,
-    "checkedAt": "2026-10-13T00:50:56.042Z",
-    "sourceSha256": "45c62f760a47ce70eba478a65a91b3b51ee89b8459bde29d660d95fe50f8d56b",
-    "sourceLastReviewed": "2026-09-15"
+    "checkedAt": "2026-10-22T04:13:14.534Z",
+    "sourceSha256": "5e9ae0157dd808945da939131e2309b44cc656ef425a99ba5f7367f7f47daa4f",
+    "sourceLastReviewed": "2026-09-15",
+    "sourceStatus": "current",
+    "frameDescription": "支持单首帧或成对首尾帧。"
   },
   "happyhouse-1.0": {
-    "checkedAt": "2026-10-13T00:51:02.138Z",
+    "checkedAt": "2026-10-22T04:13:14.596Z",
     "minInputVideoDurationSeconds": 3,
     "maxInputVideoDurationSeconds": 10,
     "fields": [
@@ -1118,14 +1130,16 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
       "audios": 0
     },
     "frames": true,
-    "framePairRequired": true,
+    "framePairRequired": false,
     "allowFrameMediaMix": false,
-    "sourceSha256": "bafd58792b85fb1b9ef034ca6c0d9f3ab5396c1689906824aa48b27ddb4d24ac",
+    "sourceSha256": "90e9212d29654e43c322db364d0459ba8b7a44d0396ffe787d692bda29c37831",
     "sourceLastReviewed": "2026-09-15",
     "maxInputBytes": {
       "image": 26214400,
       "video": 209715200
-    }
+    },
+    "sourceStatus": "current",
+    "frameDescription": "支持首帧；与多图/视频参考素材二选一。上传文件最多 26214400 字节（25 MiB）。"
   },
   "happyhouse-1.1": {
     "fields": [
@@ -1172,14 +1186,16 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
       "audios": 0
     },
     "frames": true,
-    "framePairRequired": true,
+    "framePairRequired": false,
     "allowFrameMediaMix": false,
-    "checkedAt": "2026-10-13T00:50:59.096Z",
-    "sourceSha256": "044c78c2fd4929ff9284120a1dffc46731c32a366caa3ef8f3ad8b70dcc501c4",
+    "checkedAt": "2026-10-22T04:13:14.600Z",
+    "sourceSha256": "f7507abc7266602b10fa0c5778a10168012433999097fd3f120a76b3dc256d29",
     "sourceLastReviewed": "2026-09-15",
     "maxInputBytes": {
       "image": 26214400
-    }
+    },
+    "sourceStatus": "current",
+    "frameDescription": "支持首帧；与多图/视频参考素材二选一。上传文件最多 26214400 字节（25 MiB）。"
   },
   "happyhorse-1.1": {
     "fields": [
@@ -1238,7 +1254,7 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     }
   },
   "minimax-h3-768p": {
-    "checkedAt": "2026-10-13T00:51:06.720Z",
+    "checkedAt": "2026-10-22T04:13:14.605Z",
     "minInputVideoDurationSeconds": 2,
     "maxInputVideoDurationSeconds": 15,
     "minInputAudioDurationSeconds": 2,
@@ -1290,13 +1306,15 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "framePairRequired": true,
     "allowFrameMediaMix": false,
     "maxTotalInputVideoDurationSeconds": 15,
-    "sourceSha256": "f94fff11a497e32d1809b7ed1b612b9f9fc082e034e79aa51200cfe73081a961",
+    "sourceSha256": "0b39e43bb8a2480b109563bf5ffab3389cca2196e0e28039d74966149fd3105f",
     "sourceLastReviewed": "2026-09-15",
     "maxInputBytes": {
       "image": 26214400,
       "video": 209715200,
       "audio": 15728640
-    }
+    },
+    "sourceStatus": "current",
+    "frameDescription": "首尾帧与多模态（参考图/视频/音频）二选一。上传文件最多 26214400 字节（25 MiB）。"
   },
   "omni-fast": {
     "fields": [
@@ -1309,8 +1327,14 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "parameters": [
       {
         "key": "duration",
-        "description": "视频时长，单位秒。",
-        "valueType": "integer"
+        "description": "固定输出约 10 秒。",
+        "valueType": "integer",
+        "values": [
+          10
+        ],
+        "min": 10,
+        "max": 10,
+        "default": 10
       },
       {
         "key": "aspect_ratio",
@@ -1330,9 +1354,12 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "frames": true,
     "framePairRequired": true,
     "allowFrameMediaMix": false,
-    "checkedAt": "2026-10-13T00:51:05.194Z",
-    "sourceSha256": "da16ce7d2220ba8f1f43569b71de3bf00a153d45375226a317cdfb3d3696c7a2",
-    "sourceLastReviewed": "2026-09-15"
+    "checkedAt": "2026-10-22T04:13:13.481Z",
+    "sourceSha256": "4f51dc17ec50a335cc0e19f0f63200e31a193f2107b92de3517db0f3e77c7ae5",
+    "sourceLastReviewed": "2026-09-15",
+    "sourceStatus": "current",
+    "frameDescription": "支持首帧/尾帧参考图。",
+    "approximateDurationSeconds": 10
   },
   "omni-fast-no-water": {
     "fields": [
@@ -1345,8 +1372,14 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "parameters": [
       {
         "key": "duration",
-        "description": "视频时长，单位秒。",
-        "valueType": "integer"
+        "description": "固定输出约 10 秒。",
+        "valueType": "integer",
+        "values": [
+          10
+        ],
+        "min": 10,
+        "max": 10,
+        "default": 10
       },
       {
         "key": "aspect_ratio",
@@ -1366,9 +1399,12 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "frames": true,
     "framePairRequired": true,
     "allowFrameMediaMix": false,
-    "checkedAt": "2026-10-13T00:51:08.252Z",
-    "sourceSha256": "01a228def1c787df9e020c121507c38acfa4c8a3ae17640e29ab735e41c0eaa6",
-    "sourceLastReviewed": "2026-09-15"
+    "checkedAt": "2026-10-22T04:13:14.054Z",
+    "sourceSha256": "55b8e239cd0afcf3effa0d46a75562a46c2fffe5e926182d0ae3a31bcc1a4e38",
+    "sourceLastReviewed": "2026-09-15",
+    "sourceStatus": "current",
+    "frameDescription": "支持首帧/尾帧参考图。",
+    "approximateDurationSeconds": 10
   },
   "omni-v2v": {
     "checkedAt": "2026-10-13T00:51:15.893Z",
@@ -1506,8 +1542,9 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
       },
       {
         "key": "generate_audio",
-        "description": "是否生成音频。",
-        "valueType": "boolean"
+        "description": "是否生成原生音频，默认开启。",
+        "valueType": "boolean",
+        "default": true
       }
     ],
     "references": {
@@ -1518,14 +1555,16 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "frames": true,
     "framePairRequired": true,
     "allowFrameMediaMix": false,
-    "checkedAt": "2026-10-13T00:51:11.313Z",
-    "sourceSha256": "c5155f25259de541c1dd82bb5ba9ff03076cea219c9f2304b22e746e1a1a6638",
+    "checkedAt": "2026-10-22T04:13:14.614Z",
+    "sourceSha256": "0cef96024722ccb02128bbc60a4552de80fa61a7b24201e39a73334e936a4fb9",
     "sourceLastReviewed": "2026-09-15",
     "maxInputBytes": {
       "image": 26214400,
       "video": 209715200,
       "audio": 15728640
-    }
+    },
+    "sourceStatus": "current",
+    "frameDescription": "首尾帧与多模态（参考图/视频/音频）二选一；首帧与尾帧须成对提供。上传文件最多 26214400 字节（25 MiB）。"
   },
   "sd4-seedance-2.0-fast": {
     "fields": [
@@ -1571,8 +1610,9 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
       },
       {
         "key": "generate_audio",
-        "description": "是否生成音频。",
-        "valueType": "boolean"
+        "description": "是否生成原生音频，默认开启。",
+        "valueType": "boolean",
+        "default": true
       }
     ],
     "references": {
@@ -1583,14 +1623,16 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "frames": true,
     "framePairRequired": true,
     "allowFrameMediaMix": false,
-    "checkedAt": "2026-10-13T00:51:17.436Z",
-    "sourceSha256": "908efdd14d936383e4b96eb1a2c9d586c65c0f7e2986f50e9e5f5c5afc41b43a",
+    "checkedAt": "2026-10-22T04:13:14.620Z",
+    "sourceSha256": "0dfae50a03c55ea0e847092b3b8db262438119f56a7614dba17901eac647071b",
     "sourceLastReviewed": "2026-09-15",
     "maxInputBytes": {
       "image": 26214400,
       "video": 209715200,
       "audio": 15728640
-    }
+    },
+    "sourceStatus": "current",
+    "frameDescription": "首尾帧与多模态（参考图/视频/音频）二选一；首帧与尾帧须成对提供。上传文件最多 26214400 字节（25 MiB）。"
   },
   "sd4-seedance-2.0-mini": {
     "fields": [
@@ -1636,8 +1678,9 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
       },
       {
         "key": "generate_audio",
-        "description": "是否生成音频。",
-        "valueType": "boolean"
+        "description": "是否生成原生音频，默认开启。",
+        "valueType": "boolean",
+        "default": true
       }
     ],
     "references": {
@@ -1648,17 +1691,19 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "frames": true,
     "framePairRequired": true,
     "allowFrameMediaMix": false,
-    "checkedAt": "2026-10-13T00:51:12.834Z",
-    "sourceSha256": "5d89ec44cf55a63986e675ac058e8676ded1df8497fe792ad074e769dd82000a",
+    "checkedAt": "2026-10-22T04:13:14.695Z",
+    "sourceSha256": "6461230e743e3c5307db82557e3336e3be3552ab384359d4c0bc6a7c481a38d2",
     "sourceLastReviewed": "2026-09-15",
     "maxInputBytes": {
       "image": 26214400,
       "video": 209715200,
       "audio": 15728640
-    }
+    },
+    "sourceStatus": "current",
+    "frameDescription": "首尾帧与多模态（参考图/视频/音频）二选一；首帧与尾帧须成对提供。上传文件最多 26214400 字节（25 MiB）。"
   },
   "sd4-seedance-2.5-480p": {
-    "checkedAt": "2026-10-13T00:51:14.371Z",
+    "checkedAt": "2026-10-22T04:13:14.624Z",
     "maxInputVideoDurationSeconds": 30.2,
     "maxTotalInputVideoDurationSeconds": 30.2,
     "maxInputAudioDurationSeconds": 30.2,
@@ -1702,8 +1747,9 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
       },
       {
         "key": "generate_audio",
-        "description": "是否生成音频。",
-        "valueType": "boolean"
+        "description": "是否生成原生音频，默认开启。",
+        "valueType": "boolean",
+        "default": true
       }
     ],
     "references": {
@@ -1714,13 +1760,15 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "frames": true,
     "framePairRequired": true,
     "allowFrameMediaMix": false,
-    "sourceSha256": "5a1aff1ba21c9a048850afbe847d2d2f9b8a83439a28ad997df102b38dbe7936",
+    "sourceSha256": "527d7143a101ef7d7b8c9ba7ebee06667979e1343e85a3d45c04eb35af7292f4",
     "sourceLastReviewed": "2026-09-15",
     "maxInputBytes": {
       "image": 26214400,
       "video": 209715200,
       "audio": 15728640
-    }
+    },
+    "sourceStatus": "current",
+    "frameDescription": "首尾帧与多模态（参考图/视频/音频）二选一；首帧与尾帧须成对提供。上传文件最多 26214400 字节（25 MiB）。"
   },
   "sd4-seedance-2.5-720p": {
     "fields": [
@@ -1762,8 +1810,9 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
       },
       {
         "key": "generate_audio",
-        "description": "是否生成音频。",
-        "valueType": "boolean"
+        "description": "是否生成原生音频，默认开启。",
+        "valueType": "boolean",
+        "default": true
       }
     ],
     "references": {
@@ -1779,14 +1828,16 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "maxTotalInputVideoDurationSeconds": 30.2,
     "maxInputAudioDurationSeconds": 30.2,
     "maxTotalInputAudioDurationSeconds": 30.2,
-    "checkedAt": "2026-10-13T00:51:20.485Z",
-    "sourceSha256": "936f5f6e51e1fc3ae806d3576d42d772eef8a97e8f12e404b2a42b5214cf5d37",
+    "checkedAt": "2026-10-22T04:13:14.629Z",
+    "sourceSha256": "d4ebc30119c6e6b1dc31bef3e4c0b823a4519799acbb6ec930fbe0ad0ff61f16",
     "sourceLastReviewed": "2026-09-15",
     "maxInputBytes": {
       "image": 26214400,
       "video": 209715200,
       "audio": 15728640
-    }
+    },
+    "sourceStatus": "current",
+    "frameDescription": "首尾帧与多模态（参考图/视频/音频）二选一；首帧与尾帧须成对提供。上传文件最多 26214400 字节（25 MiB）。"
   },
   "sd5-seedance-2.0": {
     "fields": [
@@ -1833,12 +1884,13 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
       },
       {
         "key": "generate_audio",
-        "description": "是否生成音频。",
-        "valueType": "boolean"
+        "description": "是否生成原生音频，默认开启。",
+        "valueType": "boolean",
+        "default": true
       },
       {
         "key": "seed",
-        "description": "随机种子。",
+        "description": "可选整数种子；相同输入可用于复现，显式 0 也会透传。",
         "valueType": "integer"
       }
     ],
@@ -1850,14 +1902,16 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "frames": true,
     "framePairRequired": true,
     "allowFrameMediaMix": false,
-    "checkedAt": "2026-10-13T00:51:22.008Z",
-    "sourceSha256": "84c2242c20abe7e4158b4d0663aaadfdd931b8ce5aff87080e49d8ac478eb995",
+    "checkedAt": "2026-10-22T04:13:14.674Z",
+    "sourceSha256": "27f6d9662d12073b18db295f267e0036f0b37a980551137ab34b506725d7e4c3",
     "sourceLastReviewed": "2026-09-15",
     "maxInputBytes": {
       "image": 31457280,
       "video": 52428800,
       "audio": 15728640
-    }
+    },
+    "sourceStatus": "current",
+    "frameDescription": "首尾帧与 9 图 + 3 个视频/音频素材的多模态参考互斥；首帧与尾帧须成对提供。上传文件最多 31457280 字节（30 MiB）。"
   },
   "sd5-seedance-2.0-fast": {
     "fields": [
@@ -1904,12 +1958,13 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
       },
       {
         "key": "generate_audio",
-        "description": "是否生成音频。",
-        "valueType": "boolean"
+        "description": "是否生成原生音频，默认开启。",
+        "valueType": "boolean",
+        "default": true
       },
       {
         "key": "seed",
-        "description": "随机种子。",
+        "description": "可选整数种子；相同输入可用于复现，显式 0 也会透传。",
         "valueType": "integer"
       }
     ],
@@ -1921,14 +1976,16 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "frames": true,
     "framePairRequired": true,
     "allowFrameMediaMix": false,
-    "checkedAt": "2026-10-13T00:51:18.964Z",
-    "sourceSha256": "e906e6b689ffbc719d39cd7bd337517743abb261e1854badceaf49a5fb17e943",
+    "checkedAt": "2026-10-22T04:13:14.683Z",
+    "sourceSha256": "ec661444239247349d5f8955757b2988d14f2373e1b71501669d5cfc80e44ce2",
     "sourceLastReviewed": "2026-09-15",
     "maxInputBytes": {
       "image": 31457280,
       "video": 52428800,
       "audio": 15728640
-    }
+    },
+    "sourceStatus": "current",
+    "frameDescription": "首尾帧与 9 图 + 3 个视频/音频素材的多模态参考互斥；首帧与尾帧须成对提供。上传文件最多 31457280 字节（30 MiB）。"
   },
   "sd6-seedance-2.0-720p": {
     "fields": [
@@ -1969,9 +2026,11 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "frames": true,
     "framePairRequired": true,
     "allowFrameMediaMix": false,
-    "checkedAt": "2026-10-13T00:51:23.541Z",
-    "sourceSha256": "cd6cfe7f875f4b77a71c2db03dad9ac13ad7b3e255767e64be893c846329f08e",
-    "sourceLastReviewed": "2026-09-15"
+    "checkedAt": "2026-10-22T04:13:14.700Z",
+    "sourceSha256": "66834ce1ca1b1310454d9cd4311d95a1e1d85bd1bfa49131bf395de9237316d4",
+    "sourceLastReviewed": "2026-09-15",
+    "sourceStatus": "current",
+    "frameDescription": "首尾帧必须成对提供，并与多模态参考二选一。"
   },
   "sd6-seedance-2.0-1080p": {
     "fields": [
@@ -2012,9 +2071,11 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "frames": true,
     "framePairRequired": true,
     "allowFrameMediaMix": false,
-    "checkedAt": "2026-10-13T00:58:31.815Z",
-    "sourceSha256": "c3a8e184e76232984e570a63bce4ccf1a504f9df71ead241e30a2abb8a65a5ad",
-    "sourceLastReviewed": "2026-09-15"
+    "checkedAt": "2026-10-22T04:13:14.732Z",
+    "sourceSha256": "9468a2f1ca00107eb7780dbddfde875670a586269f2770d774b45438c75bdc7d",
+    "sourceLastReviewed": "2026-09-15",
+    "sourceStatus": "current",
+    "frameDescription": "首尾帧必须成对提供，并与多模态参考二选一。"
   },
   "sd7-seedance-2.0-720p": {
     "fields": [
@@ -2284,12 +2345,14 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "frames": true,
     "framePairRequired": true,
     "allowFrameMediaMix": false,
-    "checkedAt": "2026-10-13T00:52:27.047Z",
-    "sourceSha256": "726d4acb4ba8b21617b84da700205e823c7c78b26ca0dc6d4b216ad9bf67d891",
+    "checkedAt": "2026-10-22T04:13:14.757Z",
+    "sourceSha256": "f74e4b6dd7e21345ea94a7adee1d73b4fae6f366a6cc64a9e573e917ed86d2f3",
     "sourceLastReviewed": "2026-09-16",
     "maxInputBytes": {
       "image": 31457280
-    }
+    },
+    "sourceStatus": "current",
+    "frameDescription": "首尾帧必须成对，且不能和参考图、参考视频、参考音频同时使用。上传文件最多 31457280 字节（30 MiB）。"
   },
   "doubao-seedance-2-0-fast-260128": {
     "fields": [
@@ -2358,12 +2421,14 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "frames": true,
     "framePairRequired": true,
     "allowFrameMediaMix": false,
-    "checkedAt": "2026-10-13T00:52:25.512Z",
-    "sourceSha256": "1be2452962e44fa0947d7dd9ac692d75d33efd658eae3576c034fefaaf0ac9e8",
+    "checkedAt": "2026-10-22T04:13:14.801Z",
+    "sourceSha256": "9396bbb0dae0fca3619de516885c54d829b4a7ccbb13c59649e450b9bc29b9d1",
     "sourceLastReviewed": "2026-09-16",
     "maxInputBytes": {
       "image": 31457280
-    }
+    },
+    "sourceStatus": "current",
+    "frameDescription": "首尾帧必须成对，且不能和参考图、参考视频、参考音频同时使用。上传文件最多 31457280 字节（30 MiB）。"
   },
   "doubao-seedance-2-0-mini-260615": {
     "fields": [
@@ -2432,12 +2497,14 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "frames": true,
     "framePairRequired": true,
     "allowFrameMediaMix": false,
-    "checkedAt": "2026-10-13T00:52:40.170Z",
-    "sourceSha256": "f73459adf12c6a1c7b6a800bfa5ce100977d1ba13397a3bf15b3e0d96165c0fd",
+    "checkedAt": "2026-10-22T04:13:14.796Z",
+    "sourceSha256": "1172c49a272200c701c70d46f82e4cd55b37d6b79286046addc42092167cc5cf",
     "sourceLastReviewed": "2026-09-16",
     "maxInputBytes": {
       "image": 31457280
-    }
+    },
+    "sourceStatus": "current",
+    "frameDescription": "首尾帧必须成对，且不能和参考图、参考视频、参考音频同时使用。上传文件最多 31457280 字节（30 MiB）。"
   },
   "doubao-seedance-2-5-260628": {
     "fields": [
@@ -2506,12 +2573,14 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "frames": true,
     "framePairRequired": true,
     "allowFrameMediaMix": false,
-    "checkedAt": "2026-10-13T00:52:37.114Z",
-    "sourceSha256": "28173f89a57980f8e952250bdc44bcdb18df3ec4d341fcbe51496bac3bdeb0a4",
+    "checkedAt": "2026-10-22T04:13:14.830Z",
+    "sourceSha256": "d4518d0ede08a5a940a40d111c537cdc97131755f91e5708d29b1fccdb6e5114",
     "sourceLastReviewed": "2026-09-16",
     "maxInputBytes": {
       "image": 31457280
-    }
+    },
+    "sourceStatus": "current",
+    "frameDescription": "首尾帧必须成对，且不能和参考图、参考视频、参考音频同时使用。上传文件最多 31457280 字节（30 MiB）。"
   },
   "sd10-seedance-2.0": {
     "fields": [
@@ -2833,7 +2902,8 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
           "768P",
           "2K"
         ],
-        "suggestedDefault": "768P"
+        "suggestedDefault": "768P",
+        "default": "768P"
       },
       {
         "key": "seed",
@@ -2849,9 +2919,11 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "frames": true,
     "framePairRequired": false,
     "allowFrameMediaMix": true,
-    "checkedAt": "2026-10-13T00:52:47.838Z",
-    "sourceSha256": "3df5a936f623cdf4f29a5d84d82f9995914aa76791d7f9471bb8510549627567",
-    "sourceLastReviewed": "2026-09-15"
+    "checkedAt": "2026-10-22T04:13:14.845Z",
+    "sourceSha256": "5e70b06210517706b5826dd9cdbeb591ad85d8cdba73db9bcac87863d68d55b2",
+    "sourceLastReviewed": "2026-09-15",
+    "sourceStatus": "current",
+    "frameDescription": "尾帧必须同时给首帧。首帧可以和参考图一起传。"
   },
   "mm2-minimax-h3-max": {
     "fields": [
@@ -2895,7 +2967,8 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
           "480P",
           "768P"
         ],
-        "suggestedDefault": "480P"
+        "suggestedDefault": "480P",
+        "default": "480P"
       },
       {
         "key": "seed",
@@ -2911,9 +2984,11 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "frames": true,
     "framePairRequired": false,
     "allowFrameMediaMix": true,
-    "checkedAt": "2026-10-13T00:52:46.294Z",
-    "sourceSha256": "351366349a7f81602312bb02d39eb550cb55af13942b2d39e70ecac81df68701",
-    "sourceLastReviewed": "2026-09-15"
+    "checkedAt": "2026-10-22T04:13:14.890Z",
+    "sourceSha256": "2ae78b2fc469956d99758272a9ab66eae381450109115b46610accfaf4d9586b",
+    "sourceLastReviewed": "2026-09-15",
+    "sourceStatus": "current",
+    "frameDescription": "尾帧必须同时给首帧。首帧可以和参考图一起传。"
   },
   "sd11-seedance-2.5": {
     "fields": [
@@ -2959,7 +3034,8 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
           "720p",
           "1080p"
         ],
-        "suggestedDefault": "480p"
+        "suggestedDefault": "480p",
+        "default": "480p"
       },
       {
         "key": "generate_audio",
@@ -2980,9 +3056,11 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "frames": true,
     "framePairRequired": false,
     "allowFrameMediaMix": true,
-    "checkedAt": "2026-10-13T00:52:55.514Z",
-    "sourceSha256": "d2a7bf774e57b5ea0d3f951ae28e3b9f1b73475b8887d5201e7448f97aef7ca5",
-    "sourceLastReviewed": "2026-09-16"
+    "checkedAt": "2026-10-22T04:13:14.956Z",
+    "sourceSha256": "6fb891420e8b3382f871b2651ef26e84e78f7d06bb6794107935f0da1546c206",
+    "sourceLastReviewed": "2026-09-16",
+    "sourceStatus": "current",
+    "frameDescription": "尾帧必须同时给首帧。首帧可以和参考图一起传。"
   },
   "sd11-seedance-2.0": {
     "fields": [
@@ -3028,7 +3106,8 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
           "720p",
           "1080p"
         ],
-        "suggestedDefault": "480p"
+        "suggestedDefault": "480p",
+        "default": "480p"
       },
       {
         "key": "generate_audio",
@@ -3049,13 +3128,15 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "frames": true,
     "framePairRequired": false,
     "allowFrameMediaMix": true,
-    "checkedAt": "2026-10-13T00:52:50.920Z",
-    "sourceSha256": "c278202c01a6f0d217e96e592d24b38d6cdc81b60507a4468e4843f64b7c01ad",
+    "checkedAt": "2026-10-22T04:13:14.855Z",
+    "sourceSha256": "355337e5af7d1f3d6f67c314d5a6e02e60ddbf562d803669fa67ebec58dca64d",
     "sourceLastReviewed": "2026-09-15",
     "forbiddenResolutionValues": [
       "4k",
       "4K"
-    ]
+    ],
+    "sourceStatus": "current",
+    "frameDescription": "尾帧必须同时给首帧。首帧可以和参考图一起传。"
   },
   "sd11-seedance-2.0-fast": {
     "fields": [
@@ -3100,7 +3181,8 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
           "480p",
           "720p"
         ],
-        "suggestedDefault": "480p"
+        "suggestedDefault": "480p",
+        "default": "480p"
       },
       {
         "key": "generate_audio",
@@ -3121,9 +3203,11 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "frames": true,
     "framePairRequired": false,
     "allowFrameMediaMix": true,
-    "checkedAt": "2026-10-13T00:52:57.051Z",
-    "sourceSha256": "97142bd998a17e780184d7aca5633524e7f2bf7f91e4e6030f999c71cf13f09d",
-    "sourceLastReviewed": "2026-09-15"
+    "checkedAt": "2026-10-22T04:13:14.898Z",
+    "sourceSha256": "59352e59a582337cc7ab26615eb2044f4844e26659283bd51f27b4297e0aa014",
+    "sourceLastReviewed": "2026-09-15",
+    "sourceStatus": "current",
+    "frameDescription": "尾帧必须同时给首帧。首帧可以和参考图一起传。"
   },
   "sd11-seedance-2.0-mini": {
     "fields": [
@@ -3168,7 +3252,8 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
           "480p",
           "720p"
         ],
-        "suggestedDefault": "480p"
+        "suggestedDefault": "480p",
+        "default": "480p"
       },
       {
         "key": "generate_audio",
@@ -3189,9 +3274,11 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "frames": true,
     "framePairRequired": false,
     "allowFrameMediaMix": true,
-    "checkedAt": "2026-10-13T00:52:52.450Z",
-    "sourceSha256": "0e57bf3a3ac95ddf24216c37594e361ce5179b1a3dca8979ac07cb5cb62c8f4d",
-    "sourceLastReviewed": "2026-09-15"
+    "checkedAt": "2026-10-22T04:13:14.917Z",
+    "sourceSha256": "b302d67195954cc1f82178b8260b832e801abd0e6a22f94c36ea13ff7464ff81",
+    "sourceLastReviewed": "2026-09-15",
+    "sourceStatus": "current",
+    "frameDescription": "尾帧必须同时给首帧。首帧可以和参考图一起传。"
   },
   "wan4-wan3.0": {
     "fields": [
@@ -3236,7 +3323,8 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
           "720P",
           "1080P"
         ],
-        "suggestedDefault": "480P"
+        "suggestedDefault": "480P",
+        "default": "480P"
       },
       {
         "key": "generate_audio",
@@ -3257,9 +3345,11 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "frames": true,
     "framePairRequired": false,
     "allowFrameMediaMix": true,
-    "checkedAt": "2026-10-13T00:52:53.987Z",
-    "sourceSha256": "aa597b944addf87e5c2d0ce13ff12d7b3dfa488372ff51a8d28eea57bb769a99",
-    "sourceLastReviewed": "2026-09-15"
+    "checkedAt": "2026-10-22T04:13:14.908Z",
+    "sourceSha256": "8622ceea159d8311c8549c8943e2c5975ed2fb6e9e38bffdcc62715e81587fe9",
+    "sourceLastReviewed": "2026-09-15",
+    "sourceStatus": "current",
+    "frameDescription": "尾帧必须同时给首帧。首帧可以和参考图一起传。"
   },
   "kl1-kling-3.0": {
     "fields": [
@@ -3297,7 +3387,8 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
           "720p",
           "1080p"
         ],
-        "suggestedDefault": "720p"
+        "suggestedDefault": "720p",
+        "default": "720p"
       },
       {
         "key": "generate_audio",
@@ -3318,9 +3409,11 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "frames": true,
     "framePairRequired": false,
     "allowFrameMediaMix": false,
-    "checkedAt": "2026-10-13T00:53:03.190Z",
-    "sourceSha256": "4e13697b7c952a90b01697122860b264537ad4c6a4362aee7bf219bc0838cb0c",
-    "sourceLastReviewed": "2026-09-15"
+    "checkedAt": "2026-10-22T04:13:14.948Z",
+    "sourceSha256": "eae68444e7080b77c4ca346ca1d58d4138cae44c5a5349513b951561d310dc34",
+    "sourceLastReviewed": "2026-09-15",
+    "sourceStatus": "current",
+    "frameDescription": "尾帧必须同时给首帧。可只传首帧做图生。不支持参考图。"
   },
   "sd12-seedance-2.0": {
     "fields": [
@@ -3361,7 +3454,8 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
         "suggestions": [
           "480p"
         ],
-        "suggestedDefault": "480p"
+        "suggestedDefault": "480p",
+        "default": "480p"
       },
       {
         "key": "generate_audio",
@@ -3392,9 +3486,12 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "maxInputVideoDurationSeconds": 15,
     "maxTotalInputAudioDurationSeconds": 15,
     "maxPromptCharacters": 5000,
-    "checkedAt": "2026-10-13T00:53:01.654Z",
-    "sourceSha256": "8250e403ca8f55d6e4f5fea0a8c69b7b886fd34f93b317fe851a9cc0a193ccde",
-    "sourceLastReviewed": "2026-09-15"
+    "checkedAt": "2026-10-22T04:13:14.962Z",
+    "sourceSha256": "9d89dfc5190dd0f92897dcc2509c59f018b30f1059b6a3f98e0e9c83963a72e9",
+    "sourceLastReviewed": "2026-09-15",
+    "sourceStatus": "current",
+    "frameDescription": "尾帧必须同时给首帧。首帧可以和参考图一起传。有首帧时不支持参考音频。",
+    "allowFrameAudioMix": false
   },
   "sd12-seedance-2.0-fast": {
     "fields": [
@@ -3435,7 +3532,8 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
         "suggestions": [
           "480p"
         ],
-        "suggestedDefault": "480p"
+        "suggestedDefault": "480p",
+        "default": "480p"
       },
       {
         "key": "generate_audio",
@@ -3466,9 +3564,12 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "maxInputVideoDurationSeconds": 15,
     "maxTotalInputAudioDurationSeconds": 15,
     "maxPromptCharacters": 2000,
-    "checkedAt": "2026-10-13T00:53:00.116Z",
-    "sourceSha256": "78c20ab4117b35210e6a4b64232b76c646017761e127e36ec1fee3d1129c0e98",
-    "sourceLastReviewed": "2026-09-15"
+    "checkedAt": "2026-10-22T04:13:14.970Z",
+    "sourceSha256": "1927739756997ed39124e63f61a1dcde2336a01a02003c8362c34fc82d7e055b",
+    "sourceLastReviewed": "2026-09-15",
+    "sourceStatus": "current",
+    "frameDescription": "尾帧必须同时给首帧。首帧可以和参考图一起传。有首帧时不支持参考音频。",
+    "allowFrameAudioMix": false
   },
   "sd12-seedance-2.0-mini": {
     "fields": [
@@ -3509,7 +3610,8 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
         "suggestions": [
           "480p"
         ],
-        "suggestedDefault": "480p"
+        "suggestedDefault": "480p",
+        "default": "480p"
       },
       {
         "key": "generate_audio",
@@ -3540,9 +3642,12 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "maxInputVideoDurationSeconds": 15,
     "maxTotalInputAudioDurationSeconds": 15,
     "maxPromptCharacters": 3800,
-    "checkedAt": "2026-10-13T00:52:58.586Z",
-    "sourceSha256": "0b41f53dbbe19c1805f2e43e23b40f8c4e99b80385e56967321348d146e44147",
-    "sourceLastReviewed": "2026-09-15"
+    "checkedAt": "2026-10-22T04:13:15.020Z",
+    "sourceSha256": "0e0939080ffbdbcd1770dc176b29218f9b71837e970634ce04f58454be054867",
+    "sourceLastReviewed": "2026-09-15",
+    "sourceStatus": "current",
+    "frameDescription": "尾帧必须同时给首帧。首帧可以和参考图一起传。有首帧时不支持参考音频。",
+    "allowFrameAudioMix": false
   },
   "kl2-kling-3.0": {
     "fields": [
@@ -3578,7 +3683,8 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
         "suggestions": [
           "720p"
         ],
-        "suggestedDefault": "720p"
+        "suggestedDefault": "720p",
+        "default": "720p"
       },
       {
         "key": "generate_audio",
@@ -3598,9 +3704,11 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
       "image": 31457280
     },
     "maxPromptCharacters": 2500,
-    "checkedAt": "2026-10-13T00:53:09.324Z",
-    "sourceSha256": "78158799ac3898647fa5ee3a054172e66f1589dfb17461d838aed0e398cee81d",
-    "sourceLastReviewed": "2026-09-15"
+    "checkedAt": "2026-10-22T04:13:14.982Z",
+    "sourceSha256": "f65dfbea160b503d4552aed1724bb2dea473fea776205b995ed1d8579ee03860",
+    "sourceLastReviewed": "2026-09-15",
+    "sourceStatus": "current",
+    "frameDescription": "仅首尾帧。有尾帧必须有首帧。可只传首帧。不支持普通参考图、参考视频或参考音频。"
   },
   "wan5-wan3.0": {
     "fields": [
@@ -3684,7 +3792,8 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
         "suggestions": [
           "720p"
         ],
-        "suggestedDefault": "720p"
+        "suggestedDefault": "720p",
+        "default": "720p"
       },
       {
         "key": "generate_audio",
@@ -3704,9 +3813,11 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
       "image": 31457280
     },
     "maxPromptCharacters": 2000,
-    "checkedAt": "2026-10-13T00:53:04.717Z",
-    "sourceSha256": "4f347f544521575861c1386e7c7e9cf336103600b0d6b6a8d4a5613a024b992f",
-    "sourceLastReviewed": "2026-09-15"
+    "checkedAt": "2026-10-22T04:13:15.028Z",
+    "sourceSha256": "b7b57ec3d9de342e97d16e81ffb439e21a770c1e99cc3cd734c63920e460dc30",
+    "sourceLastReviewed": "2026-09-15",
+    "sourceStatus": "current",
+    "frameDescription": "仅首尾帧。有尾帧必须有首帧。可只传首帧。不支持普通参考图、参考视频或参考音频。"
   },
   "sd13-seedance-2.0": {
     "fields": [
@@ -4044,7 +4155,7 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
       },
       {
         "key": "aspect_ratio",
-        "description": "画面比例。推荐值：1:1 / 16:9 / 9:16；推荐值不代表完整允许集合。 当前 Seedance 线路说明：画幅只有 1:1 / 16:9 / 9:16。",
+        "description": "画面比例。推荐值：1:1 / 16:9 / 9:16；推荐值不代表完整允许集合。",
         "valueType": "string",
         "suggestions": [
           "1:1",
@@ -4064,7 +4175,8 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
         "suggestions": [
           "720p"
         ],
-        "suggestedDefault": "720p"
+        "suggestedDefault": "720p",
+        "default": "720p"
       }
     ],
     "references": {
@@ -4076,9 +4188,11 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "framePairRequired": false,
     "allowFrameMediaMix": false,
     "maxOutputAndInputVideoDurationSeconds": 25,
-    "checkedAt": "2026-10-13T00:53:13.909Z",
-    "sourceSha256": "2793dff675a6755e82a09c5885b15f4af7c7d444c51728b65a7c877dbad62a46",
-    "sourceLastReviewed": "2026-09-21"
+    "checkedAt": "2026-10-22T04:13:14.309Z",
+    "sourceSha256": "2899beb2b1f1e801c9e9b590eca4f4705dbb0edd705542aa9b253a04d5a80428",
+    "sourceLastReviewed": "2026-09-21",
+    "sourceStatus": "current",
+    "frameDescription": "可只给首帧。首尾帧与参考图、参考视频、参考音频互斥。"
   },
   "sd15-seedance-2.5": {
     "fields": [
@@ -4287,8 +4401,8 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "sourceLastReviewed": "2026-09-29"
   },
   "sd16-seedance-2.0": {
-    "checkedAt": "2026-10-14T03:17:52.833Z",
-    "sourceSha256": "0240523e6c7c2d0226a9e2b289b5210881e75502793d19924afb64ffc08600af",
+    "checkedAt": "2026-10-22T04:13:13.713Z",
+    "sourceSha256": "27ccf723602158b5bb7ee9650b2a4c4d21c8fb49db005adbdddb4633307f234e",
     "sourceLastReviewed": "2026-10-13",
     "facePolicy": "backend",
     "fields": [
@@ -4351,11 +4465,13 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     },
     "frames": true,
     "framePairRequired": true,
-    "allowFrameMediaMix": true
+    "allowFrameMediaMix": true,
+    "sourceStatus": "current",
+    "frameDescription": "首尾帧要成对，可以和参考图、参考视频、参考音频一起传。"
   },
   "sd16-seedance-2.0-fast": {
-    "checkedAt": "2026-10-14T03:17:54.869Z",
-    "sourceSha256": "e3f82e36728f3b7b63ef1595c4ebca31593b811203a883193e4c3e977e0800ca",
+    "checkedAt": "2026-10-22T04:13:14.062Z",
+    "sourceSha256": "9680bc73c49c8226131eb2297b1e075f14e24fe999d0025a98199eb524149f5e",
     "sourceLastReviewed": "2026-10-13",
     "facePolicy": "backend",
     "fields": [
@@ -4422,11 +4538,13 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
       "1080P",
       "4k",
       "4K"
-    ]
+    ],
+    "sourceStatus": "current",
+    "frameDescription": "首尾帧要成对，可以和参考图、参考视频、参考音频一起传。"
   },
   "sd16-seedance-2.0-mini": {
-    "checkedAt": "2026-10-14T03:17:56.896Z",
-    "sourceSha256": "c221d8af28a43ad54c4333f8ac5d88aee0f6c4b85b4ca1dadc32613aed90ac87",
+    "checkedAt": "2026-10-22T04:13:14.066Z",
+    "sourceSha256": "1d8996d3b9154b97eebaf7aba8cd52ef0cd4b396b4fc716ec4355efea43cde86",
     "sourceLastReviewed": "2026-10-13",
     "facePolicy": "backend",
     "fields": [
@@ -4493,7 +4611,9 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
       "1080P",
       "4k",
       "4K"
-    ]
+    ],
+    "sourceStatus": "current",
+    "frameDescription": "首尾帧要成对，可以和参考图、参考视频、参考音频一起传。"
   },
   "sd17-seedance-2.0-3": {
     "checkedAt": "2026-10-14T03:17:58.930Z",
@@ -5007,8 +5127,8 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "allowFrameMediaMix": false
   },
   "sd8-seedance-2.5-n": {
-    "checkedAt": "2026-10-21T02:54:38.665Z",
-    "sourceSha256": "deac9d8a7facb46c309ee4cf4a8423c4ddfaee81aa186a5813a5aca82b912e84",
+    "checkedAt": "2026-10-22T04:13:15.131Z",
+    "sourceSha256": "5b6ada319eeb50940133a651da28754a9addb205a1c055a288753dc009119d8b",
     "sourceLastReviewed": "2026-10-18",
     "sourceStatus": "current",
     "facePolicy": "blocked",
@@ -5032,7 +5152,8 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
         "valueType": "integer",
         "suggestedDefault": 30,
         "min": 30,
-        "max": 30
+        "max": 30,
+        "default": 30
       },
       {
         "key": "aspect_ratio",
@@ -5046,16 +5167,20 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
           "3:4",
           "9:16"
         ],
-        "suggestedDefault": "16:9"
+        "suggestedDefault": "16:9",
+        "default": "16:9"
       },
       {
         "key": "resolution",
-        "description": "输出分辨率。推荐值：720p；推荐值不代表完整允许集合。",
+        "description": "输出分辨率。推荐值：480p / 720p / 1080p；推荐值不代表完整允许集合。",
         "valueType": "string",
         "suggestions": [
-          "720p"
+          "480p",
+          "720p",
+          "1080p"
         ],
-        "suggestedDefault": "720p"
+        "suggestedDefault": "480p",
+        "default": "480p"
       }
     ],
     "references": {

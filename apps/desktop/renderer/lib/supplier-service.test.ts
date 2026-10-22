@@ -35,7 +35,7 @@ import {
   mergeSupplierCatalog,
   patchSupplierRecord,
   scanSupplierRecord,
-  supplierConfigForConnection,
+  prepareSupplierConnection,
   SupplierInputSchema,
   SupplierPatchSchema,
   publicSupplierRecord,
@@ -43,6 +43,7 @@ import {
 import { decryptSecret, encryptSecret, parseSupplierCatalog, SupplierLoginError } from "@super-canvas/providers";
 import { requireServerMasterKey } from "./master-key";
 import { catalogChanges } from "./supplier-catalog-policy";
+import { oldBrandedSupplierId, supplierOwnsStoredConnection } from "./supplier-stored-identity";
 
 beforeEach(() => {
   mocks.repository = new MemoryRepository();
@@ -52,6 +53,97 @@ beforeEach(() => {
   mocks.accountKeys.mockReset().mockResolvedValue({ keys: [], skipped: 0, complete: true, checkedAt: new Date().toISOString() });
 });
 describe("supplier service", () => {
+  it("keeps a legacy provider-default API identity without substituting its marketing website", async () => {
+    const connection = await mocks.repository.saveConnection({ id: "default-api", name: "Official", provider: "openai", config: {} });
+    const record = await getSupplierRecord(legacySupplierId(connection));
+    expect(record).not.toBeNull();
+    expect(record!.apiUrl).toBe("");
+    expect(supplierOwnsStoredConnection(record!, connection)).toBe(true);
+    expect(supplierOwnsStoredConnection(record!, { ...connection, config: { baseUrl: "not an API address" } })).toBe(false);
+    expect(supplierOwnsStoredConnection(record!, { ...connection, config: { baseUrl: "https://api.openai.com/v1" } })).toBe(false);
+    expect(await mocks.repository.listSuppliers()).toEqual([]);
+  });
+  it("keeps old branded projections tied to their exact namespace and site without hiding other legacy gateways", async () => {
+    const connection = await mocks.repository.saveConnection({ id: "old-brand-key", name: "Old", provider: "openai",
+      encryptedSecret: "opaque-existing-key", config: { supplierKey: "legacy-brand", baseUrl: "https://fixture.invalid/a/v1" } });
+    const other = await mocks.repository.saveConnection({ ...connection, id: "other-site", config: { ...connection.config, baseUrl: "https://fixture.invalid/b/v1" } });
+    const oldBrand = await mocks.repository.saveSupplier({ id: oldBrandedSupplierId(connection), name: "Original", supplierKey: "legacy-brand",
+      kind: "auto", apiUrl: "https://fixture.invalid/a", siteUrl: "https://fixture.invalid/a", catalog: { groups: [] }, scanStatus: "unscanned" });
+    const snapshot = mocks.repository.exportSnapshot();
+    expect(supplierOwnsStoredConnection(oldBrand, connection)).toBe(true);
+    expect(supplierOwnsStoredConnection(oldBrand, other)).toBe(false);
+    expect(supplierOwnsStoredConnection({ ...oldBrand, id: "another-account" }, connection)).toBe(false);
+    expect(supplierOwnsStoredConnection(oldBrand, { ...connection, config: { ...connection.config, supplierId: "another-account" } })).toBe(false);
+    const records = await listSupplierRecords();
+    expect(records.map(record => record.id).sort()).toEqual([oldBrand.id, legacySupplierId(other)].sort());
+    expect(await getSupplierRecord(legacySupplierId(other))).toMatchObject({ apiUrl: other.config.baseUrl });
+    expect(mocks.repository.exportSnapshot()).toEqual(snapshot);
+  });
+  it("keeps stored legacy suppliers and connection identities untouched during reads", async () => {
+    const legacy = await mocks.repository.saveSupplier({
+      id: "legacy-stored", name: "Legacy", supplierKey: "legacy-site", kind: "auto",
+      siteUrl: "https://legacy.example.test", apiUrl: "https://legacy.example.test/v1",
+      catalog: { groups: [{ id: "images", label: "Images", models: [{ id: "image-model", capability: "image" }] }] },
+      scanStatus: "live",
+    });
+    const connection = await mocks.repository.saveConnection({ id: "legacy-connection", name: "Existing Key", provider: "openai",
+      encryptedSecret: "opaque-existing-key", config: { supplierId: legacy.id, supplierKey: legacy.supplierKey,
+        baseUrl: legacy.apiUrl, modelGroup: "images", defaultModel: "image-model" } });
+    const before = mocks.repository.exportSnapshot();
+    const write = vi.spyOn(mocks.repository, "commitSupplier");
+    expect(await listSupplierRecords()).toEqual([legacy]);
+    expect(await getSupplierRecord(legacy.id)).toEqual(legacy);
+    expect(await supplierImpact(legacy.id)).toMatchObject({ revision: 0, keys: 1 });
+    await expect(assertCurrentSupplierConnection(connection)).resolves.toBeUndefined();
+    expect(write).not.toHaveBeenCalled();
+    expect(mocks.repository.exportSnapshot()).toEqual(before);
+
+    const saved = await patchSupplierRecord(legacy.id, { name: "Saved legacy account", expectedRevision: 0 });
+    expect(saved.state?.revision).toBe(1);
+    expect(await mocks.repository.getConnection(connection.id)).toMatchObject({
+      id: connection.id, encryptedSecret: connection.encryptedSecret,
+      config: { ...connection.config, supplierSourceId: saved.state!.sourceId },
+    });
+    expect(write).toHaveBeenCalledTimes(1);
+  });
+  it("looks up a saved account without reading unrelated suppliers or connections", async () => {
+    const supplier = await createSupplierRecord({ name: "Saved", siteUrl: "https://saved.example.test" });
+    const suppliers = vi.spyOn(mocks.repository, "listSuppliers");
+    const connections = vi.spyOn(mocks.repository, "listConnections");
+    expect(await getSupplierRecord(supplier.id)).toEqual(supplier);
+    expect(suppliers).not.toHaveBeenCalled();
+    expect(connections).not.toHaveBeenCalled();
+  });
+  it("migrates legacy connection identities in the first explicit catalog-only refresh", async () => {
+    const connection = await mocks.repository.saveConnection({ id: "legacy-catalog-only", name: "Existing", provider: "openai",
+      encryptedSecret: "opaque-existing-key", config: { supplierKey: "legacy-site", baseUrl: "https://legacy.example.test/v1",
+        modelGroup: "images", defaultModel: "saved-choice", usage: "canvas" } });
+    mocks.discover.mockResolvedValue({ groups: [], kind: "auto", status: "failed", complete: false,
+      checkedAt: new Date().toISOString(), error: "Fixture unavailable" });
+    const supplier = await scanSupplierRecord(legacySupplierId(connection), undefined, 0, { catalogOnly: true });
+    expect(await mocks.repository.getConnection(connection.id)).toMatchObject({
+      id: connection.id, encryptedSecret: connection.encryptedSecret,
+      config: { ...connection.config, supplierId: supplier.id, supplierSourceId: supplier.state!.sourceId },
+    });
+    expect(mocks.models).not.toHaveBeenCalled();
+    expect(mocks.accountKeys).not.toHaveBeenCalled();
+  });
+  it("isolates two accounts at the same site through configuration changes", async () => {
+    const input = { name: "Same site", siteUrl: "https://accounts.example.test", supplierKey: "same-site" };
+    const first = await createSupplierRecord(input);
+    const second = await createSupplierRecord(input);
+    expect(first.state!.sourceId).not.toBe(second.state!.sourceId);
+    const saved = await patchSupplierRecord(first.id, { siteLogin: { username: "first", password: "first-fixture-password" } });
+    const connection = await mocks.repository.saveConnection({ id: "first-account-key", name: "Group 1", provider: "openai",
+      encryptedSecret: "opaque-first-key", config: { supplierKey: input.supplierKey, supplierId: first.id,
+        supplierSourceId: first.state!.sourceId, accountKeyGroupId: "1", modelGroup: "default", baseUrl: first.apiUrl } });
+    await patchSupplierRecord(second.id, { siteLogin: { username: "second", password: "second-fixture-password" } });
+    await patchSupplierRecord(second.id, { siteUrl: "https://moved.example.test", apiUrl: "https://moved.example.test/v1" });
+    expect(await getSupplierRecord(first.id)).toEqual(saved);
+    expect(await mocks.repository.getConnection(connection.id)).toEqual(connection);
+    await expect(prepareSupplierConnection({ provider: "openai", config: { ...connection.config, supplierId: second.id } }))
+      .rejects.toMatchObject({ status: 409 });
+  });
   it("projects newly documented Cangyuan audio directory rows without rewriting saved records or creating a chat/Key capability", async () => {
     const supplier = await createSupplierRecord({ name: "Cangyuan documentary audio", siteUrl: "https://ai.cangyuansuanli.cn", kind: "newapi" });
     supplier.catalog = { groups: ["AUDIO", "全模型-无claude/gpt"].map(id => ({ id, label: id, source: "catalog", models: [
@@ -143,6 +235,34 @@ describe("supplier service", () => {
     expect(mocks.accountKeys).not.toHaveBeenCalled();
     expect(mocks.models).not.toHaveBeenCalled();
     expect(await mocks.repository.listConnections()).toEqual(before);
+  });
+  it("reconciles fresh stable-ID group renames during a partial catalog-only scan without reading or replacing Keys", async () => {
+    const supplier = await createSupplierRecord({ name: "Stable names", siteUrl: "https://synoralink.com", kind: "sub2api" });
+    supplier.catalog = { groups: ["99", "125"].map(id => ({ id: `old-${id}`, label: `old-${id}`, supplierGroupId: id,
+      source: "catalog" as const, status: "available" as const, models: [] })) };
+    await mocks.repository.saveSupplier(supplier);
+    const saved = [];
+    for (const id of ["99", "125"]) saved.push(await mocks.repository.saveConnection({ id: `saved-${id}`, name: `User title ${id}`,
+      provider: "openai", encryptedSecret: `opaque-${id}`, config: { supplierId: supplier.id, supplierSourceId: supplier.state!.sourceId,
+        accountKeyGroupId: id, accountKeyGroup: `old-${id}`, modelGroup: `old-${id}`, usage: "canvas", defaultModel: "gpt-image-2",
+        parameters: { quality: "high", size: "3840x2160" }, scannedModelIds: ["gpt-image-2"] } }));
+    mocks.discover.mockResolvedValue({ kind: "sub2api", status: "live", complete: false, checkedAt: "2026-10-22T05:00:00Z",
+      groups: ["99", "125"].map(id => ({ id: `current-${id}`, label: `Current ${id}`, supplierGroupId: id, source: "catalog",
+        models: [], details: { source: "key-groups", description: "fresh description" } })) });
+    const refreshed = await scanSupplierRecord(supplier.id, undefined, supplier.state!.revision, { catalogOnly: true, verifyCapabilities: false });
+    for (const before of saved) {
+      const id = before.config.accountKeyGroupId;
+      const after = (await mocks.repository.getConnection(before.id))!;
+      const { updatedAt, ...unchanged } = before;
+      expect(after).toMatchObject({ ...unchanged,
+        config: { ...before.config, accountKeyGroup: `current-${id}`, modelGroup: `current-${id}` } });
+      expect(Number.isFinite(Date.parse(after.updatedAt))).toBe(true);
+      expect(Date.parse(after.updatedAt)).toBeGreaterThanOrEqual(Date.parse(updatedAt));
+      expect(refreshed.catalog.groups.find(group => group.id === `current-${id}`)?.status).toBe("available");
+      expect(refreshed.catalog.groups.find(group => group.id === `old-${id}`)?.status).toBe("missing");
+    }
+    expect(mocks.accountKeys).not.toHaveBeenCalled();
+    expect(mocks.models).not.toHaveBeenCalled();
   });
   it.each([undefined, "8"])("catalog-only reads retain current Key-owned groups and stable identity %s without reviving old sources", async supplierGroupId => {
     const supplier = await createSupplierRecord({ name: "Account groups", siteUrl: "https://catalog-only.example.test", kind: "sub2api" });
@@ -257,6 +377,33 @@ describe("supplier service", () => {
     const replacement = mergeSupplierCatalog({ groups: [old] }, { groups: [{ ...renamed, id: old.id, supplierGroupId: "116" }] }, true, false).groups[0]!;
     expect(replacement.details?.ledgerPrices).toBeUndefined();
     expect(replacement.models).toEqual([]);
+  });
+  it("keeps only the fresh stable-ID alias current and distinguishes current model rates from retained historical models", () => {
+    const old = { id: "old-name", label: "old-name", supplierGroupId: "31", source: "catalog" as const, status: "available" as const,
+      details: { source: "key-groups" as const, rateMultiplier: .08 },
+      models: [{ id: "retained-full-id", capability: "chat" as const, priceLabel: "输入 ¥0.16/1M", metadata: { chuangxiangEffectiveRateMultiplier: .08 } }] };
+    const current = { ...old, id: "current-name", label: "current-name", models: [], details: { source: "key-groups" as const, rateMultiplier: .09 } };
+    const previous = structuredClone(old);
+    const merged = mergeSupplierCatalog({ groups: [old] }, { groups: [current] }, true, false);
+    expect(merged.groups.find(group => group.id === old.id)).toMatchObject({ status: "missing", details: { stale: true } });
+    expect(merged.groups.find(group => group.id === current.id)).toMatchObject({ status: "available", details: { rateMultiplier: .09, stale: true },
+      models: [{ id: "retained-full-id", priceLabel: "输入 ¥0.16/1M", metadata: { chuangxiangEffectiveRateMultiplier: .08, supplierCatalogModelStale: true, priceStatus: "partial" } }] });
+    expect(old).toEqual(previous);
+    const refreshed = mergeSupplierCatalog(merged, { groups: [{ ...current, models: [{ ...old.models[0]!, priceLabel: "输入 ¥0.18/1M",
+      metadata: { chuangxiangEffectiveRateMultiplier: .09 } }] }, { ...old, details: { ...old.details, stale: true } }] }, true, false);
+    expect(refreshed.groups.find(group => group.id === old.id)?.status).toBe("missing");
+    expect(refreshed.groups.find(group => group.id === current.id)).toMatchObject({ details: { rateMultiplier: .09 },
+      models: [{ priceLabel: "输入 ¥0.18/1M", metadata: { chuangxiangEffectiveRateMultiplier: .09 } }] });
+    expect(refreshed.groups.find(group => group.id === current.id)?.models[0]?.metadata?.supplierCatalogModelStale).toBeUndefined();
+  });
+  it("does not choose between two fresh aliases for one stable ID by traversal order", () => {
+    const groups = ["first-name", "second-name"].map(id => ({ id, label: id, source: "catalog" as const,
+      supplierGroupId: "99", models: [], details: { source: "key-groups" as const } }));
+    for (const rows of [groups, [...groups].reverse()]) {
+      const merged = mergeSupplierCatalog({ groups: [] }, { groups: rows }, true, false);
+      expect(merged.groups.every(group => group.status === "available")).toBe(true);
+      expect(merged.groups.map(group => group.id).sort()).toEqual(["first-name", "second-name"]);
+    }
   });
   it.each(["partial", "throw", "complete"])("preserves account-only model evidence with a %s account directory", async mode => {
     const created = await createSupplierRecord({ name: "Account groups", siteUrl: "https://account-groups.example.test", kind: "sub2api" });
@@ -774,17 +921,17 @@ describe("supplier service", () => {
     expect(supplier.catalog.groups).toEqual([]);
     expect(supplier.supplierKey).toMatch(/^custom-/u);
     await expect(
-      supplierConfigForConnection({
+      prepareSupplierConnection({
         provider: "openai",
         config: { supplierId: supplier.id, supplierKey: "other" },
       }),
     ).rejects.toMatchObject({ status: 409 });
     expect(
-      await supplierConfigForConnection({
+      await prepareSupplierConnection({
         provider: "openai",
         config: { supplierId: supplier.id, supplierKey: supplier.supplierKey },
       }),
-    ).toMatchObject({ supplierId: supplier.id });
+    ).toMatchObject({ config: { supplierId: supplier.id } });
     await expect(
       patchSupplierRecord(supplier.id, { supplierKey: "other" }),
     ).rejects.toMatchObject({ status: 409 });

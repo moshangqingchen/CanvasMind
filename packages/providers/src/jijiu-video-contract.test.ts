@@ -42,7 +42,7 @@ describe("Jijiu exact official video contracts (offline only)", () => {
     ["SD2.5特价30-10-10-线路二", "image_urls", "video_urls", "audio_urls"],
     ["满血seedance-2.5全参C", "images", "video_refs", "audio_refs"],
     ["稳定seedance-2.5全参E", "image_refs", undefined, "audio_refs"],
-    ["稳定seedance-2.5全参D", "image_refs", undefined, undefined],
+    ["稳定seedance-2.5全参D", "images", undefined, "audio_refs"],
     ["SD2.5特价30-10-10-线路四", "images", "videos", "audios"],
   ])("maps %s to its current exact material fields", async (id, imageField, videoField, audioField) => {
     const assets = [image, ...(videoField ? [video] : []), ...(audioField ? [audio] : [])];
@@ -71,14 +71,14 @@ describe("Jijiu exact official video contracts (offline only)", () => {
   });
 
   it("discovers the new exact IDs and retains historical contracts with chat endpoint labels", () => {
-    const ids = jijiuVideoModelIds(); expect(ids).toHaveLength(29);
+    const ids = jijiuVideoModelIds(); expect(ids).toHaveLength(31);
     const scan = scanProviderModelCatalog({ data: ids.map(id => ({ id, supported_endpoint_types: ["openai"] })) }, { baseUrl: "https://newapi.jijiucanvas.com/v1" });
-    expect(scan.models).toHaveLength(29);
+    expect(scan.models).toHaveLength(31);
     expect(scan.models.every(m => m.outputKinds?.includes("video") && m.metadata?.canvasRunnable === true)).toBe(true);
     expect(scanProviderModelCatalog({ data: [{ id: "SD2.5特价30-10-10-线路一" }] }, { baseUrl: "https://other.example/v1" }).models[0]?.metadata?.jijiuVideoContract).toBeUndefined();
   });
 
-  it.each(jijiuVideoModelIds())("submits the exact model %s and its legal bounds without real network", async id => {
+  it.each(jijiuVideoModelIds().filter(id => id !== "SD2.0特价933-线路五"))("submits the exact model %s and its legal bounds without real network", async id => {
     const model = remainingVideoModel("jijiu", id)!, duration = model.parameters!.find(p => p.key === "duration")!;
     const openDuration = model.metadata?.videoApiDurationRangeUnverified === true;
     const min = openDuration ? 1 : Number(model.metadata?.videoMinDuration), max = openDuration ? 120 : Number(model.metadata?.videoMaxDuration);
@@ -191,7 +191,7 @@ describe("Jijiu exact official video contracts (offline only)", () => {
     expect(f.fetcher).not.toHaveBeenCalled();
     expect(jijiuVideoRequestIssues(request(id, { resolution: "480p", duration: 5 }), undefined, group)).toEqual([]);
     expect(jijiuVideoModel("满血seedance-2.5全参B", undefined, group)?.metadata?.videoSupportedResolutions).toEqual(["480p", "720p"]);
-    expect(jijiuVideoModel("稳定seedance-2.5全参D", undefined, group)?.metadata?.videoSupportedResolutions).toEqual(["480p", "720p"]);
+    expect(jijiuVideoModel("稳定seedance-2.5全参D", undefined, group)?.metadata?.videoSupportedResolutions).toEqual(["480p", "720p", "1080p"]);
     expect(jijiuVideoRequestIssues(request(id, { resolution: "480p" }), undefined, "视频SD.2.5")).toEqual(expect.arrayContaining([expect.objectContaining({ path: "model" })]));
   });
 
@@ -353,18 +353,18 @@ describe("Jijiu exact official video contracts (offline only)", () => {
     expect(jijiuVideoModel("稳定seedance-2.5参图参音F")?.parameters?.find(p => p.key === "resolution")?.options).toEqual([{ label: "480p", value: "480p" }]);
   });
 
-  it("uses the 2026-10-17 D reference-only contract and preserves incompatible saved inputs", async () => {
+  it("uses the current D reference contract and preserves incompatible saved inputs", async () => {
     const id = "稳定seedance-2.5全参D", group = "稳定满血视频模型", model = jijiuVideoModel(id, undefined, group)!;
-    expect(model.limits).toMatchObject({ maxInputImages: 30, maxInputVideos: 0, maxInputAudios: 0 });
-    expect(model.metadata).toMatchObject({ supportsFirstLastFrames: false, videoMinDuration: 4, videoMaxDuration: 30, videoContractCheckedAt: "2026-10-17" });
-    expect(model.metadata?.videoAspectRatioPresets).toContainEqual({ label: "自适应（adaptive）", value: "adaptive" });
-    const input = request(id, { duration: 4, resolution: "480p", aspect_ratio: "adaptive" }, [image]), original = structuredClone(input);
+    expect(model.limits).toMatchObject({ maxInputImages: 30, maxInputVideos: 10, maxInputAudios: 10 });
+    expect(model.metadata).toMatchObject({ supportsFirstLastFrames: false, videoMinDuration: 4, videoMaxDuration: 30, videoContractCheckedAt: "2026-10-21" });
+    expect(model.metadata?.videoAspectRatioPresets).toEqual([{ label: "16:9", value: "16:9" }, { label: "9:16", value: "9:16" }]);
+    const input = request(id, { duration: 4, resolution: "480p", aspect_ratio: "16:9" }, [image]), original = structuredClone(input);
     const f = fixture(id, [Response.json({ id: "fixture_d", status: "queued" })], { accountKeyGroup: group, modelGroup: group });
     expect((await f.adapter.validate(input)).issues).toEqual([]);
     await f.adapter.submit(input);
-    expect(JSON.parse(String(f.fetcher.mock.calls[0]?.[1]?.body))).toEqual({ model: id, prompt: input.prompt, seconds: 4, resolution: "480p", aspect_ratio: "adaptive", image_refs: [image.url] });
+    expect(JSON.parse(String(f.fetcher.mock.calls[0]?.[1]?.body))).toEqual({ model: id, prompt: input.prompt, seconds: 4, resolution: "480p", aspect_ratio: "16:9", images: [image.url] });
     expect(input).toEqual(original);
-    for (const bad of [request(id, { duration: 30 }, [video]), request(id, {}, [audio]), request(id, {}, [{ ...image, role: "firstFrame" }]), request(id, {}, [{ ...image, url: "http://media.example/ref.png" }])]) {
+    for (const bad of [request(id, { duration: 30, aspect_ratio: "adaptive" }, [video]), request(id, {}, [{ ...video, durationSeconds: 31 }]), request(id, {}, [{ ...image, role: "firstFrame" }]), request(id, {}, [{ ...image, url: "http://media.example/ref.png" }])]) {
       const saved = structuredClone(bad), denied = fixture(id);
       await expect(denied.adapter.submit(bad)).rejects.toThrow();
       expect(denied.fetcher).not.toHaveBeenCalled(); expect(bad).toEqual(saved);

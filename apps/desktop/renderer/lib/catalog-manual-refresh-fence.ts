@@ -1,5 +1,7 @@
 import type { CatalogObservationCommit, CatalogPipelineState, JsonObject, ProviderConnectionRecord } from "@super-canvas/db";
 import type { ModelDescriptor } from "@super-canvas/providers";
+import { isTk1688ApiUrl } from "@super-canvas/providers";
+import { compactCatalogTk1688Inventory } from "./catalog-tk1688-state-storage";
 import type { CatalogInventoryState } from "./catalog-inventory-policy";
 import type { CatalogReadItemSpec } from "./catalog-read-contracts";
 import type { CatalogSchedulerState } from "./catalog-read-scheduler";
@@ -36,7 +38,8 @@ export function catalogManualRefreshPatches(pipeline: CatalogPipelineState, conn
     for (const source of Object.values(inventory.sources)) if (source.candidate) {
       delete source.candidate; source.lastOutcome = "incomplete";
     }
-    patches.push({ key: inventoryKey, expected: pipeline.entries[inventoryKey], value: inventory as unknown as JsonObject });
+    patches.push({ key: inventoryKey, expected: pipeline.entries[inventoryKey], value: (isTk1688ApiUrl(String(connection.config.baseUrl))
+      ? compactCatalogTk1688Inventory(inventory) : inventory) as unknown as JsonObject });
   }
   const previousQueue = pipeline.entries["scheduler:v1"] as unknown as CatalogSchedulerState | undefined;
   if (previousQueue) {

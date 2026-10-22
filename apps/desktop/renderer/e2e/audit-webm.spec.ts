@@ -1,15 +1,16 @@
-import { readFile, mkdir, writeFile } from "node:fs/promises";
-import { join, resolve, sep } from "node:path";
+import { realpath, mkdir, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { expect, test } from "./helpers/canvas-offline-test";
 
 test("项目音频WebM的列表、播放、Range与再导入保持真实音频类型", async ({ page, request }) => {
-  const repository = resolve(process.cwd(), "../../..");
-  const evidence = resolve(repository, process.env.NEURAL_EVIDENCE_DIR!);
-  const environment = JSON.parse(await readFile(join(evidence, "neural-test-environment.json"), "utf8"));
-  const temporary = resolve(environment.ephemeralDataRoot);
-  expect(temporary.startsWith(join(repository, ".codex-temp") + sep)).toBe(true);
-  const audio = spawnSync(process.env.NEURAL_FFMPEG_PATH!, ["-v", "error", "-f", "lavfi", "-i", "anullsrc=channel_layout=mono:sample_rate=48000",
+  const repository = await realpath(fileURLToPath(new URL("../../../../", import.meta.url)));
+  const ownedRoot = process.env.SUPERCANVAS_E2E_DATA_ROOT;
+  if (!ownedRoot) throw new Error("WebM regression requires the E2E setup's owned isolated runtime");
+  const temporary = await realpath(ownedRoot);
+  expect(dirname(temporary)).toBe(join(repository, ".codex-temp"));
+  const audio = spawnSync(process.env.NEURAL_FFMPEG_PATH ?? "ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "anullsrc=channel_layout=mono:sample_rate=48000",
     "-t", "0.2", "-c:a", "libopus", "-f", "webm", "pipe:1"], { windowsHide: true, maxBuffer: 1024 * 1024 });
   expect(audio.status, audio.stderr?.toString()).toBe(0);
   const title = `音频WebM-${Date.now()}`;

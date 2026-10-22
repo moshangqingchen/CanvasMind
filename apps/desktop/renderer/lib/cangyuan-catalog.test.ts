@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import {
   GenericRestAdapter,
@@ -14,6 +15,22 @@ import {
 import { CANGYUAN_BACKUP_IMAGE_GROUP, cangyuanImageConnectionConfig } from "./provider-presets";
 import { applySupplierCatalogPrices } from "./supplier-model-pricing";
 import { modelPriceSummary } from "./model-display";
+
+it("projects the current Flux and SD8 exact live rows into controls, transports and parameter-dependent quotes", () => {
+  const evidence = JSON.parse(readFileSync(new URL("../../../../packages/providers/src/fixtures/cangyuan-contract-update-20261021.json", import.meta.url), "utf8"));
+  const catalog = cangyuanCatalogFromPricing({ group_ratio: { IMAGE: 1, VIDEO: 1 }, data: evidence.pricingRows });
+  for (const [id, amount] of [["flux-3-image", "8.498"], ["flux-3-klein", "0.56875"]] as const) {
+    const model = catalog.groups.IMAGE.find(m => m.id === id)!;
+    expect(model.operations).toEqual(["image.generate", "image.edit"]);
+    expect(model.parameters?.find(p => p.key === "resolution")?.options?.some(o => o.value === "4K")).toBe(true);
+    expect(modelPriceSummary(model, { resolution: "4K", n: 1 })).toContain(amount);
+    expect(cangyuanCurrentTransport(id)?.operationOverrides?.["image.edit"]?.submit?.path).toBe("/v1/images/edits");
+  }
+  const sd8 = catalog.groups.VIDEO.find(m => m.id === "sd8-seedance-2.5-n")!;
+  expect(sd8.parameters?.find(p => p.key === "resolution")?.default).toBe("480p");
+  expect(modelPriceSummary(sd8, { resolution: "1080p", duration: 30 })).toContain("20.25");
+  expect(modelPriceSummary(sd8, { resolution: "480p", duration: 30 })).toContain("9");
+});
 
 it("keeps October independent Image2/Grok quotes separate from the integrated x contract", () => {
   const catalog = cangyuanCatalogFromPricing({ group_ratio: { IMAGE: 1 }, data: [

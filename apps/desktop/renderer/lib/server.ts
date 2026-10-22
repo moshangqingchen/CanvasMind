@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   decryptSecret,
   encryptSecret,
@@ -639,6 +639,9 @@ export function maskConnection(
     provider: record.provider,
     config: configForBrowser(record.config),
     apiKeySet: Boolean(record.encryptedSecret),
+    // Fingerprint randomized ciphertext, never the secret. This response-only
+    // identity lets a before/after view distinguish a manually replaced Key.
+    ...(record.encryptedSecret ? { credentialEpoch: createHash("sha256").update(record.encryptedSecret).digest("hex") } : {}),
     apiKeyUsable,
     apiKey: record.encryptedSecret ? maskSecret("configured") : "",
   };

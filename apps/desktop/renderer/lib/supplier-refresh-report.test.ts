@@ -16,9 +16,21 @@ const model = (id: string, price = 1, path = "/v1/images/generations"): ModelDes
 });
 const connection = (items: ModelDescriptor[], patch: Record<string, unknown> = {}): ProviderConnectionView => ({
   id: "connection", name: "创作组", provider: "openai", apiKey: "", apiKeySet: true,
-  config: { supplierId: "supplier", modelGroup: "vip", modelCatalogModels: items as never, modelScanStatus: "live", modelScanCheckedAt: "before", ...patch } as ProviderConnectionView["config"],
+  config: { supplierId: "supplier", modelGroup: "vip", modelCatalogModels: items as never, modelScanStatus: "live", modelScanCheckedAt: "before", modelScanComplete: true, ...patch } as ProviderConnectionView["config"],
 });
 describe("supplier refresh evidence", () => {
+  it("does not compare a newly scanned manual Key with the pre-rotation Key baseline", () => {
+    const before = { ...connection([model("old"), model("keep")]), credentialEpoch: "ciphertext-a" };
+    const after = { ...connection([model("new"), model("keep", 2, "/changed")], { modelScanCheckedAt: "after" }), credentialEpoch: "ciphertext-b" };
+    for (const previous of [before, { ...before, credentialEpoch: undefined }]) {
+      const result = buildSupplierRefreshResult(supplier(), supplier({ scannedAt: "after" }), [previous], [after]).connections![0]!;
+      expect(result.modelAddedIds).toEqual([]);
+      expect(result.modelRemovedModels).toEqual([]);
+      expect(result.interfaceChanges).toEqual([]);
+      expect(result.priceChanges).toEqual([]);
+      expect(result.modelFirstDiscoveredIds).toEqual(["new", "keep"]);
+    }
+  });
   it("reports newly imported conditional token rates without claiming an unknown price or task total", () => {
     const old: ModelDescriptor = { id: "doubao-seedance-2-0-260128", name: "Seedance", operations: ["video.generate"], metadata: { priceLabel: "价格未公布" } };
     const current: ModelDescriptor = { ...old, pricing: { kind: "token", currency: "CNY", confidence: "exact", checkedAt: "after",
@@ -98,7 +110,8 @@ describe("supplier refresh evidence", () => {
     const after = connection([], { modelScanCheckedAt: "after", modelScanStatus: "empty", modelScanAttemptStatus: "empty" });
     const report = buildSupplierRefreshResult(supplier(), supplier({ scannedAt: "after", catalog: { groups: [group("vip"), group("new")] } }), [before], [after]);
     expect(report.connections![0]!.status).toBe("empty");
-    expect(report.connections![0]!.modelRemovedModels.map(item => item.id)).toEqual(["old"]);
+    expect(report.connections![0]!.modelRemovedModels).toEqual([]);
+    expect(report.message).toContain("未再返回 —");
     expect(report.connections!.find(item => item.groupId === "new")!.status).toBe("unconfigured");
     expect(report.status).toBe("partial");
   });
@@ -183,5 +196,54 @@ describe("supplier refresh evidence", () => {
     expect(report.connections![0]!.modelAddedIds).toEqual([]);
     expect(JSON.stringify(report)).not.toMatch(/secret-value|other-secret|user:password/);
     expect(safeRefreshMessage("HTTP 401", "读取失败")).toBe("HTTP 401");
+  });
+  it("reports first discovery instead of additions or interface changes without a complete baseline", () => {
+    const before = supplier({ scannedAt: undefined, scanStatus: "unscanned", scanComplete: undefined, catalog: { groups: [] } });
+    const report = buildSupplierRefreshResult(before, supplier({ scannedAt: "after" }), [], [connection([model("new")], { modelScanCheckedAt: "after" })]);
+    expect(report.groupChanges).toMatchObject({ added: [], missing: [], renamed: [], firstDiscovered: [{ id: "vip", label: "vip" }] });
+    expect(report.connections![0]).toMatchObject({ status: "updated", modelAddedIds: [], modelFirstDiscoveredIds: ["new"], modelRemovedModels: [], interfaceChanges: [] });
+    expect(report.message).toContain("无法确认何时新增");
+    expect(report.message).toContain("未再返回 —");
+    expect(report.connections![0]!.message).toContain("首次发现");
+  });
+  it.each([false, undefined])("does not infer model removals or a complete refresh from completeness %s", complete => {
+    const report = buildSupplierRefreshResult(supplier(), supplier({ scannedAt: "after" }), [connection([model("old")])],
+      [connection([model("new")], { modelScanCheckedAt: "after", modelScanComplete: complete })]);
+    expect(report.status).toBe("partial");
+    expect(report.connections![0]!.modelRemovedModels).toEqual([]);
+    expect(report.message).toContain("未再返回 —");
+  });
+  it.each([
+    { accountKeyGroupId: "other-stable-group" }, { accountKeyId: "another-account-key" },
+    { baseUrl: "https://different.invalid/v1" }, { protocol: "other-protocol" },
+  ])("does not compare another account, group, address or protocol to the old connection ID: %j", changed => {
+    const old = connection([model("shared", 1), model("old")]);
+    const current = connection([model("shared", 2), model("new")], { ...changed, modelScanCheckedAt: "after" });
+    const report = buildSupplierRefreshResult(supplier(), supplier({ scannedAt: "after" }), [old], [current]);
+    expect(report.connections![0]).toMatchObject({ status: "updated", modelAddedIds: [], modelRemovedModels: [],
+      modelFirstDiscoveredIds: ["shared", "new"], interfaceChanges: [], priceChanges: [] });
+  });
+  it("retains the comparable baseline through a proven stable group rename", () => {
+    const old = connection([model("old")], { modelGroup: "old-name", accountKeyGroup: "old-name", accountKeyGroupId: "7" });
+    const current = connection([model("new")], { modelScanCheckedAt: "after", modelGroup: "new-name", accountKeyGroup: "new-name", accountKeyGroupId: "7" });
+    const report = buildSupplierRefreshResult(supplier(), supplier({ scannedAt: "after" }), [old], [current]);
+    expect(report.connections![0]).toMatchObject({ modelAddedIds: ["new"], modelRemovedModels: [{ id: "old", name: "old" }] });
+    expect(report.connections![0]!.modelFirstDiscoveredIds).toBeUndefined();
+  });
+  it("ignores older successful responses and legacy source changes without a sourceId", () => {
+    const recent = "2026-10-22T12:00:00Z", oldTime = "2026-10-22T11:00:00Z";
+    const report = buildSupplierRefreshResult(supplier({ scannedAt: recent }), supplier({ scannedAt: oldTime }),
+      [connection([model("keep")], { modelScanCheckedAt: recent })], [connection([model("older")], { modelScanCheckedAt: oldTime })]);
+    expect(report.directory!.status).toBe("unconfirmed");
+    expect(report.connections![0]).toMatchObject({ status: "unconfirmed", modelAddedIds: [], modelRemovedModels: [] });
+    const moved = buildSupplierRefreshResult(supplier(), supplier({ scannedAt: "after", apiUrl: "https://different.invalid/v1" }),
+      [connection([model("keep")])], [connection([model("new")], { modelScanCheckedAt: "after" })]);
+    expect(moved.directory!.status).toBe("unconfirmed");
+    expect(moved.connections![0]!.modelAddedIds).toEqual([]);
+  });
+  it("never treats an empty complete supplier catalog as every group being deleted", () => {
+    const report = buildSupplierRefreshResult(supplier(), supplier({ scannedAt: "after", scanStatus: "empty", catalog: { groups: [] } }), [], []);
+    expect(report.groupChanges!.missing).toEqual([]);
+    expect(report.message).toContain("未再返回 —");
   });
 });

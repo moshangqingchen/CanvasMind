@@ -29,6 +29,25 @@ beforeAll(() => { vi.stubGlobal("fetch", noNetwork); vi.stubGlobal("React", Reac
 afterAll(() => { expect(noNetwork).not.toHaveBeenCalled(); vi.unstubAllGlobals(); });
 
 describe("狼帧 public catalog → saved descriptors → real UI binding and normalization", () => {
+  it("restores the latest two calls, exact category tariffs and X/C 5–30 controls after saved catalog reload", () => {
+    const current = JSON.parse(readFileSync(new URL("../../../../packages/providers/src/fixtures/langframe-catalog-20261021.json", import.meta.url), "utf8"));
+    const parsed = parseLangframeCatalog(current.payload, { checkedAt: current.checkedAt, sourceSha256: current.sha256 });
+    const fresh = json(langframeModelsForKey(json(parsed.groups), [], []));
+    const liveConnection = { ...connection, config: { ...connection.config, scannedModelIds: fresh.map(m => m.id), modelCatalogModels: fresh } };
+    const bound = bindScannedModelProtocols(liveConnection, json(fresh)).models;
+    for (const [id, resolution, price] of [["kling-v4-VIP-支持真人", "720P", .399], ["SD-2.5-S支持真人满血", "480P", .49]] as const) {
+      const selected = bound.find(m => m.id === id)!;
+      const controls = parameterDescriptorsFor("video-generation", "langframe", selected);
+      const saved = { resolution, duration: 5, ratio: "16:9" };
+      expect(normalizedParametersForModel("video-generation", "langframe", selected, json(parametersWithDefaults(controls, saved)))).toMatchObject(saved);
+      expect(currentSupplierUnitPrice(selected, saved)).toContain(String(price));
+    }
+    for (const id of ["SD2.5-X-满参支持人脸", "SD2.5-C-满参支持人脸"]) {
+      const selected = bound.find(m => m.id === id)!;
+      expect(parameterDescriptorsFor("video-generation", "langframe", selected).find(p => p.key === "duration")?.options?.map(o => o.value)).toEqual(Array.from({ length: 26 }, (_, i) => i + 5));
+      expect(normalizedParametersForModel("video-generation", "langframe", selected, { resolution: "720P", duration: 4 })).toMatchObject({ duration: 4 });
+    }
+  });
   it("keeps complete call names, declared media kinds, raw stats and 8 independent chat tariffs after save/reload", () => {
     const bound = bind();
     expect(savedGroups).toHaveLength(39);

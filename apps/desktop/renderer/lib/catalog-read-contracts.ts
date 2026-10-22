@@ -60,6 +60,8 @@ export interface CatalogReadReceipt {
   startedAt?: string;
   completedAt?: string;
   reason?: CatalogReadReason;
+  /** Reviewed application classification only; never a remote error/message. */
+  failureCode?: "timeout";
   httpStatus?: number;
   /** Actual safe endpoints, including equivalent candidates of one logical read. */
   attemptedUrls?: string[];
@@ -70,6 +72,16 @@ export interface CatalogNormalizedFacts {
   models: ModelDescriptor[];
   /** Only rows validated by a successful membership parser may add partial positives. */
   validatedMembershipModelIds?: string[];
+  /** Internal membership projection only. The persisted fact remains the raw
+   * Key read; these references distinguish derived merchant aliases from it. */
+  membershipDerivation?: {
+    kind: "tk1688-three-way";
+    complete: boolean;
+    localProjectionDispatchSeq?: number;
+    rawKey: { sourceKey: string; sourceUrl: string; checkedAt: string; dispatchSeq: number; modelIds: string[]; coverage?: CatalogReadCoverage };
+    account?: { sourceKey: string; sourceUrl: string; checkedAt: string; dispatchSeq: number };
+    marketplace?: { sourceKey: string; sourceUrl: string; checkedAt: string; dispatchSeq: number };
+  };
   groups?: Array<{ id: string; label: string; modelIds: readonly string[] }>;
   dependencies?: Record<string, number | string>;
   contractDigests?: string[];

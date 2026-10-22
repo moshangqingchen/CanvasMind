@@ -53,7 +53,7 @@ export function cangyuanDocumentedImageModelWithCatalogDimensions(model: ModelDe
   const rules = doc.parameterRules ?? {};
   const parameters: ModelParameterDescriptor[] = [];
   if (doc.ratios.length) parameters.push({ key: "aspect_ratio", label: "画面比例", control: "select", valueType: "string",
-    default: nano ? "1:1" : model.id === "midjourney-v7" || model.id === "seedream-5.0-pro-x" ? "16:9" : "auto",
+    default: rules.size?.default ?? (nano ? "1:1" : model.id === "midjourney-v7" || model.id === "seedream-5.0-pro-x" ? "16:9" : "auto"),
     options: [...(!nano ? [{ label: "自动（供应商默认）", value: "auto" }] : []), ...options(doc.ratios)], operations,
     ...(doc.sizeSuggestionsOnly ? { allowCustomValue: true } : {}),
     description: doc.fields.size ?? "" });
@@ -63,7 +63,7 @@ export function cangyuanDocumentedImageModelWithCatalogDimensions(model: ModelDe
     ...(model.id.startsWith("grok-imagine-image") ? { default: model.id.endsWith("-lite") ? "1280x720" : "1024x1024" } : {}),
     options: doc.pixelOptions.map(value => ({ label: (fixedTier(model.id)?.toUpperCase() ?? "原生") + " · " + value.replace("x", " × "), value })), operations,
     description: doc.fields.size ?? "" });
-  const labels: Record<string, string> = { series: "产品线", tier: "清晰度 / 计费档位", quality: "质量", speed: "生成速度", reference: "参考图模式",
+  const labels: Record<string, string> = { series: "产品线", tier: "清晰度 / 计费档位", resolution: "分辨率档位", quality: "质量", speed: "生成速度", reference: "参考图模式",
     output_format: "输出文件编码", background: "背景", output_compression: "输出压缩", moderation: "内容审核", response_format: "结果返回方式", async: "异步任务", n: "生成张数" };
   const legacyOptions: Record<string, string[]> = { series: ["flare", "sunburst"], tier: ["web", ...kTiers], quality: doc.qualityOptions,
     speed: ["relax", "fast"], reference: ["image", "style", "edit", "moodboard", "editor"], output_format: ["png", "jpeg"] };
@@ -97,7 +97,8 @@ export function cangyuanDocumentedImageModelWithCatalogDimensions(model: ModelDe
   const denied = /401|403|权限|未开通|拒绝|下架|停用|未返回|unauthorized|forbidden|not.?returned|unavailable|disabled/iu.test(String(metadata.canvasUnavailableReason ?? ""));
   if (!denied) { delete metadata.canvasUnavailableReason; delete metadata.pendingLiveScan; delete metadata.protocolSourceModel; if (metadata.autoInterfaceStatus === "incomplete") delete metadata.autoInterfaceStatus; }
   const nativeQuality = parameters.find(p => p.key === "quality")?.options?.some(o => String(o.value) === "4k");
-  const supported = x || nativeQuality ? ["1K", "2K", "4K"] : declaredFixedTier ? [declaredFixedTier] : model.id === "seedream-5.0-pro-x" ? ["1K", "2K"] : [];
+  const nativeResolution = rules.resolution?.enum ?? rules.resolution?.suggestions;
+  const supported = nativeResolution?.map(String) ?? (x || nativeQuality ? ["1K", "2K", "4K"] : declaredFixedTier ? [declaredFixedTier] : model.id === "seedream-5.0-pro-x" ? ["1K", "2K"] : []);
   const { maxInputImages: _oldMax, supportedMimeTypes: _oldMime, ...oldLimits } = model.limits ?? {};
   const dimensionRules = {
     ...(doc.dimensionRules?.step !== undefined ? { alignment: doc.dimensionRules.step } : {}),
@@ -109,11 +110,12 @@ export function cangyuanDocumentedImageModelWithCatalogDimensions(model: ModelDe
   };
   const catalogBounds = catalogDimensionEvidence(model.id, dimensionRules, catalogDimensions);
   return { ...model, operations, parameters, description: doc.intro, inputKinds: doc.editing ? ["text", "image", "image[]"] : ["text"], outputKinds: ["image", "image[]"],
-    limits: { ...oldLimits, ...(doc.maxReferences !== undefined ? { maxInputImages: doc.maxReferences } : {}), ...(nano ? { supportedMimeTypes: ["image/png", "image/jpeg", "image/webp"] } : {}) },
+    limits: { ...oldLimits, ...(doc.maxReferences !== undefined ? { maxInputImages: doc.maxReferences } : {}), ...(rules.n?.max !== undefined ? { maxOutputImages: rules.n.max } : {}), ...(nano ? { supportedMimeTypes: ["image/png", "image/jpeg", "image/webp"] } : {}) },
     metadata: { ...metadata, canvasRunnable: !denied, protocol: "rest", cangyuanCurrentContract: model.id, imageNativeParameterContract: true,
       operationsSource: "declared", outputKindsSource: "declared", catalogCapability: "image", documentationUrl: doc.sourceUrl, contractCheckedAt: doc.checkedAt, imageContractDocumentSha256: doc.sha256, imageContractSourceLastReviewed: doc.sourceLastReviewed,
-      imageSupportedResolutions: supported, imageRequestResolutions: x || nativeQuality || declaredFixedTier ? supported : [],
-      ...(x || nativeQuality ? { imageNativeResolutionParameter: x ? "tier" : "quality", imageNativeResolutionOptions: true, imageNativeQualityOptions: true } : { imageResolutionMode: declaredFixedTier ? "fixed-model-tier" : doc.dimensionRules ? "model-dimension-bounds" : "provider-decided" }),
+      imageSupportedResolutions: supported, imageRequestResolutions: nativeResolution || x || nativeQuality || declaredFixedTier ? supported : [],
+      ...(nativeResolution ? { imageNativeResolutionParameter: "resolution", imageNativeResolutionOptions: true, imageResolutionTierSource: "supplier-schema-suggestions" }
+        : x || nativeQuality ? { imageNativeResolutionParameter: x ? "tier" : "quality", imageNativeResolutionOptions: true, imageNativeQualityOptions: true } : { imageResolutionMode: declaredFixedTier ? "fixed-model-tier" : doc.dimensionRules ? "model-dimension-bounds" : "provider-decided" }),
       ...(declaredFixedTier ? { imageFixedResolution: declaredFixedTier } : {}),
       ...(fixedTier(model.id) ? { imageNominalResolution: fixedTier(model.id)!.toUpperCase() } : {}),
       imagePixelBudgetPublished: doc.dimensionRules?.minPixels !== undefined || doc.dimensionRules?.maxPixels !== undefined, imageQualityOptionsCompleteEnum: Boolean(rules.quality?.enum),
@@ -137,7 +139,8 @@ export function cangyuanDocumentedImageTransport(id: string, parameters?: Readon
   const mappings: RestRequestMapping[] = [
     { target: "/model", source: { kind: "request", path: "$.model" } },
     { target: "/prompt", source: { kind: "request", path: "$.prompt" } },
-    { target: "/size", source: { kind: "request", path: "$.parameters.aspect_ratio" }, omitIfUndefined: true, omitValues: ["auto"] },
+    { target: "/size", source: { kind: "request", path: "$.parameters.aspect_ratio" }, omitIfUndefined: true,
+      ...(doc.parameterRules?.resolution ? {} : { omitValues: ["auto"] }) },
     ...(doc.customPixels || doc.pixelOptions.length ? [{ target: "/size", source: { kind: "request" as const, path: "$.parameters.size" }, omitIfUndefined: true, omitValues: ["auto"] }] : []),
     ...[...new Set([...Object.keys(doc.fields).filter(key => !["model", "prompt", "size", "images", "mask"].includes(key)), ...(!cangyuanQualityParameterUnsupported(id) && userImageQualityOptions(id).length ? ["quality"] : [])])].map((key): RestRequestMapping => ({ target: `/${key}`,
       source: { kind: "request", path: `$.parameters.${key}` }, omitIfUndefined: true })),

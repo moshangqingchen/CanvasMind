@@ -1,4 +1,5 @@
 import type { ProviderConnectionRecord, SupplierRecord } from "@super-canvas/db";
+import { createHash } from "node:crypto";
 import type { CatalogPriceProvenance, ModelDescriptor, ProviderOperation, StructuredModelPricing, StructuredPriceTier } from "@super-canvas/providers";
 import { catalogPriceDescriptor } from "./supplier-catalog-price-merge";
 import { catalogConnectionScopes } from "./catalog-source-plan";
@@ -271,8 +272,8 @@ export function reduceCatalogPrices(previous: CatalogPriceState | undefined, inp
     for (const { model, operation, next, conflicting } of slots) {
       const key = stable([receipt.spec.sourceKey, identity, model.id, operation ?? "*"]);
       let entry = state.entries[key];
-      const fingerprint = stable({ pricing: priceSignature(next?.pricing), label: next?.metadata?.priceLabel, status: receipt.status,
-        complete: receipt.complete, priceStates: observation.facts.priceStates, conflicting });
+      const fingerprint = createHash("sha256").update(stable({ pricing: priceSignature(next?.pricing), label: next?.metadata?.priceLabel, status: receipt.status,
+        complete: receipt.complete, priceStates: observation.facts.priceStates, conflicting })).digest("hex");
       if (entry && (receipt.context.dispatchSeq < entry.lastDispatchSeq || receipt.context.dispatchSeq === entry.lastDispatchSeq &&
         fingerprint === entry.lastObservationFingerprint)) continue;
       const explicitRows = ((observation.facts as typeof observation.facts & { priceStates?: Array<{ modelId: string; state: string; groupIdentity?: string; operation?: ProviderOperation; conditions?: StructuredPriceTier["conditions"] }> }).priceStates ?? [])
@@ -384,7 +385,18 @@ export function reduceCatalogPrices(previous: CatalogPriceState | undefined, inp
       entry.lastDispatchSeq = receipt.context.dispatchSeq;
       entry.conflict = conflicting;
       entry.lastObservationFingerprint = fingerprint;
-      entry.scopePriority = receipt.spec.authScope.kind === "connection-key" ? 2 : receipt.spec.authScope.kind === "site-account" ? 1 : 0;
+      // A merchant SKU's published retail price includes the platform markup.
+      // Generic account token expressions must not erase that exact numeric
+      // tariff or turn its CNY projection back into an unrelated USD label.
+      const exactRetail = observation.facts.sourceFacts?.kind === "tk1688" &&
+        observation.facts.sourceFacts.value.source === "marketplace" &&
+        receipt.spec.sourceUrl === "https://tk1688.com/api/marketplace/listings" &&
+        /@s\d+c\d+$/u.test(model.id) && pricing?.currency === "CNY";
+      // A failed/unknown sample keeps the provenance of a retained tariff.
+      // A successfully accepted replacement or completed withdrawal removes it.
+      const retainedRetail = entry.scopePriority === 3 && !pricing && entry.pricing?.currency === "CNY" &&
+        receipt.spec.sourceUrl === "https://tk1688.com/api/marketplace/listings" && /@s\d+c\d+$/u.test(model.id);
+      entry.scopePriority = exactRetail || retainedRetail ? 3 : receipt.spec.authScope.kind === "connection-key" ? 2 : receipt.spec.authScope.kind === "site-account" ? 1 : 0;
       state.entries[key] = entry;
     }
   }
@@ -437,8 +449,9 @@ export function reduceCatalogPrices(previous: CatalogPriceState | undefined, inp
       priceCheckedAt: pricing?.checkedAt ?? latest.checkedAt,
       priceLastAttemptAt: input.observedAt, supplierPriceGroupId: identity.startsWith("site-id:") ? identity.slice(8) : undefined,
       catalogUnavailablePriceOperations: [...new Set(entries.filter(entry => entry.operation && (entry.status !== "published" || entry.conflict)).map(entry => entry.operation))],
-      catalogPriceEvidence: { schemaVersion: 1, status: pricing ? "published" : latest.status, entries: entries.map(({ pricing: _pricing, billingMetadata: _billingMetadata, ...entry }) => {
-        void _pricing; void _billingMetadata;
+      catalogPriceEvidence: { schemaVersion: 1, status: pricing ? "published" : latest.status, entries: entries.map(({ pricing: _pricing, billingMetadata: _billingMetadata,
+        lastObservationFingerprint: _fingerprint, ...entry }) => {
+        void _pricing; void _billingMetadata; void _fingerprint;
         return { ...clone(entry), history: clone(entry.history.slice(-4)) };
       }) } satisfies CatalogModelPriceEvidence,
       priceLabel: conflict ? "价格存在冲突，待确认" : chosen?.label ? `${chosen.label.replace(/（上次价格）$/u, "")}${unknown ? "（上次价格）" : ""}` : pricing ? partial ? "（上次价格）" : "" : "价格未公布",

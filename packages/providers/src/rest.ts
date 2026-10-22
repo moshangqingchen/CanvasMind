@@ -90,7 +90,7 @@ export function preservesMiaowuExplicitVideoContract(config: Readonly<Record<str
     !isMiaowuUnverifiedAutoVideoContract(config, model, connector, operation));
 }
 import { isChuangxiangVideoConnection, chuangxiangVideoModel, chuangxiangVideoTransport,
-  validateChuangxiangVideoRequest, normalizeChuangxiangVideoParameters, CHUANGXIANG_VIDEO_POLL_INTERVAL_MS } from "./chuangxiang-video-contract.js";
+  validateChuangxiangVideoRequest, normalizeChuangxiangVideoParameters, isChuangxiangWanVideoModel, CHUANGXIANG_VIDEO_POLL_INTERVAL_MS } from "./chuangxiang-video-contract.js";
 import { getImageEditingCapabilities, imageEditingConnection, imageEditingRequestIssues,
   imageReferenceAssets, normalizeImageEditingParameters } from "./image-editing-capabilities.js";
 import { verifiedTransparentImageEvidence, verifiedTransparentImageJsonEndpoint } from "./transparent-image-evidence.js";
@@ -1521,6 +1521,11 @@ export class GenericRestAdapter implements ProviderAdapter {
     }
     try {
       const connection = await this.connections.resolve(request.connectionId);
+      if (["openai", "rest"].includes(connection.provider) && request.operation.startsWith("video.") &&
+          isChuangxiangVideoConnection(imageEditingConnection(connection).config, request.model) && isChuangxiangWanVideoModel(request.model)) {
+        const promptIssue = issues.findIndex(issue => issue.path === "prompt" && issue.code === "required");
+        if (promptIssue >= 0) issues.splice(promptIssue, 1);
+      }
       if (!this.fixedConfig && cangyuanOwnMediaUploadAvailable(connection.provider, { ...connection.settings, baseUrl: connection.baseUrl }, request.model, request.operation)) {
         issues.push(...cangyuanMediaUploadInputIssues(request.assets ?? []));
         if (request.assets) request = { ...request, assets: request.assets.map(asset => cangyuanLocalMedia(asset)
@@ -1646,7 +1651,10 @@ export class GenericRestAdapter implements ProviderAdapter {
           const values = request.parameters ?? {};
           // Canvas image requests may carry the internal one-image count. The
           // documented Miaowu mapping omits n; larger counts are unsupported.
-          const declared = media === "image" && values.n === 1 ? Object.fromEntries(Object.entries(values).filter(([key]) => key !== "n")) : values;
+          // Current Dream documentation retires mode: old saved values remain
+          // intact, but the server ignores that legacy selector. The fixed
+          // transport also omits it; other unknown fields still fail validation.
+          const declared = Object.fromEntries(Object.entries(values).filter(([key]) => key !== "mode" && !(media === "image" && values.n === 1 && key === "n")));
           issues.push(...validateModelParameters(configuredModel, { ...defaults, ...declared }, request.operation).issues);
           for (const key of Object.keys(declared)) if (!configuredModel.parameters?.some(parameter => parameter.key === key))
             issues.push({ path: `parameters.${key}`, code: "unsupported_parameter", message: `当前型号认证 schema 未声明参数 ${key}，本次生成尚未提交。` });
